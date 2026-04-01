@@ -2,6 +2,8 @@
 
 Artifact repository for the paper *"Seeing the Bugs: Mining and Characterizing Virtual Reality Visualization Bugs"*.
 
+> **Archived version with DOI**: [https://doi.org/10.5281/zenodo.19363210](https://doi.org/10.5281/zenodo.19363210)
+
 ## Dataset
 
 **1,991 confirmed VR Visualization Bugs (VVBs)** mined from **538 open-source VR repositories** and **112,517 issue reports** on GitHub. Each VVB is annotated along three dimensions:
@@ -71,76 +73,3 @@ vr_taxonomy/
         └── rq4_bm25_results.jsonl                    BM25 baseline: Hit@1, Hit@3, MFR
 ```
 
-## Data Schema
-
-### ALL_DIMENSION.csv
-
-| Column | Description |
-|--------|-------------|
-| repo | GitHub repository (owner/name) |
-| id | Issue ID |
-| text | Bug report text (title + description) |
-| repo_level | VR software stack: C1 (XR Runtime), C2 (Graphics), C3 (Engine), C4 (Middleware), C5 (Application) |
-| symptom_cate | AF, SD, IC, RA, VF, RS |
-| entity_layer | L1 (Interaction Proxy), L2 (Embodied Avatar), L3 (Interface Entity), L4 (Scene Entity), L5 (View Configuration) |
-| root_cause | ICFM, UPF, GCE, RLM, IIV, IAC, TDI |
-| root_cause_sub | Pipeline Misordering, Scope Mismatch, Unbounded Loop, etc. |
-
-### ALL_summaries.jsonl
-
-Each line: `{repo, id, root_cause, fix, causal_chain, vr_concept}`
-
-### Experiment Results (detection/results/)
-
-**top1 files** — per-bug diagnosis quality (scored manually):
-- `{prefix}_rc_score`: 0 (wrong), 1 (partial), 2 (correct)
-- `{prefix}_file_match`, `{prefix}_func_match`: localization accuracy
-- `{prefix}_level`: correct / 1a / 1b / wrong
-
-**top3 files** — per-bug localization ranking:
-- `{prefix}_hit1`, `{prefix}_hit3`: whether top-1/top-3 predictions hit gold function
-- `{prefix}_mfr`: Mean First Rank (1=best, 4=miss)
-
-Prefixes: `a` = L_bare, `e` = L_random, `full` = L_full
-
-## Setup
-
-```bash
-pip install -r requirements.txt
-```
-
-Python 3.9+. API keys via environment variables:
-- `OPENAI_API_KEY` for GPT-4.1-mini experiments
-- `GEMINI_API_KEY` for Gemini experiments
-
-## Reproducing Results
-
-### VVB Identification (Section 3.2)
-
-```bash
-python identification/sbert_xgboost.py
-python identification/codebert_linear.py
-python identification/gpt41_ensemble.py
-```
-
-### Fault Localization (Section 6.1, Table 5)
-
-```bash
-python detection/run_gpt41mini_full.py run
-python detection/run_gemini_flash_full.py run
-python detection/run_gpt41mini_full.py analyze
-python detection/run_gemini_flash_full.py analyze
-```
-
-## Inter-Annotator Agreement
-
-| Dimension | Fleiss' Kappa |
-|-----------|:------------:|
-| VVB Identification | 0.83 |
-| Visual Symptoms | 0.85 |
-| Root Causes | 0.80 |
-| Visual Elements | 0.83 |
-
-## License
-
-Released for research purposes. Please cite our paper if you use this dataset or code.
