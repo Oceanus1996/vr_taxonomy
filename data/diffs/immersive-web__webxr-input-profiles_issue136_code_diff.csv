@@ -1,0 +1,229 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+immersive-web/webxr-input-profiles,136,ccf4a1d,packages/viewer/backgrounds/README.md,added,5,0,5,"@@ -0,0 +1,5 @@
++# Backgrounds
++
++These various backgrounds are provided to show what the controllers look like in a variety of lighting conditions, which can help when debugging material issues.
++
++All background images courtesy of [HDRI Haven](https://hdrihaven.com/)"
+immersive-web/webxr-input-profiles,136,ccf4a1d,packages/viewer/backgrounds/autumn_forest_01_2k.hdr,added,0,0,0,
+immersive-web/webxr-input-profiles,136,ccf4a1d,packages/viewer/backgrounds/backgrounds.json,added,8,0,8,"@@ -0,0 +1,8 @@
++{
++    ""autumn_forest"": ""autumn_forest_01_2k.hdr"",
++    ""cave_wall"": ""cave_wall_2k.hdr"",
++    ""fireplace"": ""fireplace_2k.hdr"",
++    ""georgentor"": ""georgentor_2k.hdr"",
++    ""snowy_park"": ""snowy_park_01_2k.hdr"",
++    ""studio"": ""studio_small_03_2k.hdr""
++}
+\ No newline at end of file"
+immersive-web/webxr-input-profiles,136,ccf4a1d,packages/viewer/backgrounds/cave_wall_2k.hdr,added,0,0,0,
+immersive-web/webxr-input-profiles,136,ccf4a1d,packages/viewer/backgrounds/fireplace_2k.hdr,added,0,0,0,
+immersive-web/webxr-input-profiles,136,ccf4a1d,packages/viewer/backgrounds/georgentor_2k.hdr,added,0,0,0,
+immersive-web/webxr-input-profiles,136,ccf4a1d,packages/viewer/backgrounds/snowy_park_01_2k.hdr,added,0,0,0,
+immersive-web/webxr-input-profiles,136,ccf4a1d,packages/viewer/backgrounds/studio_small_03_2k.hdr,added,0,0,0,
+immersive-web/webxr-input-profiles,136,ccf4a1d,packages/viewer/rollup.config.js,modified,7,0,7,"@@ -13,6 +13,7 @@ export default [
+     ],
+     external: [
+       './three/build/three.module.js',
++      './three/examples/jsm/loaders/RGBELoader.js',
+       './three/examples/jsm/loaders/GLTFLoader.js',
+       './three/examples/jsm/loaders/FBXLoader.js',
+       './three/examples/jsm/controls/OrbitControls.js',
+@@ -31,6 +32,12 @@ export default [
+         ],
+         { verbose: true, watch: process.env.ROLLUP_WATCH }
+       ),
++      copy(
++        [
++          { files: 'backgrounds/*.{hdr,json}', dest: `${DIST_FOLDER}/backgrounds` }
++        ],
++        { verbose: true, watch: process.env.ROLLUP_WATCH }
++      ),
+       copy(
+         [
+           { files: '../../node_modules/three/**', dest: `${DIST_FOLDER}/three` }"
+immersive-web/webxr-input-profiles,136,ccf4a1d,packages/viewer/src/backgroundSelector.js,added,38,0,38,"@@ -0,0 +1,38 @@
++const defaultBackground = 'georgentor';
++
++export default class BackgroundSelector extends EventTarget {
++  constructor() {
++    super();
++
++    this.backgroundSelectorElement = document.getElementById('backgroundSelector');
++    this.backgroundSelectorElement.addEventListener('change', () => { this.onBackgroundChange(); });
++
++    this.selectedBackground = window.localStorage.getItem('background') || defaultBackground;
++    this.backgroundList = {};
++    fetch('backgrounds/backgrounds.json')
++      .then(response => response.json())
++      .then((backgrounds) => {
++        this.backgroundList = backgrounds;
++        Object.keys(backgrounds).forEach((background) => {
++          const option = document.createElement('option');
++          option.value = background;
++          option.innerText = background;
++          if (this.selectedBackground === background) {
++            option.selected = true;
++          }
++          this.backgroundSelectorElement.appendChild(option);
++        });
++        this.dispatchEvent(new Event('selectionchange'));
++      });
++  }
++
++  onBackgroundChange() {
++    this.selectedBackground = this.backgroundSelectorElement.value;
++    window.localStorage.setItem('background', this.selectedBackground);
++    this.dispatchEvent(new Event('selectionchange'));
++  }
++
++  get backgroundPath() {
++    return this.backgroundList[this.selectedBackground];
++  }
++}"
+immersive-web/webxr-input-profiles,136,ccf4a1d,packages/viewer/src/controllerModel.js,modified,31,0,31,"@@ -17,6 +17,27 @@ class ControllerModel extends THREE.Object3D {
+     this.rootNode = null;
+     this.nodes = {};
+     this.loaded = false;
++    this.envMap = null;
++  }
++
++  set environmentMap(value) {
++    if (this.envMap === value) {
++      return;
++    }
++
++    this.envMap = value;
++    /* eslint-disable no-param-reassign */
++    this.traverse((child) => {
++      if (child.isMesh) {
++        child.material.envMap = this.envMap;
++        child.material.needsUpdate = true;
++      }
++    });
++    /* eslint-enable */
++  }
++
++  get environmentMap() {
++    return this.envMap;
+   }
+ 
+   async initialize(motionController) {
+@@ -33,6 +54,16 @@ class ControllerModel extends THREE.Object3D {
+       );
+     }));
+ 
++    if (this.envMap) {
++      /* eslint-disable no-param-reassign */
++      this.asset.scene.traverse((child) => {
++        if (child.isMesh) {
++          child.material.envMap = this.envMap;
++        }
++      });
++      /* eslint-enable */
++    }
++
+     this.rootNode = this.asset.scene;
+     this.addTouchDots();
+     this.findNodes();"
+immersive-web/webxr-input-profiles,136,ccf4a1d,packages/viewer/src/index.html,modified,5,0,5,"@@ -36,6 +36,11 @@ <h1>WebXR Input Profile Viewer</h1>
+                 </section>
+             </div>
+             <section class=""rightSide"" id=""modelViewer"">
++                <section id=""backgrounds"">
++                    <label for=""backgroundSelector"">Background</label>
++                    <select id=""backgroundSelector""></select>
++                </section>
++                
+             </section>
+         </main>
+     </body>"
+immersive-web/webxr-input-profiles,136,ccf4a1d,packages/viewer/src/modelViewer.js,modified,32,7,39,"@@ -1,12 +1,14 @@
+ /* eslint-disable import/no-unresolved */
+ import * as THREE from './three/build/three.module.js';
+ import { OrbitControls } from './three/examples/jsm/controls/OrbitControls.js';
++import { RGBELoader } from './three/examples/jsm/loaders/RGBELoader.js';
+ import { VRButton } from './three/examples/jsm/webxr/VRButton.js';
+ /* eslint-enable */
+ 
+ import ManualControls from './manualControls.js';
+ import ControllerModel from './controllerModel.js';
+ import ProfileSelector from './profileSelector.js';
++import BackgroundSelector from './backgroundSelector.js';
+ import AssetError from './assetError.js';
+ import MockGamepad from './mocks/mockGamepad.js';
+ import MockXRInputSource from './mocks/mockXRInputSource.js';
+@@ -15,6 +17,7 @@ const three = {};
+ let canvasParentElement;
+ 
+ let profileSelector;
++let backgroundSelector;
+ let mockControllerModel;
+ let isImmersive = false;
+ 
+@@ -96,13 +99,6 @@ function initializeThree() {
+   three.cameraControls.enablePan = false;
+   three.cameraControls.update();
+ 
+-  // Set up the lights so the model can be seen
+-  const bottomDirectionalLight = new THREE.DirectionalLight(0xFFFFFF, 2);
+-  bottomDirectionalLight.position.set(0, -1, 0);
+-  three.scene.add(bottomDirectionalLight);
+-  const topDirectionalLight = new THREE.DirectionalLight(0xFFFFFF, 2);
+-  three.scene.add(topDirectionalLight);
+-
+   // Add VR
+   canvasParentElement.appendChild(VRButton.createButton(three.renderer));
+   three.renderer.xr.enabled = true;
+@@ -137,6 +133,32 @@ async function onSelectionChange() {
+   const motionController = await profileSelector.createMotionController(mockXRInputSource);
+   ManualControls.build(motionController);
+   await mockControllerModel.initialize(motionController);
++
++  if (three.environmentMap) {
++    mockControllerModel.environmentMap = three.environmentMap;
++  }
++}
++
++async function onBackgroundChange() {
++  const pmremGenerator = new THREE.PMREMGenerator(three.renderer);
++  pmremGenerator.compileEquirectangularShader();
++
++  await new Promise((resolve) => {
++    const rgbeLoader = new RGBELoader();
++    rgbeLoader.setDataType(THREE.UnsignedByteType);
++    rgbeLoader.setPath('backgrounds/');
++    rgbeLoader.load(backgroundSelector.backgroundPath, (texture) => {
++      three.environmentMap = pmremGenerator.fromEquirectangular(texture).texture;
++      three.scene.background = three.environmentMap;
++
++      if (mockControllerModel) {
++        mockControllerModel.environmentMap = three.environmentMap;
++      }
++
++      pmremGenerator.dispose();
++      resolve(three.environmentMap);
++    });
++  });
+ }
+ 
+ /**
+@@ -149,5 +171,8 @@ function onLoad() {
+ 
+   profileSelector.addEventListener('selectionclear', onSelectionClear);
+   profileSelector.addEventListener('selectionchange', onSelectionChange);
++
++  backgroundSelector = new BackgroundSelector();
++  backgroundSelector.addEventListener('selectionchange', onBackgroundChange);
+ }
+ window.addEventListener('load', onLoad);"
+immersive-web/webxr-input-profiles,136,ccf4a1d,packages/viewer/src/profileViewer.css,modified,6,0,6,"@@ -83,3 +83,9 @@ section {
+   margin: 0.5em;
+   list-style-position: inside;
+ }
++
++#backgrounds {
++  position: absolute;
++  z-index: 2;
++  margin: 1em;
++}"

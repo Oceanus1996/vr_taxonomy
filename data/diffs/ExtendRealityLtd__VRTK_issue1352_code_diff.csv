@@ -1,0 +1,132 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+ExtendRealityLtd/VRTK,1352,896231d,Assets/VRTK/Scripts/Locomotion/VRTK_HeightAdjustTeleport.cs,modified,1,1,2,"@@ -57,7 +57,7 @@ protected virtual float GetTeleportY(Transform target, Vector3 tipPosition)
+             Vector3 rayStartPositionOffset = Vector3.up * heightOffset;
+             Ray ray = new Ray(tipPosition + rayStartPositionOffset, -playArea.up);
+             RaycastHit rayCollidedWith;
+-            if (target != null && VRTK_CustomRaycast.Raycast(customRaycast, ray, out rayCollidedWith, new LayerMask(), Mathf.Infinity, QueryTriggerInteraction.Ignore))
++            if (target != null && VRTK_CustomRaycast.Raycast(customRaycast, ray, out rayCollidedWith, Physics.IgnoreRaycastLayer, Mathf.Infinity, QueryTriggerInteraction.Ignore))
+             {
+                 newY = (tipPosition.y - rayCollidedWith.distance) + heightOffset;
+             }"
+ExtendRealityLtd/VRTK,1352,896231d,Assets/VRTK/Scripts/Pointers/PointerRenderers/VRTK_BasePointerRenderer.cs,modified,1,0,1,"@@ -96,6 +96,7 @@ public sealed class PointerOriginSmoothingSettings
+ 
+         protected bool tracerVisible;
+         protected bool cursorVisible;
++        protected LayerMask defaultIgnoreLayer = Physics.IgnoreRaycastLayer;
+ 
+         /// <summary>
+         /// The GetPointerObjects returns an array of the auto generated GameObjects associated with the pointer."
+ExtendRealityLtd/VRTK,1352,896231d,Assets/VRTK/Scripts/Pointers/PointerRenderers/VRTK_BezierPointerRenderer.cs,modified,4,4,8,"@@ -216,7 +216,7 @@ protected virtual Vector3 ProjectForwardBeam()
+             Ray pointerRaycast = new Ray(origin.position, useForward);
+ 
+             RaycastHit collidedWith;
+-            bool hasRayHit = VRTK_CustomRaycast.Raycast(customRaycast, pointerRaycast, out collidedWith, new LayerMask(), calculatedLength);
++            bool hasRayHit = VRTK_CustomRaycast.Raycast(customRaycast, pointerRaycast, out collidedWith, defaultIgnoreLayer, calculatedLength);
+ 
+             float contactDistance = 0f;
+             //reset if beam not hitting or hitting new target
+@@ -247,7 +247,7 @@ protected virtual Vector3 ProjectDownBeam(Vector3 jointPosition)
+             Ray projectedBeamDownRaycast = new Ray(jointPosition, Vector3.down);
+             RaycastHit collidedWith;
+ 
+-            bool downRayHit = VRTK_CustomRaycast.Raycast(customRaycast, projectedBeamDownRaycast, out collidedWith, new LayerMask(), maximumLength.y);
++            bool downRayHit = VRTK_CustomRaycast.Raycast(customRaycast, projectedBeamDownRaycast, out collidedWith, defaultIgnoreLayer, maximumLength.y);
+ 
+             if (!downRayHit || (destinationHit.collider && destinationHit.collider != collidedWith.collider))
+             {
+@@ -297,13 +297,13 @@ protected virtual void AdjustForEarlyCollisions(Vector3 jointPosition, Vector3 d
+                     Ray checkCollisionRay = new Ray(currentPoint, nextPointDirection);
+                     RaycastHit checkCollisionHit;
+ 
+-                    if (VRTK_CustomRaycast.Raycast(customRaycast, checkCollisionRay, out checkCollisionHit, new LayerMask(), nextPointDistance))
++                    if (VRTK_CustomRaycast.Raycast(customRaycast, checkCollisionRay, out checkCollisionHit, defaultIgnoreLayer, nextPointDistance))
+                     {
+                         Vector3 collisionPoint = checkCollisionRay.GetPoint(checkCollisionHit.distance);
+                         Ray downwardCheckRay = new Ray(collisionPoint + (Vector3.up * 0.01f), Vector3.down);
+                         RaycastHit downwardCheckHit;
+ 
+-                        if (VRTK_CustomRaycast.Raycast(customRaycast, downwardCheckRay, out downwardCheckHit, new LayerMask(), float.PositiveInfinity))
++                        if (VRTK_CustomRaycast.Raycast(customRaycast, downwardCheckRay, out downwardCheckHit, defaultIgnoreLayer, float.PositiveInfinity))
+                         {
+                             destinationHit = downwardCheckHit;
+                             newDownPosition = downwardCheckRay.GetPoint(downwardCheckHit.distance); ;"
+ExtendRealityLtd/VRTK,1352,896231d,Assets/VRTK/Scripts/Pointers/PointerRenderers/VRTK_StraightPointerRenderer.cs,modified,1,1,2,"@@ -188,7 +188,7 @@ protected virtual float CastRayForward()
+             Transform origin = GetOrigin();
+             Ray pointerRaycast = new Ray(origin.position, origin.forward);
+             RaycastHit pointerCollidedWith;
+-            bool rayHit = VRTK_CustomRaycast.Raycast(customRaycast, pointerRaycast, out pointerCollidedWith, new LayerMask(), maximumLength);
++            bool rayHit = VRTK_CustomRaycast.Raycast(customRaycast, pointerRaycast, out pointerCollidedWith, defaultIgnoreLayer, maximumLength);
+ 
+             CheckRayMiss(rayHit, pointerCollidedWith);
+             CheckRayHit(rayHit, pointerCollidedWith);"
+ExtendRealityLtd/VRTK,1352,896231d,Assets/VRTK/Scripts/Presence/VRTK_BodyPhysics.cs,modified,7,6,13,"@@ -201,6 +201,7 @@ public enum FallingRestrictors
+         protected List<GameObject> ignoreCollisionsOnGameObjects = new List<GameObject>();
+         protected Transform cachedGrabbedObjectTransform = null;
+         protected VRTK_InteractableObject cachedGrabbedObject;
++        protected LayerMask defaultIgnoreLayer = Physics.IgnoreRaycastLayer;
+ 
+         // Draws a sphere for current standing position and a sphere for current headset position.
+         // Set to `true` to view the debug spheres.
+@@ -404,7 +405,7 @@ public virtual bool SweepCollision(Vector3 direction, float maxDistance)
+             Vector3 point1 = (bodyCollider.transform.position + bodyCollider.center) + (Vector3.up * ((bodyCollider.height * 0.5f) - bodyCollider.radius));
+             Vector3 point2 = (bodyCollider.transform.position + bodyCollider.center) - (Vector3.up * ((bodyCollider.height * 0.5f) - bodyCollider.radius));
+             RaycastHit collisionHit;
+-            return VRTK_CustomRaycast.CapsuleCast(customRaycast, point1, point2, bodyCollider.radius, direction, maxDistance, out collisionHit, new LayerMask(), QueryTriggerInteraction.Ignore);
++            return VRTK_CustomRaycast.CapsuleCast(customRaycast, point1, point2, bodyCollider.radius, direction, maxDistance, out collisionHit, defaultIgnoreLayer, QueryTriggerInteraction.Ignore);
+         }
+ 
+         protected virtual void Awake()
+@@ -743,7 +744,7 @@ protected virtual void CheckLean()
+                 RaycastHit standingDownRayCollision;
+ 
+                 //Determine the current valid floor that the user is standing over
+-                currentValidFloorObject = (VRTK_CustomRaycast.Raycast(customRaycast, standingDownRay, out standingDownRayCollision, new LayerMask(), Mathf.Infinity, QueryTriggerInteraction.Ignore) ? standingDownRayCollision.collider.gameObject : null);
++                currentValidFloorObject = (VRTK_CustomRaycast.Raycast(customRaycast, standingDownRay, out standingDownRayCollision, defaultIgnoreLayer, Mathf.Infinity, QueryTriggerInteraction.Ignore) ? standingDownRayCollision.collider.gameObject : null);
+ 
+                 //Don't bother checking for lean if body collisions are disabled
+                 if (headset == null || playArea == null || !enableBodyCollisions)
+@@ -762,7 +763,7 @@ protected virtual void CheckLean()
+ 
+                 // Cast a ray forward just outside the body collider radius to see if anything is blocking your path
+                 // If nothing is blocking your path and you're currently standing over a valid floor
+-                if (!VRTK_CustomRaycast.Raycast(customRaycast, forwardRay, out forwardRayCollision, new LayerMask(), forwardLength, QueryTriggerInteraction.Ignore) && currentValidFloorObject != null)
++                if (!VRTK_CustomRaycast.Raycast(customRaycast, forwardRay, out forwardRayCollision, defaultIgnoreLayer, forwardLength, QueryTriggerInteraction.Ignore) && currentValidFloorObject != null)
+                 {
+                     CalculateLean(standingDownRayStartPosition, forwardLength, standingDownRayCollision.distance);
+                 }
+@@ -782,7 +783,7 @@ protected virtual void CalculateLean(Vector3 startPosition, float forwardLength,
+             RaycastHit downRayCollision;
+ 
+             //Cast a ray down from the end of the forward ray position
+-            if (VRTK_CustomRaycast.Raycast(customRaycast, downRay, out downRayCollision, new LayerMask(), Mathf.Infinity, QueryTriggerInteraction.Ignore))
++            if (VRTK_CustomRaycast.Raycast(customRaycast, downRay, out downRayCollision, defaultIgnoreLayer, Mathf.Infinity, QueryTriggerInteraction.Ignore))
+             {
+                 //Determine the difference between the original down ray and the projected forward a bit downray
+                 float rayDownDelta = VRTK_SharedMethods.RoundFloat(originalRayDistance - downRayCollision.distance, decimalPrecision);
+@@ -1206,7 +1207,7 @@ protected virtual float ControllerHeightCheck(GameObject controllerObj)
+         {
+             Ray ray = new Ray(controllerObj.transform.position, -playArea.up);
+             RaycastHit rayCollidedWith;
+-            VRTK_CustomRaycast.Raycast(customRaycast, ray, out rayCollidedWith, new LayerMask(), Mathf.Infinity, QueryTriggerInteraction.Ignore);
++            VRTK_CustomRaycast.Raycast(customRaycast, ray, out rayCollidedWith, defaultIgnoreLayer, Mathf.Infinity, QueryTriggerInteraction.Ignore);
+             return controllerObj.transform.position.y - rayCollidedWith.distance;
+         }
+ 
+@@ -1248,7 +1249,7 @@ protected virtual void SnapToNearestFloor()
+             {
+                 Ray ray = new Ray(headset.transform.position, -playArea.up);
+                 RaycastHit rayCollidedWith;
+-                bool rayHit = VRTK_CustomRaycast.Raycast(customRaycast, ray, out rayCollidedWith, new LayerMask(), Mathf.Infinity, QueryTriggerInteraction.Ignore);
++                bool rayHit = VRTK_CustomRaycast.Raycast(customRaycast, ray, out rayCollidedWith, defaultIgnoreLayer, Mathf.Infinity, QueryTriggerInteraction.Ignore);
+                 hitFloorYDelta = playArea.position.y - rayCollidedWith.point.y;
+ 
+                 if (initialFloorDrop && (ValidDrop(rayHit, rayCollidedWith, rayCollidedWith.point.y) || retogglePhysicsOnCanFall))"
+ExtendRealityLtd/VRTK,1352,896231d,Assets/VRTK/Scripts/Presence/VRTK_HeadsetControllerAware.cs,modified,1,1,2,"@@ -198,7 +198,7 @@ protected virtual void RayCastToController(GameObject controller, Transform cust
+             {
+                 var destination = (customDestination ? customDestination.position : controller.transform.position);
+                 RaycastHit hitInfo;
+-                if (VRTK_CustomRaycast.Linecast(customRaycast, headset.position, destination, out hitInfo, new LayerMask(), QueryTriggerInteraction.Ignore))
++                if (VRTK_CustomRaycast.Linecast(customRaycast, headset.position, destination, out hitInfo, Physics.IgnoreRaycastLayer, QueryTriggerInteraction.Ignore))
+                 {
+                     obscured = true;
+                 }"

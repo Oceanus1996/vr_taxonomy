@@ -1,0 +1,57 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+fredemmott/HTCC,24,e6fbeb0626d22e8778646a937404c2de6465ad74,docs/settings.md,modified,9,0,9,"@@ -181,6 +181,15 @@ Rough distance from your head to the majority of things you want to interact wit
+ 
+ ## Controller emulation tweaks
+ 
++### VRControllerGripSquueze
++
++DWORD
++
++- 0: Never
++- 1: When tracking
++
++Some games (such as DCS) require the grip to be squeezed to consider the controller active. Others consider it an active input.
++
+ ### VRControllerPointerSinkWorldLock 
+ 
+ DWORD"
+fredemmott/HTCC,24,e6fbeb0626d22e8778646a937404c2de6465ad74,reg/DCS.reg,modified,0,0,0,
+fredemmott/HTCC,24,e6fbeb0626d22e8778646a937404c2de6465ad74,src/APILayer/VirtualControllerSink.cpp,modified,8,1,9,"@@ -413,7 +413,14 @@ XrResult VirtualControllerSink::xrSyncActions(
+     sFirstRun = false;
+     hand->presentLastSync = hand->present;
+ 
+-    hand->squeezeValue.currentState = (hand->present ? 1.0f : 0.0f);
++    switch (Config::VRControllerGripSqueeze) {
++      case VRControllerGripSqueeze::Never:
++        hand->squeezeValue.currentState = 0.0f;
++        break;
++      case VRControllerGripSqueeze::WhenTracking:
++        hand->squeezeValue.currentState = (hand->present ? 1.0f : 0.0f);
++        break;
++    }
+     hand->squeezeValue.isActive = hand->present;
+     hand->squeezeValue.changedSinceLastSync = presenceChanged;
+ "
+fredemmott/HTCC,24,e6fbeb0626d22e8778646a937404c2de6465ad74,src/lib/Config.h,modified,9,0,9,"@@ -62,6 +62,11 @@ enum class VRControllerPointerSinkWorldLock : DWORD {
+   Orientation = 1,
+   OrientationAndSoftPosition = 2,
+ };
++enum class VRControllerGripSqueeze : DWORD {
++  Never = 0,
++  WhenTracking = 1,
++};
++
+ }// namespace HandTrackedCockpitClicking
+ 
+ #define HandTrackedCockpitClicking_DWORD_SETTINGS \
+@@ -116,6 +121,10 @@ enum class VRControllerPointerSinkWorldLock : DWORD {
+     VRControllerPointerSinkWorldLock, \
+     HandTrackedCockpitClicking::VRControllerPointerSinkWorldLock:: \
+       OrientationAndSoftPosition) \
++  IT( \
++    HandTrackedCockpitClicking::VRControllerGripSqueeze, \
++    VRControllerGripSqueeze, \
++    HandTrackedCockpitClicking::VRControllerGripSqueeze::Never) \
+   IT(uint16_t, PointCtrlVID, 0x04d8) \
+   IT(uint16_t, PointCtrlPID, 0xeeec) \
+   IT(uint8_t, PointCtrlFCUButtonL1, 0) \"

@@ -1,0 +1,219 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+Samsung/GearVRf,1899,c1a10208e2981cc49eb6ed6b18ebe8357e944231,GVRf/Framework/framework/src/main/java/org/gearvrf/GVRShaderTemplate.java,modified,1,0,1,"@@ -425,6 +425,7 @@ private String assignTexcoords(GVRShaderData mtl)
+      * @param scene
+      *            scene being rendered
+      */
++    @Override
+     public int bindShader(GVRContext context, IRenderable rdata, GVRScene scene, boolean isMultiview)
+     {
+         GVRMesh mesh = rdata.getMesh();"
+Samsung/GearVRf,1899,c1a10208e2981cc49eb6ed6b18ebe8357e944231,GVRf/Framework/framework/src/main/java/org/gearvrf/GVRVertexBuffer.java,modified,1,0,1,"@@ -106,6 +106,7 @@ public GVRVertexBuffer(GVRVertexBuffer srcVerts, String descriptor)
+         Pattern pattern = Pattern.compile(""([a-zA-Z0-9]+)[ \t]+([a-zA-Z0-9_]+)[^ ]*"");
+         final String srcDesc = srcVerts.getDescriptor();
+         Matcher matcher = pattern.matcher(srcDesc);
++        mDescriptor = descriptor;
+ 
+         while (matcher.find())
+         {"
+Samsung/GearVRf,1899,c1a10208e2981cc49eb6ed6b18ebe8357e944231,GVRf/Framework/framework/src/main/jni/objects/lightlist.cpp,modified,38,22,60,"@@ -33,14 +33,7 @@ namespace gvr {
+ 
+ LightList::~LightList()
+ {
+-    if (mLightBlock)
+-    {
+-        delete mLightBlock;
+-        mLightBlock = nullptr;
+-    }
+-#ifdef DEBUG_LIGHT
+-    LOGD(""LIGHT: deleting light block"");
+-#endif
++    clear();
+ }
+ 
+ int LightList::getLights(std::vector<Light*>& lightList) const
+@@ -114,9 +107,10 @@ bool LightList::removeLight(Light* light)
+          * If all lights in the class are gone,
+          * remove the class from the map.
+          */
+-        if (lights.size() == 0)
++        if (lights.size() == 1)
+         {
+             mClassMap.erase(it3);
++            mDirty |= LIGHT_REMOVED | REBUILD_SHADERS;
+             return true;
+         }
+         /*
+@@ -226,6 +220,14 @@ ShadowMap* LightList::updateLightBlock(Renderer* renderer)
+     mTotalUniforms = 0;
+     if (mClassMap.size() == 0)
+     {
++        if (mLightBlock != nullptr)
++        {
++            delete mLightBlock;
++            mLightBlock = nullptr;
++#ifdef DEBUG_LIGHT
++            LOGD(""LIGHT: clearing light uniform block"");
++#endif
++        }
+         return NULL;
+     }
+     for (auto it1 = mClassMap.begin();
+@@ -260,7 +262,10 @@ void LightList::useLights(Renderer* renderer, Shader* shader)
+ {
+     if (mUseUniformBlock)
+     {
+-        mLightBlock->bindBuffer(shader, renderer);
++        if (mLightBlock)
++        {
++            mLightBlock->bindBuffer(shader, renderer);
++        }
+     }
+     else
+     {
+@@ -313,32 +318,43 @@ bool LightList::createLightBlock(Renderer* renderer)
+             numFloats += light->getTotalSize() / sizeof(float);
+         }
+     }
+-    if ((mLightBlock == NULL) ||
+-        (numFloats > (mLightBlock->getTotalSize()/ sizeof(float))))
++    if (mLightBlock && (numFloats > (mLightBlock->getTotalSize() / sizeof(float))))
+     {
+-        std::string desc(""float lightdata"");
+-        if (mLightBlock)
+-        {
+-            delete mLightBlock;
+-        }
+-        mLightBlock = renderer->createUniformBlock(desc.c_str(), LIGHT_UBO_INDEX, ""Lights_ubo"", numFloats);
+-        mLightBlock->useGPUBuffer(true);
++        delete mLightBlock;
++        mLightBlock = nullptr;
+ #ifdef DEBUG_LIGHT
+-        LOGD(""LIGHT: creating light uniform block"");
++        LOGD(""LIGHT: deleting light uniform block"");
+ #endif
+-        return true;
+     }
+-    return false;
++    if (mLightBlock == nullptr)
++    {
++        mLightBlock = renderer->createUniformBlock(""float lightdata"", LIGHT_UBO_INDEX,
++                                                   ""Lights_ubo"", numFloats);
++#ifdef DEBUG_LIGHT
++        LOGD(""LIGHT: creating light uniform block %d floats"", numFloats);
++#endif
++        mLightBlock->useGPUBuffer(true);
++    }
++    return true;
+ }
+ 
+ /*
+  * Removes all the lights from the scene.
++ * This function should only be called from the GL thread.
+  */
+ void LightList::clear()
+ {
+     std::lock_guard < std::recursive_mutex > lock(mLock);
+     mClassMap.clear();
+     mDirty = LIGHT_REMOVED | REBUILD_SHADERS;
++    if (mLightBlock)
++    {
++        delete mLightBlock;
++        mLightBlock = nullptr;
++#ifdef DEBUG_LIGHT
++        LOGD(""LIGHT: clearing light uniform block"");
++#endif
++    }
+ #ifdef DEBUG_LIGHT
+     LOGD(""LIGHT: clearing lights"");
+ #endif"
+Samsung/GearVRf,1899,c1a10208e2981cc49eb6ed6b18ebe8357e944231,GVRf/Framework/framework/src/main/jni/objects/scene_object.cpp,modified,23,17,40,"@@ -176,16 +176,17 @@ bool SceneObject::onAddChild(SceneObject* addme, SceneObject* root)
+     {
+         std::string error =  ""SceneObject::addChildObject() : cycle of scene objects is not allowed."";
+         LOGE(""%s"", error.c_str());
+-        throw error;
++        return false;
+     }
+-    if (parent_ != NULL)
++    if (this == root)
+     {
+-        if (parent_->onAddChild(addme, root) || (parent_ == root))
+-        {
+-            return true;
+-        }
++        return true;
+     }
+-    return false;
++    if (parent_ == NULL)
++    {
++        return false;
++    }
++    return parent_->onAddChild(addme, root);
+ }
+ 
+ 
+@@ -195,14 +196,15 @@ bool SceneObject::onAddChild(SceneObject* addme, SceneObject* root)
+ bool SceneObject::onRemoveChild(SceneObject* removeme, SceneObject* root)
+ {
+     bounding_volume_dirty_ = true;
+-    if (parent_ != NULL)
++    if (this == root)
+     {
+-        if (parent_->onRemoveChild(removeme, root) || (parent_ == root))
+-        {
+-            return true;
+-        }
++        return true;
+     }
+-    return false;
++    if (parent_ == NULL)
++    {
++        return false;
++    }
++    return parent_->onRemoveChild(removeme, root);
+ }
+ 
+ /**
+@@ -221,7 +223,8 @@ void SceneObject::onRemovedFromScene(Scene* scene)
+     }
+ }
+ 
+-void SceneObject::removeChildObject(SceneObject* child) {
++void SceneObject::removeChildObject(SceneObject* child)
++{
+     Scene* scene = Scene::main_scene();
+ 
+     if (child->parent_ == this)
+@@ -246,7 +249,8 @@ void SceneObject::removeChildObject(SceneObject* child) {
+     }
+ }
+ 
+-void SceneObject::onTransformChanged() {
++void SceneObject::onTransformChanged()
++{
+     Transform* t = transform();
+     if (t)
+     {
+@@ -265,10 +269,12 @@ void SceneObject::onTransformChanged() {
+     }
+ }
+ 
+-void SceneObject::clear() {
++void SceneObject::clear()
++{
+     Scene* scene = Scene::main_scene();
+     std::lock_guard < std::mutex > lock(children_mutex_);
+-    for (auto it = children_.begin(); it != children_.end(); ++it) {
++    for (auto it = children_.begin(); it != children_.end(); ++it)
++    {
+         SceneObject* child = *it;
+         if (scene != NULL)
+         {"
+Samsung/GearVRf,1899,c1a10208e2981cc49eb6ed6b18ebe8357e944231,GVRf/Framework/framework/src/main/res/raw/vertex_template.vsh,modified,2,0,2,"@@ -45,6 +45,8 @@ layout(location = 5) out vec2 ambient_coord;
+ layout(location = 6) out vec2 specular_coord;
+ layout(location = 7) out vec2 emissive_coord;
+ layout(location = 8) out vec2 lightmap_coord;
++layout(location = 9) out vec2 opacity_coord;
++layout(location = 10) out vec2 normal_coord;
+ 
+ struct Vertex
+ {"

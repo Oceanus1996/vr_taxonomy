@@ -1,0 +1,563 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+StereoKit/StereoKit,795,6790f81,Examples/StereoKitTest/Tools/HolographicTheme.cs,modified,2,0,2,"@@ -33,6 +33,8 @@ public static void Apply()
+ 			UI.SetElementVisual(UIVisual.WindowBody,  backplate,      uiQuadrantMaterial);
+ 			UI.SetElementVisual(UIVisual.Separator,   quadrantCube,   uiQuadrantMaterial);
+ 			UI.SetElementVisual(UIVisual.SliderLine,  backplateSmall, uiQuadrantMaterial);
++			UI.SetElementVisual(UIVisual.SliderLineActive,   backplateSmall, uiQuadrantMaterial, new(0.008f, 0.008f));
++			UI.SetElementVisual(UIVisual.SliderLineInactive, backplateSmall, uiQuadrantMaterial, new(0.008f, 0.008f));
+ 			UI.SetElementVisual(UIVisual.SliderPinch, backplateSmall, uiQuadrantMaterial);
+ 			UI.SetElementVisual(UIVisual.SliderPush,  backplateSmall, uiQuadrantMaterial);
+ 			UI.SetElementVisual(UIVisual.Button,      glassMesh,      uiGlassMaterial);"
+StereoKit/StereoKit,795,6790f81,StereoKit/Native/NativeAPI.cs,modified,2,0,2,"@@ -723,6 +723,8 @@ internal static class NativeAPI
+ 		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern void   ui_set_theme_color_state(UIColor color_type, UIColorState state, Color color_gamma);
+ 		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern Color  ui_get_theme_color_state(UIColor color_type, UIColorState state);
+ 		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern void   ui_set_element_visual   (UIVisual element_visual, IntPtr mesh, IntPtr material, Vec2 min_size);
++		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern void   ui_set_element_color    (UIVisual element_visual, UIColor color_type);
++		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern void   ui_set_element_sound    (UIVisual element_visual, IntPtr activate, IntPtr deactivate);
+ 		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern Pose   ui_popup_pose           (Vec3 shift);
+ 
+ 		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern void ui_push_grab_aura        ([MarshalAs(UnmanagedType.Bool)] bool enabled);"
+StereoKit/StereoKit,795,6790f81,StereoKit/Native/NativeTypes.cs,modified,4,1,5,"@@ -686,9 +686,12 @@ public enum UIVisual
+ 	/// </summary>
+ 	public enum UIColor
+ 	{
++		/// <summary>The default category, used to indicate that no category
++		/// has been selected.</summary>
++		None = 0,
+ 		/// <summary>This is the main accent color used by window headers,
+ 		/// separators, etc.</summary>
+-		Primary = 0,
++		Primary,
+ 		/// <summary>This is a background sort of color that should generally
+ 		/// be dark. Used by window bodies and backgrounds of certain elements.
+ 		/// </summary>"
+StereoKit/StereoKit,795,6790f81,StereoKit/Systems/UI.cs,modified,23,2,25,"@@ -1333,7 +1333,7 @@ public static void PopEnabled()
+ 		public static void PanelEnd() => NativeAPI.ui_panel_end();
+ 
+ 		/// <summary>Override the visual assets attached to a particular UI
+-		/// element. 
++		/// element.
+ 		/// 
+ 		/// Note that StereoKit's default UI assets use a type of quadrant
+ 		/// sizing that is implemented in the Material _and_ the Mesh. You
+@@ -1354,7 +1354,28 @@ public static void PopEnabled()
+ 		/// This lets UI elements to accommodate for this minimum size, and
+ 		/// behave somewhat more appropriately.</param>
+ 		public static void SetElementVisual(UIVisual visual, Mesh mesh, Material material = null, Vec2 minSize = default)
+-			=> NativeAPI.ui_set_element_visual(visual, mesh?._inst ?? IntPtr.Zero, material?._inst ?? IntPtr.Zero, Vec2.Zero);
++			=> NativeAPI.ui_set_element_visual(visual, mesh?._inst ?? IntPtr.Zero, material?._inst ?? IntPtr.Zero, minSize);
++
++		/// <summary>This allows you to override the color category that a UI
++		/// element is assigned to.</summary>
++		/// <param name=""visual"">The UI element type to set the color category
++		/// of.</param>
++		/// <param name=""colorCategory"">The category of color to assign to this
++		/// UI element. Use UI.SetThemeColor in combination with this to assign
++		/// a specific color.</param>
++		public static void SetElementColor(UIVisual visual, UIColor colorCategory)
++			=> NativeAPI.ui_set_element_color(visual, colorCategory);
++
++		/// <summary>This sets the sound that a particulat UI element will make
++		/// when you interact with it. One sound when the interaction starts,
++		/// and one when it ends.</summary>
++		/// <param name=""visual"">The UI element to apply the sounds to.</param>
++		/// <param name=""activate"">The sound made when the interaction begins.
++		/// A null sound will fall back to the default sound.</param>
++		/// <param name=""deactivate"">The sound made when the interaction ends.
++		/// A null sound will fall back to the default sound.</param>
++		public static void SetElementSound(UIVisual visual, Sound activate, Sound deactivate)
++			=> NativeAPI.ui_set_element_sound(visual, activate?._inst ?? IntPtr.Zero, deactivate?._inst ?? IntPtr.Zero);
+ 
+ 		/// <summary>This creates a Pose that is friendly towards UI popup
+ 		/// windows, or windows that are created due to some type of user"
+StereoKit/StereoKit,795,6790f81,StereoKitC/stereokit_ui.h,modified,4,1,5,"@@ -65,7 +65,8 @@ typedef enum ui_vis_ {
+ } ui_vis_;
+ 
+ typedef enum ui_color_ {
+-	ui_color_primary = 0,
++	ui_color_none = 0,
++	ui_color_primary,
+ 	ui_color_background,
+ 	ui_color_common,
+ 	ui_color_complement,
+@@ -128,6 +129,8 @@ SK_API color128 ui_get_theme_color      (ui_color_ color_type);
+ SK_API void     ui_set_theme_color_state(ui_color_ color_type, ui_color_state_ state, color128 color_gamma);
+ SK_API color128 ui_get_theme_color_state(ui_color_ color_type, ui_color_state_ state);
+ SK_API void     ui_set_element_visual   (ui_vis_ element_visual, mesh_t mesh, material_t material sk_default(nullptr), vec2 min_size sk_default(vec2_zero));
++SK_API void     ui_set_element_color    (ui_vis_ element_visual, ui_color_ color_category);
++SK_API void     ui_set_element_sound    (ui_vis_ element_visual, sound_t activate, sound_t deactivate);
+ SK_API bool32_t ui_has_keyboard_focus   (void);
+ SK_API pose_t   ui_popup_pose           (vec3 shift);
+ "
+StereoKit/StereoKit,795,6790f81,StereoKitC/ui/stereokit_ui.cpp,modified,25,27,52,"@@ -131,7 +131,7 @@ void ui_hseparator() {
+ 	vec2 size;
+ 	ui_layout_reserve_sz({ 0, text_style_get_char_height(ui_get_text_style())*0.4f }, false, &pos, &size);
+ 
+-	ui_draw_el(ui_vis_separator, pos, vec3{ size.x, size.y, size.y / 2.0f }, ui_color_primary, 0);
++	ui_draw_el(ui_vis_separator, pos, vec3{ size.x, size.y, size.y / 2.0f }, 0);
+ }
+ 
+ ///////////////////////////////////////////
+@@ -329,7 +329,7 @@ bool32_t ui_button_img_at_g(const C* text, sprite_t image, ui_btn_layout_ image_
+ 	}
+ 
+ 	float activation = (1 - (finger_offset / skui_settings.depth)) * 0.5f + ((focus & button_state_active) > 0 ? 0.5f : 0);
+-	ui_draw_el(ui_vis_button, window_relative_pos, vec3{ size.x,size.y,finger_offset }, ui_color_common, fmaxf(activation, color_blend));
++	ui_draw_el(ui_vis_button, window_relative_pos, vec3{ size.x,size.y,finger_offset }, fmaxf(activation, color_blend));
+ 	_ui_button_img_surface(text, image, image_layout, text_align_center, window_relative_pos, size, finger_offset);
+ 
+ 	return state & button_state_just_active;
+@@ -404,7 +404,7 @@ bool32_t ui_toggle_img_at_g(const C* text, bool32_t& pressed, sprite_t toggle_of
+ 	finger_offset = pressed ? fminf(skui_pressed_depth * skui_settings.depth, finger_offset) : finger_offset;
+ 
+ 	float activation = (1 - (finger_offset / skui_settings.depth)) * 0.5f + ((focus & button_state_active) > 0 ? 0.5f : 0);
+-	ui_draw_el(ui_vis_button, window_relative_pos, vec3{ size.x,size.y,finger_offset }, ui_color_common, fmaxf(activation, color_blend));
++	ui_draw_el(ui_vis_toggle, window_relative_pos, vec3{ size.x,size.y,finger_offset }, fmaxf(activation, color_blend));
+ 	_ui_button_img_surface(text, pressed?toggle_on:toggle_off, image_layout, text_align_center, window_relative_pos, size, finger_offset);
+ 
+ 	return state & button_state_just_active;
+@@ -474,7 +474,7 @@ bool32_t ui_button_round_at_g(const C *text, sprite_t image, vec3 window_relativ
+ 	}
+ 
+ 	float activation = (1 - (finger_offset / skui_settings.depth)) * 0.5f + ((focus & button_state_active) > 0 ? 0.5f : 0);
+-	ui_draw_el(ui_vis_button_round, window_relative_pos, { diameter, diameter, finger_offset }, ui_color_common, fmaxf(activation, color_blend));
++	ui_draw_el(ui_vis_button_round, window_relative_pos, { diameter, diameter, finger_offset }, fmaxf(activation, color_blend));
+ 
+ 	float sprite_scale = fmaxf(1, sprite_get_aspect(image));
+ 	float sprite_size  = (diameter * 0.7f) / sprite_scale;
+@@ -634,7 +634,7 @@ bool32_t ui_input_g(const C *id, C *buffer, int32_t buffer_size, vec2 size, text
+ 
+ 	// Render the input UI
+ 	vec2 text_bounds = { final_size.x - skui_settings.padding * 2,final_size.y };
+-	ui_draw_el(ui_vis_input, final_pos, vec3{ final_size.x, final_size.y, skui_settings.depth/2 }, ui_color_common, color_blend);
++	ui_draw_el(ui_vis_input, final_pos, vec3{ final_size.x, final_size.y, skui_settings.depth/2 }, color_blend);
+ 
+ 	// Swap out for a string of asterisks to hide any password
+ 	const C* draw_text = buffer;
+@@ -676,7 +676,7 @@ bool32_t ui_input_g(const C *id, C *buffer, int32_t buffer_size, vec2 size, text
+ 
+ 		// Show a blinking text carat
+ 		if ((int)((time_totalf_unscaled()-skui_input_blink)*2)%2==0) {
+-			ui_draw_el(ui_vis_carat, final_pos - vec3{ skui_settings.padding - carat_pos.x, -carat_pos.y, skui_settings.depth/2 }, vec3{ line * 0.1f, line, line * 0.1f }, ui_color_text, 0);
++			ui_draw_el(ui_vis_carat, final_pos - vec3{ skui_settings.padding - carat_pos.x, -carat_pos.y, skui_settings.depth/2 }, vec3{ line * 0.1f, line, line * 0.1f }, 0);
+ 		}
+ 	}
+ 
+@@ -713,17 +713,17 @@ void ui_progress_bar_at_ex(float percent, vec3 start_pos, vec2 size, float focus
+ 	float bar_length = math_saturate(percent) * size.x;
+ 	vec2  min_size   = ui_get_mesh_minsize(ui_vis_slider_line_active);
+ 	if (bar_length <= min_size.x) {
+-		ui_draw_el(ui_vis_slider_line,
++		ui_draw_el_color(ui_vis_slider_line, ui_vis_slider_line_inactive,
+ 			vec3{ 0,      bar_y,      0 },
+ 			vec3{ size.x, bar_height, bar_depth },
+-			ui_color_common, focus);
++			focus);
+ 		hierarchy_pop();
+ 		return;
+ 	} else if (bar_length >= size.x-min_size.x) {
+-		ui_draw_el(ui_vis_slider_line,
++		ui_draw_el_color(ui_vis_slider_line, ui_vis_slider_line_active,
+ 			vec3{ 0,      bar_y,      0 },
+ 			vec3{ size.x, bar_height, bar_depth },
+-			ui_color_primary, focus);
++			focus);
+ 		hierarchy_pop();
+ 		return;
+ 	}
+@@ -732,18 +732,18 @@ void ui_progress_bar_at_ex(float percent, vec3 start_pos, vec2 size, float focus
+ 	ui_draw_el(ui_vis_slider_line_active,
+ 		vec3{ 0,          bar_y,      0 },
+ 		vec3{ bar_length, bar_height, bar_depth },
+-		ui_color_primary, focus);
++		focus);
+ 	ui_draw_el(ui_vis_slider_line_inactive,
+ 		vec3{        - bar_length, bar_y,      0 },
+ 		vec3{ size.x - bar_length, bar_height, bar_depth },
+-		ui_color_common, focus);
++		focus);
+ 	hierarchy_pop();
+ }
+ 
+ ///////////////////////////////////////////
+ 
+ void ui_progress_bar_at(float percent, vec3 start_pos, vec2 size) {
+-	ui_progress_bar_at_ex(percent, start_pos, size, 1, false);
++	ui_progress_bar_at_ex(percent, start_pos, size, 0, false);
+ }
+ 
+ ///////////////////////////////////////////
+@@ -868,7 +868,7 @@ bool32_t ui_slider_at_g(bool vertical, const C *id_text, N &value, N min, N max,
+ 			
+ 			if (step != 0) {
+ 				// Play on every change if there's a user specified step value
+-				ui_play_sound(ui_vis_slider_line, skui_hand[hand].finger_world);
++				ui_play_sound_on(ui_vis_slider_line, skui_hand[hand].finger_world);
+ 			} else {
+ 				// If no user specified step, then we'll do a set number of
+ 				// clicks across the whole bar.
+@@ -879,7 +879,7 @@ bool32_t ui_slider_at_g(bool vertical, const C *id_text, N &value, N min, N max,
+ 				int32_t new_quantize = (int32_t)(percent     * click_steps + 0.5f);
+ 
+ 				if (old_quantize != new_quantize) {
+-					ui_play_sound(ui_vis_slider_line, skui_hand[hand].finger_world);
++					ui_play_sound_on(ui_vis_slider_line, skui_hand[hand].finger_world);
+ 				}
+ 			}
+ 		}
+@@ -915,12 +915,12 @@ bool32_t ui_slider_at_g(bool vertical, const C *id_text, N &value, N min, N max,
+ 		ui_draw_el(ui_vis_slider_push,
+ 			vec3{x - slide_x_rel, y - slide_y_rel, window_relative_pos.z},
+ 			vec3{button_size.x, button_size.y, fmaxf(finger_offset,rule_size*skui_pressed_depth +mm2m)},
+-			ui_color_primary, color_blend);
++			color_blend);
+ 	} else if (confirm_method == ui_confirm_pinch || confirm_method == ui_confirm_variable_pinch) {
+ 		ui_draw_el(ui_vis_slider_pinch,
+ 			vec3{x - slide_x_rel, y - slide_y_rel, window_relative_pos.z},
+ 			vec3{button_size.x, button_size.y, button_depth},
+-			ui_color_primary, color_blend);
++			color_blend);
+ 
+ 		vec3 pinch_local = hand < 0
+ 			? vec3_zero
+@@ -959,7 +959,7 @@ bool32_t ui_slider_at_g(bool vertical, const C *id_text, N &value, N min, N max,
+ 					? vec3{ x - slide_x_rel, scaled_at - slide_y_rel * scale, window_relative_pos.z + z }
+ 					: vec3{ scaled_at - slide_x_rel * scale, y - slide_y_rel, window_relative_pos.z + z },
+ 				vec3{ button_size.x, button_size.y, button_depth },
+-				ui_color_primary, color_blend);
++				color_blend);
+ 		}
+ 	}
+ 	
+@@ -1097,27 +1097,25 @@ void ui_window_end() {
+ 		(skui_hand[1].focused_prev != win->hash && skui_hand[1].focused_prev_prev == win->hash))
+ 		ui_anim_start(win->hash, 1);
+ 
+-	float color_blend = ui_id_focused(win->hash) & button_state_active ? 1.0f : 0.0f;
++	float focus = ui_id_focused(win->hash) & button_state_active ? 1.0f : 0.0f;
+ 	if (ui_anim_has(win->hash, 0, skui_anim_focus_duration)) {
+-		float t = ui_anim_elapsed(win->hash, 0, skui_anim_focus_duration);
+-		color_blend = math_ease_smooth(0, 1, t);
++		focus = math_ease_smooth(0, 1, ui_anim_elapsed(win->hash, 0, skui_anim_focus_duration));
+ 	} else if (ui_anim_has(win->hash, 1, skui_anim_focus_duration)) {
+-		float t = ui_anim_elapsed(win->hash, 1, skui_anim_focus_duration);
+-		color_blend = math_ease_smooth(1, 0, t);
++		focus = math_ease_smooth(1, 0, ui_anim_elapsed(win->hash, 1, skui_anim_focus_duration));
+ 	}
+ 
+ 	if (win->move != ui_move_none && ui_grab_aura_enabled()) {
+ 		vec3 aura_start = vec3{ start.x+skui_aura_radius,  start.y+skui_aura_radius,  start.z };
+ 		vec3 aura_size  = vec3{ size .x+skui_aura_radius*2,size .y+skui_aura_radius*2,size .z };
+ 		if (win->type & ui_win_head) { aura_start.y += line_height; aura_size.y += line_height; }
+-		ui_draw_el(ui_vis_aura, aura_start, aura_size, ui_color_text, color_blend); 
++		ui_draw_el(ui_vis_aura, aura_start, aura_size, focus);
+ 	}
+ 
+ 	if (win->type & ui_win_head) {
+-		ui_draw_el(win->type == ui_win_head ? ui_vis_window_head_only : ui_vis_window_head, start + vec3{0,line_height,0}, { size.x, line_height, size.z }, ui_color_primary, color_blend);
++		ui_draw_el(win->type == ui_win_head ? ui_vis_window_head_only : ui_vis_window_head, start + vec3{0,line_height,0}, { size.x, line_height, size.z }, focus);
+ 	}
+ 	if (win->type & ui_win_body) {
+-		ui_draw_el(win->type == ui_win_body ? ui_vis_window_body_only : ui_vis_window_body, start, size, ui_color_background, 0);
++		ui_draw_el(win->type == ui_win_body ? ui_vis_window_body_only : ui_vis_window_body, start, size, 0);
+ 	}
+ 	ui_handle_end();
+ 	ui_pop_id();
+@@ -1134,7 +1132,7 @@ void ui_panel_at(vec3 start, vec2 size, ui_pad_ padding) {
+ 		start_offset = { gutter,  gutter,  0 };
+ 		size_offset  = { gutter2, gutter2, 0 };
+ 	}
+-	ui_draw_el(ui_vis_panel, start+start_offset, vec3{ size.x, size.y, skui_settings.depth* 0.1f }+size_offset, ui_color_complement, 0);
++	ui_draw_el(ui_vis_panel, start+start_offset, vec3{ size.x, size.y, skui_settings.depth* 0.1f }+size_offset, 0);
+ }
+ 
+ } // namespace sk"
+StereoKit/StereoKit,795,6790f81,StereoKitC/ui/ui_core.cpp,modified,0,1,1,"@@ -487,7 +487,6 @@ bool32_t _ui_handle_begin(uint64_t id, pose_t &handle_pose, bounds_t handle_boun
+ 		ui_draw_el(ui_vis_handle,
+ 			handle_bounds.center+handle_bounds.dimensions/2,
+ 			handle_bounds.dimensions,
+-			ui_color_primary,
+ 			color_blend);
+ 		ui_nextline();
+ 	}"
+StereoKit/StereoKit,795,6790f81,StereoKitC/ui/ui_theming.cpp,modified,118,66,184,"@@ -15,6 +15,9 @@ struct ui_el_visual_t {
+ 	mesh_t     mesh;
+ 	material_t material;
+ 	vec2       min_size;
++	sound_t    snd_activate;
++	sound_t    snd_deactivate;
++	ui_color_  color_category;
+ };
+ 
+ struct ui_theme_color_t {
+@@ -87,6 +90,7 @@ void ui_theming_init() {
+ 	skui_tint_stack      = {};
+ 	skui_grab_aura_stack = {};
+ 	memset(skui_visuals,   0, sizeof(skui_visuals));
++	memset(skui_palette,   0, sizeof(skui_palette));
+ 	memset(skui_anim_id,   0, sizeof(skui_anim_id));
+ 	memset(skui_anim_time, 0, sizeof(skui_anim_time));
+ 
+@@ -95,7 +99,7 @@ void ui_theming_init() {
+ 	skui_font_mat   = material_find(default_id_material_font);
+ 	material_set_queue_offset(skui_font_mat, -12);
+ 	skui_font       = font_find(default_id_font);
+-	skui_font_stack.add( text_make_style_mat(skui_font, 10*mm2m, skui_font_mat, color_to_gamma( skui_palette[ui_color_text].normal )) );
++	skui_font_stack.add(text_make_style_mat(skui_font, 10 * mm2m, skui_font_mat, {1,1,1,1}));
+ 
+ 	// TODO: v0.4, this sets up default values when zeroed out, with a
+ 	// ui_get_settings, this isn't really necessary anymore!
+@@ -201,6 +205,35 @@ void ui_theming_init() {
+ 	ui_set_element_visual(ui_vis_slider_pinch,         skui_small,       skui_mat_quad, skui_small_min);
+ 	ui_set_element_visual(ui_vis_slider_push,          skui_small,       skui_mat_quad, skui_small_min);
+ 	ui_set_element_visual(ui_vis_aura,                 skui_aura_mesh,   skui_aura_mat);
++
++	ui_set_element_color (ui_vis_none,                 ui_color_common);
++	ui_set_element_color (ui_vis_default,              ui_color_common);
++	ui_set_element_color (ui_vis_window_head,          ui_color_primary);
++	ui_set_element_color (ui_vis_window_head_only,     ui_color_primary);
++	ui_set_element_color (ui_vis_window_body,          ui_color_background);
++	ui_set_element_color (ui_vis_window_body_only,     ui_color_background);
++	ui_set_element_color (ui_vis_separator,            ui_color_primary);
++	ui_set_element_color (ui_vis_slider_line,          ui_color_common);
++	ui_set_element_color (ui_vis_slider_line_active,   ui_color_primary);
++	ui_set_element_color (ui_vis_slider_line_inactive, ui_color_common);
++	ui_set_element_color (ui_vis_slider_pinch,         ui_color_primary);
++	ui_set_element_color (ui_vis_slider_push,          ui_color_primary);
++	ui_set_element_color (ui_vis_aura,                 ui_color_text);
++	ui_set_element_color (ui_vis_panel,                ui_color_complement);
++	ui_set_element_color (ui_vis_handle,               ui_color_primary);
++	ui_set_element_color (ui_vis_button,               ui_color_common);
++	ui_set_element_color (ui_vis_toggle,               ui_color_common);
++	ui_set_element_color (ui_vis_button_round,         ui_color_common);
++	ui_set_element_color (ui_vis_input,                ui_color_common);
++	ui_set_element_color (ui_vis_carat,                ui_color_text);
++
++	ui_set_element_sound(ui_vis_default,               skui_snd_interact, skui_snd_uninteract);
++	ui_set_element_sound(ui_vis_handle,                skui_snd_grab,     skui_snd_ungrab);
++	ui_set_element_sound(ui_vis_window_body,           skui_snd_grab,     skui_snd_ungrab);
++	ui_set_element_sound(ui_vis_window_head,           skui_snd_grab,     skui_snd_ungrab);
++	ui_set_element_sound(ui_vis_window_body_only,      skui_snd_grab,     skui_snd_ungrab);
++	ui_set_element_sound(ui_vis_window_head_only,      skui_snd_grab,     skui_snd_ungrab);
++	ui_set_element_sound(ui_vis_slider_line,           skui_snd_tick,     skui_snd_tick);
+ }
+ 
+ ///////////////////////////////////////////
+@@ -213,6 +246,8 @@ void ui_theming_shutdown() {
+ 	for (int32_t i = 0; i < ui_vis_max; i++) {
+ 		mesh_release    (skui_visuals[i].mesh);
+ 		material_release(skui_visuals[i].material);
++		sound_release   (skui_visuals[i].snd_activate);
++		sound_release   (skui_visuals[i].snd_deactivate);
+ 		skui_visuals[i] = {};
+ 	}
+ 
+@@ -279,17 +314,34 @@ void ui_theming_update() {
+ ///////////////////////////////////////////
+ 
+ void ui_set_element_visual(ui_vis_ element_visual, mesh_t mesh, material_t material, vec2 min_size) {
+-	ui_el_visual_t visual = {};
++	ui_el_visual_t *vis = &skui_visuals[element_visual];
++
++	if (mesh          != nullptr) mesh_addref     (mesh);
++	if (material      != nullptr) material_addref (material);
++	if (vis->mesh     != nullptr) mesh_release    (vis->mesh);
++	if (vis->material != nullptr) material_release(vis->material);
++
++	vis->mesh     = mesh;
++	vis->material = material;
++	vis->min_size = min_size;
++}
++
++///////////////////////////////////////////
+ 
+-	if (mesh                                  != nullptr) mesh_addref     (mesh);
+-	if (material                              != nullptr) material_addref (material);
+-	if (skui_visuals[element_visual].mesh     != nullptr) mesh_release    (skui_visuals[element_visual].mesh);
+-	if (skui_visuals[element_visual].material != nullptr) material_release(skui_visuals[element_visual].material);
++void ui_set_element_color(ui_vis_ element, ui_color_ color_category) {
++	skui_visuals[element].color_category = color_category;
++}
++
++///////////////////////////////////////////
+ 
+-	visual.mesh     = mesh;
+-	visual.material = material;
+-	visual.min_size = min_size;
+-	skui_visuals[element_visual] = visual;
++void ui_set_element_sound(ui_vis_ element, sound_t activate, sound_t deactivate) {
++	if (activate   != nullptr) sound_addref(activate);
++	if (deactivate != nullptr) sound_addref(deactivate);
++	if (skui_visuals[element].snd_activate   != nullptr) sound_release(skui_visuals[element].snd_activate);
++	if (skui_visuals[element].snd_deactivate != nullptr) sound_release(skui_visuals[element].snd_deactivate);
++
++	skui_visuals[element].snd_activate   = activate;
++	skui_visuals[element].snd_deactivate = deactivate;
+ }
+ 
+ ///////////////////////////////////////////
+@@ -318,41 +370,71 @@ material_t ui_get_material(ui_vis_ element_visual) {
+ 
+ ///////////////////////////////////////////
+ 
+-void ui_draw_el(ui_vis_ element_visual, vec3 start, vec3 size, ui_color_ color, float focus) {
+-	/*if (size.x < skui_box_min.x) size.x = skui_box_min.x;
+-	if (size.y < skui_box_min.y) size.y = skui_box_min.y;
+-	if (size.z < skui_box_min.z) size.z = skui_box_min.z;*/
++ui_color_ ui_get_color(ui_vis_ element_visual) {
++	ui_color_ category = skui_visuals[element_visual].color_category;
++	return category != ui_color_none
++		? category
++		: skui_visuals[ui_vis_default].color_category;
++}
++
++///////////////////////////////////////////
+ 
+-	vec3   pos = start - size / 2;
+-	matrix mx  = matrix_ts(pos, size);
++sound_t ui_get_sound_on(ui_vis_ element_visual) {
++	return skui_visuals[element_visual].snd_activate
++		? skui_visuals[element_visual].snd_activate
++		: skui_visuals[ui_vis_default].snd_activate;
++}
+ 
+-	color128 final_color = ui_is_enabled()
++///////////////////////////////////////////
++
++sound_t ui_get_sound_off(ui_vis_ element_visual) {
++	return skui_visuals[element_visual].snd_deactivate
++		? skui_visuals[element_visual].snd_deactivate
++		: skui_visuals[ui_vis_default].snd_deactivate;
++}
++
++///////////////////////////////////////////
++
++color128 ui_get_el_color(ui_vis_ element_visual, float focus) {
++	ui_color_ color       = ui_get_color(element_visual);
++	color128  final_color = ui_is_enabled()
+ 		? color_lerp(skui_palette[color].normal, skui_palette[color].active, focus)
+ 		: skui_palette[color].disabled;
+-	final_color = final_color * skui_tint;
++	final_color   = final_color * skui_tint;
+ 	final_color.a = focus;
+ 
+-	render_add_mesh(ui_get_mesh(element_visual), ui_get_material(element_visual), mx, final_color);
++	return final_color;
++}
++
++///////////////////////////////////////////
++
++void ui_draw_el_color(ui_vis_ element_visual, ui_vis_ element_color, vec3 start, vec3 size, float focus) {
++	/*if (size.x < skui_box_min.x) size.x = skui_box_min.x;
++	if (size.y < skui_box_min.y) size.y = skui_box_min.y;
++	if (size.z < skui_box_min.z) size.z = skui_box_min.z;*/
++
++	render_add_mesh(
++		ui_get_mesh    (element_visual),
++		ui_get_material(element_visual),
++		matrix_ts(start - size / 2, size),
++		ui_get_el_color(element_color, focus));
++}
++
++///////////////////////////////////////////
++
++void ui_draw_el(ui_vis_ element_visual, vec3 start, vec3 size, float focus) {
++	render_add_mesh(
++		ui_get_mesh    (element_visual),
++		ui_get_material(element_visual),
++		matrix_ts(start - size / 2, size),
++		ui_get_el_color(element_visual, focus));
+ }
+ 
+ ///////////////////////////////////////////
+ 
+ void ui_play_sound_on_off(ui_vis_ element_visual, uint64_t element_id, vec3 at) {
+-	sound_t snd_on  = nullptr;
+-	sound_t snd_off = nullptr;
+-
+-	// This pattern is until we add sounds to theming
+-	if (element_visual == ui_vis_handle           ||
+-		element_visual == ui_vis_window_body      ||
+-		element_visual == ui_vis_window_body_only ||
+-		element_visual == ui_vis_window_head      ||
+-		element_visual == ui_vis_window_head_only) {
+-		snd_on = skui_snd_grab;
+-		snd_off= skui_snd_ungrab;
+-	} else {
+-		snd_on = skui_snd_interact;
+-		snd_off= skui_snd_uninteract;
+-	}
++	sound_t snd_on  = ui_get_sound_on(element_visual);
++	sound_t snd_off = ui_get_sound_off(element_visual);
+ 
+ 	if (snd_off) sound_addref(snd_off);
+ 	sound_release(skui_active_sound_off);
+@@ -368,44 +450,14 @@ void ui_play_sound_on_off(ui_vis_ element_visual, uint64_t element_id, vec3 at)
+ ///////////////////////////////////////////
+ 
+ void ui_play_sound_on(ui_vis_ element_visual, vec3 at) {
+-	sound_t snd = nullptr;
+-	// This pattern is until we add sounds to theming
+-	if (element_visual == ui_vis_handle           ||
+-		element_visual == ui_vis_window_body      ||
+-		element_visual == ui_vis_window_body_only ||
+-		element_visual == ui_vis_window_head      ||
+-		element_visual == ui_vis_window_head_only) {
+-		snd = skui_snd_grab;
+-	} else {
+-		snd = skui_snd_interact;
+-	}
+-
++	sound_t snd = ui_get_sound_on(element_visual);
+ 	if (snd) sound_play(snd, at, 1);
+ }
+ 
+ ///////////////////////////////////////////
+ 
+ void ui_play_sound_off(ui_vis_ element_visual, vec3 at) {
+-	sound_t snd = nullptr;
+-	// This pattern is until we add sounds to theming
+-	if (element_visual == ui_vis_handle           ||
+-		element_visual == ui_vis_window_body      ||
+-		element_visual == ui_vis_window_body_only ||
+-		element_visual == ui_vis_window_head      ||
+-		element_visual == ui_vis_window_head_only) {
+-		snd = skui_snd_ungrab;
+-	} else {
+-		snd = skui_snd_uninteract;
+-	}
+-
+-	if (snd) sound_play(snd, at, 1);
+-}
+-
+-///////////////////////////////////////////
+-
+-void ui_play_sound(ui_vis_ element_visual, vec3 at) {
+-	sound_t snd = skui_snd_tick;
+-
++	sound_t snd = ui_get_sound_off(element_visual);
+ 	if (snd) sound_play(snd, at, 1);
+ }
+ "
+StereoKit/StereoKit,795,6790f81,StereoKitC/ui/ui_theming.h,modified,8,7,15,"@@ -17,13 +17,14 @@ void ui_theming_init();
+ void ui_theming_update();
+ void ui_theming_shutdown();
+ 
+-vec2 ui_get_mesh_minsize (ui_vis_ element_visual);
+-void ui_draw_el          (ui_vis_ element_visual, vec3 start, vec3 size, ui_color_ color, float focus);
+-void ui_play_sound_on_off(ui_vis_ element_visual, uint64_t element_id, vec3 at);
+-void ui_play_sound_on    (ui_vis_ element_visual, vec3 at);
+-void ui_play_sound_off   (ui_vis_ element_visual, vec3 at);
+-void ui_play_sound       (ui_vis_ element_visual, vec3 at);
+-void ui_draw_cube        (vec3 start, vec3 size, ui_color_ color, float focus);
++vec2     ui_get_mesh_minsize (ui_vis_ element_visual);
++void     ui_draw_el          (ui_vis_ element_visual, vec3 start, vec3 size, float focus);
++void     ui_draw_el_color    (ui_vis_ element_visual, ui_vis_ element_color, vec3 start, vec3 size, float focus);
++color128 ui_get_el_color     (ui_vis_ element_visual, float focus);
++void     ui_play_sound_on_off(ui_vis_ element_visual, uint64_t element_id, vec3 at);
++void     ui_play_sound_on    (ui_vis_ element_visual, vec3 at);
++void     ui_play_sound_off   (ui_vis_ element_visual, vec3 at);
++void     ui_draw_cube        (vec3 start, vec3 size, ui_color_ color, float focus);
+ 
+ void  ui_anim_start  (uint64_t id, int32_t channel);
+ bool  ui_anim_has    (uint64_t id, int32_t channel, float duration);"

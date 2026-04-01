@@ -1,0 +1,34 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+Raicuparta/nomai-vr,142,eeed7fead038303e6ee1eb9218fcf0bf1c0b5173,NomaiVR/Modules/ControllerInput.cs,modified,10,1,11,"@@ -9,6 +9,7 @@ class ControllerInput: MonoBehaviour {
+         static Dictionary<XboxButton, float> _buttons;
+         static Dictionary<string, float> _singleAxes;
+         static Dictionary<DoubleAxis, Vector2> _doubleAxes;
++        static PlayerResources _playerResources;
+         public static bool IsGripping { get; private set; }
+         float _primaryLastTime = -1;
+         const float holdDuration = 0.3f;
+@@ -66,7 +67,9 @@ private void OnPrimaryActionChange (SteamVR_Action_Boolean fromAction, SteamVR_I
+             var isInShip = Common.ToolSwapper.GetToolGroup() == ToolGroup.Ship;
+ 
+             if (Common.ToolSwapper.IsInToolMode(ToolMode.None) || Common.ToolSwapper.IsInToolMode(ToolMode.Item)) {
+-                if (_repairPrompt != null && !_repairPrompt.IsVisible() && Common.ToolSwapper.GetToolGroup() != ToolGroup.Ship) {
++                var canRepairSuit = _playerResources.IsSuitPunctured() && OWInput.IsInputMode(InputMode.Character) && !Locator.GetToolModeSwapper().IsSuitPatchingBlocked();
++
++                if (_repairPrompt != null && !_repairPrompt.IsVisible() && Common.ToolSwapper.GetToolGroup() != ToolGroup.Ship && !canRepairSuit) {
+                     if (newState) {
+                         _primaryLastTime = fromAction.changedTime;
+                     } else {
+@@ -157,7 +160,13 @@ public static void Patch () {
+                 NomaiVR.Post<ItemTool>(""Start"", typeof(Patches), nameof(Patches.ItemToolStart));
+                 NomaiVR.Pre<OWInput>(""Awake"", typeof(Patches), nameof(Patches.EnableListenForAllJoysticks));
+                 NomaiVR.Post<PadEZ.PadManager>(""GetAxis"", typeof(Patches), nameof(Patches.GetAxis));
++                NomaiVR.Post<PlayerResources>(""Awake"", typeof(Patches), nameof(PlayerResourcesAwake));
++            }
++
++            static void PlayerResourcesAwake () {
++                _playerResources = GameObject.FindObjectOfType<PlayerResources>();
+             }
++
+             static float GetAxis (float __result, string axisName) {
+                 if (_singleAxes.ContainsKey(axisName)) {
+                     return _singleAxes[axisName];"

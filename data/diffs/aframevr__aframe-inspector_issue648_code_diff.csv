@@ -1,0 +1,110 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe-inspector,648,a6d59bc3293ee16a0d96965fe21d184b92e15cae,src/components/Main.js,modified,12,12,24,"@@ -48,19 +48,17 @@ export default class Main extends React.Component {
+         }
+       } else if (event.which === 'attributes') {
+         this.setState(prevState => ({
+-          visible: {
++          visible: Object.assign({}, prevState.visible, {
+             attributes: !prevState.visible.attributes
+-          }
++          })
+         }));
+       } else if (event.which === 'scenegraph') {
+         this.setState(prevState => ({
+-          visible: {
++          visible: Object.assign({}, prevState.visible, {
+             scenegraph: !prevState.visible.scenegraph
+-          }
++          })
+         }));
+       }
+-
+-      this.forceUpdate();
+     });
+   }
+ 
+@@ -109,15 +107,18 @@ export default class Main extends React.Component {
+   };
+ 
+   renderComponentsToggle() {
+-    if (!this.state.entity || this.state.visible.attributes) {
++    if (
++      !this.state.inspectorEnabled ||
++      !this.state.entity ||
++      this.state.visible.attributes
++    ) {
+       return null;
+     }
+     return (
+       <div className=""toggle-sidebar right"">
+         <a
+           onClick={() => {
+-            this.setState({ visible: { attributes: true } });
+-            this.forceUpdate();
++            Events.emit('togglesidebar', { which: 'attributes' });
+           }}
+           className=""fa fa-plus""
+           title=""Show components""
+@@ -127,15 +128,14 @@ export default class Main extends React.Component {
+   }
+ 
+   renderSceneGraphToggle() {
+-    if (this.state.visible.scenegraph) {
++    if (!this.state.inspectorEnabled || this.state.visible.scenegraph) {
+       return null;
+     }
+     return (
+       <div className=""toggle-sidebar left"">
+         <a
+           onClick={() => {
+-            this.setState({ visible: { scenegraph: true } });
+-            this.forceUpdate();
++            Events.emit('togglesidebar', { which: 'scenegraph' });
+           }}
+           className=""fa fa-plus""
+           title=""Show scenegraph"""
+aframevr/aframe-inspector,648,a6d59bc3293ee16a0d96965fe21d184b92e15cae,src/lib/shortcuts.js,modified,3,3,6,"@@ -174,8 +174,8 @@ export const Shortcuts = {
+       this.disable();
+     }
+ 
+-    window.addEventListener('keydown', this.onKeyDown.bind(this), false);
+-    window.addEventListener('keyup', this.onKeyUp.bind(this), false);
++    window.addEventListener('keydown', this.onKeyDown, false);
++    window.addEventListener('keyup', this.onKeyUp, false);
+     this.enabled = true;
+   },
+   disable: function() {
+@@ -189,7 +189,7 @@ export const Shortcuts = {
+       this.shortcuts.modules[moduleName][keyCode]
+     ) {
+       console.warn(
+-        'Keycode <%s> already registered as shorcut within the same module',
++        'Keycode <%s> already registered as shortcut within the same module',
+         keyCode
+       );
+     }"
+aframevr/aframe-inspector,648,a6d59bc3293ee16a0d96965fe21d184b92e15cae,src/style/index.styl,modified,8,6,14,"@@ -247,12 +247,6 @@ body.aframe-inspector-opened
+     position absolute
+     z-index 9998
+ 
+-    .left
+-      left 0
+-
+-    .right
+-      right 0
+-
+     a
+       background-color #262626
+       color #bcbcbc
+@@ -262,3 +256,11 @@ body.aframe-inspector-opened
+     a.hover
+       background-color #1faaf2
+       color #fff
++
++  .toggle-sidebar.left
++    top 0
++    left 0
++
++  .toggle-sidebar.right
++    top 0
++    right 0"

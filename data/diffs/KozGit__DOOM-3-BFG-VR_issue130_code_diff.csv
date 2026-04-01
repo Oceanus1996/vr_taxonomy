@@ -1,0 +1,229 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+KozGit/DOOM-3-BFG-VR,130,df62b3f6bedac4221bb222715357ada6e59c4802,neo/d3xp/Player.cpp,modified,36,7,43,"@@ -2269,6 +2269,8 @@ void idPlayer::Init()
+ 
+ 	SetupPDASlot( true );
+ 	holsteredWeapon = weapon_fists;
++	extraHolsteredWeapon = weapon_fists;
++	const char* extraHolsteredWeaponModel = NULL;
+ 
+ 	// Koz begin
+ 	
+@@ -3607,7 +3609,9 @@ void idPlayer::Restore( idRestoreGame* savefile )
+ 
+ 	SetupPDASlot( true );
+ 	holsteredWeapon = weapon_fists;
+-	
++	extraHolsteredWeapon = weapon_fists;
++	const char* extraHolsteredWeaponModel = NULL;
++
+ 	for( int i = 0; i < MAX_PLAYER_PDA; i++ )
+ 	{
+ 		savefile->ReadBool( pdaHasBeenRead[i] );
+@@ -6177,8 +6181,10 @@ bool idPlayer::OtherHandImpulseSlot()
+ 			TogglePDA();
+ 		}
+ 		else
++		{
+ 			// pick up whatever weapon we have holstered, and magically holster our current weapon
+ 			SetupHolsterSlot();
++		}
+ 		return true;
+ 	}
+ 	if ( otherHandSlot == SLOT_WEAPON_BACK_BOTTOM )
+@@ -6258,8 +6264,8 @@ bool idPlayer::WeaponHandImpulseSlot()
+ 	{
+ 		SwapWeaponHand();
+ 		// if we're holding a gun (not a pointer finger or fist) then holster the gun
+-		if ( !commonVr->PDAforced && !objectiveSystemOpen && currentWeapon != weapon_fists )
+-			SetupHolsterSlot();
++		//if ( !commonVr->PDAforced && !objectiveSystemOpen && currentWeapon != weapon_fists )
++		//	SetupHolsterSlot();
+ 		// pick up PDA in our weapon hand, or pick up the torch if our hand is a pointer finger
+ 		if (!common->IsMultiplayer())
+ 		{
+@@ -11703,14 +11709,26 @@ void idPlayer::SetupHolsterSlot( int stashed )
+ 	const char * modelname;
+ 	idRenderModel* renderModel;
+ 
++	if ( stashed == 0 )
++	{
++		extraHolsteredWeapon = holsteredWeapon;
++		if ( holsterRenderEntity.hModel )
++			extraHolsteredWeaponModel = holsterRenderEntity.hModel->Name();
++		else
++			extraHolsteredWeaponModel = NULL;
++	}
++
+ 	FreeHolsterSlot();
+ 	if( vr_slotDisable.GetBool() )
+ 	{
+ 		return;
+ 	}
+ 
+ 	if ( stashed == 1 )
+-		modelname = NULL;
++	{
++		modelname = extraHolsteredWeaponModel;
++		extraHolsteredWeaponModel = NULL;
++	}
+ 	else
+ 		modelname = weapon->weaponDef->dict.GetString(""model"");
+ 
+@@ -11726,7 +11744,7 @@ void idPlayer::SetupHolsterSlot( int stashed )
+ 		if( holsteredWeapon != weapon_fists )
+ 		{
+ 			if ( stashed < 0 )
+-				SelectWeapon(holsteredWeapon, false);
++				SelectWeapon(holsteredWeapon, false, true);
+ 			holsteredWeapon = weapon_fists;
+ 			memset(&holsterRenderEntity, 0, sizeof(holsterRenderEntity));
+ 		}
+@@ -11737,11 +11755,22 @@ void idPlayer::SetupHolsterSlot( int stashed )
+ 	if (stashed < 0)
+ 	{
+ 		int previousWeapon = currentWeapon;
+-		SelectWeapon(holsteredWeapon, false);
++		SelectWeapon(holsteredWeapon, false, true);
+ 		holsteredWeapon = previousWeapon;
+ 	}
+ 	else
+-		holsteredWeapon = currentWeapon;
++	{
++		if (stashed == 0) // stash current weapon, holstered weapon moves to invisible ""extra"" slot
++		{
++			holsteredWeapon = currentWeapon;
++		}
++		else // unstash holstered weapon, extra weapon moves back to holster
++		{
++			SelectWeapon(holsteredWeapon, true, true);
++			holsteredWeapon = extraHolsteredWeapon;
++			extraHolsteredWeapon = weapon_fists;
++		}
++	}
+ 
+ 	memset( &holsterRenderEntity, 0, sizeof( holsterRenderEntity ) );
+ "
+KozGit/DOOM-3-BFG-VR,130,df62b3f6bedac4221bb222715357ada6e59c4802,neo/d3xp/Player.h,modified,2,1,3,"@@ -323,7 +323,8 @@ class idPlayer : public idActor
+ 	renderEntity_t			holsterRenderEntity;					// used to present a model to the renderer
+ 	qhandle_t				holsterModelDefHandle;					// handle to static renderer model
+ 	idMat3					holsterAxis;
+-	int						holsteredWeapon;
++	int						holsteredWeapon, extraHolsteredWeapon;
++	const char*		extraHolsteredWeaponModel;
+ 
+ 	renderEntity_t			hudEntity; // koz add a model to place the hud into the world
+ 	qhandle_t				hudHandle;"
+KozGit/DOOM-3-BFG-VR,130,9dfe9c42d553b11ee6dbf822a241737cc7b59664,neo/d3xp/Player.cpp,modified,36,7,43,"@@ -2269,6 +2269,8 @@ void idPlayer::Init()
+ 
+ 	SetupPDASlot( true );
+ 	holsteredWeapon = weapon_fists;
++	extraHolsteredWeapon = weapon_fists;
++	const char* extraHolsteredWeaponModel = NULL;
+ 
+ 	// Koz begin
+ 	
+@@ -3607,7 +3609,9 @@ void idPlayer::Restore( idRestoreGame* savefile )
+ 
+ 	SetupPDASlot( true );
+ 	holsteredWeapon = weapon_fists;
+-	
++	extraHolsteredWeapon = weapon_fists;
++	const char* extraHolsteredWeaponModel = NULL;
++
+ 	for( int i = 0; i < MAX_PLAYER_PDA; i++ )
+ 	{
+ 		savefile->ReadBool( pdaHasBeenRead[i] );
+@@ -6177,8 +6181,10 @@ bool idPlayer::OtherHandImpulseSlot()
+ 			TogglePDA();
+ 		}
+ 		else
++		{
+ 			// pick up whatever weapon we have holstered, and magically holster our current weapon
+ 			SetupHolsterSlot();
++		}
+ 		return true;
+ 	}
+ 	if ( otherHandSlot == SLOT_WEAPON_BACK_BOTTOM )
+@@ -6258,8 +6264,8 @@ bool idPlayer::WeaponHandImpulseSlot()
+ 	{
+ 		SwapWeaponHand();
+ 		// if we're holding a gun (not a pointer finger or fist) then holster the gun
+-		if ( !commonVr->PDAforced && !objectiveSystemOpen && currentWeapon != weapon_fists )
+-			SetupHolsterSlot();
++		//if ( !commonVr->PDAforced && !objectiveSystemOpen && currentWeapon != weapon_fists )
++		//	SetupHolsterSlot();
+ 		// pick up PDA in our weapon hand, or pick up the torch if our hand is a pointer finger
+ 		if (!common->IsMultiplayer())
+ 		{
+@@ -11703,14 +11709,26 @@ void idPlayer::SetupHolsterSlot( int stashed )
+ 	const char * modelname;
+ 	idRenderModel* renderModel;
+ 
++	if ( stashed == 0 )
++	{
++		extraHolsteredWeapon = holsteredWeapon;
++		if ( holsterRenderEntity.hModel )
++			extraHolsteredWeaponModel = holsterRenderEntity.hModel->Name();
++		else
++			extraHolsteredWeaponModel = NULL;
++	}
++
+ 	FreeHolsterSlot();
+ 	if( vr_slotDisable.GetBool() )
+ 	{
+ 		return;
+ 	}
+ 
+ 	if ( stashed == 1 )
+-		modelname = NULL;
++	{
++		modelname = extraHolsteredWeaponModel;
++		extraHolsteredWeaponModel = NULL;
++	}
+ 	else
+ 		modelname = weapon->weaponDef->dict.GetString(""model"");
+ 
+@@ -11726,7 +11744,7 @@ void idPlayer::SetupHolsterSlot( int stashed )
+ 		if( holsteredWeapon != weapon_fists )
+ 		{
+ 			if ( stashed < 0 )
+-				SelectWeapon(holsteredWeapon, false);
++				SelectWeapon(holsteredWeapon, false, true);
+ 			holsteredWeapon = weapon_fists;
+ 			memset(&holsterRenderEntity, 0, sizeof(holsterRenderEntity));
+ 		}
+@@ -11737,11 +11755,22 @@ void idPlayer::SetupHolsterSlot( int stashed )
+ 	if (stashed < 0)
+ 	{
+ 		int previousWeapon = currentWeapon;
+-		SelectWeapon(holsteredWeapon, false);
++		SelectWeapon(holsteredWeapon, false, true);
+ 		holsteredWeapon = previousWeapon;
+ 	}
+ 	else
+-		holsteredWeapon = currentWeapon;
++	{
++		if (stashed == 0) // stash current weapon, holstered weapon moves to invisible ""extra"" slot
++		{
++			holsteredWeapon = currentWeapon;
++		}
++		else // unstash holstered weapon, extra weapon moves back to holster
++		{
++			SelectWeapon(holsteredWeapon, true, true);
++			holsteredWeapon = extraHolsteredWeapon;
++			extraHolsteredWeapon = weapon_fists;
++		}
++	}
+ 
+ 	memset( &holsterRenderEntity, 0, sizeof( holsterRenderEntity ) );
+ "
+KozGit/DOOM-3-BFG-VR,130,9dfe9c42d553b11ee6dbf822a241737cc7b59664,neo/d3xp/Player.h,modified,2,1,3,"@@ -323,7 +323,8 @@ class idPlayer : public idActor
+ 	renderEntity_t			holsterRenderEntity;					// used to present a model to the renderer
+ 	qhandle_t				holsterModelDefHandle;					// handle to static renderer model
+ 	idMat3					holsterAxis;
+-	int						holsteredWeapon;
++	int						holsteredWeapon, extraHolsteredWeapon;
++	const char*		extraHolsteredWeaponModel;
+ 
+ 	renderEntity_t			hudEntity; // koz add a model to place the hud into the world
+ 	qhandle_t				hudHandle;"

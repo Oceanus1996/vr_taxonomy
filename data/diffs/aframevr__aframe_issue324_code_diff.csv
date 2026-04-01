@@ -1,0 +1,117 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe,324,50b9d5f438e150272f80f9dc7feaa11ec6695c02,elements/templates/a-curvedimage.html,modified,2,2,4,"@@ -2,7 +2,7 @@
+           element=""a-curvedimage""
+           radius=""1""
+           height=""1""
+-          segments-radius=""48""
++          segments-radial=""48""
+           theta-start=""0""
+           theta-length=""360""
+           opacity=""1.0""
+@@ -11,7 +11,7 @@
+   <a-entity geometry=""primitive: cylinder;
+                       radius: ${radius};
+                       height: ${height};
+-                      segmentsRadius: ${segments-radius};
++                      segmentsRadial: ${segments-radial};
+                       segmentsHeight: 1;
+                       thetaStart: ${theta-start};
+                       thetaLength: ${theta-length};"
+aframevr/aframe,324,1d30b370bfb383833edd0a3a10226efe852e115f,elements/templates/a-curvedimage.html,modified,2,2,4,"@@ -2,7 +2,7 @@
+           element=""a-curvedimage""
+           radius=""1""
+           height=""1""
+-          segments-radius=""48""
++          segments-radial=""48""
+           theta-start=""0""
+           theta-length=""360""
+           opacity=""1.0""
+@@ -11,7 +11,7 @@
+   <a-entity geometry=""primitive: cylinder;
+                       radius: ${radius};
+                       height: ${height};
+-                      segmentsRadius: ${segments-radius};
++                      segmentsRadial: ${segments-radial};
+                       segmentsHeight: 1;
+                       thetaStart: ${theta-start};
+                       thetaLength: ${theta-length};"
+aframevr/aframe,324,7a44a2c763ff769aec55eaf9ad15c91cf821120d,examples/controls/index.html,added,22,0,22,"@@ -0,0 +1,22 @@
++<!DOCTYPE html>
++<html>
++  <head>
++    <meta charset=""utf-8"">
++    <title>Controls</title>
++    <meta name=""description"" content=""Controls — vr-markup"">
++    <link rel=""stylesheet"" type=""text/css"" href=""../../style/vr-markup.css"">
++    <link rel=""stylesheet"" type=""text/css"" href=""../_style/main.css"">
++    <script src=""../../build/vr-markup.js""></script>
++  </head>
++  <body>
++    <vr-scene stats=""true"">
++      <!-- We wrap the camera in a vr-object so we can position it without colliding with the HMD updates -->
++      <vr-object position=""0 0 20"">
++        <vr-object  camera=""fov: 45"" hmd-controls></vr-object>
++      </vr-object>
++      <vr-object position=""-10 0 0"" rotation=""0 45 0"" geometry=""primitive: box"" material=""color: red""></vr-object>
++      <vr-object position=""0 0 0"" rotation=""0 45 0"" geometry=""primitive: box"" material=""color: green""></vr-object>
++      <vr-object class=""cube"" position=""10 0 0"" rotation=""0 45 0"" geometry=""primitive: box"" material=""color: blue""></vr-object>
++    </vr-scene>
++  </body>
++</html>"
+aframevr/aframe,324,7a44a2c763ff769aec55eaf9ad15c91cf821120d,examples/index.html,modified,1,0,1,"@@ -41,6 +41,7 @@
+     <h1>vr-markup examples</h1>
+     <ul>
+       <li><a href=""animation/"">Animation</a></li>
++      <li><a href=""controls/"">Controls</a></li>
+       <li><a href=""cursor/"">Cursor</a></li>
+       <li><a href=""cubes/"">Cubes</a></li>
+       <li><a href=""cylinders/"">Cylinders</a></li>"
+aframevr/aframe,324,7a44a2c763ff769aec55eaf9ad15c91cf821120d,src/components/hmd-controls.js,added,40,0,40,"@@ -0,0 +1,40 @@
++var registerComponent = require('../core/register-component').registerComponent;
++var THREE = require('../../lib/three');
++
++module.exports.Component = registerComponent('hmd-controls', {
++  init: {
++    value: function () {
++      this.setupControls();
++    }
++  },
++
++  setupControls: {
++    value: function () {
++      var scene = this.el.sceneEl;
++      var dolly = this.dolly = new THREE.Object3D();
++      this.euler = new THREE.Euler();
++      this.controls = new THREE.VRControls(dolly);
++      scene.addBehavior(this);
++    }
++  },
++
++  update: {
++    value: function () {
++      var dolly = this.dolly;
++      var quaternion;
++      var euler = this.euler;
++      var rotation;
++      this.controls.update();
++      quaternion = dolly.quaternion;
++      euler.setFromQuaternion(quaternion);
++      rotation = euler.toArray();
++      rotation = {
++        x: THREE.Math.radToDeg(rotation[0]),
++        y: THREE.Math.radToDeg(rotation[1]),
++        z: THREE.Math.radToDeg(rotation[2])
++      };
++      this.el.setAttribute('position', dolly.position);
++      this.el.setAttribute('rotation', rotation);
++    }
++  }
++});"
+aframevr/aframe,324,7a44a2c763ff769aec55eaf9ad15c91cf821120d,src/core/components.js,modified,1,0,1,"@@ -4,6 +4,7 @@ require('../components/camera');
+ require('../components/controls');
+ require('../components/cursor');
+ require('../components/geometry');
++require('../components/hmd-controls');
+ require('../components/light');
+ require('../components/material');
+ require('../components/position');"

@@ -1,0 +1,28 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vrm-c/UniVRM,203,ea16b9ac7c4961fa39dd58221bfe7053c68a7b49,Assets/VRM/UniUnlit/Editor/UniUnlitEditor.cs,modified,12,2,14,"@@ -124,14 +124,24 @@ private void DrawOptionsBox(MaterialEditor materialEditor, Material[] materials)
+         
+         private static bool PopupEnum<T>(string name, MaterialProperty property, MaterialEditor editor) where T : struct
+         {
++            if (!typeof(T).IsEnum) return false;
++            
+             EditorGUI.showMixedValue = property.hasMixedValue;
+             EditorGUI.BeginChangeCheck();
+-            var ret = EditorGUILayout.Popup(name, (int) property.floatValue, Enum.GetNames(typeof(T)));
++            var values = (T[]) Enum.GetValues(typeof(T));
++            var names = Enum.GetNames(typeof(T));
++
++            var currInt = (int) property.floatValue;
++            var currValue = (T) Enum.ToObject(typeof(T), currInt);
++            var currIndex = Array.IndexOf(values, currValue);
++            var nextIndex = EditorGUILayout.Popup(name, currIndex, names);
+             var changed = EditorGUI.EndChangeCheck();
+             if (changed)
+             {
+                 editor.RegisterPropertyChangeUndo(""EnumPopUp"");
+-                property.floatValue = ret;
++                var nextValue = values[nextIndex];
++                var nextInt = (int) (object) nextValue;
++                property.floatValue = nextInt;
+             }
+             EditorGUI.showMixedValue = false;
+             return changed;"

@@ -1,0 +1,285 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+musehq/spacesvr,71,fe6ddb71396fe16ba5f8931685bc553f012131bf,examples/src/scenes/ManyModels.jsx,modified,34,1,35,"@@ -1,5 +1,12 @@
+ import { Vector3 } from ""three"";
+-import { StandardEnvironment, Background, Logo, Image, Audio } from ""spacesvr"";
++import { useEffect } from ""react"";
++import {
++  StandardEnvironment,
++  Background,
++  Logo,
++  Image,
++  usePlayer,
++} from ""spacesvr"";
+ import Building from ""../models/Building"";
+ import MichaelModel from ""../models/MichaelModel"";
+ import PinkWhiteDurag from ""../models/PinkWhiteDurag"";
+@@ -31,6 +38,32 @@ export default () => {
+       <ShoppingCart position={[-6, 0, 0]} />
+       <Ramp />
+       <Block />
++      <MovementTest />
+     </StandardEnvironment>
+   );
+ };
++
++const MovementTest = () => {
++  const player = usePlayer();
++
++  useEffect(() => {
++    const onKeyPress = (e) => {
++      if (e.key.toLowerCase() === "" "") {
++        player.velocity.set(
++          player.velocity
++            .get()
++            .add(new Vector3(Math.random() * 50, 4, Math.random() * 50))
++        );
++      }
++
++      if (e.key.toLowerCase() === ""t"") {
++        player.velocity.set(new Vector3());
++      }
++    };
++
++    document.addEventListener(""keypress"", onKeyPress);
++    return () => document.removeEventListener(""keypress"", onKeyPress);
++  }, [player]);
++
++  return null;
++};"
+musehq/spacesvr,71,fe6ddb71396fe16ba5f8931685bc553f012131bf,examples/src/scenes/Starter.jsx,modified,12,16,28,"@@ -1,5 +1,4 @@
+ import { useEffect, useState } from ""react"";
+-import { Vector3 } from ""three"";
+ import * as THREE from ""three"";
+ 
+ import {
+@@ -38,6 +37,8 @@ export default () => {
+     );
+   }, []);
+ 
++  const [hovering, setHovering] = useState(false);
++
+   return (
+     <StandardEnvironment playerProps={{ pos: [0, 2, 0] }}>
+       <Background color={0xffffff} />
+@@ -46,7 +47,7 @@ export default () => {
+         onHover={() => console.log(""hover"")}
+         onUnHover={() => console.log(""un hover"")}
+       >
+-        <Logo floating rotating position={new Vector3(0, 1.25, 0)} />
++        <Logo floating rotating position={[4, 2, 0]} />
+       </Interactable>
+       <fog attach=""fog"" args={[0xffffff, 10, 90]} />
+       <ambientLight />
+@@ -104,20 +105,15 @@ export default () => {
+           })
+         }
+       />
+-      {/* <Image
+-        src=""https://d27rt3a60hh1lx.cloudfront.net/textures/dream1-1621460174/dream1.ktx2""
+-        size={3}
+-        position={[-3, 2, 6.4]}
+-        rotation={[0, Math.PI, 0]}
+-        framed
+-      />
+-      <Image
+-        src=""https://d27rt3a60hh1lx.cloudfront.net/textures/dream17-1621460188/dream17.ktx2""
+-        size={3}
+-        position={[0, 2, 6.4]}
+-        rotation={[0, Math.PI, 0]}
+-        framed
+-      /> */}
++      <Interactable
++        onHover={() => setHovering(true)}
++        onUnHover={() => setHovering(false)}
++      >
++        <mesh position={[-3, 0.5, 0]}>
++          <boxBufferGeometry args={[1, 0.25, 0.1]} />
++          <meshStandardMaterial color={hovering ? ""red"" : ""blue""} />
++        </mesh>
++      </Interactable>
+       <Image
+         name=""outside-eddie""
+         src=""https://d27rt3a60hh1lx.cloudfront.net/content/muse.place/jasonmatias/EddieWave.jpg"""
+musehq/spacesvr,71,fe6ddb71396fe16ba5f8931685bc553f012131bf,package.json,modified,2,0,2,"@@ -55,6 +55,7 @@
+     ""node-fetch"": ""^2.6.1"",
+     ""peerjs"": ""^1.3.1"",
+     ""react-device-detect"": ""^1.13.1"",
++    ""react-helmet"": ""^6.1.0"",
+     ""react-spring"": ""^9.2.0"",
+     ""valtio"": ""^0.7.0""
+   },
+@@ -75,6 +76,7 @@
+     ""@types/node-fetch"": ""^2.5.7"",
+     ""@types/peerjs"": ""^1.1.0"",
+     ""@types/react"": ""^16.9.36"",
++    ""@types/react-helmet"": ""^6.1.4"",
+     ""@types/three"": ""^0.127.1"",
+     ""@typescript-eslint/eslint-plugin"": ""^3.2.0"",
+     ""@typescript-eslint/parser"": ""^3.2.0"","
+musehq/spacesvr,71,fe6ddb71396fe16ba5f8931685bc553f012131bf,src/layers/reality/controls/NippleMovement.tsx,modified,11,5,16,"@@ -1,4 +1,5 @@
+ import { useRef, useEffect, MutableRefObject } from ""react"";
++import { Global, css } from ""@emotion/react"";
+ import { Vector3 } from ""three"";
+ import nipplejs, { JoystickManager } from ""nipplejs"";
+ import { useEnvironment } from ""../layers/environment"";
+@@ -45,7 +46,7 @@ const NippleMovement = (props: NippleMovementProps) => {
+         zone: nippleContainer.current,
+         mode: ""static"",
+         position: { left: ""50%"", top: ""50%"" },
+-        color: ""gray"",
++        color: ""#fff"",
+         size: 120,
+         restOpacity: 0.75,
+       });
+@@ -62,14 +63,19 @@ const NippleMovement = (props: NippleMovementProps) => {
+       });
+ 
+       return () => {
+-        if (nipple.current) {
+-          nipple.current.destroy();
+-        }
++        if (nipple.current) nipple.current.destroy();
+       };
+     }
+   }, []);
+ 
+-  return null;
++  const nippleStyles = css`
++    .nipple-container > * > .front,
++    .nipple-container > * > .back {
++      background: radial-gradient(white, white 64%, black 86%) !important;
++    }
++  `;
++
++  return <Global styles={nippleStyles} />;
+ };
+ 
+ export default NippleMovement;"
+musehq/spacesvr,71,fe6ddb71396fe16ba5f8931685bc553f012131bf,src/layers/reality/ui/Crosshair.tsx,modified,2,2,4,"@@ -3,8 +3,8 @@ import { isMobile } from ""react-device-detect"";
+ 
+ const Element = styled.div`
+   position: fixed;
+-  top: 50vh;
+-  left: 50vw;
++  top: 50%;
++  left: 50%;
+   z-index: 1;
+   mix-blend-mode: difference;
+ "
+musehq/spacesvr,71,fe6ddb71396fe16ba5f8931685bc553f012131bf,src/layers/reality/ui/GlobalStyles.tsx,modified,11,1,12,"@@ -1,4 +1,5 @@
+ import { Global, css } from ""@emotion/react"";
++import { Helmet } from ""react-helmet"";
+ 
+ const globalStyles = css`
+   @font-face {
+@@ -29,4 +30,13 @@ const globalStyles = css`
+   }
+ `;
+ 
+-export default () => <Global styles={globalStyles} />;
++export default function GlobalStyles() {
++  return (
++    <>
++      <Global styles={globalStyles} />
++      <Helmet>
++        <meta name=""viewport"" content=""initial-scale=1, viewport-fit=cover"" />
++      </Helmet>
++    </>
++  );
++}"
+musehq/spacesvr,71,fe6ddb71396fe16ba5f8931685bc553f012131bf,src/layers/reality/utils/player.ts,modified,8,2,10,"@@ -13,11 +13,17 @@ export function createPlayerState(
+ ): PlayerState {
+   return {
+     position: {
+-      set: (pos: Vector3) => bodyApi.position.copy(pos),
++      set: (pos: Vector3) => {
++        bodyApi.position.copy(pos);
++        position.current.copy(pos);
++      },
+       get: () => position.current,
+     },
+     velocity: {
+-      set: (vec: Vector3) => bodyApi.velocity.copy(vec),
++      set: (vec: Vector3) => {
++        bodyApi.velocity.copy(vec);
++        velocity.current.copy(vec);
++      },
+       get: () => velocity.current,
+     },
+     controls: {"
+musehq/spacesvr,71,fe6ddb71396fe16ba5f8931685bc553f012131bf,yarn.lock,modified,42,1,43,"@@ -1332,6 +1332,22 @@
+   resolved ""https://registry.yarnpkg.com/@types/prop-types/-/prop-types-15.7.3.tgz#2ab0d5da2e5815f94b0b9d4b95d1e5f243ab2ca7""
+   integrity sha512-KfRL3PuHmqQLOG+2tGpRO26Ctg+Cq1E01D2DMriKEATHgWLfeNDmq9e29Q9WIky0dQ3NPkd1mzYH8Lm936Z9qw==
+ 
++""@types/react-helmet@^6.1.4"":
++  version ""6.1.4""
++  resolved ""https://registry.yarnpkg.com/@types/react-helmet/-/react-helmet-6.1.4.tgz#3e54a3eb37ba7fb34ffafc64f425be4e68df03b9""
++  integrity sha512-jyx50RNZXVaTGHY3MsoRPNpeiVk8b0XTPgD/O6KHF6COTDnG/+lRjPYvTK5nfWtR3xDOux0w6bHLAsaHo2ZLTA==
++  dependencies:
++    ""@types/react"" ""*""
++
++""@types/react@*"":
++  version ""17.0.37""
++  resolved ""https://registry.yarnpkg.com/@types/react/-/react-17.0.37.tgz#6884d0aa402605935c397ae689deed115caad959""
++  integrity sha512-2FS1oTqBGcH/s0E+CjrCCR9+JMpsu9b69RTFO+40ua43ZqP5MmQ4iUde/dMjWR909KxZwmOQIFq6AV6NjEG5xg==
++  dependencies:
++    ""@types/prop-types"" ""*""
++    ""@types/scheduler"" ""*""
++    csstype ""^3.0.2""
++
+ ""@types/react@^16.9.36"":
+   version ""16.14.2""
+   resolved ""https://registry.yarnpkg.com/@types/react/-/react-16.14.2.tgz#85dcc0947d0645349923c04ccef6018a1ab7538c""
+@@ -1347,6 +1363,11 @@
+   dependencies:
+     ""@types/node"" ""*""
+ 
++""@types/scheduler@*"":
++  version ""0.16.2""
++  resolved ""https://registry.yarnpkg.com/@types/scheduler/-/scheduler-0.16.2.tgz#1a62f89525723dde24ba1b01b092bf5df8ad4d39""
++  integrity sha512-hppQEBDmlwhFAXKJX2KnWLYu5yMfi91yazPb2l+lbJiwW+wdo1gNeRA+3RgNSO39WYX2euey41KEwnqesU2Jew==
++
+ ""@types/three@^0.127.1"":
+   version ""0.127.1""
+   resolved ""https://registry.yarnpkg.com/@types/three/-/three-0.127.1.tgz#0978054e5daa6485946a3f1518a76412186ae81f""
+@@ -3990,6 +4011,21 @@ react-devtools-core@^4.6.0:
+     shell-quote ""^1.6.1""
+     ws ""^7""
+ 
++react-fast-compare@^3.1.1:
++  version ""3.2.0""
++  resolved ""https://registry.yarnpkg.com/react-fast-compare/-/react-fast-compare-3.2.0.tgz#641a9da81b6a6320f270e89724fb45a0b39e43bb""
++  integrity sha512-rtGImPZ0YyLrscKI9xTpV8psd6I8VAtjKCzQDlzyDvqJA8XOW78TXYQwNRNd8g8JZnDu8q9Fu/1v4HPAVwVdHA==
++
++react-helmet@^6.1.0:
++  version ""6.1.0""
++  resolved ""https://registry.yarnpkg.com/react-helmet/-/react-helmet-6.1.0.tgz#a750d5165cb13cf213e44747502652e794468726""
++  integrity sha512-4uMzEY9nlDlgxr61NL3XbKRy1hEkXmKNXhjbAIOVw5vcFrsdYbH2FEwcNyWvWinl103nXgzYNlns9ca+8kFiWw==
++  dependencies:
++    object-assign ""^4.1.1""
++    prop-types ""^15.7.2""
++    react-fast-compare ""^3.1.1""
++    react-side-effect ""^2.1.0""
++
+ react-is@^16.7.0, react-is@^16.8.1:
+   version ""16.13.1""
+   resolved ""https://registry.yarnpkg.com/react-is/-/react-is-16.13.1.tgz#789729a4dc36de2999dc156dd6c1d9c18cea56a4""
+@@ -4019,6 +4055,11 @@ react-reconciler@^0.26.2:
+     object-assign ""^4.1.1""
+     scheduler ""^0.20.2""
+ 
++react-side-effect@^2.1.0:
++  version ""2.1.1""
++  resolved ""https://registry.yarnpkg.com/react-side-effect/-/react-side-effect-2.1.1.tgz#66c5701c3e7560ab4822a4ee2742dee215d72eb3""
++  integrity sha512-2FoTQzRNTncBVtnzxFOk2mCpcfxQpenBMbk5kSVBg5UcPqV9fRbgY2zhb7GTWWOlpFmAxhClBDlIq8Rsubz1yQ==
++
+ react-spring@^9.2.0:
+   version ""9.2.4""
+   resolved ""https://registry.yarnpkg.com/react-spring/-/react-spring-9.2.4.tgz#9d89b0321664d594f957dca9459b13d94b3dfa39""
+@@ -5232,4 +5273,4 @@ zustand@^3.3.3:
+ zustand@^3.5.1:
+   version ""3.5.7""
+   resolved ""https://registry.yarnpkg.com/zustand/-/zustand-3.5.7.tgz#add5e8d0ba031ce6e0ddf9cb76ef15306efb665f""
+-  integrity sha512-DlVFXJavIHyXTOGz6dB+8QHZsPyJcGJSEBtlp2Ivmd5SwtlCnhPo3L8LB6YRfAOJC2PbqzgoD8NMjk+y+vIF0g==
+\ No newline at end of file
++  integrity sha512-DlVFXJavIHyXTOGz6dB+8QHZsPyJcGJSEBtlp2Ivmd5SwtlCnhPo3L8LB6YRfAOJC2PbqzgoD8NMjk+y+vIF0g=="

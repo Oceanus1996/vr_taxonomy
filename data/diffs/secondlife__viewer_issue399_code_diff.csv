@@ -1,0 +1,353 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+secondlife/viewer,399,53e9b1c,indra/newview/lldrawable.cpp,modified,0,13,13,"@@ -763,19 +763,6 @@ void LLDrawable::movePartition()
+ 	if (part)
+ 	{
+ 		part->move(this, getSpatialGroup());
+-
+-		// SL-18251 ""On-screen animesh characters using pelvis offset animations
+-		// disappear when root goes off-screen""
+-		//
+-		// Update extents of the root node when Control Avatar changes it's bounds
+-		if (mRenderType == LLPipeline::RENDER_TYPE_CONTROL_AV && isRoot())
+-		{
+-			LLControlAvatar* controlAvatar = dynamic_cast<LLControlAvatar*>(getVObj().get());
+-			if (controlAvatar && controlAvatar->mControlAVBridge)
+-			{
+-				((LLSpatialGroup*)controlAvatar->mControlAVBridge->mOctree->getListener(0))->setState(LLViewerOctreeGroup::DIRTY);
+-			}
+-		}
+ 	}
+ }
+ "
+secondlife/viewer,399,53e9b1c,indra/newview/llspatialpartition.cpp,modified,32,0,32,"@@ -847,6 +847,38 @@ void LLSpatialGroup::handleChildAddition(const OctreeNode* parent, OctreeNode* c
+ 	assert_states_valid(this);
+ }
+ 
++//virtual
++void LLSpatialGroup::rebound()
++{
++    if (!isDirty())
++        return;
++
++    super::rebound();
++
++    LLSpatialBridge* bridge = getSpatialPartition()->asBridge();
++    if (bridge && mSpatialPartition->mDrawableType == LLPipeline::RENDER_TYPE_CONTROL_AV)
++    {
++        llassert(bridge->mDrawable);
++        llassert(bridge->mDrawable->getVObj());
++        llassert(bridge->mDrawable->getVObj()->isRoot());
++        llassert(mSpatialPartition->mPartitionType == LLViewerRegion::PARTITION_CONTROL_AV);
++        LLControlAvatar* controlAvatar = bridge->mDrawable->getVObj()->getControlAvatar();
++
++        llassert(controlAvatar);
++        llassert(controlAvatar->mDrawable);
++        llassert(controlAvatar->mControlAVBridge);
++        llassert(controlAvatar->mControlAVBridge->mOctree);
++        LLSpatialGroup* root = (LLSpatialGroup*)controlAvatar->mControlAVBridge->mOctree->getListener(0);
++
++        if (this == root)
++        {
++            const LLVector4a* addingExtents = controlAvatar->mDrawable->getSpatialExtents();
++            const LLXformMatrix* currentTransform = bridge->mDrawable->getXform();
++            expandExtents(addingExtents, *currentTransform);
++        }
++    }
++}
++
+ void LLSpatialGroup::destroyGL(bool keep_occlusion) 
+ {
+ 	setState(LLSpatialGroup::GEOM_DIRTY | LLSpatialGroup::IMAGE_DIRTY);"
+secondlife/viewer,399,53e9b1c,indra/newview/llspatialpartition.h,modified,4,1,5,"@@ -205,6 +205,7 @@ class LLDrawInfo : public LLRefCount
+ LL_ALIGN_PREFIX(64)
+ class LLSpatialGroup : public LLOcclusionCullingGroup
+ {
++	using super = LLOcclusionCullingGroup;
+ 	friend class LLSpatialPartition;
+ 	friend class LLOctreeStateCheck;
+ public:
+@@ -322,6 +323,9 @@ class LLSpatialGroup : public LLOcclusionCullingGroup
+ 	virtual void handleDestruction(const TreeNode* node);
+ 	virtual void handleChildAddition(const OctreeNode* parent, OctreeNode* child);
+ 
++	// LLViewerOctreeGroup
++	virtual void rebound();
++
+ public:
+ 	LL_ALIGN_16(LLVector4a mViewAngle);
+ 	LL_ALIGN_16(LLVector4a mLastUpdateViewAngle);
+@@ -703,7 +707,6 @@ class LLControlAVBridge : public LLVolumeBridge
+ 	using super = LLVolumeBridge;
+ public:
+ 	LLControlAVBridge(LLDrawable* drawablep, LLViewerRegion* regionp);
+-	virtual void updateSpatialExtents();
+ };
+ 
+ class LLHUDBridge : public LLVolumeBridge"
+secondlife/viewer,399,53e9b1c,indra/newview/llvovolume.cpp,modified,0,22,22,"@@ -5110,28 +5110,6 @@ LLControlAVBridge::LLControlAVBridge(LLDrawable* drawablep, LLViewerRegion* regi
+ 	mPartitionType = LLViewerRegion::PARTITION_CONTROL_AV;
+ }
+ 
+-void LLControlAVBridge::updateSpatialExtents()
+-{
+-	LL_PROFILE_ZONE_SCOPED_CATEGORY_DRAWABLE
+-
+-	LLControlAvatar* controlAvatar = getVObj()->getControlAvatar();
+-
+-	LLSpatialGroup* root = (LLSpatialGroup*)mOctree->getListener(0);
+-
+-	bool rootWasDirty = root->isDirty();
+-
+-	super::updateSpatialExtents(); // root becomes non-dirty here
+-
+-	// SL-18251 ""On-screen animesh characters using pelvis offset animations
+-	// disappear when root goes off-screen""
+-	//
+-	// Expand extents to include Control Avatar placed outside of the bounds
+-	if (controlAvatar && (rootWasDirty || controlAvatar->mPlaying))
+-	{
+-		root->expandExtents(controlAvatar->mDrawable->getSpatialExtents(), *mDrawable->getXform());
+-	}
+-}
+-
+ bool can_batch_texture(LLFace* facep)
+ {
+ 	if (facep->getTextureEntry()->getBumpmap())"
+secondlife/viewer,399,372459d,indra/newview/lldrawable.cpp,modified,0,13,13,"@@ -763,19 +763,6 @@ void LLDrawable::movePartition()
+ 	if (part)
+ 	{
+ 		part->move(this, getSpatialGroup());
+-
+-		// SL-18251 ""On-screen animesh characters using pelvis offset animations
+-		// disappear when root goes off-screen""
+-		//
+-		// Update extents of the root node when Control Avatar changes it's bounds
+-		if (mRenderType == LLPipeline::RENDER_TYPE_CONTROL_AV && isRoot())
+-		{
+-			LLControlAvatar* controlAvatar = dynamic_cast<LLControlAvatar*>(getVObj().get());
+-			if (controlAvatar && controlAvatar->mControlAVBridge)
+-			{
+-				((LLSpatialGroup*)controlAvatar->mControlAVBridge->mOctree->getListener(0))->setState(LLViewerOctreeGroup::DIRTY);
+-			}
+-		}
+ 	}
+ }
+ "
+secondlife/viewer,399,372459d,indra/newview/llspatialpartition.cpp,modified,37,0,37,"@@ -847,6 +847,43 @@ void LLSpatialGroup::handleChildAddition(const OctreeNode* parent, OctreeNode* c
+ 	assert_states_valid(this);
+ }
+ 
++//virtual
++void LLSpatialGroup::rebound()
++{
++    if (!isDirty())
++        return;
++
++    super::rebound();
++
++    if (mSpatialPartition->mDrawableType == LLPipeline::RENDER_TYPE_CONTROL_AV)
++    {
++        llassert(mSpatialPartition->mPartitionType == LLViewerRegion::PARTITION_CONTROL_AV);
++
++        LLSpatialBridge* bridge = getSpatialPartition()->asBridge();
++        if (bridge &&
++            bridge->mDrawable &&
++            bridge->mDrawable->getVObj() &&
++            bridge->mDrawable->getVObj()->isRoot())
++        {
++            LLControlAvatar* controlAvatar = bridge->mDrawable->getVObj()->getControlAvatar();
++            if (controlAvatar &&
++                controlAvatar->mDrawable &&
++                controlAvatar->mControlAVBridge)
++            {
++                llassert(controlAvatar->mControlAVBridge->mOctree);
++
++                LLSpatialGroup* root = (LLSpatialGroup*)controlAvatar->mControlAVBridge->mOctree->getListener(0);
++                if (this == root)
++                {
++                    const LLVector4a* addingExtents = controlAvatar->mDrawable->getSpatialExtents();
++                    const LLXformMatrix* currentTransform = bridge->mDrawable->getXform();
++                    expandExtents(addingExtents, *currentTransform);
++                }
++            }
++        }
++    }
++}
++
+ void LLSpatialGroup::destroyGL(bool keep_occlusion) 
+ {
+ 	setState(LLSpatialGroup::GEOM_DIRTY | LLSpatialGroup::IMAGE_DIRTY);"
+secondlife/viewer,399,372459d,indra/newview/llspatialpartition.h,modified,4,1,5,"@@ -205,6 +205,7 @@ class LLDrawInfo : public LLRefCount
+ LL_ALIGN_PREFIX(64)
+ class LLSpatialGroup : public LLOcclusionCullingGroup
+ {
++	using super = LLOcclusionCullingGroup;
+ 	friend class LLSpatialPartition;
+ 	friend class LLOctreeStateCheck;
+ public:
+@@ -322,6 +323,9 @@ class LLSpatialGroup : public LLOcclusionCullingGroup
+ 	virtual void handleDestruction(const TreeNode* node);
+ 	virtual void handleChildAddition(const OctreeNode* parent, OctreeNode* child);
+ 
++	// LLViewerOctreeGroup
++	virtual void rebound();
++
+ public:
+ 	LL_ALIGN_16(LLVector4a mViewAngle);
+ 	LL_ALIGN_16(LLVector4a mLastUpdateViewAngle);
+@@ -703,7 +707,6 @@ class LLControlAVBridge : public LLVolumeBridge
+ 	using super = LLVolumeBridge;
+ public:
+ 	LLControlAVBridge(LLDrawable* drawablep, LLViewerRegion* regionp);
+-	virtual void updateSpatialExtents();
+ };
+ 
+ class LLHUDBridge : public LLVolumeBridge"
+secondlife/viewer,399,372459d,indra/newview/llvovolume.cpp,modified,0,22,22,"@@ -5110,28 +5110,6 @@ LLControlAVBridge::LLControlAVBridge(LLDrawable* drawablep, LLViewerRegion* regi
+ 	mPartitionType = LLViewerRegion::PARTITION_CONTROL_AV;
+ }
+ 
+-void LLControlAVBridge::updateSpatialExtents()
+-{
+-	LL_PROFILE_ZONE_SCOPED_CATEGORY_DRAWABLE
+-
+-	LLControlAvatar* controlAvatar = getVObj()->getControlAvatar();
+-
+-	LLSpatialGroup* root = (LLSpatialGroup*)mOctree->getListener(0);
+-
+-	bool rootWasDirty = root->isDirty();
+-
+-	super::updateSpatialExtents(); // root becomes non-dirty here
+-
+-	// SL-18251 ""On-screen animesh characters using pelvis offset animations
+-	// disappear when root goes off-screen""
+-	//
+-	// Expand extents to include Control Avatar placed outside of the bounds
+-	if (controlAvatar && (rootWasDirty || controlAvatar->mPlaying))
+-	{
+-		root->expandExtents(controlAvatar->mDrawable->getSpatialExtents(), *mDrawable->getXform());
+-	}
+-}
+-
+ bool can_batch_texture(LLFace* facep)
+ {
+ 	if (facep->getTextureEntry()->getBumpmap())"
+secondlife/viewer,399,18dc7d0,indra/newview/lldrawable.cpp,modified,0,13,13,"@@ -763,19 +763,6 @@ void LLDrawable::movePartition()
+ 	if (part)
+ 	{
+ 		part->move(this, getSpatialGroup());
+-
+-		// SL-18251 ""On-screen animesh characters using pelvis offset animations
+-		// disappear when root goes off-screen""
+-		//
+-		// Update extents of the root node when Control Avatar changes it's bounds
+-		if (mRenderType == LLPipeline::RENDER_TYPE_CONTROL_AV && isRoot())
+-		{
+-			LLControlAvatar* controlAvatar = dynamic_cast<LLControlAvatar*>(getVObj().get());
+-			if (controlAvatar && controlAvatar->mControlAVBridge)
+-			{
+-				((LLSpatialGroup*)controlAvatar->mControlAVBridge->mOctree->getListener(0))->setState(LLViewerOctreeGroup::DIRTY);
+-			}
+-		}
+ 	}
+ }
+ "
+secondlife/viewer,399,18dc7d0,indra/newview/llspatialpartition.cpp,modified,37,0,37,"@@ -847,6 +847,43 @@ void LLSpatialGroup::handleChildAddition(const OctreeNode* parent, OctreeNode* c
+ 	assert_states_valid(this);
+ }
+ 
++//virtual
++void LLSpatialGroup::rebound()
++{
++    if (!isDirty())
++        return;
++
++    super::rebound();
++
++    if (mSpatialPartition->mDrawableType == LLPipeline::RENDER_TYPE_CONTROL_AV)
++    {
++        llassert(mSpatialPartition->mPartitionType == LLViewerRegion::PARTITION_CONTROL_AV);
++
++        LLSpatialBridge* bridge = getSpatialPartition()->asBridge();
++        if (bridge &&
++            bridge->mDrawable &&
++            bridge->mDrawable->getVObj() &&
++            bridge->mDrawable->getVObj()->isRoot())
++        {
++            LLControlAvatar* controlAvatar = bridge->mDrawable->getVObj()->getControlAvatar();
++            if (controlAvatar &&
++                controlAvatar->mDrawable &&
++                controlAvatar->mControlAVBridge)
++            {
++                llassert(controlAvatar->mControlAVBridge->mOctree);
++
++                LLSpatialGroup* root = (LLSpatialGroup*)controlAvatar->mControlAVBridge->mOctree->getListener(0);
++                if (this == root)
++                {
++                    const LLVector4a* addingExtents = controlAvatar->mDrawable->getSpatialExtents();
++                    const LLXformMatrix* currentTransform = bridge->mDrawable->getXform();
++                    expandExtents(addingExtents, *currentTransform);
++                }
++            }
++        }
++    }
++}
++
+ void LLSpatialGroup::destroyGL(bool keep_occlusion) 
+ {
+ 	setState(LLSpatialGroup::GEOM_DIRTY | LLSpatialGroup::IMAGE_DIRTY);"
+secondlife/viewer,399,18dc7d0,indra/newview/llspatialpartition.h,modified,4,1,5,"@@ -205,6 +205,7 @@ class LLDrawInfo : public LLRefCount
+ LL_ALIGN_PREFIX(64)
+ class LLSpatialGroup : public LLOcclusionCullingGroup
+ {
++	using super = LLOcclusionCullingGroup;
+ 	friend class LLSpatialPartition;
+ 	friend class LLOctreeStateCheck;
+ public:
+@@ -322,6 +323,9 @@ class LLSpatialGroup : public LLOcclusionCullingGroup
+ 	virtual void handleDestruction(const TreeNode* node);
+ 	virtual void handleChildAddition(const OctreeNode* parent, OctreeNode* child);
+ 
++	// LLViewerOctreeGroup
++	virtual void rebound();
++
+ public:
+ 	LL_ALIGN_16(LLVector4a mViewAngle);
+ 	LL_ALIGN_16(LLVector4a mLastUpdateViewAngle);
+@@ -703,7 +707,6 @@ class LLControlAVBridge : public LLVolumeBridge
+ 	using super = LLVolumeBridge;
+ public:
+ 	LLControlAVBridge(LLDrawable* drawablep, LLViewerRegion* regionp);
+-	virtual void updateSpatialExtents();
+ };
+ 
+ class LLHUDBridge : public LLVolumeBridge"
+secondlife/viewer,399,18dc7d0,indra/newview/llvovolume.cpp,modified,0,22,22,"@@ -5110,28 +5110,6 @@ LLControlAVBridge::LLControlAVBridge(LLDrawable* drawablep, LLViewerRegion* regi
+ 	mPartitionType = LLViewerRegion::PARTITION_CONTROL_AV;
+ }
+ 
+-void LLControlAVBridge::updateSpatialExtents()
+-{
+-	LL_PROFILE_ZONE_SCOPED_CATEGORY_DRAWABLE
+-
+-	LLControlAvatar* controlAvatar = getVObj()->getControlAvatar();
+-
+-	LLSpatialGroup* root = (LLSpatialGroup*)mOctree->getListener(0);
+-
+-	bool rootWasDirty = root->isDirty();
+-
+-	super::updateSpatialExtents(); // root becomes non-dirty here
+-
+-	// SL-18251 ""On-screen animesh characters using pelvis offset animations
+-	// disappear when root goes off-screen""
+-	//
+-	// Expand extents to include Control Avatar placed outside of the bounds
+-	if (controlAvatar && (rootWasDirty || controlAvatar->mPlaying))
+-	{
+-		root->expandExtents(controlAvatar->mDrawable->getSpatialExtents(), *mDrawable->getXform());
+-	}
+-}
+-
+ bool can_batch_texture(LLFace* facep)
+ {
+ 	if (facep->getTextureEntry()->getBumpmap())"

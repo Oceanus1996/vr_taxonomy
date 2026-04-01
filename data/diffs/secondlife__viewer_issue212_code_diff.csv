@@ -1,0 +1,39 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+secondlife/viewer,212,3914c4c,indra/newview/lldrawpoolalpha.cpp,modified,1,1,2,"@@ -157,7 +157,7 @@ void LLDrawPoolAlpha::renderPostDeferred(S32 pass)
+ { 
+     LL_PROFILE_ZONE_SCOPED_CATEGORY_DRAWPOOL;
+ 
+-    if ((!LLPipeline::sRenderTransparentWater || gCubeSnapshot) && getType() == LLDrawPool::POOL_ALPHA_PRE_WATER)
++    if (LLPipeline::isWaterClip() && getType() == LLDrawPool::POOL_ALPHA_PRE_WATER)
+     { // don't render alpha objects on the other side of the water plane if water is opaque
+         return;
+     }"
+secondlife/viewer,212,3914c4c,indra/newview/pipeline.cpp,modified,7,1,8,"@@ -2239,12 +2239,18 @@ bool LLPipeline::getVisibleExtents(LLCamera& camera, LLVector3& min, LLVector3&
+ 
+ static LLTrace::BlockTimerStatHandle FTM_CULL(""Object Culling"");
+ 
++// static
++bool LLPipeline::isWaterClip()
++{
++	return (!sRenderTransparentWater || gCubeSnapshot) && !sRenderingHUDs;
++}
++
+ void LLPipeline::updateCull(LLCamera& camera, LLCullResult& result)
+ {
+     LL_PROFILE_ZONE_SCOPED_CATEGORY_PIPELINE; //LL_RECORD_BLOCK_TIME(FTM_CULL);
+     LL_PROFILE_GPU_ZONE(""updateCull""); // should always be zero GPU time, but drop a timer to flush stuff out
+ 
+-    bool water_clip = !sRenderTransparentWater && !sRenderingHUDs;
++	bool water_clip = isWaterClip();
+ 
+     if (water_clip)
+     {"
+secondlife/viewer,212,3914c4c,indra/newview/pipeline.h,modified,2,0,2,"@@ -376,6 +376,8 @@ class LLPipeline
+ 	bool hasRenderType(const U32 type) const;
+ 	bool hasAnyRenderType(const U32 type, ...) const;
+ 
++	static bool isWaterClip();
++
+ 	void setRenderTypeMask(U32 type, ...);
+ 	// This is equivalent to 'setRenderTypeMask'
+ 	//void orRenderTypeMask(U32 type, ...);"

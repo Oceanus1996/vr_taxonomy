@@ -1,0 +1,411 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch,gpt_bug_detection
+doodlum/skyrim-community-shaders,893,d39efe9f10cd9c7508003237713a8d2b79e7e31e,features/Cloud Shadows/Shaders/CloudShadows/CloudShadows.hlsli,modified,2,2,4,"@@ -1,6 +1,6 @@
+ namespace CloudShadows
+ {
+-	TextureCube<float4> CloudShadowsTexture : register(t25);
++	TextureCube<float> CloudShadowsTexture : register(t25);
+ 
+ 	const static float CloudHeight = 2e3f / 1.428e-2;
+ 	const static float PlanetRadius = (6371e3f / 1.428e-2);
+@@ -20,7 +20,7 @@ namespace CloudShadows
+ 	float GetCloudShadowMult(float3 worldPosition, SamplerState textureSampler)
+ 	{
+ 		float3 cloudSampleDir = GetCloudShadowSampleDir(worldPosition, SharedData::DirLightDirection.xyz).xyz;
+-		float cloudCubeSample = CloudShadowsTexture.SampleLevel(textureSampler, cloudSampleDir, 0).w;
++		float cloudCubeSample = CloudShadowsTexture.SampleLevel(textureSampler, cloudSampleDir, 0).x;
+ 		return 1.0 - saturate(cloudCubeSample);
+ 	}
+ }","{""has_bug"": true, ""bugs"": [{""line_start"": 15, ""line_end"": 15, ""description"": ""Potential logic error in calculating 't'. The expression inside the sqrt function can lead to a negative value, causing a runtime error."", ""buggy_code"": ""float t = -dotprod + sqrt(dotprod * dotprod - dot(p, p) + 1);""}, {""line_start"": 23, ""line_end"": 23, ""description"": ""Possible null reference issue if 'CloudShadowsTexture' is not properly initialized or if 'cloudSampleDir' is not a valid direction."", ""buggy_code"": ""float cloudCubeSample = CloudShadowsTexture.SampleLevel(textureSampler, cloudSampleDir, 0).x;""}]}"
+doodlum/skyrim-community-shaders,893,d39efe9f10cd9c7508003237713a8d2b79e7e31e,package/Shaders/Common/ShadowSampling.hlsli,modified,5,71,76,"@@ -142,94 +142,28 @@ namespace ShadowSampling
+ 		return 1.0;
+ 	}
+ 
+-	float GetWorldShadow(float3 positionWS, float depth, float3 offset, uint eyeIndex)
++	float GetWorldShadow(float3 positionWS, float3 offset, uint eyeIndex)
+ 	{
+ 		float worldShadow = 1.0;
+ #if defined(TERRAIN_SHADOWS)
+-		float terrainShadow = TerrainShadows::GetTerrainShadow(positionWS + offset + FrameBuffer::CameraPosAdjust[eyeIndex].xyz, LinearSampler);
++		float terrainShadow = TerrainShadows::GetTerrainShadow(positionWS + offset, LinearSampler);
+ 		worldShadow = terrainShadow;
+ 		if (worldShadow == 0.0)
+ 			return 0.0;
+ #endif
+ 
+ #if defined(CLOUD_SHADOWS)
+-		worldShadow *= CloudShadows::GetCloudShadowMult(positionWS + offset, LinearSampler);
++		worldShadow *= CloudShadows::GetCloudShadowMult(positionWS, LinearSampler);
+ 		if (worldShadow == 0.0)
+ 			return 0.0;
+ #endif
+ 
+ 		return worldShadow;
+ 	}
+ 
+-	float GetVL(float3 startPosWS, float3 endPosWS, float3 normal, float noise, inout float shadow, uint eyeIndex)
+-	{
+-		float startDepth = length(startPosWS);
+-
+-		// Simulate blurring world shadows on the surface
+-		normal *= 8.0;
+-
+-		float worldShadow = GetWorldShadow(startPosWS, startDepth, normal, eyeIndex);
+-
+-		shadow = worldShadow;
+-
+-		float phase = dot(normalize(startPosWS.xyz), SharedData::DirLightDirection.xyz) * 0.5 + 0.5;
+-
+-		worldShadow *= phase;
+-
+-		ShadowData sD = SharedShadowData[0];
+-
+-		float fadeFactor = 1.0 - saturate(length(endPosWS) / 4096.0);
+-		uint sampleCount = ceil(4.0 * fadeFactor);
+-
+-		if (sampleCount == 0)
+-			return worldShadow;
+-
+-		float2 rotation;
+-		sincos(Math::TAU * noise, rotation.y, rotation.x);
+-		float2x2 rotationMatrix = float2x2(rotation.x, rotation.y, -rotation.y, rotation.x);
+-
+-		float stepSize = rcp((float)sampleCount);
+-
+-		float3 worldDir = endPosWS - startPosWS;
+-
+-		// Offset starting position
+-		startPosWS += worldDir * stepSize * noise;
+-
+-		sD.EndSplitDistances.x = SharedData::GetScreenDepth(sD.EndSplitDistances.x);
+-		sD.EndSplitDistances.y = SharedData::GetScreenDepth(sD.EndSplitDistances.y);
+-		sD.StartSplitDistances.y = SharedData::GetScreenDepth(sD.StartSplitDistances.y);
+-
+-		float vlShadow = 0;
+-
+-		for (uint i = 0; i < sampleCount; i++) {
+-			float3 samplePositionWS = startPosWS + worldDir * saturate(i * stepSize);
+-			float2 sampleOffset = mul(Random::SpiralSampleOffsets8[(float(i * 2) + noise * 8) % 8].xy, rotationMatrix);
+-
+-			float cascadeIndex = 0;
+-			float4x3 lightProjectionMatrix = sD.ShadowMapProj[eyeIndex][0];
+-			float shadowRange = sD.EndSplitDistances.x;
+-
+-			if (sD.EndSplitDistances.x < length(samplePositionWS) + 8.0 * dot(sampleOffset, float2(1, 1)))  // Stochastic cascade sampling
+-			{
+-				lightProjectionMatrix = sD.ShadowMapProj[eyeIndex][1];
+-				cascadeIndex = 1;
+-				shadowRange = sD.EndSplitDistances.y - sD.StartSplitDistances.y;
+-			}
+-
+-			float3 samplePositionLS = mul(transpose(lightProjectionMatrix), float4(samplePositionWS.xyz, 1)).xyz;
+-
+-			samplePositionLS.xy += 8.0 * sampleOffset * rcp(shadowRange);
+-
+-			float4 depths = SharedShadowMap.GatherRed(LinearSampler, float3(saturate(samplePositionLS.xy), cascadeIndex), 0);
+-
+-			vlShadow += dot(depths > (samplePositionLS.z - 0.0005), 0.25);
+-		}
+-		return lerp(worldShadow, min(worldShadow, vlShadow * stepSize), fadeFactor);
+-	}
+-
+ 	float GetEffectShadow(float3 worldPosition, float3 viewDirection, float2 screenPosition, uint eyeIndex)
+ 	{
+-		float worldShadow = GetWorldShadow(worldPosition, length(worldPosition), 0.0, eyeIndex);
++		float worldShadow = GetWorldShadow(worldPosition, FrameBuffer::CameraPosAdjust[eyeIndex], eyeIndex);
+ 		if (worldShadow != 0.0) {
+ 			float shadow = Get3DFilteredShadow(worldPosition, viewDirection, screenPosition, eyeIndex);
+ 			return min(worldShadow, shadow);
+@@ -248,7 +182,7 @@ namespace ShadowSampling
+ 
+ 	float GetWaterShadow(float noise, float3 worldPosition, uint eyeIndex)
+ 	{
+-		float worldShadow = GetWorldShadow(worldPosition, length(worldPosition), 0.0, eyeIndex);
++		float worldShadow = GetWorldShadow(worldPosition, FrameBuffer::CameraPosAdjust[eyeIndex], eyeIndex);
+ 		if (worldShadow != 0.0) {
+ 			float2 rotation;
+ 			sincos(Math::TAU * noise, rotation.y, rotation.x);","{""has_bug"": true, ""bugs"": [{""line_start"": 18, ""line_end"": 18, ""description"": ""Typo in comment: 'ditances' should be 'distances'."", ""buggy_code"": ""float4 StartSplitDistances;  // cascade start ditances int xyz, 4 int z""}, {""line_start"": 71, ""line_end"": 71, ""description"": ""Incorrect condition for cascadeIndex assignment. It should be a boolean expression, but it is currently an assignment."", ""buggy_code"": ""uint cascadeIndex = sD.EndSplitDistances.x < GetShadowDepth(positionWS.xyz + viewDirection * (sampleOffset.x + sampleOffset.y), eyeIndex);""}, {""line_start"": 119, ""line_end"": 119, ""description"": ""Incorrect type for cascadeIndex. It should be an integer, but it is declared as a float."", ""buggy_code"": ""float cascadeIndex = 0;""}, {""line_start"": 189, ""line_end"": 189, ""description"": ""Incomplete line of code. The line is cut off and does not compile."", ""buggy_code"": ""float2x2 rotationMatrix = float2x2(rotation.x, rotatio""}]}"
+doodlum/skyrim-community-shaders,893,d39efe9f10cd9c7508003237713a8d2b79e7e31e,package/Shaders/Common/SharedData.hlsli,modified,1,1,2,"@@ -7,7 +7,7 @@
+ namespace SharedData
+ {
+ 
+-#if defined(PSHADER) || defined(COMPUTESHADER)
++#if defined(PSHADER) || defined(CSHADER) || defined(COMPUTESHADER)
+ 	cbuffer SharedData : register(b5)
+ 	{
+ 		float4 WaterData[25];","{""has_bug"": true, ""bugs"": [{""line_start"": 178, ""line_end"": 178, ""description"": ""Potential null reference issue due to incorrect use of modf function. The second parameter should be a pointer to an integer, but it is being passed as an uninitialized variable."", ""buggy_code"": ""float2 cellFrac = modf(cellF, cellInt);""}, {""line_start"": 185, ""line_end"": 185, ""description"": ""Off-by-one error in the calculation of waterTile. The maximum index for WaterData is 24, but the calculation allows for a value of 25 when cellInt.x + (cellInt.y * 5) equals 25."", ""buggy_code"": ""uint waterTile = (uint)clamp(cellInt.x + (cellInt.y * 5), 0, 24);""}]}"
+doodlum/skyrim-community-shaders,893,d39efe9f10cd9c7508003237713a8d2b79e7e31e,package/Shaders/ISVolumetricLightingGenerateCS.hlsl,modified,18,0,18,"@@ -16,6 +16,21 @@ Texture3D<float4> NoiseTex : register(t3);
+ RWTexture3D<float4> DensityRW : register(u0);
+ RWTexture3D<float4> DensityCopyRW : register(u1);
+ 
++#	define LinearSampler ShadowmapSampler
++
++#	include ""Common/Framebuffer.hlsli""
++#	include ""Common/SharedData.hlsli""
++
++#	if defined(TERRAIN_SHADOWS)
++#		include ""TerrainShadows/TerrainShadows.hlsli""
++#	endif
++
++#	if defined(CLOUD_SHADOWS)
++#		include ""CloudShadows/CloudShadows.hlsli""
++#	endif
++
++#	include ""Common/ShadowSampling.hlsli""
++
+ cbuffer PerTechnique : register(b0)
+ {
+ #	ifndef VR
+@@ -127,6 +142,9 @@ cbuffer PerTechnique : register(b0)
+ 	float phaseFactor = (1 - PhaseScattering * PhaseScattering) / (4 * Math::PI * (1 - LdotN * PhaseScattering));
+ 	float phaseContribution = lerp(1, phaseFactor, PhaseContribution);
+ 
++	if (shadowContribution != 0.0)
++		shadowContribution *= ShadowSampling::GetWorldShadow(positionWS.xyz, PosAdjust[eyeIndex].xyz, eyeIndex);
++
+ 	float vl = shadowContribution * densityContribution * phaseContribution;
+ 
+ 	DensityRW[dispatchID.xyz] = vl;","{""has_bug"": true, ""bugs"": [{""line_start"": 102, ""line_end"": 102, ""description"": ""Potential off-by-one error in cascade index calculation. The condition checks if ShadowMapCount is greater than 2.5, which may lead to incorrect indexing."", ""buggy_code"": ""if (2.5 < ShadowMapCount && EndSplitDistances.y < shadowMapDepth) {""}, {""line_start"": 116, ""line_end"": 116, ""description"": ""Possible null reference issue if ShadowmapVLTex is not properly initialized or if the sampler is not set up correctly, leading to undefined behavior when sampling."", ""buggy_code"": ""float shadowMapVLValue = ShadowmapVLTex.SampleLevel(ShadowmapVLSampler, float3(positionLS.xy, cascadeIndex), 0).x;""}, {""line_start"": 138, ""line_end"": 138, ""description"": ""Potential type mismatch if positionWS.z is not within the expected range, leading to unexpected results in the smoothstep function."", ""buggy_code"": ""float densityFactor = noise * (1 - 0.75 * smoothstep(0, 1, saturate(2 * positionWS.z / 300)));""}]}"
+doodlum/skyrim-community-shaders,893,d39efe9f10cd9c7508003237713a8d2b79e7e31e,package/Shaders/Sky.hlsl,modified,8,1,9,"@@ -187,6 +187,8 @@ cbuffer AlphaTestRefCB : register(b11)
+ #		include ""CloudShadows/CloudShadows.hlsli""
+ #	endif
+ 
++Texture2D<float> TexDepthSampler : register(t17);
++
+ PS_OUTPUT main(PS_INPUT input)
+ {
+ 	PS_OUTPUT psout;
+@@ -246,7 +248,12 @@ PS_OUTPUT main(PS_INPUT input)
+ 	psout.Normal = float4(0.5, 0.5, 0, psout.Color.w);
+ 
+ #	if defined(CLOUD_SHADOWS) && defined(CLOUDS) && !defined(DEFERRED)
+-	psout.CloudShadows = psout.Color;
++	psout.CloudShadows = float4(1, 1, 1, psout.Color.w);
++
++	float depth = TexDepthSampler.Load(int3(input.Position.xy, 0));
++	if (depth < input.Position.z)
++		psout.Color.w = 0;
++
+ #	endif
+ 
+ 	return psout;","{""has_bug"": true, ""bugs"": [{""line_start"": 39, ""line_end"": 39, ""description"": ""Potential type mismatch: Color is defined as float4 in VS_OUTPUT but is assigned as float3 in some branches."", ""buggy_code"": ""float4 Color : COLOR0;""}, {""line_start"": 90, ""line_end"": 90, ""description"": ""Possible null reference issue: input.TexCoord is used without checking if it is defined."", ""buggy_code"": ""vsout.TexCoord0 = input.TexCoord;""}, {""line_start"": 100, ""line_end"": 100, ""description"": ""Potential off-by-one error: The multiplication by VParams may lead to unexpected results if VParams is not properly defined."", ""buggy_code"": ""vsout.Color.xyz = BlendColor[0].xyz * VParams;""}, {""line_start"": 229, ""line_end"": 229, ""description"": ""Incorrect condition: The comparison may lead to incorrect discarding of fragments if AlphaTestRefRS is not properly initialized."", ""buggy_code"": ""if (baseColor.w - AlphaTestRefRS.x < 0) {""}, {""line_start"": 253, ""line_end"": 253, ""description"": ""Potential resource leak: TexDepthSampler.Load may not handle cases where input.Position.xy is out of bounds."", ""buggy_code"": ""float depth = TexDepthSampler.Load(int3(input.Position.xy, 0));""}]}"
+doodlum/skyrim-community-shaders,893,d39efe9f10cd9c7508003237713a8d2b79e7e31e,src/Deferred.cpp,modified,27,0,27,"@@ -211,6 +211,33 @@ void Deferred::CopyShadowData()
+ 	}
+ }
+ 
++void Deferred::EarlyPrepasses()
++{
++	auto& shaderCache = SIE::ShaderCache::Instance();
++
++	if (!shaderCache.IsEnabled())
++		return;
++
++	State::GetSingleton()->UpdateSharedData();
++
++	ZoneScoped;
++	TracyD3D11Zone(State::GetSingleton()->tracyCtx, ""Early Prepass"");
++
++	auto context = RE::BSGraphics::Renderer::GetSingleton()->GetRuntimeData().context;
++	context->OMSetRenderTargets(0, nullptr, nullptr);  // Unbind all bound render targets
++
++	auto shadowState = RE::BSGraphics::RendererShadowState::GetSingleton();
++	GET_INSTANCE_MEMBER(stateUpdateFlags, shadowState)
++
++	stateUpdateFlags.set(RE::BSGraphics::ShaderFlags::DIRTY_RENDERTARGET);  // Run OMSetRenderTargets again
++
++	for (auto* feature : Feature::GetFeatureList()) {
++		if (feature->loaded) {
++			feature->EarlyPrepass();
++		}
++	}
++}
++
+ void Deferred::PrepassPasses()
+ {
+ 	ZoneScoped;","{""has_bug"": true, ""bugs"": [{""line_start"": 113, ""line_end"": 113, ""description"": ""Potential null reference issue when creating sampler state. If 'device' is null, this will lead to a crash."", ""buggy_code"": ""DX::ThrowIfFailed(device->CreateSamplerState(&samplerDesc, &linearSampler));""}, {""line_start"": 138, ""line_end"": 138, ""description"": ""Memory leak potential. 'perShadow' is allocated with 'new' but there is no corresponding delete, leading to a resource leak."", ""buggy_code"": ""perShadow = new Buffer(sbDesc);""}, {""line_start"": 168, ""line_end"": 168, ""description"": ""Memory leak potential. 'prevDiffuseAmbientTexture' is allocated with 'new' but there is no corresponding delete, leading to a resource leak."", ""buggy_code"": ""prevDiffuseAmbientTexture = new Texture2D(texDesc);""}, {""line_start"": 181, ""line_end"": 181, ""description"": ""Potential null reference issue when accessing 'perShadow->uav'. If 'perShadow' is null, this will lead to a crash."", ""buggy_code"": ""ID3D11UnorderedAccessView* uavs[1]{ perShadow->uav.get() };""}, {""line_start"": 205, ""line_end"": 205, ""description"": ""Potential null reference issue when accessing 'shadowView'. If 'shadowView' is null, this will lead to a crash."", ""buggy_code"": ""ID3D11ShaderResourceView* srvs[2]{ shadowView, perShadow->srv.get(), };""}]}"
+doodlum/skyrim-community-shaders,893,d39efe9f10cd9c7508003237713a8d2b79e7e31e,src/Deferred.h,modified,13,0,13,"@@ -22,6 +22,7 @@ class Deferred
+ 
+ 	void SetupResources();
+ 	void CopyShadowData();
++	void EarlyPrepasses();
+ 	void StartDeferred();
+ 	void OverrideBlendStates();
+ 	void ResetBlendStates();
+@@ -80,6 +81,16 @@ class Deferred
+ 
+ 	struct Hooks
+ 	{
++		struct Main_RenderShadowMaps
++		{
++			static void thunk()
++			{
++				func();
++				GetSingleton()->EarlyPrepasses();
++			}
++			static inline REL::Relocation<decltype(thunk)> func;
++		};
++
+ 		struct Main_RenderWorld
+ 		{
+ 			static void thunk(bool a1)
+@@ -166,6 +177,8 @@ class Deferred
+ 
+ 		static void Install()
+ 		{
++			stl::write_thunk_call<Main_RenderShadowMaps>(REL::RelocationID(35560, 36559).address() + REL::Relocate(0x2EC, 0x2EC, 0x248));
++
+ 			stl::write_thunk_call<Main_RenderWorld>(REL::RelocationID(35560, 36559).address() + REL::Relocate(0x831, 0x841, 0x791));
+ 			stl::write_thunk_call<Main_RenderWorld_Start>(REL::RelocationID(99938, 106583).address() + REL::Relocate(0x8E, 0x84));
+ 			stl::write_thunk_call<Main_RenderWorld_BlendedDecals>(REL::RelocationID(99938, 106583).address() + REL::Relocate(0x319, 0x308, 0x321));","{""has_bug"": true, ""bugs"": [{""line_start"": 66, ""line_end"": 66, ""description"": ""Potential off-by-one error in the comment regarding cascade start distances. It mentions '4 int z' which could be misleading."", ""buggy_code"": ""float4 StartSplitDistances;  // cascade start ditances int xyz, 4 int z""}, {""line_start"": 142, ""line_end"": 145, ""description"": ""The logic for handling blended decals may lead to incorrect rendering if the GeometryGroup is not properly validated. The hardcoded value '12' could lead to unexpected behavior."", ""buggy_code"": ""func(This, StartRange, EndRanges, RenderFlags, 12);""}, {""line_start"": 159, ""line_end"": 159, ""description"": ""Calling 'func(This, RenderFlags);' twice in a row without any condition may lead to unintended side effects or performance issues."", ""buggy_code"": ""func(This, RenderFlags);""}]}"
+doodlum/skyrim-community-shaders,893,d39efe9f10cd9c7508003237713a8d2b79e7e31e,src/Feature.h,modified,1,0,1,"@@ -32,6 +32,7 @@ struct Feature
+ 
+ 	virtual void DrawSettings() {}
+ 	virtual void Prepass() {}
++	virtual void EarlyPrepass() {}
+ 
+ 	virtual void DataLoaded() {}
+ 	virtual void PostPostLoad() {}","{""has_bug"": false, ""bugs"": []}"
+doodlum/skyrim-community-shaders,893,d39efe9f10cd9c7508003237713a8d2b79e7e31e,src/Features/CloudShadows.cpp,modified,30,5,35,"@@ -36,8 +36,8 @@ void CloudShadows::ModifySky(RE::BSRenderPass* Pass)
+ 
+ 		// render targets
+ 		ID3D11RenderTargetView* rtvs[4];
+-		ID3D11DepthStencilView* depthStencil;
+-		context->OMGetRenderTargets(3, rtvs, &depthStencil);
++		ID3D11DepthStencilView* dsv;
++		context->OMGetRenderTargets(3, rtvs, &dsv);
+ 
+ 		int side = -1;
+ 		for (int i = 0; i < 6; ++i)
+@@ -51,11 +51,19 @@ void CloudShadows::ModifySky(RE::BSRenderPass* Pass)
+ 		CheckResourcesSide(side);
+ 
+ 		rtvs[3] = cubemapCloudOccRTVs[side];
+-		context->OMSetRenderTargets(4, rtvs, depthStencil);
++		context->OMSetRenderTargets(4, rtvs, nullptr);
++
++		float blendFactor[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
++		UINT sampleMask = 0xffffffff;
++
++		context->OMSetBlendState(cloudShadowBlendState, blendFactor, sampleMask);
++
++		auto cubemapDepth = renderer->GetDepthStencilData().depthStencils[RE::RENDER_TARGETS_DEPTHSTENCIL::kCUBEMAP_REFLECTIONS];
++		context->PSSetShaderResources(17, 1, &cubemapDepth.depthSRV);
+ 	}
+ }
+ 
+-void CloudShadows::Prepass()
++void CloudShadows::EarlyPrepass()
+ {
+ 	if ((RE::Sky::GetSingleton()->mode.get() != RE::Sky::Mode::kFull) ||
+ 		!RE::Sky::GetSingleton()->currentClimate)
+@@ -65,6 +73,7 @@ void CloudShadows::Prepass()
+ 
+ 	ID3D11ShaderResourceView* srv = texCubemapCloudOcc->srv.get();
+ 	context->PSSetShaderResources(25, 1, &srv);
++	context->CSSetShaderResources(25, 1, &srv);
+ }
+ 
+ void CloudShadows::SetupResources()
+@@ -82,7 +91,7 @@ void CloudShadows::SetupResources()
+ 		reflections.texture->GetDesc(&texDesc);
+ 		reflections.SRV->GetDesc(&srvDesc);
+ 
+-		texDesc.Format = srvDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
++		texDesc.Format = srvDesc.Format = DXGI_FORMAT_R8_UNORM;
+ 
+ 		texCubemapCloudOcc = new Texture2D(texDesc);
+ 		texCubemapCloudOcc->CreateSRV(srvDesc);
+@@ -93,4 +102,20 @@ void CloudShadows::SetupResources()
+ 			DX::ThrowIfFailed(device->CreateRenderTargetView(texCubemapCloudOcc->resource.get(), &rtvDesc, cubemapCloudOccRTVs + i));
+ 		}
+ 	}
++	{
++		D3D11_BLEND_DESC blendDesc = {};
++		blendDesc.AlphaToCoverageEnable = false;
++		blendDesc.IndependentBlendEnable = false;
++
++		blendDesc.RenderTarget[0].BlendEnable = true;
++		blendDesc.RenderTarget[0].SrcBlend = D3D11_BLEND_SRC_ALPHA;
++		blendDesc.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
++		blendDesc.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
++		blendDesc.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_SRC_ALPHA;
++		blendDesc.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_INV_SRC_ALPHA;
++		blendDesc.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
++		blendDesc.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
++
++		DX::ThrowIfFailed(device->CreateBlendState(&blendDesc, &cloudShadowBlendState));
++	}
+ }","{""has_bug"": true, ""bugs"": [{""line_start"": 10, ""line_end"": 10, ""description"": ""Potential out-of-bounds access if 'side' is not in the range [0, 5]."", ""buggy_code"": ""static Util::FrameChecker frame_checker[6];""}, {""line_start"": 26, ""line_end"": 26, ""description"": ""Incorrect condition check; should validate if 'cubeMapRenderTarget' is not null before dereferencing."", ""buggy_code"": ""if (cubeMapRenderTarget != RE::RENDER_TARGETS_CUBEMAP::kREFLECTIONS)""}, {""line_start"": 42, ""line_end"": 42, ""description"": ""Potential off-by-one error; 'OMGetRenderTargets' should match the number of render targets expected."", ""buggy_code"": ""context->OMGetRenderTargets(3, rtvs, &dsv);""}, {""line_start"": 44, ""line_end"": 44, ""description"": ""Potential null reference; 'reflections.cubeSideRTV[i]' may not be initialized."", ""buggy_code"": ""if (rtvs[0] == reflections.cubeSideRTV[i])""}, {""line_start"": 74, ""line_end"": 74, ""description"": ""Potential null reference; 'texCubemapCloudOcc' may not be initialized before accessing 'srv'."", ""buggy_code"": ""ID3D11ShaderResourceView* srv = texCubemapCloudOcc->srv.get();""}, {""line_start"": 96, ""line_end"": 96, ""description"": ""Memory leak; 'texCubemapCloudOcc' is allocated with 'new' but never deleted."", ""buggy_code"": ""texCubemapCloudOcc = new Texture2D(texDesc);""}]}"
+doodlum/skyrim-community-shaders,893,d39efe9f10cd9c7508003237713a8d2b79e7e31e,src/Features/CloudShadows.h,modified,2,6,8,"@@ -16,20 +16,16 @@ struct CloudShadows : Feature
+ 	virtual inline std::string_view GetShaderDefineName() override { return ""CLOUD_SHADOWS""; }
+ 	virtual inline bool HasShaderDefine(RE::BSShader::Type) override { return true; }
+ 
+-	bool isCubemapPass = false;
+-	ID3D11BlendState* resetBlendState = nullptr;
+-	std::set<ID3D11BlendState*> mappedBlendStates;
+-	std::map<ID3D11BlendState*, ID3D11BlendState*> modifiedBlendStates;
+-
+ 	Texture2D* texCubemapCloudOcc = nullptr;
+ 	ID3D11RenderTargetView* cubemapCloudOccRTVs[6] = { nullptr };
++	ID3D11BlendState* cloudShadowBlendState = nullptr;
+ 
+ 	virtual void SetupResources() override;
+ 
+ 	void CheckResourcesSide(int side);
+ 	void ModifySky(RE::BSRenderPass* Pass);
+ 
+-	virtual void Prepass() override;
++	virtual void EarlyPrepass() override;
+ 
+ 	virtual inline void PostPostLoad() override { Hooks::Install(); }
+ ","{""has_bug"": true, ""bugs"": [{""line_start"": 10, ""line_end"": 10, ""description"": ""The singleton instance is created statically, which can lead to issues in multi-threaded environments where multiple threads might access it simultaneously."", ""buggy_code"": ""static CloudShadows singleton;""}, {""line_start"": 20, ""line_end"": 20, ""description"": ""The array 'cubemapCloudOccRTVs' is initialized with nullptrs, but there is no check for null before usage, which could lead to dereferencing null pointers if not properly initialized later."", ""buggy_code"": ""ID3D11RenderTargetView* cubemapCloudOccRTVs[6] = { nullptr };""}, {""line_start"": 50, ""line_end"": 50, ""description"": ""The SupportsVR method always returns true, which may not be accurate if the feature does not support VR in certain conditions, leading to incorrect behavior in VR environments."", ""buggy_code"": ""virtual bool SupportsVR() override { return true; };""}]}"
+doodlum/skyrim-community-shaders,893,d39efe9f10cd9c7508003237713a8d2b79e7e31e,src/Features/TerrainShadows.cpp,modified,2,1,3,"@@ -399,7 +399,7 @@ void TerrainShadows::UpdateShadow()
+ 	context->CSSetConstantBuffers(0, 1, &old.buffer);
+ }
+ 
+-void TerrainShadows::Prepass()
++void TerrainShadows::EarlyPrepass()
+ {
+ 	LoadHeightmap();
+ 
+@@ -416,5 +416,6 @@ void TerrainShadows::Prepass()
+ 
+ 		std::array<ID3D11ShaderResourceView*, 1> srvs = { texShadowHeight->srv.get() };
+ 		context->PSSetShaderResources(60, (uint)srvs.size(), srvs.data());
++		context->CSSetShaderResources(60, (uint)srvs.size(), srvs.data());
+ 	}
+ }","{""has_bug"": true, ""bugs"": [{""line_start"": 85, ""line_end"": 85, ""description"": ""Potential off-by-one error in heightmap parsing. The expected number of fields in the filename may not match the actual number, leading to incorrect parsing."", ""buggy_code"": ""if (splitstr.size() != (xlodgen_style ? 9 : 10)) {""}, {""line_start"": 100, ""line_end"": 100, ""description"": ""The z-coordinate for pos0 is set to a constant value (-32767 * 8.f) which may not be appropriate for all heightmaps, potentially leading to incorrect heightmap data."", ""buggy_code"": ""metadata.pos0.z = -32767 * 8.f;""}, {""line_start"": 110, ""line_end"": 110, ""description"": ""The z-coordinate for pos0 is set to a value based on std::stoi which may lead to incorrect heightmap data if the input is not valid or out of expected range."", ""buggy_code"": ""metadata.pos0.z = std::stoi(splitstr[6]) * 8.f;""}, {""line_start"": 178, ""line_end"": 178, ""description"": ""Potential null reference issue if cachedHeightmap is null, leading to dereferencing a null pointer when accessing cachedHeightmap->worldspace."", ""buggy_code"": ""return cachedHeightmap && cachedHeightmap->worldspace == worldspace->GetFormEditorID();""}, {""line_start"": 209, ""line_end"": 209, ""description"": ""The check for the existence of a heightmap may lead to issues if heightmaps is not properly initialized or if the worldspace_name is not valid."", ""buggy_code"": ""if (!heightmaps.contains(worldspace_name))  // no height map for that, but we don't remove cache""}]}"
+doodlum/skyrim-community-shaders,893,d39efe9f10cd9c7508003237713a8d2b79e7e31e,src/Features/TerrainShadows.h,modified,1,1,2,"@@ -73,7 +73,7 @@ struct TerrainShadows : public Feature
+ 
+ 	virtual void DrawSettings() override;
+ 
+-	virtual void Prepass() override;
++	virtual void EarlyPrepass() override;
+ 	void LoadHeightmap();
+ 	void Precompute();
+ 	void UpdateShadow();","{""has_bug"": true, ""bugs"": [{""line_start"": 86, ""line_end"": 86, ""description"": ""The method SupportsVR should not have a semicolon at the end of its definition."", ""buggy_code"": ""virtual bool SupportsVR() override { return true; };""}]}"
+doodlum/skyrim-community-shaders,893,d39efe9f10cd9c7508003237713a8d2b79e7e31e,src/Hooks.cpp,modified,12,0,12,"@@ -535,6 +535,17 @@ namespace Hooks
+ 		static inline REL::Relocation<decltype(thunk)> func;
+ 	};
+ 
++	struct CreateDepthStencil_Reflections
++	{
++		static void thunk(RE::BSGraphics::Renderer* This, uint32_t a_target, RE::BSGraphics::DepthStencilTargetProperties* a_properties)
++		{
++			a_properties->height = 128;
++			a_properties->width = 128;
++			func(This, a_target, a_properties);
++		}
++		static inline REL::Relocation<decltype(thunk)> func;
++	};
++
+ 	// Sky Reflection Fix
+ 	struct TESWaterReflections_Update_Actor_GetLOSPosition
+ 	{
+@@ -687,6 +698,7 @@ namespace Hooks
+ 		stl::write_thunk_call<CreateRenderTarget_MotionVectors>(REL::RelocationID(100458, 107175).address() + REL::Relocate(0x4F0, 0x4EF, 0x64E));
+ 		stl::write_thunk_call<CreateDepthStencil_PrecipitationMask>(REL::RelocationID(100458, 107175).address() + REL::Relocate(0x1245, 0x123B, 0x1917));
+ 		stl::write_thunk_call<CreateCubemapRenderTarget_Reflections>(REL::RelocationID(100458, 107175).address() + REL::Relocate(0xA25, 0xA25, 0xCD2));
++		stl::write_thunk_call<CreateDepthStencil_Reflections>(REL::RelocationID(100458, 107175).address() + REL::Relocate(0xA59, 0xA59, 0xD13));
+ 
+ #ifdef TRACY_ENABLE
+ 		stl::write_thunk_call<Main_Update>(REL::RelocationID(35551, 36544).address() + REL::Relocate(0x11F, 0x160));","{""has_bug"": true, ""bugs"": [{""line_start"": 35, ""line_end"": 35, ""description"": ""Memory leak: 'dxbcData' allocated with 'new' is not deleted if 'fopen_s' fails."", ""buggy_code"": ""uint8_t* dxbcData = new uint8_t[bytecode.second];""}, {""line_start"": 54, ""line_end"": 54, ""description"": ""Potential null pointer dereference: 'file' may not be initialized if 'fopen_s' fails."", ""buggy_code"": ""if (FILE * file; fopen_s(&file, dumpDir.c_str(), \""wb\"") == 0) {""}, {""line_start"": 123, ""line_end"": 123, ""description"": ""Logic error: The condition checks if 'vertexShader' is null or if 'pixelShader' is null when 'skipPixelShader' is false, but it should also handle the case when 'skipPixelShader' is true."", ""buggy_code"": ""if (vertexShader == nullptr || (!skipPixelShader && pixelShader == nullptr)) {""}]}"

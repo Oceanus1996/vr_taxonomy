@@ -1,0 +1,265 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+Samsung/GearVRf,1355,5ec56af9a20dc641a3f2ee72f0e6eba7a52252b1,GVRf/Framework/backend_oculus/src/main/java/org/gearvrf/OvrVrapiActivityHandler.java,modified,14,1,15,"@@ -54,6 +54,7 @@ class OvrVrapiActivityHandler implements OvrActivityHandler {
+     private EGLSurface mMainSurface;
+     boolean mVrApiInitialized;
+     private OvrViewManager mViewManager;
++    private int mCurrentSurfaceWidth, mCurrentSurfaceHeight;
+ 
+     OvrVrapiActivityHandler(final GVRActivity activity, final OvrActivityNative activityNative) throws VrapiNotAvailableException {
+         if (null == activity) {
+@@ -109,6 +110,7 @@ public void run() {
+             nativeUninitializeVrApi(mPtr);
+             mVrApiInitialized = false;
+         }
++        mCurrentSurfaceWidth = mCurrentSurfaceHeight = 0;
+     }
+ 
+     @Override
+@@ -125,7 +127,14 @@ public void onResume() {
+ 
+     @Override
+     public boolean onBack() {
+-        nativeShowConfirmQuit(mPtr);
++        if (null != mSurfaceView) {
++            mSurfaceView.queueEvent(new Runnable() {
++                @Override
++                public void run() {
++                    nativeShowConfirmQuit(mPtr);
++                }
++            });
++        }
+         return true;
+     }
+ 
+@@ -373,7 +382,11 @@ public void onSurfaceChanged(final GL10 gl, final int width, final int height) {
+                 Log.v(TAG, ""short-circuiting onSurfaceChanged; surface in portrait"");
+                 return;
+             }
++            if (mCurrentSurfaceWidth == width && mCurrentSurfaceHeight == height) {
++                return;
++            }
+ 
++            mCurrentSurfaceWidth = width; mCurrentSurfaceHeight = height;
+             nativeLeaveVrMode(mPtr);
+             destroySurfaceForTimeWarp();
+ "
+Samsung/GearVRf,1355,5ec56af9a20dc641a3f2ee72f0e6eba7a52252b1,GVRf/Framework/backend_oculus/src/main/jni/ovr_activity.cpp,modified,18,5,23,"@@ -21,6 +21,7 @@
+ #include ""VrApi_SystemUtils.h""
+ #include <cstring>
+ #include <unistd.h>
++#include <VrApi_Types.h>
+ #include ""engine/renderer/renderer.h""
+ 
+ 
+@@ -82,7 +83,14 @@ namespace gvr {
+     }
+ 
+     void GVRActivity::showConfirmQuit() {
+-        LOGV(""GVRActivity::showConfirmQuit"");
++        LOGV(""GVRActivity::showConfirmuit"");
++
++        ovrFrameParms parms = vrapi_DefaultFrameParms(&oculusJavaGlThread_, VRAPI_FRAME_INIT_BLACK_FINAL, vrapi_GetTimeInSeconds(), nullptr);
++        parms.FrameIndex = ++frameIndex;
++        parms.MinimumVsyncs = 1;
++        parms.PerformanceParms = oculusPerformanceParms_;
++        vrapi_SubmitFrame(oculusMobile_, &parms);
++
+         vrapi_ShowSystemUI(&oculusJavaMainThread_, VRAPI_SYS_UI_CONFIRM_QUIT_MENU);
+     }
+ 
+@@ -124,10 +132,15 @@ RenderTexture*  GVRActivity::createRenderTexture(int eye, int index){
+ 
+         if (nullptr == oculusMobile_) {
+             ovrModeParms parms = vrapi_DefaultModeParms(&oculusJavaGlThread_);
+-        bool AllowPowerSave, ResetWindowFullscreen;
+-            configurationHelper_.getModeConfiguration(env, AllowPowerSave, ResetWindowFullscreen);
+-            parms.Flags |=AllowPowerSave;
+-            parms.Flags |=ResetWindowFullscreen;
++
++            bool allowPowerSave, resetWindowFullscreen;
++            configurationHelper_.getModeConfiguration(env, allowPowerSave, resetWindowFullscreen);
++            if (allowPowerSave) {
++                parms.Flags |= VRAPI_MODE_FLAG_ALLOW_POWER_SAVE;
++            }
++            if (resetWindowFullscreen) {
++                parms.Flags |= VRAPI_MODE_FLAG_RESET_WINDOW_FULLSCREEN;
++            }
+ 
+             oculusMobile_ = vrapi_EnterVrMode(&parms);
+             if (gearController != nullptr) {"
+Samsung/GearVRf,1355,af9eff515eaf14aa0fa72e95e7237032eeab82d8,GVRf/Framework/backend_oculus/src/main/java/org/gearvrf/OvrVrapiActivityHandler.java,modified,14,1,15,"@@ -54,6 +54,7 @@ class OvrVrapiActivityHandler implements OvrActivityHandler {
+     private EGLSurface mMainSurface;
+     boolean mVrApiInitialized;
+     private OvrViewManager mViewManager;
++    private int mCurrentSurfaceWidth, mCurrentSurfaceHeight;
+ 
+     OvrVrapiActivityHandler(final GVRActivity activity, final OvrActivityNative activityNative) throws VrapiNotAvailableException {
+         if (null == activity) {
+@@ -109,6 +110,7 @@ public void run() {
+             nativeUninitializeVrApi(mPtr);
+             mVrApiInitialized = false;
+         }
++        mCurrentSurfaceWidth = mCurrentSurfaceHeight = 0;
+     }
+ 
+     @Override
+@@ -125,7 +127,14 @@ public void onResume() {
+ 
+     @Override
+     public boolean onBack() {
+-        nativeShowConfirmQuit(mPtr);
++        if (null != mSurfaceView) {
++            mSurfaceView.queueEvent(new Runnable() {
++                @Override
++                public void run() {
++                    nativeShowConfirmQuit(mPtr);
++                }
++            });
++        }
+         return true;
+     }
+ 
+@@ -373,7 +382,11 @@ public void onSurfaceChanged(final GL10 gl, final int width, final int height) {
+                 Log.v(TAG, ""short-circuiting onSurfaceChanged; surface in portrait"");
+                 return;
+             }
++            if (mCurrentSurfaceWidth == width && mCurrentSurfaceHeight == height) {
++                return;
++            }
+ 
++            mCurrentSurfaceWidth = width; mCurrentSurfaceHeight = height;
+             nativeLeaveVrMode(mPtr);
+             destroySurfaceForTimeWarp();
+ "
+Samsung/GearVRf,1355,af9eff515eaf14aa0fa72e95e7237032eeab82d8,GVRf/Framework/backend_oculus/src/main/jni/ovr_activity.cpp,modified,18,5,23,"@@ -21,6 +21,7 @@
+ #include ""VrApi_SystemUtils.h""
+ #include <cstring>
+ #include <unistd.h>
++#include <VrApi_Types.h>
+ #include ""engine/renderer/renderer.h""
+ 
+ 
+@@ -82,7 +83,14 @@ namespace gvr {
+     }
+ 
+     void GVRActivity::showConfirmQuit() {
+-        LOGV(""GVRActivity::showConfirmQuit"");
++        LOGV(""GVRActivity::showConfirmuit"");
++
++        ovrFrameParms parms = vrapi_DefaultFrameParms(&oculusJavaGlThread_, VRAPI_FRAME_INIT_BLACK_FINAL, vrapi_GetTimeInSeconds(), nullptr);
++        parms.FrameIndex = ++frameIndex;
++        parms.MinimumVsyncs = 1;
++        parms.PerformanceParms = oculusPerformanceParms_;
++        vrapi_SubmitFrame(oculusMobile_, &parms);
++
+         vrapi_ShowSystemUI(&oculusJavaMainThread_, VRAPI_SYS_UI_CONFIRM_QUIT_MENU);
+     }
+ 
+@@ -115,10 +123,15 @@ namespace gvr {
+ 
+         if (nullptr == oculusMobile_) {
+             ovrModeParms parms = vrapi_DefaultModeParms(&oculusJavaGlThread_);
+-        bool AllowPowerSave, ResetWindowFullscreen;
+-            configurationHelper_.getModeConfiguration(env, AllowPowerSave, ResetWindowFullscreen);
+-            parms.Flags |=AllowPowerSave;
+-            parms.Flags |=ResetWindowFullscreen;
++
++            bool allowPowerSave, resetWindowFullscreen;
++            configurationHelper_.getModeConfiguration(env, allowPowerSave, resetWindowFullscreen);
++            if (allowPowerSave) {
++                parms.Flags |= VRAPI_MODE_FLAG_ALLOW_POWER_SAVE;
++            }
++            if (resetWindowFullscreen) {
++                parms.Flags |= VRAPI_MODE_FLAG_RESET_WINDOW_FULLSCREEN;
++            }
+ 
+             oculusMobile_ = vrapi_EnterVrMode(&parms);
+             if (gearController != nullptr) {"
+Samsung/GearVRf,1355,976286b50c0dda16f6909cd10a90189cc3d3a269,GVRf/Framework/backend_oculus/src/main/java/org/gearvrf/OvrVrapiActivityHandler.java,modified,14,1,15,"@@ -54,6 +54,7 @@ class OvrVrapiActivityHandler implements OvrActivityHandler {
+     private EGLSurface mMainSurface;
+     boolean mVrApiInitialized;
+     private OvrViewManager mViewManager;
++    private int mCurrentSurfaceWidth, mCurrentSurfaceHeight;
+ 
+     OvrVrapiActivityHandler(final GVRActivity activity, final OvrActivityNative activityNative) throws VrapiNotAvailableException {
+         if (null == activity) {
+@@ -109,6 +110,7 @@ public void run() {
+             nativeUninitializeVrApi(mPtr);
+             mVrApiInitialized = false;
+         }
++        mCurrentSurfaceWidth = mCurrentSurfaceHeight = 0;
+     }
+ 
+     @Override
+@@ -125,7 +127,14 @@ public void onResume() {
+ 
+     @Override
+     public boolean onBack() {
+-        nativeShowConfirmQuit(mPtr);
++        if (null != mSurfaceView) {
++            mSurfaceView.queueEvent(new Runnable() {
++                @Override
++                public void run() {
++                    nativeShowConfirmQuit(mPtr);
++                }
++            });
++        }
+         return true;
+     }
+ 
+@@ -373,7 +382,11 @@ public void onSurfaceChanged(final GL10 gl, final int width, final int height) {
+                 Log.v(TAG, ""short-circuiting onSurfaceChanged; surface in portrait"");
+                 return;
+             }
++            if (mCurrentSurfaceWidth == width && mCurrentSurfaceHeight == height) {
++                return;
++            }
+ 
++            mCurrentSurfaceWidth = width; mCurrentSurfaceHeight = height;
+             nativeLeaveVrMode(mPtr);
+             destroySurfaceForTimeWarp();
+ "
+Samsung/GearVRf,1355,976286b50c0dda16f6909cd10a90189cc3d3a269,GVRf/Framework/backend_oculus/src/main/jni/ovr_activity.cpp,modified,18,5,23,"@@ -21,6 +21,7 @@
+ #include ""VrApi_SystemUtils.h""
+ #include <cstring>
+ #include <unistd.h>
++#include <VrApi_Types.h>
+ #include ""engine/renderer/renderer.h""
+ 
+ 
+@@ -83,7 +84,14 @@ void GVRActivity::uninitializeVrApi() {
+ 
+ void GVRActivity::showConfirmQuit() {
+     LOGV(""GVRActivity::showConfirmQuit"");
+-    vrapi_ShowSystemUI(&oculusJavaMainThread_, VRAPI_SYS_UI_CONFIRM_QUIT_MENU);
++
++    ovrFrameParms parms = vrapi_DefaultFrameParms(&oculusJavaGlThread_, VRAPI_FRAME_INIT_BLACK_FINAL, vrapi_GetTimeInSeconds(), nullptr);
++    parms.FrameIndex = ++frameIndex;
++    parms.MinimumVsyncs = 1;
++    parms.PerformanceParms = oculusPerformanceParms_;
++    vrapi_SubmitFrame(oculusMobile_, &parms);
++
++    vrapi_ShowSystemUI(&oculusJavaGlThread_, VRAPI_SYS_UI_CONFIRM_QUIT_MENU);
+ }
+ 
+ bool GVRActivity::updateSensoredScene() {
+@@ -115,10 +123,15 @@ void GVRActivity::onSurfaceChanged(JNIEnv& env) {
+ 
+     if (nullptr == oculusMobile_) {
+         ovrModeParms parms = vrapi_DefaultModeParms(&oculusJavaGlThread_);
+-        bool AllowPowerSave, ResetWindowFullscreen;
+-        configurationHelper_.getModeConfiguration(env, AllowPowerSave, ResetWindowFullscreen);
+-        parms.Flags |=AllowPowerSave;
+-        parms.Flags |=ResetWindowFullscreen;
++
++        bool allowPowerSave, resetWindowFullscreen;
++        configurationHelper_.getModeConfiguration(env, allowPowerSave, resetWindowFullscreen);
++        if (allowPowerSave) {
++            parms.Flags |= VRAPI_MODE_FLAG_ALLOW_POWER_SAVE;
++        }
++        if (resetWindowFullscreen) {
++            parms.Flags |= VRAPI_MODE_FLAG_RESET_WINDOW_FULLSCREEN;
++        }
+ 
+         oculusMobile_ = vrapi_EnterVrMode(&parms);
+         if (gearController != nullptr) {"

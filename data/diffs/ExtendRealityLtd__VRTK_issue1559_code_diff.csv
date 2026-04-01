@@ -1,0 +1,68 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+ExtendRealityLtd/VRTK,1559,ab64d10,Assets/VRTK/Documentation/API.md,modified,1,0,1,"@@ -2051,6 +2051,7 @@ Updates the `x/y/z` position of the SDK Camera Rig with an optional screen fade.
+ ### Inspector Parameters
+ 
+  * **Snap To Nearest Floor:** If this is checked, then the teleported Y position will snap to the nearest available below floor. If it is unchecked, then the teleported Y position will be where ever the destination Y position is.
++ * **Apply Playarea Parent Offset:** If this is checked then the teleported Y position will also be offset by the play area parent Transform Y position (if the play area has a parent).
+  * **Custom Raycast:** A custom raycaster to use when raycasting to find floors.
+ 
+ ### Example"
+ExtendRealityLtd/VRTK,1559,ab64d10,Assets/VRTK/Source/Scripts/Locomotion/VRTK_HeightAdjustTeleport.cs,modified,24,2,26,"@@ -29,13 +29,16 @@ public class VRTK_HeightAdjustTeleport : VRTK_BasicTeleport
+ 
+         [Tooltip(""If this is checked, then the teleported Y position will snap to the nearest available below floor. If it is unchecked, then the teleported Y position will be where ever the destination Y position is."")]
+         public bool snapToNearestFloor = true;
++        [Tooltip(""If this is checked then the teleported Y position will also be offset by the play area parent Transform Y position (if the play area has a parent)."")]
++        public bool applyPlayareaParentOffset = false;
+         [Tooltip(""A custom raycaster to use when raycasting to find floors."")]
+         public VRTK_CustomRaycast customRaycast;
+ 
+         protected override void OnEnable()
+         {
+             base.OnEnable();
+             adjustYForTerrain = true;
++            AdjustForParentOffset();
+         }
+ 
+         protected override void OnDisable()
+@@ -53,11 +56,30 @@ protected override Vector3 GetNewPosition(Vector3 tipPosition, Transform target,
+             return basePosition;
+         }
+ 
++        protected virtual void AdjustForParentOffset()
++        {
++            if (snapToNearestFloor && applyPlayareaParentOffset && playArea != null && playArea.parent != null)
++            {
++                Ray ray = new Ray(playArea.parent.position, -playArea.up);
++                RaycastHit rayCollidedWith;
++                if (VRTK_CustomRaycast.Raycast(customRaycast, ray, out rayCollidedWith, Physics.IgnoreRaycastLayer, Mathf.Infinity, QueryTriggerInteraction.Ignore))
++                {
++                    playArea.position = new Vector3(playArea.position.x, playArea.position.y + rayCollidedWith.point.y, playArea.position.z);
++                }
++            }
++        }
++
++        protected virtual float GetParentOffset()
++        {
++            return (applyPlayareaParentOffset && playArea.parent != null ? playArea.parent.transform.localPosition.y : 0f);
++        }
++
+         protected virtual float GetTeleportY(Transform target, Vector3 tipPosition)
+         {
++            float parentOffset = GetParentOffset();
+             if (!snapToNearestFloor || !ValidRigObjects())
+             {
+-                return tipPosition.y;
++                return tipPosition.y + parentOffset;
+             }
+ 
+             float newY = playArea.position.y;
+@@ -70,7 +92,7 @@ protected virtual float GetTeleportY(Transform target, Vector3 tipPosition)
+             {
+                 newY = (tipPosition.y - rayCollidedWith.distance) + heightOffset;
+             }
+-            return newY;
++            return newY + parentOffset;
+         }
+     }
+ }
+\ No newline at end of file"

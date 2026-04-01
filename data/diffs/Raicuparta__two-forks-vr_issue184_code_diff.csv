@@ -1,0 +1,582 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+Raicuparta/two-forks-vr,184,7680ee70ff33cf8f5bbee3666504b2839455e37e,TwoForksVr/TwoForksVrAssets/AssetBundles/AssetBundles,modified,0,0,0,
+Raicuparta/two-forks-vr,184,7680ee70ff33cf8f5bbee3666504b2839455e37e,TwoForksVr/TwoForksVrAssets/AssetBundles/AssetBundles.manifest,modified,1,1,2,"@@ -1,5 +1,5 @@
+ ManifestFileVersion: 0
+-CRC: 391282614
++CRC: 1357328670
+ AssetBundleManifest:
+   AssetBundleInfos:
+     Info_0:"
+Raicuparta/two-forks-vr,184,7680ee70ff33cf8f5bbee3666504b2839455e37e,TwoForksVr/TwoForksVrAssets/AssetBundles/ui,modified,0,0,0,
+Raicuparta/two-forks-vr,184,7680ee70ff33cf8f5bbee3666504b2839455e37e,TwoForksVr/TwoForksVrAssets/AssetBundles/ui.manifest,modified,3,3,6,"@@ -1,9 +1,9 @@
+ ManifestFileVersion: 0
+-CRC: 2536487924
++CRC: 3245577078
+ Hashes:
+   AssetFileHash:
+     serializedVersion: 2
+-    Hash: e888523402c0b8265fc42bcc8a7f849d
++    Hash: 6fedaaba2bbf06047b7d17a8a8765814
+   TypeTreeHash:
+     serializedVersion: 2
+     Hash: 847b612e36feea4ad10ef65dcfe5eff9
+@@ -68,13 +68,13 @@ ClassTypes:
+ - Class: 224
+   Script: {instanceID: 0}
+ Assets:
++- Assets/SteamVR/Resources/SteamVR_Fade.shader
+ - Assets/Bundles/UI/TMPro_Mobile.cginc
+ - Assets/Bundles/UI/TMP_SDF-Mobile.shader
+ - Assets/Bundles/UI/vr-settings-menu.prefab
+ - Assets/Bundles/UI/tool-picker.prefab
+ - Assets/Bundles/UI/TMPro_Surface.cginc
+ - Assets/Bundles/UI/teleport-target.prefab
+ - Assets/Bundles/UI/TMPro.cginc
+-- Assets/Bundles/UI/fade-overlay.prefab
+ - Assets/Bundles/UI/TMPro_Properties.cginc
+ Dependencies: []"
+Raicuparta/two-forks-vr,184,7680ee70ff33cf8f5bbee3666504b2839455e37e,TwoForksVr/src/Assets/VrAssetLoader.cs,modified,2,2,4,"@@ -12,10 +12,10 @@ public static class VrAssetLoader
+         public static Texture2D PlayerArmsTexture { get; private set; }
+         public static Shader TMProShader { get; private set; }
+         public static Shader HighlightShader { get; private set; }
++        public static Shader FadeShader { get; private set; }
+         public static GameObject VrSettingsMenuPrefab { get; private set; }
+         public static GameObject LeftHandPrefab { get; private set; }
+         public static GameObject RightHandPrefab { get; private set; }
+-        public static GameObject FadeOverlayPrefab { get; private set; }
+         public static GameObject TeleportTargetPrefab { get; private set; }
+ 
+         public static void LoadAssets()
+@@ -29,10 +29,10 @@ public static void LoadAssets()
+             var uiBundle = LoadBundle(""ui"");
+             ToolPickerPrefab = uiBundle.LoadAsset<GameObject>(""tool-picker"");
+             VrSettingsMenuPrefab = uiBundle.LoadAsset<GameObject>(""vr-settings-menu"");
+-            FadeOverlayPrefab = uiBundle.LoadAsset<GameObject>(""fade-overlay"");
+             TeleportTargetPrefab = uiBundle.LoadAsset<GameObject>(""teleport-target"");
+             HighlightShader = TeleportTargetPrefab.GetComponentInChildren<Renderer>().material.shader;
+             TMProShader = uiBundle.LoadAsset<Shader>(""TMP_SDF-Mobile"");
++            FadeShader = uiBundle.LoadAsset<Shader>(""SteamVR_Fade"");
+         }
+ 
+         private static AssetBundle LoadBundle(string assetName)"
+Raicuparta/two-forks-vr,184,7680ee70ff33cf8f5bbee3666504b2839455e37e,TwoForksVr/src/Locomotion/TurningController.cs,modified,6,2,8,"@@ -11,6 +11,7 @@ public class TurningController : MonoBehaviour
+     {
+         private const float smoothRotationSpeed = 150f; // TODO make this configurable.
+         private const float snapRotationAngle = 60f; // TODO make this configurable.
++        private bool isSnapTurning;
+         private VrLimbManager limbManager;
+         private vgPlayerNavigationController navigationController;
+         private VrStage stage;
+@@ -45,14 +46,16 @@ private void Update()
+ 
+         private void UpdateSnapTurning()
+         {
+-            if (ActionInputDefinitions.SnapTurnLeft.ButtonDown)
++            if (!isSnapTurning && ActionInputDefinitions.SnapTurnLeft.ButtonDown)
+             {
++                isSnapTurning = true;
+                 stage.FadeToBlack();
+                 Invoke(nameof(SnapTurnLeft), FadeOverlay.Duration);
+             }
+ 
+-            if (ActionInputDefinitions.SnapTurnRight.ButtonDown)
++            if (!isSnapTurning && ActionInputDefinitions.SnapTurnRight.ButtonDown)
+             {
++                isSnapTurning = true;
+                 stage.FadeToBlack();
+                 Invoke(nameof(SnapTurnRight), FadeOverlay.Duration);
+             }
+@@ -84,6 +87,7 @@ private void SnapTurn(float angle)
+         private void EndSnap()
+         {
+             stage.FadeToClear();
++            isSnapTurning = false;
+         }
+     }
+ }
+\ No newline at end of file"
+Raicuparta/two-forks-vr,184,7680ee70ff33cf8f5bbee3666504b2839455e37e,TwoForksVr/src/Stage/VrStage.cs,modified,6,7,13,"@@ -24,7 +24,8 @@ public class VrStage : MonoBehaviour
+         private BodyRendererManager bodyRendererManager;
+ 
+         private VRCameraManager cameraManager;
+-        private FadeOverlay fadeOverlay;
++
++        // private FadeOverlay fadeOverlay;
+         private Camera fallbackCamera;
+         private FakeParenting follow;
+         private InteractiveUiTarget interactiveUiTarget;
+@@ -60,7 +61,7 @@ public static void Create(Transform parent)
+             instance.follow = FakeParenting.Create(stageParent.transform);
+             instance.interactiveUiTarget = InteractiveUiTarget.Create(instance);
+             instance.staticUiTarget = StaticUiTarget.Create(instance);
+-            instance.fadeOverlay = FadeOverlay.Create(instance);
++            // instance.fadeOverlay = FadeOverlay.Create(instance);
+             instance.teleportController = TeleportController.Create(instance, instance.limbManager);
+             instance.turningController =
+                 TurningController.Create(instance, instance.teleportController, instance.limbManager);
+@@ -105,7 +106,7 @@ public void SetUp(Camera camera, vgPlayerController playerController)
+             interactiveUiTarget.SetUp(nextCamera);
+             staticUiTarget.SetUp(nextCamera);
+             teleportController.SetUp(playerController);
+-            fadeOverlay.SetUp(nextCamera);
++            FadeOverlay.Create(nextCamera);
+             veryLateUpdateManager.SetUp(nextCamera);
+             turningController.SetUp(playerController);
+             roomScaleBodyTransform.SetUp(playerController);
+@@ -146,14 +147,12 @@ public void Recenter()
+ 
+         public void FadeToBlack()
+         {
+-            if (!fadeOverlay) return;
+-            fadeOverlay.FadeToBlack();
++            FadeOverlay.StartFade(Color.black, FadeOverlay.Duration);
+         }
+ 
+         public void FadeToClear()
+         {
+-            if (!fadeOverlay) return;
+-            fadeOverlay.FadeToClear();
++            FadeOverlay.StartFade(Color.clear, FadeOverlay.Duration);
+         }
+ 
+         public void OpenVrSettings()"
+Raicuparta/two-forks-vr,184,7680ee70ff33cf8f5bbee3666504b2839455e37e,TwoForksVr/src/VrCamera/FadeOverlay.cs,modified,62,38,100,"@@ -1,67 +1,91 @@
+ using TwoForksVr.Assets;
+-using TwoForksVr.Helpers;
+-using TwoForksVr.Stage;
+ using UnityEngine;
+-using UnityEngine.UI;
++using Valve.VR;
+ 
+ namespace TwoForksVr.VrCamera
+ {
++    // TODO clean this up. This was adapted from SteamVR code and it has some unnecessary stuff.
+     public class FadeOverlay : MonoBehaviour
+     {
+         public const float Duration = 0.1f;
+-        private float alphaLerpT;
+-        private Canvas canvas;
+-        private Image image;
+-        private float targetAlpha;
++        private static Material fadeMaterial;
++        private static int fadeMaterialColorID = -1;
+ 
+-        public static FadeOverlay Create(VrStage vrStage)
+-        {
+-            var gameObject = Instantiate(VrAssetLoader.FadeOverlayPrefab, vrStage.transform, false);
+-            var fadeOverlay = gameObject.AddComponent<FadeOverlay>();
+-            LayerHelper.SetLayer(fadeOverlay, GameLayer.Default);
++        private Color currentColor = new Color(0, 0, 0, 0); // default starting color: black and fully transparent
+ 
+-            fadeOverlay.canvas = gameObject.GetComponent<Canvas>();
+-            fadeOverlay.canvas.enabled = false;
+-            fadeOverlay.canvas.renderMode = RenderMode.ScreenSpaceCamera;
++        // the delta-color is basically the ""speed / second"" at which the current color should change
++        private Color deltaColor = new Color(0, 0, 0, 0);
+ 
+-            fadeOverlay.image = gameObject.GetComponentInChildren<Image>();
+-            fadeOverlay.image.color = new Color(0, 0, 0, 0);
++        private Color targetColor = new Color(0, 0, 0, 0); // default target color: black and fully transparent
+ 
+-            return fadeOverlay;
++        public static void Create(Camera camera)
++        {
++            camera.gameObject.AddComponent<FadeOverlay>();
+         }
+ 
+-        public void SetUp(Camera camera)
++        private void OnEnable()
+         {
+-            if (camera)
+-            {
+-                canvas.worldCamera = camera;
+-                canvas.enabled = true;
+-            }
+-            else
++            if (fadeMaterial == null)
+             {
+-                canvas.enabled = false;
++                fadeMaterial = new Material(VrAssetLoader.FadeShader);
++                fadeMaterialColorID = Shader.PropertyToID(""fadeColor"");
+             }
++
++            SteamVR_Events.Fade.Listen(OnStartFade);
++            SteamVR_Events.FadeReady.Send();
+         }
+ 
+-        private void Update()
++        private void OnDisable()
+         {
+-            if (Mathf.Abs(targetAlpha - image.color.a) < 0.01f) return;
+-            alphaLerpT += Time.unscaledDeltaTime;
+-            image.color = new Color(0, 0, 0, Mathf.Lerp(image.color.a, targetAlpha, alphaLerpT / Duration));
++            SteamVR_Events.Fade.Remove(OnStartFade);
++        }
++
++        private void OnPostRender()
++        {
++            if (currentColor != targetColor)
++            {
++                // if the difference between the current alpha and the desired alpha is smaller than delta-alpha * deltaTime, then we're pretty much done fading:
++                if (Mathf.Abs(currentColor.a - targetColor.a) < Mathf.Abs(deltaColor.a) * Time.deltaTime)
++                {
++                    currentColor = targetColor;
++                    deltaColor = new Color(0, 0, 0, 0);
++                }
++                else
++                {
++                    currentColor += deltaColor * Time.deltaTime;
++                }
++            }
++
++            if (currentColor.a > 0 && fadeMaterial)
++            {
++                fadeMaterial.SetColor(fadeMaterialColorID, currentColor);
++                fadeMaterial.SetPass(0);
++                GL.Begin(GL.QUADS);
++
++                GL.Vertex3(-1, -1, 0);
++                GL.Vertex3(1, -1, 0);
++                GL.Vertex3(1, 1, 0);
++                GL.Vertex3(-1, 1, 0);
++                GL.End();
++            }
+         }
+ 
+-        public void FadeToBlack()
++        public static void StartFade(Color newColor, float duration, bool fadeOverlay = false)
+         {
+-            image.color = new Color(0, 0, 0, 0);
+-            alphaLerpT = 0;
+-            targetAlpha = 1;
++            SteamVR_Events.Fade.Send(newColor, duration, fadeOverlay);
+         }
+ 
+-        public void FadeToClear()
++        public void OnStartFade(Color newColor, float duration, bool fadeOverlay)
+         {
+-            image.color = new Color(0, 0, 0, 1);
+-            alphaLerpT = 0;
+-            targetAlpha = 0;
++            if (duration > 0.0f)
++            {
++                targetColor = newColor;
++                deltaColor = (targetColor - currentColor) / duration;
++            }
++            else
++            {
++                currentColor = newColor;
++            }
+         }
+     }
+ }
+\ No newline at end of file"
+Raicuparta/two-forks-vr,184,7680ee70ff33cf8f5bbee3666504b2839455e37e,UnityHelper/Assets/Bundles/UI/fade-overlay.prefab,removed,0,136,136,"@@ -1,136 +0,0 @@
+-%YAML 1.1
+-%TAG !u! tag:unity3d.com,2011:
+---- !u!1001 &100100000
+-Prefab:
+-  m_ObjectHideFlags: 1
+-  serializedVersion: 2
+-  m_Modification:
+-    m_TransformParent: {fileID: 0}
+-    m_Modifications: []
+-    m_RemovedComponents: []
+-  m_ParentPrefab: {fileID: 0}
+-  m_RootGameObject: {fileID: 1445482854308888}
+-  m_IsPrefabParent: 1
+---- !u!1 &1040004756029592
+-GameObject:
+-  m_ObjectHideFlags: 0
+-  m_PrefabParentObject: {fileID: 0}
+-  m_PrefabInternal: {fileID: 100100000}
+-  serializedVersion: 5
+-  m_Component:
+-  - component: {fileID: 224050269475117368}
+-  - component: {fileID: 222143536485143992}
+-  - component: {fileID: 114129333710263066}
+-  m_Layer: 5
+-  m_Name: Black
+-  m_TagString: Untagged
+-  m_Icon: {fileID: 0}
+-  m_NavMeshLayer: 0
+-  m_StaticEditorFlags: 0
+-  m_IsActive: 1
+---- !u!1 &1445482854308888
+-GameObject:
+-  m_ObjectHideFlags: 0
+-  m_PrefabParentObject: {fileID: 0}
+-  m_PrefabInternal: {fileID: 100100000}
+-  serializedVersion: 5
+-  m_Component:
+-  - component: {fileID: 224973769962851808}
+-  - component: {fileID: 223250741547418596}
+-  m_Layer: 5
+-  m_Name: fade-overlay
+-  m_TagString: Untagged
+-  m_Icon: {fileID: 0}
+-  m_NavMeshLayer: 0
+-  m_StaticEditorFlags: 0
+-  m_IsActive: 1
+---- !u!114 &114129333710263066
+-MonoBehaviour:
+-  m_ObjectHideFlags: 1
+-  m_PrefabParentObject: {fileID: 0}
+-  m_PrefabInternal: {fileID: 100100000}
+-  m_GameObject: {fileID: 1040004756029592}
+-  m_Enabled: 1
+-  m_EditorHideFlags: 0
+-  m_Script: {fileID: -765806418, guid: f70555f144d8491a825f0804e09c671c, type: 3}
+-  m_Name: 
+-  m_EditorClassIdentifier: 
+-  m_Material: {fileID: 0}
+-  m_Color: {r: 0, g: 0, b: 0, a: 1}
+-  m_RaycastTarget: 0
+-  m_OnCullStateChanged:
+-    m_PersistentCalls:
+-      m_Calls: []
+-    m_TypeName: UnityEngine.UI.MaskableGraphic+CullStateChangedEvent, UnityEngine.UI,
+-      Version=1.0.0.0, Culture=neutral, PublicKeyToken=null
+-  m_Sprite: {fileID: 0}
+-  m_Type: 0
+-  m_PreserveAspect: 0
+-  m_FillCenter: 1
+-  m_FillMethod: 4
+-  m_FillAmount: 1
+-  m_FillClockwise: 1
+-  m_FillOrigin: 0
+---- !u!222 &222143536485143992
+-CanvasRenderer:
+-  m_ObjectHideFlags: 1
+-  m_PrefabParentObject: {fileID: 0}
+-  m_PrefabInternal: {fileID: 100100000}
+-  m_GameObject: {fileID: 1040004756029592}
+---- !u!223 &223250741547418596
+-Canvas:
+-  m_ObjectHideFlags: 1
+-  m_PrefabParentObject: {fileID: 0}
+-  m_PrefabInternal: {fileID: 100100000}
+-  m_GameObject: {fileID: 1445482854308888}
+-  m_Enabled: 1
+-  serializedVersion: 3
+-  m_RenderMode: 1
+-  m_Camera: {fileID: 0}
+-  m_PlaneDistance: 0.1
+-  m_PixelPerfect: 0
+-  m_ReceivesEvents: 1
+-  m_OverrideSorting: 0
+-  m_OverridePixelPerfect: 0
+-  m_SortingBucketNormalizedSize: 0
+-  m_AdditionalShaderChannelsFlag: 0
+-  m_SortingLayerID: 0
+-  m_SortingOrder: 1000
+-  m_TargetDisplay: 0
+---- !u!224 &224050269475117368
+-RectTransform:
+-  m_ObjectHideFlags: 1
+-  m_PrefabParentObject: {fileID: 0}
+-  m_PrefabInternal: {fileID: 100100000}
+-  m_GameObject: {fileID: 1040004756029592}
+-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+-  m_LocalPosition: {x: 0, y: 0, z: 0}
+-  m_LocalScale: {x: 1, y: 1, z: 1}
+-  m_Children: []
+-  m_Father: {fileID: 224973769962851808}
+-  m_RootOrder: 0
+-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+-  m_AnchorMin: {x: 0, y: 0}
+-  m_AnchorMax: {x: 1, y: 1}
+-  m_AnchoredPosition: {x: 0, y: 0}
+-  m_SizeDelta: {x: 2000, y: 2000}
+-  m_Pivot: {x: 0.5, y: 0.5}
+---- !u!224 &224973769962851808
+-RectTransform:
+-  m_ObjectHideFlags: 1
+-  m_PrefabParentObject: {fileID: 0}
+-  m_PrefabInternal: {fileID: 100100000}
+-  m_GameObject: {fileID: 1445482854308888}
+-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+-  m_LocalPosition: {x: 0, y: 0, z: 0}
+-  m_LocalScale: {x: 0, y: 0, z: 0}
+-  m_Children:
+-  - {fileID: 224050269475117368}
+-  m_Father: {fileID: 0}
+-  m_RootOrder: 0
+-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+-  m_AnchorMin: {x: 0, y: 0}
+-  m_AnchorMax: {x: 0, y: 0}
+-  m_AnchoredPosition: {x: 0, y: 0}
+-  m_SizeDelta: {x: 0, y: 0}
+-  m_Pivot: {x: 0, y: 0}"
+Raicuparta/two-forks-vr,184,7680ee70ff33cf8f5bbee3666504b2839455e37e,UnityHelper/Assets/Bundles/UI/fade-overlay.prefab.meta,removed,0,8,8,"@@ -1,8 +0,0 @@
+-fileFormatVersion: 2
+-guid: c7935cca8e1b37a4fac675402d1786eb
+-NativeFormatImporter:
+-  externalObjects: {}
+-  mainObjectFileID: 100100000
+-  userData: 
+-  assetBundleName: ui
+-  assetBundleVariant: "
+Raicuparta/two-forks-vr,184,7680ee70ff33cf8f5bbee3666504b2839455e37e,UnityHelper/Assets/Scene.unity,modified,3,121,124,"@@ -244,7 +244,7 @@ Prefab:
+       objectReference: {fileID: 0}
+     - target: {fileID: 400004, guid: c05c39494fc228e47b9e2c89b41b2518, type: 3}
+       propertyPath: m_RootOrder
+-      value: 7
++      value: 6
+       objectReference: {fileID: 0}
+     - target: {fileID: 400004, guid: c05c39494fc228e47b9e2c89b41b2518, type: 3}
+       propertyPath: m_LocalEulerAnglesHint.x
+@@ -621,7 +621,7 @@ Prefab:
+       objectReference: {fileID: 0}
+     - target: {fileID: 4636807315544752, guid: 6f75cb18c8fc9534b8175df2dd34759c, type: 2}
+       propertyPath: m_RootOrder
+-      value: 6
++      value: 5
+       objectReference: {fileID: 0}
+     m_RemovedComponents: []
+   m_ParentPrefab: {fileID: 100100000, guid: 6f75cb18c8fc9534b8175df2dd34759c, type: 2}
+@@ -710,131 +710,13 @@ Transform:
+   m_LocalScale: {x: 1, y: 1, z: 1}
+   m_Children: []
+   m_Father: {fileID: 0}
+-  m_RootOrder: 5
++  m_RootOrder: 4
+   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+ --- !u!4 &1405118606 stripped
+ Transform:
+   m_PrefabParentObject: {fileID: 4835675590386574, guid: 448f305bf64730e4495d001046b9806a,
+     type: 2}
+   m_PrefabInternal: {fileID: 595009880}
+---- !u!1001 &1655781468
+-Prefab:
+-  m_ObjectHideFlags: 0
+-  serializedVersion: 2
+-  m_Modification:
+-    m_TransformParent: {fileID: 0}
+-    m_Modifications:
+-    - target: {fileID: 224973769962851808, guid: c7935cca8e1b37a4fac675402d1786eb,
+-        type: 2}
+-      propertyPath: m_LocalPosition.x
+-      value: 0
+-      objectReference: {fileID: 0}
+-    - target: {fileID: 224973769962851808, guid: c7935cca8e1b37a4fac675402d1786eb,
+-        type: 2}
+-      propertyPath: m_LocalPosition.y
+-      value: 0
+-      objectReference: {fileID: 0}
+-    - target: {fileID: 224973769962851808, guid: c7935cca8e1b37a4fac675402d1786eb,
+-        type: 2}
+-      propertyPath: m_LocalPosition.z
+-      value: 0
+-      objectReference: {fileID: 0}
+-    - target: {fileID: 224973769962851808, guid: c7935cca8e1b37a4fac675402d1786eb,
+-        type: 2}
+-      propertyPath: m_LocalRotation.x
+-      value: 0
+-      objectReference: {fileID: 0}
+-    - target: {fileID: 224973769962851808, guid: c7935cca8e1b37a4fac675402d1786eb,
+-        type: 2}
+-      propertyPath: m_LocalRotation.y
+-      value: 0
+-      objectReference: {fileID: 0}
+-    - target: {fileID: 224973769962851808, guid: c7935cca8e1b37a4fac675402d1786eb,
+-        type: 2}
+-      propertyPath: m_LocalRotation.z
+-      value: 0
+-      objectReference: {fileID: 0}
+-    - target: {fileID: 224973769962851808, guid: c7935cca8e1b37a4fac675402d1786eb,
+-        type: 2}
+-      propertyPath: m_LocalRotation.w
+-      value: 1
+-      objectReference: {fileID: 0}
+-    - target: {fileID: 224973769962851808, guid: c7935cca8e1b37a4fac675402d1786eb,
+-        type: 2}
+-      propertyPath: m_RootOrder
+-      value: 4
+-      objectReference: {fileID: 0}
+-    - target: {fileID: 224973769962851808, guid: c7935cca8e1b37a4fac675402d1786eb,
+-        type: 2}
+-      propertyPath: m_AnchoredPosition.x
+-      value: 0
+-      objectReference: {fileID: 0}
+-    - target: {fileID: 224973769962851808, guid: c7935cca8e1b37a4fac675402d1786eb,
+-        type: 2}
+-      propertyPath: m_AnchoredPosition.y
+-      value: 0
+-      objectReference: {fileID: 0}
+-    - target: {fileID: 224973769962851808, guid: c7935cca8e1b37a4fac675402d1786eb,
+-        type: 2}
+-      propertyPath: m_SizeDelta.x
+-      value: 0
+-      objectReference: {fileID: 0}
+-    - target: {fileID: 224973769962851808, guid: c7935cca8e1b37a4fac675402d1786eb,
+-        type: 2}
+-      propertyPath: m_SizeDelta.y
+-      value: 0
+-      objectReference: {fileID: 0}
+-    - target: {fileID: 224973769962851808, guid: c7935cca8e1b37a4fac675402d1786eb,
+-        type: 2}
+-      propertyPath: m_AnchorMin.x
+-      value: 0
+-      objectReference: {fileID: 0}
+-    - target: {fileID: 224973769962851808, guid: c7935cca8e1b37a4fac675402d1786eb,
+-        type: 2}
+-      propertyPath: m_AnchorMin.y
+-      value: 0
+-      objectReference: {fileID: 0}
+-    - target: {fileID: 224973769962851808, guid: c7935cca8e1b37a4fac675402d1786eb,
+-        type: 2}
+-      propertyPath: m_AnchorMax.x
+-      value: 0
+-      objectReference: {fileID: 0}
+-    - target: {fileID: 224973769962851808, guid: c7935cca8e1b37a4fac675402d1786eb,
+-        type: 2}
+-      propertyPath: m_AnchorMax.y
+-      value: 0
+-      objectReference: {fileID: 0}
+-    - target: {fileID: 224973769962851808, guid: c7935cca8e1b37a4fac675402d1786eb,
+-        type: 2}
+-      propertyPath: m_Pivot.x
+-      value: 0
+-      objectReference: {fileID: 0}
+-    - target: {fileID: 224973769962851808, guid: c7935cca8e1b37a4fac675402d1786eb,
+-        type: 2}
+-      propertyPath: m_Pivot.y
+-      value: 0
+-      objectReference: {fileID: 0}
+-    - target: {fileID: 223250741547418596, guid: c7935cca8e1b37a4fac675402d1786eb,
+-        type: 2}
+-      propertyPath: m_Camera
+-      value: 
+-      objectReference: {fileID: 1900725050}
+-    - target: {fileID: 1445482854308888, guid: c7935cca8e1b37a4fac675402d1786eb, type: 2}
+-      propertyPath: m_IsActive
+-      value: 0
+-      objectReference: {fileID: 0}
+-    - target: {fileID: 114129333710263066, guid: c7935cca8e1b37a4fac675402d1786eb,
+-        type: 2}
+-      propertyPath: m_Color.a
+-      value: 1
+-      objectReference: {fileID: 0}
+-    - target: {fileID: 1040004756029592, guid: c7935cca8e1b37a4fac675402d1786eb, type: 2}
+-      propertyPath: m_IsActive
+-      value: 1
+-      objectReference: {fileID: 0}
+-    m_RemovedComponents: []
+-  m_ParentPrefab: {fileID: 100100000, guid: c7935cca8e1b37a4fac675402d1786eb, type: 2}
+-  m_IsPrefabParent: 0
+ --- !u!1 &1900725046
+ GameObject:
+   m_ObjectHideFlags: 0"
+Raicuparta/two-forks-vr,184,7680ee70ff33cf8f5bbee3666504b2839455e37e,UnityHelper/Assets/SteamVR/Resources/SteamVR_Fade.shader.meta,modified,2,3,5,"@@ -1,9 +1,8 @@
+ fileFormatVersion: 2
+ guid: 9f884441bea153347be721454dc13716
+-timeCreated: 1433284862
+-licenseType: Store
+ ShaderImporter:
++  externalObjects: {}
+   defaultTextures: []
+   userData: 
+-  assetBundleName: 
++  assetBundleName: ui
+   assetBundleVariant: "

@@ -1,0 +1,71 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aardvarkxr/aardvark,77,7c57d0429c0f4d03fd60881537c2aff6bbd65fe9,src/avrenderer/uri_request_handler.cpp,modified,7,1,8,"@@ -196,7 +196,7 @@ void CUriRequest::start()
+ 		}
+ 		m_state = EState::ReadyToComplete;
+ 	}
+-	else
++	else if( tools::IsHttpUri( m_uri ) )
+ 	{
+ 		m_cefRequestClient = new CCefUriRequest( this );
+ 
+@@ -208,6 +208,12 @@ void CUriRequest::start()
+ 
+ 		m_state = EState::Running;
+ 	}
++	else
++	{
++		LOG( ERROR ) << ""Invalid URI %s requested "" << m_uri << std::endl;
++		m_result.success = false;
++		m_state = EState::ReadyToComplete;
++	}
+ }
+ 
+ "
+aardvarkxr/aardvark,77,7c57d0429c0f4d03fd60881537c2aff6bbd65fe9,src/public/tools/pathtools.h,modified,1,0,1,"@@ -6,6 +6,7 @@
+ namespace tools
+ {
+ 	bool IsFileUri( const std::string & sUri );
++	bool IsHttpUri(const std::string& sUri);
+ 
+ 	std::filesystem::path FileUriToPath( const std::string & sUri );
+ 	std::string PathToFileUri( const std::filesystem::path & path );"
+aardvarkxr/aardvark,77,7c57d0429c0f4d03fd60881537c2aff6bbd65fe9,src/tools/pathtools.cpp,modified,7,0,7,"@@ -21,6 +21,13 @@ namespace tools
+ 			|| 0 == std::strncmp( sUri.c_str(), ""FILE://"", 7 );
+ 	}
+ 
++	bool IsHttpUri(const std::string& sUri)
++	{
++		std::string lowerUri = tools::stringToLower(sUri);
++		return 0 == std::strncmp(lowerUri.c_str(), ""http://"", 7 )
++			|| 0 == std::strncmp(lowerUri.c_str(), ""https://"", 8 );
++	}
++
+ 	std::filesystem::path FileUriToPath( const std::string & sUri )
+ 	{
+ 		if ( sUri.size() < 8 || !IsFileUri( sUri ) )"
+aardvarkxr/aardvark,77,7c57d0429c0f4d03fd60881537c2aff6bbd65fe9,websrc/server/server.ts,modified,11,1,12,"@@ -9,7 +9,7 @@ import { StoredGadget, AvGadgetManifest, AvNode, AvNodeType, AvNodeTransform, Av
+ 	MsgDetachGadgetFromHook, MessageType, EndpointType, MsgSetEndpointType, Envelope, 
+ 	MsgNewEndpoint, MsgLostEndpoint, parseEnvelope, MsgError, AardvarkPort,
+ 	MsgGetInstalledGadgets, MsgGetInstalledGadgetsResponse, MsgDestroyGadget, WebSocketCloseCodes, 
+-	MsgResourceLoadFailed, 	MsgInstallGadget} from '@aardvarkxr/aardvark-shared';
++	MsgResourceLoadFailed, 	MsgInstallGadget, EVolumeType} from '@aardvarkxr/aardvark-shared';
+ import * as express from 'express';
+ import * as http from 'http';
+ import * as WebSocket from 'ws';
+@@ -615,6 +615,16 @@ class CGadgetData
+ 						nodeId: node.id,
+ 					};
+ 				}
++
++				switch( node.propVolume.type )
++				{
++					case EVolumeType.ModelBox:
++						if( !isUrl( node.propVolume.uri ) )
++						{
++							node.propVolume.uri = this.m_gadgetUri + ""/"" + node.propVolume.uri;
++						}
++						break;
++				}
+ 				break;
+ 
+ 			case AvNodeType.Transform:"

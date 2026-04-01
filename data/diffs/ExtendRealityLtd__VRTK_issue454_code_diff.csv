@@ -1,0 +1,101 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch,gpt_bug_detection
+ExtendRealityLtd/VRTK,454,6c73404,Assets/VRTK/Scripts/Abstractions/VRTK_WorldPointer.cs,modified,35,22,57,"@@ -182,14 +182,7 @@ protected virtual void PointerIn()
+             }
+ 
+             OnDestinationMarkerEnter(SetDestinationMarkerEvent(pointerContactDistance, pointerContactTarget, destinationPosition, controllerIndex));
+-
+-            interactableObject = pointerContactTarget.GetComponent<VRTK_InteractableObject>();
+-            bool cannotUseBecauseNotGrabbed = (interactableObject && interactableObject.useOnlyIfGrabbed && !interactableObject.IsGrabbed());
+-
+-            if (interactableObject && interactableObject.pointerActivatesUseAction && interactableObject.holdButtonToUse && !cannotUseBecauseNotGrabbed)
+-            {
+-                interactableObject.StartUsing(gameObject);
+-            }
++            StartUseAction(pointerContactTarget);
+         }
+ 
+         protected virtual void PointerOut()
+@@ -200,11 +193,7 @@ protected virtual void PointerOut()
+             }
+ 
+             OnDestinationMarkerExit(SetDestinationMarkerEvent(pointerContactDistance, pointerContactTarget, destinationPosition, controllerIndex));
+-
+-            if (interactableObject && interactableObject.pointerActivatesUseAction && interactableObject.holdButtonToUse)
+-            {
+-                interactableObject.StopUsing(gameObject);
+-            }
++            StopUseAction();
+         }
+ 
+         protected virtual void PointerSet()
+@@ -216,20 +205,20 @@ protected virtual void PointerSet()
+ 
+             activateDelayTimer = Time.time + activateDelay;
+ 
+-            var interactableObject = pointerContactTarget.GetComponent<VRTK_InteractableObject>();
+-            if (interactableObject && interactableObject.pointerActivatesUseAction)
++            var setInteractableObject = pointerContactTarget.GetComponent<VRTK_InteractableObject>();
++            if (PointerActivatesUseAction(setInteractableObject))
+             {
+-                if (interactableObject.IsUsing())
++                if (setInteractableObject.IsUsing())
+                 {
+-                    interactableObject.StopUsing(gameObject);
++                    setInteractableObject.StopUsing(gameObject);
+                 }
+-                else if (!interactableObject.holdButtonToUse)
++                else if (!setInteractableObject.holdButtonToUse)
+                 {
+-                    interactableObject.StartUsing(gameObject);
++                    setInteractableObject.StartUsing(gameObject);
+                 }
+             }
+ 
+-            if (!playAreaCursorCollided && (interactableObject == null || !interactableObject.pointerActivatesUseAction))
++            if (!playAreaCursorCollided && !PointerActivatesUseAction(interactableObject))
+             {
+                 OnDestinationMarkerSet(SetDestinationMarkerEvent(pointerContactDistance, pointerContactTarget, destinationPosition, controllerIndex));
+             }
+@@ -247,9 +236,9 @@ protected virtual void TogglePointer(bool state)
+             {
+                 playAreaCursor.gameObject.SetActive(playAreaState);
+             }
+-            if (!state && interactableObject && interactableObject.pointerActivatesUseAction && interactableObject.holdButtonToUse && interactableObject.IsUsing())
++            if (!state && PointerActivatesUseAction(interactableObject) && interactableObject.holdButtonToUse && interactableObject.IsUsing())
+             {
+-                interactableObject.StopUsing(this.gameObject);
++                interactableObject.StopUsing(gameObject);
+             }
+         }
+ 
+@@ -286,6 +275,30 @@ protected virtual bool ValidDestination(Transform target, Vector3 destinationPos
+             return (validNavMeshLocation && target && target.tag != invalidTargetWithTagOrClass && target.GetComponent(invalidTargetWithTagOrClass) == null);
+         }
+ 
++        private bool PointerActivatesUseAction(VRTK_InteractableObject io)
++        {
++            return (io && io.pointerActivatesUseAction && io.IsValidInteractableController(controller.gameObject, io.allowedUseControllers));
++        }
++
++        private void StartUseAction(Transform target)
++        {
++            interactableObject = target.GetComponent<VRTK_InteractableObject>();
++            bool cannotUseBecauseNotGrabbed = (interactableObject && interactableObject.useOnlyIfGrabbed && !interactableObject.IsGrabbed());
++
++            if (PointerActivatesUseAction(interactableObject) && interactableObject.holdButtonToUse && !cannotUseBecauseNotGrabbed)
++            {
++                interactableObject.StartUsing(gameObject);
++            }
++        }
++
++        private void StopUseAction()
++        {
++            if (PointerActivatesUseAction(interactableObject) && interactableObject.holdButtonToUse)
++            {
++                interactableObject.StopUsing(gameObject);
++            }
++        }
++
+         private void TurnOnBeam(uint index)
+         {
+             beamEnabledState++;","{""has_bug"": true, ""bugs"": [{""line_start"": 153, ""line_end"": 153, ""description"": ""Reference to 'headsetPositionCompensation' is not defined in the class, which will lead to a compilation error."", ""buggy_code"": ""if (headsetPositionCompensation)""}, {""line_start"": 208, ""line_end"": 208, ""description"": ""The variable 'po' is not defined, which will lead to a compilation error. It seems to be an incomplete line of code."", ""buggy_code"": ""var setInteractableObject = po""}]}"

@@ -1,0 +1,217 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+secondlife/viewer,3157,d11bf70,indra/newview/app_settings/shaders/class2/deferred/alphaF.glsl,modified,16,5,21,"@@ -36,6 +36,7 @@ out vec4 frag_color;
+ uniform mat3 env_mat;
+ uniform vec3 sun_dir;
+ uniform vec3 moon_dir;
++uniform int classic_mode;
+ 
+ #ifdef USE_DIFFUSE_TEX
+ uniform sampler2D diffuseMap;
+@@ -241,10 +242,10 @@ void main()
+ 
+     calcAtmosphericVarsLinear(pos.xyz, norm, light_dir, sunlit, amblit, additive, atten);
+ 
+-    vec3 sunlit_linear = srgb_to_linear(sunlit);
++    vec3 sunlit_linear = sunlit;
+     vec3 amblit_linear = amblit;
+ 
+-    vec3 irradiance;
++    vec3 irradiance = srgb_to_linear(amblit);
+     vec3 glossenv;
+     vec3 legacyenv;
+     sampleReflectionProbesLegacy(irradiance, glossenv, legacyenv, frag, pos.xyz, norm.xyz, 0.0, 0.0, true, amblit_linear);
+@@ -260,11 +261,21 @@ void main()
+ 
+     color.a   = final_alpha;
+ 
+-    vec3 sun_contrib = min(final_da, shadow) * sunlit_linear;
+-
+     color.rgb = irradiance;
++    
++    if (classic_mode > 0)
++    {
++        final_da = pow(final_da,1.2);
++        vec3 sun_contrib = vec3(min(final_da, shadow));
+ 
+-    color.rgb += sun_contrib;
++        color.rgb = srgb_to_linear(color.rgb * 0.9 + linear_to_srgb(sun_contrib) * sunlit_linear * 0.7);
++        sunlit_linear = srgb_to_linear(sunlit_linear);
++    }
++    else
++    {
++        vec3 sun_contrib = min(final_da, shadow) * sunlit_linear;
++        color.rgb += sun_contrib;
++    }
+ 
+     color.rgb *= diffuse_linear.rgb;
+ "
+secondlife/viewer,3157,d11bf70,indra/newview/app_settings/shaders/class2/deferred/pbralphaF.glsl,modified,2,2,4,"@@ -161,7 +161,7 @@ void main()
+     vec3 atten;
+     calcAtmosphericVarsLinear(pos.xyz, norm, light_dir, sunlit, amblit, additive, atten);
+ 
+-    vec3 sunlit_linear = srgb_to_linear(sunlit);
++    vec3 sunlit_linear = sunlit;
+ 
+     vec2 frag = vary_fragcoord.xy/vary_fragcoord.z*0.5+0.5;
+ 
+@@ -182,7 +182,7 @@ void main()
+ 
+     // PBR IBL
+     float gloss      = 1.0 - perceptualRoughness;
+-    vec3  irradiance = vec3(0);
++    vec3  irradiance = amblit;
+     vec3  radiance  = vec3(0);
+     sampleReflectionProbes(irradiance, radiance, vary_position.xy*0.5+0.5, pos.xyz, norm.xyz, gloss, true, amblit);
+ "
+secondlife/viewer,3157,d11bf70,indra/newview/app_settings/shaders/class3/deferred/materialF.glsl,modified,18,4,22,"@@ -36,6 +36,7 @@
+ 
+ uniform float emissive_brightness;  // fullbright flag, 1.0 == fullbright, 0.0 otherwise
+ uniform int sun_up_factor;
++uniform int classic_mode;
+ 
+ vec4 applySkyAndWaterFog(vec3 pos, vec3 additive, vec3 atten, vec4 color);
+ vec3 scaleSoftClipFragLinear(vec3 l);
+@@ -329,19 +330,32 @@ void main()
+     vec3 atten;
+     calcAtmosphericVarsLinear(pos.xyz, norm.xyz, light_dir, sunlit, amblit, additive, atten);
+ 
+-    vec3 sunlit_linear = srgb_to_linear(sunlit);
++    vec3 sunlit_linear = sunlit;
+     vec3 amblit_linear = amblit;
+ 
+-    vec3 ambenv;
++    vec3 ambenv = srgb_to_linear(amblit);
+     vec3 glossenv;
+     vec3 legacyenv;
+     sampleReflectionProbesLegacy(ambenv, glossenv, legacyenv, pos.xy*0.5+0.5, pos.xyz, norm.xyz, glossiness, env, true, amblit_linear);
+ 
+     color = ambenv;
+ 
+     float da          = clamp(dot(norm.xyz, light_dir.xyz), 0.0, 1.0);
+-    vec3 sun_contrib = min(da, shadow) * sunlit_linear;
+-    color.rgb += sun_contrib;
++    
++    if (classic_mode > 0)
++    {
++        da = pow(da,1.2);
++        vec3 sun_contrib = vec3(min(da, shadow));
++
++        color.rgb = srgb_to_linear(color.rgb * 0.9 + linear_to_srgb(sun_contrib) * sunlit_linear * 0.7);
++        sunlit_linear = srgb_to_linear(sunlit_linear);
++    }
++    else
++    {
++        vec3 sun_contrib = min(da, shadow) * sunlit_linear;
++        color.rgb += sun_contrib;
++    }
++
+     color *= diffcol.rgb;
+ 
+     vec3 refnormpersp = reflect(pos.xyz, norm.xyz);"
+secondlife/viewer,3157,a90377d,indra/newview/app_settings/shaders/class2/deferred/alphaF.glsl,modified,15,5,20,"@@ -36,6 +36,7 @@ out vec4 frag_color;
+ uniform mat3 env_mat;
+ uniform vec3 sun_dir;
+ uniform vec3 moon_dir;
++uniform int classic_mode;
+ 
+ #ifdef USE_DIFFUSE_TEX
+ uniform sampler2D diffuseMap;
+@@ -241,10 +242,10 @@ void main()
+ 
+     calcAtmosphericVarsLinear(pos.xyz, norm, light_dir, sunlit, amblit, additive, atten);
+ 
+-    vec3 sunlit_linear = srgb_to_linear(sunlit);
++    vec3 sunlit_linear = sunlit;
+     vec3 amblit_linear = amblit;
+ 
+-    vec3 irradiance;
++    vec3 irradiance = amblit;
+     vec3 glossenv;
+     vec3 legacyenv;
+     sampleReflectionProbesLegacy(irradiance, glossenv, legacyenv, frag, pos.xyz, norm.xyz, 0.0, 0.0, true, amblit_linear);
+@@ -260,11 +261,20 @@ void main()
+ 
+     color.a   = final_alpha;
+ 
+-    vec3 sun_contrib = min(final_da, shadow) * sunlit_linear;
+-
+     color.rgb = irradiance;
++    if (classic_mode > 0)
++    {
++        final_da = pow(final_da,1.2);
++        vec3 sun_contrib = vec3(min(final_da, shadow));
+ 
+-    color.rgb += sun_contrib;
++        color.rgb = srgb_to_linear(color.rgb * 0.9 + linear_to_srgb(sun_contrib) * sunlit_linear * 0.7);
++        sunlit_linear = srgb_to_linear(sunlit_linear);
++    }
++    else
++    {
++        vec3 sun_contrib = min(final_da, shadow) * sunlit_linear;
++        color.rgb += sun_contrib;
++    }
+ 
+     color.rgb *= diffuse_linear.rgb;
+ "
+secondlife/viewer,3157,a90377d,indra/newview/app_settings/shaders/class2/deferred/pbralphaF.glsl,modified,2,2,4,"@@ -161,7 +161,7 @@ void main()
+     vec3 atten;
+     calcAtmosphericVarsLinear(pos.xyz, norm, light_dir, sunlit, amblit, additive, atten);
+ 
+-    vec3 sunlit_linear = srgb_to_linear(sunlit);
++    vec3 sunlit_linear = sunlit;
+ 
+     vec2 frag = vary_fragcoord.xy/vary_fragcoord.z*0.5+0.5;
+ 
+@@ -182,7 +182,7 @@ void main()
+ 
+     // PBR IBL
+     float gloss      = 1.0 - perceptualRoughness;
+-    vec3  irradiance = vec3(0);
++    vec3  irradiance = amblit;
+     vec3  radiance  = vec3(0);
+     sampleReflectionProbes(irradiance, radiance, vary_position.xy*0.5+0.5, pos.xyz, norm.xyz, gloss, true, amblit);
+ "
+secondlife/viewer,3157,a90377d,indra/newview/app_settings/shaders/class3/deferred/materialF.glsl,modified,17,4,21,"@@ -36,6 +36,7 @@
+ 
+ uniform float emissive_brightness;  // fullbright flag, 1.0 == fullbright, 0.0 otherwise
+ uniform int sun_up_factor;
++uniform int classic_mode;
+ 
+ vec4 applySkyAndWaterFog(vec3 pos, vec3 additive, vec3 atten, vec4 color);
+ vec3 scaleSoftClipFragLinear(vec3 l);
+@@ -329,19 +330,31 @@ void main()
+     vec3 atten;
+     calcAtmosphericVarsLinear(pos.xyz, norm.xyz, light_dir, sunlit, amblit, additive, atten);
+ 
+-    vec3 sunlit_linear = srgb_to_linear(sunlit);
++    vec3 sunlit_linear = sunlit;
+     vec3 amblit_linear = amblit;
+ 
+-    vec3 ambenv;
++    vec3 ambenv = amblit;
+     vec3 glossenv;
+     vec3 legacyenv;
+     sampleReflectionProbesLegacy(ambenv, glossenv, legacyenv, pos.xy*0.5+0.5, pos.xyz, norm.xyz, glossiness, env, true, amblit_linear);
+ 
+     color = ambenv;
+ 
+     float da          = clamp(dot(norm.xyz, light_dir.xyz), 0.0, 1.0);
+-    vec3 sun_contrib = min(da, shadow) * sunlit_linear;
+-    color.rgb += sun_contrib;
++    if (classic_mode > 0)
++    {
++        da = pow(da,1.2);
++        vec3 sun_contrib = vec3(min(da, shadow));
++
++        color.rgb = srgb_to_linear(color.rgb * 0.9 + linear_to_srgb(sun_contrib) * sunlit_linear * 0.7);
++        sunlit_linear = srgb_to_linear(sunlit_linear);
++    }
++    else
++    {
++        vec3 sun_contrib = min(da, shadow) * sunlit_linear;
++        color.rgb += sun_contrib;
++    }
++
+     color *= diffcol.rgb;
+ 
+     vec3 refnormpersp = reflect(pos.xyz, norm.xyz);"

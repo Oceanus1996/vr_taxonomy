@@ -1,0 +1,127 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+Unity-Technologies/EditorXR,156,561b298caf040993fd6627712e51af1cd296c24c,Scripts/Core/EditorVR.Viewer.cs,modified,14,1,15,"@@ -37,6 +37,8 @@ class Preferences
+ 			const float k_CameraRigTransitionTime = 0.75f;
+ 
+ 			PlayerBody m_PlayerBody;
++			float m_OriginalNearClipPlane;
++			float m_OriginalFarClipPlane;
+ 
+ 			readonly Preferences m_Preferences = new Preferences();
+ 
+@@ -52,6 +54,7 @@ public Viewer()
+ 				IUsesViewerBodyMethods.isOverShoulder = IsOverShoulder;
+ 				IUsesViewerBodyMethods.isAboveHead = IsAboveHead;
+ 				IUsesViewerScaleMethods.getViewerScale = GetViewerScale;
++				IUsesViewerScaleMethods.setViewerScale = SetViewerScale;
+ 
+ 				VRView.hmdStatusChange += OnHMDStatusChange;
+ 
+@@ -131,7 +134,7 @@ public void OnDeserializePreferences(object obj)
+ 				var inverseRotation = Quaternion.Inverse(cameraRotation);
+ 				cameraRig.position = Vector3.zero;
+ 				cameraRig.rotation = inverseRotation * preferences.cameraRotation;
+-				cameraRig.localScale = Vector3.one * preferences.cameraRigScale;
++				SetViewerScale(preferences.cameraRigScale);
+ 				cameraRig.position = preferences.cameraPosition - cameraTransform.position;
+ 			}
+ 
+@@ -142,6 +145,8 @@ internal void InitializeCamera()
+ 				cameraRig.hideFlags = defaultHideFlags;
+ 				var viewerCamera = CameraUtils.GetMainCamera();
+ 				viewerCamera.gameObject.hideFlags = defaultHideFlags;
++				m_OriginalNearClipPlane = viewerCamera.nearClipPlane;
++				m_OriginalFarClipPlane = viewerCamera.farClipPlane;
+ 				if (VRSettings.loadedDeviceName == ""OpenVR"")
+ 				{
+ 					// Steam's reference position should be at the feet and not at the head as we do with Oculus
+@@ -281,6 +286,14 @@ internal static float GetViewerScale()
+ 			{
+ 				return CameraUtils.GetCameraRig().localScale.x;
+ 			}
++
++			void SetViewerScale(float scale)
++			{
++				var camera = CameraUtils.GetMainCamera();
++				CameraUtils.GetCameraRig().localScale = Vector3.one * scale;
++				camera.nearClipPlane = m_OriginalNearClipPlane * scale;
++				camera.farClipPlane = m_OriginalFarClipPlane * scale;
++			}
+ 		}
+ 	}
+ }"
+Unity-Technologies/EditorXR,156,561b298caf040993fd6627712e51af1cd296c24c,Scripts/Interfaces/IUsesViewerScale.cs,modified,11,0,11,"@@ -9,7 +9,9 @@ public interface IUsesViewerScale
+ 
+ 	public static class IUsesViewerScaleMethods
+ 	{
++
+ 		internal static Func<float> getViewerScale { get; set; }
++		internal static Action<float> setViewerScale { get; set; }
+ 
+ 		/// <summary>
+ 		/// Returns whether the specified transform is over the viewer's shoulders and behind the head
+@@ -18,6 +20,15 @@ public static float GetViewerScale(this IUsesViewerScale obj)
+ 		{
+ 			return getViewerScale();
+ 		}
++
++		/// <summary>
++		/// Set the scale of the viewer object
++		/// </summary>
++		/// <param name=""scale"">Uniform scale value in world space</param>
++		public static void SetViewerScale(this IUsesViewerScale obj, float scale)
++		{
++			setViewerScale(scale);
++		}
+ 	}
+ }
+ #endif"
+Unity-Technologies/EditorXR,156,561b298caf040993fd6627712e51af1cd296c24c,Tools/BlinkLocomotionTool/BlinkLocomotionTool.cs,modified,2,15,17,"@@ -71,10 +71,6 @@ public ActionMap actionMap
+ 		[SerializeField]
+ 		private ActionMap m_BlinkActionMap;
+ 
+-		Camera m_MainCamera;
+-		float m_OriginalNearClipPlane;
+-		float m_OriginalFarClipPlane;
+-
+ 		public Transform rayOrigin { private get; set; }
+ 		public Node? node { private get; set; }
+ 
+@@ -94,10 +90,6 @@ private void Start()
+ 			m_BlinkVisualsGO.transform.localPosition = Vector3.zero;
+ 			m_BlinkVisualsGO.transform.localRotation = Quaternion.identity;
+ 
+-			m_MainCamera = CameraUtils.GetMainCamera();
+-			m_OriginalNearClipPlane = m_MainCamera.nearClipPlane;
+-			m_OriginalFarClipPlane = m_MainCamera.farClipPlane;
+-
+ 			Shader.SetGlobalFloat(k_WorldScaleProperty, 1);
+ 		}
+ 
+@@ -192,13 +184,10 @@ public void ProcessInput(ActionMapInput input, ConsumeControlDelegate consumeCon
+ 									rayToRay = otherRayOrigin.position - rayOrigin.position;
+ 									midPoint = rayOrigin.position + rayToRay * 0.5f;
+ 									var currOffset = midPoint - cameraRig.position;
+-									cameraRig.localScale = Vector3.one;
++									this.SetViewerScale(1f);
+ 									cameraRig.position = midPoint - currOffset / currentScale;
+ 									cameraRig.rotation = Quaternion.AngleAxis(m_StartYaw, Vector3.up);
+ 
+-									m_MainCamera.nearClipPlane = m_OriginalNearClipPlane;
+-									m_MainCamera.farClipPlane = m_OriginalFarClipPlane;
+-
+ 									consumeControl(m_Thumb);
+ 									consumeControl(blinkTool.m_Thumb);
+ 
+@@ -220,11 +209,9 @@ public void ProcessInput(ActionMapInput input, ConsumeControlDelegate consumeCon
+ 									midPoint = currentRotation * midPoint * currentScale;
+ 
+ 									cameraRig.position = m_StartPosition + m_StartMidPoint - midPoint;
+-									cameraRig.localScale = Vector3.one * currentScale;
+ 									cameraRig.rotation = currentRotation;
+ 
+-									m_MainCamera.nearClipPlane = m_OriginalNearClipPlane * currentScale;
+-									m_MainCamera.farClipPlane = m_OriginalFarClipPlane * currentScale;
++									this.SetViewerScale(currentScale);
+ 
+ 									m_ViewerScaleVisuals.viewerScale = currentScale;
+ 									m_BlinkVisuals.viewerScale = currentScale;"

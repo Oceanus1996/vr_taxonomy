@@ -1,0 +1,594 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch,gpt_bug_detection
+fredemmott/HTCC,10,c629e2c42a1bf131cc59fec2fd6497f17b5c824d,docs/settings.md,modified,8,1,9,"@@ -137,12 +137,19 @@ DWORD:
+ 
+ Which game's mappings are used for VR controllers.
+ 
+-# VRControllerActionSinkWorldLock 
++# VRControllerPointerSinkWorldLock 
+ 
+ DWORD
+ 
+ - 0: clicking does not affect tracking
+ - 1 - orientation: any click/wheel action locks the angle of the pointer, but not the position
++- 2 - hard-lock orientation, soft-lock position: as above, however the position will also be unlocked until your hand moves a certain distance
++
++# VRControllerPointerSinkSoftWorldLockDistance
++
++STRING
++
++Distance in meters (e.g. ""0.05"" for 5cm). While 'clicking', the virtual controllers will stay locked in position until your hand moves this far from the original position.
+ 
+ # VRControllerActionSinkSecondsPerRotation
+ ","{""has_bug"": true, ""bugs"": [{""line_start"": 145, ""line_end"": 145, ""description"": ""Incorrect condition syntax; should use ':' instead of '-' for the second option."", ""buggy_code"": ""- 1 - orientation: any click/wheel action locks the angle of the pointer, but not the position""}, {""line_start"": 146, ""line_end"": 146, ""description"": ""Incorrect condition syntax; should use ':' instead of '-' for the third option."", ""buggy_code"": ""- 2 - hard-lock orientation, soft-lock position: as above, however the position will also be unlocked until your hand moves a certain distance""}, {""line_start"": 152, ""line_end"": 152, ""description"": ""Inconsistent data type; should specify that the distance is a DWORD instead of STRING for clarity."", ""buggy_code"": ""STRING""}, {""line_start"": 158, ""line_end"": 158, ""description"": ""Inconsistent data type; should specify that the number of seconds is a DWORD instead of STRING for clarity."", ""buggy_code"": ""STRING""}]}"
+fredemmott/HTCC,10,c629e2c42a1bf131cc59fec2fd6497f17b5c824d,src/Config.h,modified,8,5,13,"@@ -54,9 +54,10 @@ enum class VRControllerActionSinkMapping : DWORD {
+   DCS = 0,
+   MSFS = 1,
+ };
+-enum class VRControllerActionSinkWorldLock : DWORD {
++enum class VRControllerPointerSinkWorldLock : DWORD {
+   Nothing = 0,
+   Orientation = 1,
++  OrientationAndSoftPosition = 2,
+ };
+ }// namespace HandTrackedCockpitClicking
+ 
+@@ -105,9 +106,10 @@ enum class VRControllerActionSinkWorldLock : DWORD {
+     VRControllerActionSinkMapping, \
+     HandTrackedCockpitClicking::VRControllerActionSinkMapping::DCS) \
+   IT( \
+-    HandTrackedCockpitClicking::VRControllerActionSinkWorldLock, \
+-    VRControllerActionSinkWorldLock, \
+-    HandTrackedCockpitClicking::VRControllerActionSinkWorldLock::Orientation) \
++    HandTrackedCockpitClicking::VRControllerPointerSinkWorldLock, \
++    VRControllerPointerSinkWorldLock, \
++    HandTrackedCockpitClicking::VRControllerPointerSinkWorldLock:: \
++      OrientationAndSoftPosition) \
+   IT(uint16_t, PointCtrlVID, 0x04d8) \
+   IT(uint16_t, PointCtrlPID, 0xeeec) \
+   IT(uint8_t, PointCtrlFCUButtonL1, 0) \
+@@ -124,7 +126,8 @@ enum class VRControllerActionSinkWorldLock : DWORD {
+   IT(PointCtrlProjectionDistance, 0.3f) \
+   IT(VRVerticalOffset, -0.04f) \
+   IT(VRFarDistance, 0.8f) \
+-  IT(VRControllerActionSinkSecondsPerRotation, 4.0f)
++  IT(VRControllerActionSinkSecondsPerRotation, 4.0f) \
++  IT(VRControllerPointerSinkSoftWorldLockDistance, 0.05f)
+ 
+ #define HandTrackedCockpitClicking_STRING_SETTINGS \
+   IT( \","{""has_bug"": true, ""bugs"": [{""line_start"": 158, ""line_end"": 158, ""description"": ""Incorrect condition checking for PointerSource and HandTrackingOrientation. The code is trying to access the enum values directly from the Config namespace, which is not correct."", ""buggy_code"": ""Config::PointerSource == PointerSource::PointCtrl""}, {""line_start"": 159, ""line_end"": 159, ""description"": ""Similar to the previous bug, this line incorrectly accesses HandTrackingOrientation directly from the Config namespace instead of using the appropriate variable."", ""buggy_code"": ""Config::HandTrackingOrientation == HandTrackingOrientation::RayCast""}]}"
+fredemmott/HTCC,10,c629e2c42a1bf131cc59fec2fd6497f17b5c824d,src/VirtualControllerSink.cpp,modified,28,5,33,"@@ -132,6 +132,16 @@ void VirtualControllerSink::Update(
+   UpdateHand(info, rightHand, &mRightController);
+ }
+ 
++static bool WorldLockOrientation() {
++  switch (Config::VRControllerPointerSinkWorldLock) {
++    case VRControllerPointerSinkWorldLock::Nothing:
++      return false;
++    case VRControllerPointerSinkWorldLock::Orientation:
++    case VRControllerPointerSinkWorldLock::OrientationAndSoftPosition:
++      return true;
++  }
++}
++
+ void VirtualControllerSink::UpdateHand(
+   const FrameInfo& frameInfo,
+   const InputState& hand,
+@@ -144,14 +154,27 @@ void VirtualControllerSink::UpdateHand(
+ 
+   auto inputPose = OffsetPointerPose(frameInfo, *hand.mPose);
+   const auto haveAction = hand.AnyInteraction();
+-  if (
+-    haveAction
+-    && Config::VRControllerActionSinkWorldLock
+-      == VRControllerActionSinkWorldLock::Orientation) {
+-    inputPose.orientation = controller->savedAimPose.orientation;
++  if (haveAction) {
++    if (WorldLockOrientation()) {
++      inputPose.orientation = controller->savedAimPose.orientation;
++    }
++    if (
++      Config::VRControllerPointerSinkWorldLock
++        == VRControllerPointerSinkWorldLock::OrientationAndSoftPosition
++      && !controller->mUnlockedPosition) {
++      const auto a = XrVecToSM(inputPose.position);
++      const auto b = XrVecToSM(controller->savedAimPose.position);
++      const auto distance = std::abs(Vector3::Distance(a, b));
++      if (distance < Config::VRControllerPointerSinkSoftWorldLockDistance) {
++        inputPose.position = controller->savedAimPose.position;
++      } else {
++        controller->mUnlockedPosition = true;
++      }
++    }
+   } else if (!haveAction) {
+     controller->haveAction = false;
+     controller->savedAimPose = inputPose;
++    controller->mUnlockedPosition = false;
+   } else if (!controller->haveAction) {
+     controller->haveAction = true;
+   }","{""has_bug"": true, ""bugs"": [{""line_start"": 135, ""line_end"": 143, ""description"": ""The function WorldLockOrientation does not have a return statement for all code paths, leading to undefined behavior if the switch does not match any case."", ""buggy_code"": ""static bool WorldLockOrientation() {\n  switch (Config::VRControllerPointerSinkWorldLock) {\n    case VRControllerPointerSinkWorldLock::Nothing:\n      return false;\n    case VRControllerPointerSinkWorldLock::Orientation:\n    case VRControllerPointerSinkWorldLock::OrientationAndSoftPosition:\n      return true;\n  }\n}""}, {""line_start"": 149, ""line_end"": 149, ""description"": ""Dereferencing hand.mPose without checking if it is null can lead to a null reference exception."", ""buggy_code"": ""if (!hand.mPose) {""}, {""line_start"": 175, ""line_end"": 175, ""description"": ""The logic for setting controller->haveAction may lead to incorrect state management if the controller's action state is not properly tracked."", ""buggy_code"": ""controller->haveAction = false;""}]}"
+fredemmott/HTCC,10,c629e2c42a1bf131cc59fec2fd6497f17b5c824d,src/VirtualControllerSink.h,modified,1,0,1,"@@ -107,6 +107,7 @@ class VirtualControllerSink final {
+     bool presentLastPollEvent {false};
+ 
+     XrPosef savedAimPose {};
++    bool mUnlockedPosition {false};
+     XrPosef aimPose {};
+     XrSpace aimSpace {};
+     std::unordered_set<XrAction> aimActions {};","{""has_bug"": true, ""bugs"": [{""line_start"": 158, ""line_end"": 158, ""description"": ""Potential null reference issue when initializing mLeftController with XR_HAND_LEFT_EXT. If XR_HAND_LEFT_EXT is not defined or invalid, it may lead to undefined behavior."", ""buggy_code"": ""ControllerState mLeftController {XR_HAND_LEFT_EXT};""}, {""line_start"": 159, ""line_end"": 159, ""description"": ""Potential null reference issue when initializing mRightController with XR_HAND_RIGHT_EXT. If XR_HAND_RIGHT_EXT is not defined or invalid, it may lead to undefined behavior."", ""buggy_code"": ""ControllerState mRightController {XR_HAND_RIGHT_EXT};""}, {""line_start"": 147, ""line_end"": 147, ""description"": ""mBlockSecondaryActionsUntil is uninitialized and may lead to undefined behavior if used before being set."", ""buggy_code"": ""XrTime mBlockSecondaryActionsUntil {}; ""}]}"
+fredemmott/HTCC,10,0219c9989b865e2017fcbafea255a508fb79f512,src/APILayer.cpp,modified,1,9,10,"@@ -25,7 +25,6 @@
+ #include ""APILayer.h""
+ 
+ #include <loader_interfaces.h>
+-#include <openxr/openxr.h>
+ 
+ #include <memory>
+ #include <string>
+@@ -38,17 +37,10 @@
+ #include ""PointCtrlSource.h""
+ #include ""VirtualControllerSink.h""
+ #include ""VirtualTouchScreenSink.h""
+-
+-template <class CharT>
+-struct std::formatter<XrResult, CharT> : std::formatter<int, CharT> {};
++#include ""openxr.h""
+ 
+ namespace HandTrackedCockpitClicking {
+ 
+-static constexpr XrPosef XR_POSEF_IDENTITY {
+-  .orientation = {0.0f, 0.0f, 0.0f, 1.0f},
+-  .position = {0.0f, 0.0f, 0.0f},
+-};
+-
+ APILayer::APILayer(
+   XrInstance instance,
+   XrSession session,","{""has_bug"": true, ""bugs"": [{""line_start"": 190, ""line_end"": 191, ""description"": ""Potential null reference issue. mVirtualTouchScreen is used without being initialized, which may lead to undefined behavior if it is accessed before being assigned."", ""buggy_code"": ""if ((!mVirtualTouchScreen) && (VirtualTouchScreenSink::IsActionSink() || VirtualTouchScreenSink::IsPointerSink()))""}, {""line_start"": 180, ""line_end"": 180, ""description"": ""Resource leak potential. If xrWaitFrame fails, the function returns early without releasing any resources that may have been allocated before this point."", ""buggy_code"": ""const auto nextResult = mOpenXR->xrWaitFrame(session, frameWaitInfo, state);""}]}"
+fredemmott/HTCC,10,0219c9989b865e2017fcbafea255a508fb79f512,src/APILayer_loader.cpp,modified,0,3,3,"@@ -34,9 +34,6 @@
+ #include ""Environment.h""
+ #include ""OpenXRNext.h""
+ 
+-template <class CharT>
+-struct std::formatter<XrResult, CharT> : std::formatter<int, CharT> {};
+-
+ namespace Environment = HandTrackedCockpitClicking::Environment;
+ 
+ namespace HandTrackedCockpitClicking::Loader {","{""has_bug"": true, ""bugs"": [{""line_start"": 170, ""line_end"": 170, ""description"": ""Potential resource leak if xrDestroySession is called without checking if gInstance is nullptr."", ""buggy_code"": ""delete gInstance;""}, {""line_start"": 176, ""line_end"": 176, ""description"": ""Potential resource leak if xrDestroyInstance is called without checking if gInstance is nullptr."", ""buggy_code"": ""delete gInstance;""}, {""line_start"": 148, ""line_end"": 148, ""description"": ""gNext could be null, leading to dereferencing a null pointer when calling xrCreateSession."", ""buggy_code"": ""auto nextResult = gNext->xrCreateSession(instance, createInfo, session);""}, {""line_start"": 152, ""line_end"": 152, ""description"": ""nextResult is checked for XR_SUCCESS, but no handling for other error codes is implemented, which could lead to unexpected behavior."", ""buggy_code"": ""if (nextResult != XR_SUCCESS) {""}]}"
+fredemmott/HTCC,10,0219c9989b865e2017fcbafea255a508fb79f512,src/ActionState.h,modified,4,0,4,"@@ -33,6 +33,10 @@ struct ActionState {
+   bool mDecreaseValue {};
+   bool mIncreaseValue {};
+ 
++  bool Any() const {
++    return mLeftClick || mRightClick || mDecreaseValue || mIncreaseValue;
++  }
++
+   constexpr auto operator<=>(const ActionState&) const noexcept = default;
+ };
+ ","{""has_bug"": true, ""bugs"": [{""line_start"": 29, ""line_end"": 29, ""description"": ""Potential null/undefined reference issue with XR_HAND_RIGHT_EXT if not properly defined or included."", ""buggy_code"": ""XrHandEXT mActiveHand {XR_HAND_RIGHT_EXT};""}, {""line_start"": 36, ""line_end"": 38, ""description"": ""Logic error: The Any() function does not account for the state of the controller being pressed while looking around, which is critical for VR interaction."", ""buggy_code"": ""return mLeftClick || mRightClick || mDecreaseValue || mIncreaseValue;""}]}"
+fredemmott/HTCC,10,0219c9989b865e2017fcbafea255a508fb79f512,src/Config.h,modified,8,0,8,"@@ -53,6 +53,10 @@ enum class VRControllerActionSinkMapping : DWORD {
+   DCS = 0,
+   MSFS = 1,
+ };
++enum class VRControllerActionSinkWorldLock : DWORD {
++  Nothing = 0,
++  Orientation = 1,
++};
+ }// namespace HandTrackedCockpitClicking
+ 
+ #define HandTrackedCockpitClicking_DWORD_SETTINGS \
+@@ -94,6 +98,10 @@ enum class VRControllerActionSinkMapping : DWORD {
+     HandTrackedCockpitClicking::VRControllerActionSinkMapping, \
+     VRControllerActionSinkMapping, \
+     HandTrackedCockpitClicking::VRControllerActionSinkMapping::DCS) \
++  IT( \
++    HandTrackedCockpitClicking::VRControllerActionSinkWorldLock, \
++    VRControllerActionSinkWorldLock, \
++    HandTrackedCockpitClicking::VRControllerActionSinkWorldLock::Orientation) \
+   IT(uint16_t, PointCtrlVID, 0x04d8) \
+   IT(uint16_t, PointCtrlPID, 0xeeec) \
+   IT(uint8_t, PointCtrlFCUButtonL1, 0) \","{""has_bug"": true, ""bugs"": [{""line_start"": 148, ""line_end"": 148, ""description"": ""Incorrect condition checking for PointerSource. It should reference the variable instead of the enum type."", ""buggy_code"": ""Config::PointerSource == PointerSource::PointCtrl""}, {""line_start"": 149, ""line_end"": 149, ""description"": ""Incorrect condition checking for HandTrackingOrientation. It should reference the variable instead of the enum type."", ""buggy_code"": ""Config::HandTrackingOrientation == HandTrackingOrientation::RayCast""}]}"
+fredemmott/HTCC,10,0219c9989b865e2017fcbafea255a508fb79f512,src/HandTrackingSource.cpp,modified,0,3,3,"@@ -32,9 +32,6 @@
+ 
+ using namespace DirectX::SimpleMath;
+ 
+-template <class CharT>
+-struct std::formatter<XrResult, CharT> : std::formatter<int, CharT> {};
+-
+ namespace HandTrackedCockpitClicking {
+ 
+ HandTrackingSource::HandTrackingSource(","{""has_bug"": true, ""bugs"": [{""line_start"": 171, ""line_end"": 173, ""description"": ""Incorrect condition check for mLeftHandPose and mRightHandPose. They are being checked as if they are pointers, but they are likely not initialized as such."", ""buggy_code"": ""if (Config::OneHandOnly && mLeftHandPose && mRightHandPose) {""}, {""line_start"": 173, ""line_end"": 173, ""description"": ""Off-by-one error in actionBits definition. The same flag is repeated multiple times instead of including different flags."", ""buggy_code"": ""constexpr auto actionBits = XR_HAND_TRACKING_AIM_INDEX_PINCHING_BIT_FB | XR_HAND_TRACKING_AIM_INDEX_PINCHING_BIT_FB | XR_HAND_TRACKING_AIM_INDEX_PINCHING_BIT_FB | XR_HAND_TRACKING_AIM_INDEX_PINCHING_BIT_FB;""}]}"
+fredemmott/HTCC,10,0219c9989b865e2017fcbafea255a508fb79f512,src/VirtualControllerSink.cpp,modified,96,20,116,"@@ -30,7 +30,7 @@
+ #include <numbers>
+ 
+ #include ""Environment.h""
+-#include ""math.h""
++#include ""openxr.h""
+ 
+ using namespace DirectX::SimpleMath;
+ 
+@@ -71,6 +71,20 @@ VirtualControllerSink::VirtualControllerSink(
+     mInstance(instance),
+     mSession(session),
+     mViewSpace(viewSpace) {
++  XrReferenceSpaceCreateInfo referenceSpace {
++    .type = XR_TYPE_REFERENCE_SPACE_CREATE_INFO,
++    .next = nullptr,
++    .referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL,
++    .poseInReferenceSpace = XR_POSEF_IDENTITY,
++  };
++
++  const auto nextResult
++    = openXR->xrCreateReferenceSpace(session, &referenceSpace, &mLocalSpace);
++  if (nextResult != XR_SUCCESS) {
++    DebugPrint(""Failed to create local space: {}"", nextResult);
++    return;
++  }
++
+   DebugPrint(
+     ""Initialized virtual VR controller - PointerSink: {}; ActionSink: {}"",
+     IsPointerSink(),
+@@ -105,6 +119,7 @@ void VirtualControllerSink::Update(
+   const std::optional<XrPosef>& leftAimPose,
+   const std::optional<XrPosef>& rightAimPose,
+   const ActionState& actionState) {
++  mActionState = actionState;
+   mPredictedDisplayTime = predictedDisplayTime;
+ 
+   mLeftHand.present = leftAimPose.has_value();
+@@ -120,22 +135,62 @@ void VirtualControllerSink::Update(
+     if (!hand->present) {
+       continue;
+     }
+-    SetControllerActions(hand, actionState);
++    SetControllerActions(hand);
++  }
++
++  const auto haveAction = actionState.Any();
++  if (actionState.mActiveHand == XR_HAND_LEFT_EXT) {
++    mRightHand.haveAction = false;
++    if (haveAction && !mLeftHand.haveAction) {
++      mLeftHand.haveAction = true;
++      UpdateWorldLockState(*leftAimPose, &mLeftHand.worldLockedAimPose);
++    } else if (!haveAction) {
++      mLeftHand.haveAction = false;
++    }
++  } else {
++    mLeftHand.haveAction = false;
++    if (haveAction && !mRightHand.haveAction) {
++      mRightHand.haveAction = true;
++      UpdateWorldLockState(*leftAimPose, &mRightHand.worldLockedAimPose);
++    } else if (!haveAction) {
++      mRightHand.haveAction = false;
++    }
++  }
++}
++
++void VirtualControllerSink::UpdateWorldLockState(
++  const XrPosef& viewPose,
++  XrPosef* worldPose) {
++  *worldPose = {};
++  if (
++    Config::VRControllerActionSinkWorldLock
++    == VRControllerActionSinkWorldLock::Nothing) {
++    return;
++  }
++
++  XrSpaceLocation viewToWorld {XR_TYPE_SPACE_LOCATION};
++  mOpenXR->xrLocateSpace(
++    mViewSpace, mLocalSpace, mPredictedDisplayTime, &viewToWorld);
++
++  if (
++    Config::VRControllerActionSinkWorldLock
++      == VRControllerActionSinkWorldLock::Orientation
++    && (viewToWorld.locationFlags & XR_SPACE_LOCATION_ORIENTATION_VALID_BIT)) {
++    worldPose->orientation
++      = viewPose.orientation * viewToWorld.pose.orientation;
+   }
+ }
+ 
+-void VirtualControllerSink::SetControllerActions(
+-  ControllerState* controller,
+-  const ActionState& actions) {
++void VirtualControllerSink::SetControllerActions(ControllerState* controller) {
+   if (!IsActionSink()) {
+     return;
+   }
+   if (UseDCSActions()) {
+-    SetDCSControllerActions(controller, actions);
++    SetDCSControllerActions(controller);
+     return;
+   }
+   if (UseMSFSActions()) {
+-    SetMSFSControllerActions(controller, actions);
++    SetMSFSControllerActions(controller);
+     return;
+   }
+ 
+@@ -146,34 +201,30 @@ void VirtualControllerSink::SetControllerActions(
+   }
+ }
+ 
+-void VirtualControllerSink::SetDCSControllerActions(
+-  ControllerState* hand,
+-  const ActionState& actionState) {
++void VirtualControllerSink::SetDCSControllerActions(ControllerState* hand) {
+   hand->thumbstickX.changedSinceLastSync = true;
+   hand->thumbstickY.changedSinceLastSync = true;
+ 
+-  if (actionState.mLeftClick) {
++  if (mActionState.mLeftClick) {
+     hand->thumbstickY.currentState = -1.0f;
+-  } else if (actionState.mRightClick) {
++  } else if (mActionState.mRightClick) {
+     hand->thumbstickY.currentState = 1.0f;
+   } else {
+     hand->thumbstickY.currentState = 0.0f;
+   }
+ 
+-  if (actionState.mDecreaseValue) {
++  if (mActionState.mDecreaseValue) {
+     hand->thumbstickX.currentState = -1.0f;
+-  } else if (actionState.mIncreaseValue) {
++  } else if (mActionState.mIncreaseValue) {
+     hand->thumbstickX.currentState = 1.0f;
+   } else {
+     hand->thumbstickX.currentState = 0.0f;
+   }
+ }
+ 
+-void VirtualControllerSink::SetMSFSControllerActions(
+-  ControllerState* hand,
+-  const ActionState& actionState) {
++void VirtualControllerSink::SetMSFSControllerActions(ControllerState* hand) {
+   hand->triggerValue.changedSinceLastSync = true;
+-  hand->triggerValue.currentState = actionState.mLeftClick;
++  hand->triggerValue.currentState = mActionState.mLeftClick;
+ }
+ 
+ XrResult VirtualControllerSink::xrSyncActions(
+@@ -547,8 +598,33 @@ XrResult VirtualControllerSink::xrLocateSpace(
+ 
+     const auto viewPose = location->pose;
+ 
++    auto aimPose = hand.aimPose;
++    const auto worldLockType = Config::VRControllerActionSinkWorldLock;
++    if (
++      hand.haveAction
++      && worldLockType != VRControllerActionSinkWorldLock::Nothing) {
++      XrSpaceLocation localInView {XR_TYPE_SPACE_LOCATION};
++      mOpenXR->xrLocateSpace(mLocalSpace, mViewSpace, time, &localInView);
++
++      if (worldLockType == VRControllerActionSinkWorldLock::Orientation) {
++        aimPose.orientation
++          = hand.worldLockedAimPose.orientation * localInView.pose.orientation;
++      }
++    }
++
++    if (
++      Config::VRControllerActionSinkMapping
++        == VRControllerActionSinkMapping::MSFS
++      && mActionState.mRightClick) {
++      // ""Push"" button by moving forward
++      aimPose.position = SMVecToXr(
++        XrVecToSM(aimPose.position)
++        + Vector3::Transform(
++          {0.0f, 0.0f, -0.02f}, XrQuatToSM(aimPose.orientation)));
++    }
++
+     if (space == hand.aimSpace) {
+-      location->pose = hand.aimPose * viewPose;
++      location->pose = aimPose * viewPose;
+       return XR_SUCCESS;
+     }
+ 
+@@ -565,7 +641,7 @@ XrResult VirtualControllerSink::xrLocateSpace(
+       .orientation = {aimToGripQ.x, aimToGripQ.y, aimToGripQ.z, aimToGripQ.w},
+     };
+ 
+-    const auto handPose = aimToGrip * hand.aimPose;
++    const auto handPose = aimToGrip * aimPose;
+ 
+     location->pose = handPose * viewPose;
+ ","{""has_bug"": true, ""bugs"": [{""line_start"": 142, ""line_end"": 154, ""description"": ""Incorrect hand reference used when updating world lock state for the right hand. It should use rightAimPose instead of leftAimPose."", ""buggy_code"": ""UpdateWorldLockState(*leftAimPose, &mRightHand.worldLockedAimPose);""}, {""line_start"": 216, ""line_end"": 216, ""description"": ""Incomplete code snippet, likely indicating a resource leak or logic error due to missing implementation for handling mActionState.mDecrease."", ""buggy_code"": ""if (mActionState.mDecreas""}]}"
+fredemmott/HTCC,10,0219c9989b865e2017fcbafea255a508fb79f512,src/VirtualControllerSink.h,modified,9,10,19,"@@ -91,13 +91,16 @@ class VirtualControllerSink final {
+     XrInteractionProfileState* interactionProfile);
+ 
+  private:
++  void UpdateWorldLockState(const XrPosef& viewPose, XrPosef* worldPose);
+   // Move the pose down, and angle upwards, so it's not blocked by the
+   // controller model
+   XrPosef OffsetPointerPose(const XrPosef& original);
+   // based on /interaction_profiles/oculus/touch_controller
+   struct ControllerState {
+     XrHandEXT hand {};
+     XrPath path {};
++    XrPosef worldLockedAimPose {};
++    bool haveAction = false;
+ 
+     bool present {false};
+     bool presentLastSync {false};
+@@ -144,6 +147,7 @@ class VirtualControllerSink final {
+   XrInstance mInstance {};
+   XrSession mSession {};
+   XrSpace mViewSpace {};
++  XrSpace mLocalSpace {};
+ 
+   XrPath mProfilePath {};
+   ControllerState mLeftHand {XR_HAND_LEFT_EXT};
+@@ -152,19 +156,14 @@ class VirtualControllerSink final {
+   std::string_view ResolvePath(XrPath path);
+   std::unordered_map<XrPath, std::string> mPaths;
+ 
++  ActionState mActionState {};
++  void SetControllerActions(ControllerState* controller);
++  void SetDCSControllerActions(ControllerState* controller);
++  void SetMSFSControllerActions(ControllerState* controller);
++
+   // For debugging
+   std::unordered_map<XrAction, std::string> mActionPaths;
+   std::unordered_map<XrSpace, XrAction> mActionSpaces;
+-
+-  void SetControllerActions(
+-    ControllerState* controller,
+-    const ActionState& actions);
+-  void SetDCSControllerActions(
+-    ControllerState* controller,
+-    const ActionState& actions);
+-  void SetMSFSControllerActions(
+-    ControllerState* controller,
+-    const ActionState& actions);
+ };
+ 
+ }// namespace HandTrackedCockpitClicking","{""has_bug"": false, ""bugs"": []}"
+fredemmott/HTCC,10,0219c9989b865e2017fcbafea255a508fb79f512,src/math.h,removed,0,63,63,"@@ -1,63 +0,0 @@
+-/*
+- * MIT License
+- *
+- * Copyright (c) 2022 Fred Emmott <fred@fredemmott.com>
+- *
+- * Permission is hereby granted, free of charge, to any person obtaining a copy
+- * of this software and associated documentation files (the ""Software""), to deal
+- * in the Software without restriction, including without limitation the rights
+- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+- * copies of the Software, and to permit persons to whom the Software is
+- * furnished to do so, subject to the following conditions:
+- *
+- * The above copyright notice and this permission notice shall be included in
+- * all copies or substantial portions of the Software.
+- *
+- * THE SOFTWARE IS PROVIDED ""AS IS"", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+- * SOFTWARE.
+- */
+-#pragma once
+-
+-#include <directxtk/SimpleMath.h>
+-#include <openxr/openxr.h>
+-
+-using namespace DirectX::SimpleMath;
+-
+-static XrPosef operator*(const XrPosef& a, const XrPosef& b) {
+-  const Quaternion ao {
+-    a.orientation.x,
+-    a.orientation.y,
+-    a.orientation.z,
+-    a.orientation.w,
+-  };
+-  const Quaternion bo {
+-    b.orientation.x,
+-    b.orientation.y,
+-    b.orientation.z,
+-    b.orientation.w,
+-  };
+-  const Vector3 ap {
+-    a.position.x,
+-    a.position.y,
+-    a.position.z,
+-  };
+-  const Vector3 bp {
+-    b.position.x,
+-    b.position.y,
+-    b.position.z,
+-  };
+-
+-  auto o = ao * bo;
+-  o.Normalize();
+-  const auto p = Vector3::Transform(ap, bo) + bp;
+-
+-  return {
+-    .orientation = {o.x, o.y, o.z, o.w},
+-    .position = {p.x, p.y, p.z},
+-  };
+-}","{""has_bug"": true, ""bugs"": [{""line_start"": 60, ""line_end"": 61, ""description"": ""Potential issue with C++20 designated initializers. This syntax is not standard in C++ prior to C++20, which may lead to compatibility issues."", ""buggy_code"": "".orientation = {o.x, o.y, o.z, o.w},\n.position = {p.x, p.y, p.z}""}]}"
+fredemmott/HTCC,10,0219c9989b865e2017fcbafea255a508fb79f512,src/openxr.h,added,81,0,81,"@@ -0,0 +1,81 @@
++/*
++ * MIT License
++ *
++ * Copyright (c) 2022 Fred Emmott <fred@fredemmott.com>
++ *
++ * Permission is hereby granted, free of charge, to any person obtaining a copy
++ * of this software and associated documentation files (the ""Software""), to deal
++ * in the Software without restriction, including without limitation the rights
++ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
++ * copies of the Software, and to permit persons to whom the Software is
++ * furnished to do so, subject to the following conditions:
++ *
++ * The above copyright notice and this permission notice shall be included in
++ * all copies or substantial portions of the Software.
++ *
++ * THE SOFTWARE IS PROVIDED ""AS IS"", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
++ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
++ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
++ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
++ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
++ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
++ * SOFTWARE.
++ */
++#pragma once
++
++#include <directxtk/SimpleMath.h>
++#include <openxr/openxr.h>
++
++#include <format>
++
++static constexpr XrPosef XR_POSEF_IDENTITY {
++  .orientation = {0.0f, 0.0f, 0.0f, 1.0f},
++  .position = {0.0f, 0.0f, 0.0f},
++};
++
++static inline DirectX::SimpleMath::Quaternion XrQuatToSM(
++  const XrQuaternionf& quat) {
++  using namespace DirectX::SimpleMath;
++  static_assert(sizeof(XrQuaternionf) == sizeof(Quaternion));
++  static_assert(offsetof(XrQuaternionf, w) == offsetof(Quaternion, w));
++  return *reinterpret_cast<const Quaternion*>(&quat);
++}
++
++static inline XrQuaternionf SMQuatToXr(
++  const DirectX::SimpleMath::Quaternion& quat) {
++  return *reinterpret_cast<const XrQuaternionf*>(&quat);
++}
++
++static inline DirectX::SimpleMath::Vector3 XrVecToSM(const XrVector3f& vec) {
++  using namespace DirectX::SimpleMath;
++  static_assert(sizeof(XrVector3f) == sizeof(Vector3));
++  static_assert(offsetof(XrVector3f, z) == offsetof(Vector3, z));
++  return *reinterpret_cast<const Vector3*>(&vec);
++}
++
++static inline XrVector3f SMVecToXr(const DirectX::SimpleMath::Vector3& vec) {
++  return *reinterpret_cast<const XrVector3f*>(&vec);
++}
++
++static XrPosef operator*(const XrPosef& a, const XrPosef& b) {
++  using namespace DirectX::SimpleMath;
++  const auto ao = XrQuatToSM(a.orientation);
++  const auto bo = XrQuatToSM(b.orientation);
++  const auto ap = XrVecToSM(a.position);
++  const auto bp = XrVecToSM(b.position);
++
++  auto o = ao * bo;
++  const auto p = Vector3::Transform(ap, bo) + bp;
++
++  return {
++    .orientation = {o.x, o.y, o.z, o.w},
++    .position = {p.x, p.y, p.z},
++  };
++}
++
++static XrQuaternionf operator*(const XrQuaternionf& a, const XrQuaternionf& b) {
++  using namespace DirectX::SimpleMath;
++  const auto& sma = XrQuatToSM(a);
++  const auto& smb = XrQuatToSM(b);
++  return SMQuatToXr(sma * smb);
++}","{""has_bug"": true, ""bugs"": [{""line_start"": 46, ""line_end"": 46, ""description"": ""Potential type mismatch when converting from SimpleMath::Quaternion to XrQuaternionf. The sizes of the two types may not match, leading to undefined behavior."", ""buggy_code"": ""return *reinterpret_cast<const XrQuaternionf*>(&quat);""}, {""line_start"": 57, ""line_end"": 57, ""description"": ""Potential type mismatch when converting from SimpleMath::Vector3 to XrVector3f. The sizes of the two types may not match, leading to undefined behavior."", ""buggy_code"": ""return *reinterpret_cast<const XrVector3f*>(&vec);""}]}"
+fredemmott/HTCC,10,0219c9989b865e2017fcbafea255a508fb79f512,src/pch.h,modified,5,0,5,"@@ -36,3 +36,8 @@
+ // clang-format on
+ 
+ #include <openxr/openxr.h>
++
++#include <format>
++
++template <class CharT>
++struct std::formatter<XrResult, CharT> : std::formatter<int, CharT> {};","{""has_bug"": false, ""bugs"": []}"

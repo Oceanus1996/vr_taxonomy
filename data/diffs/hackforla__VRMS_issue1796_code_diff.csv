@@ -1,0 +1,94 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+hackforla/VRMS,1796,7cd87aa064d375842f5c382a7577e733b6c9289b,client/src/components/data.js,modified,7,5,12,"@@ -39,29 +39,31 @@ export const simpleInputs = [
+     label: 'GitHub URL',
+     name: 'githubUrl',
+     type: 'text',
+-    placeholder: 'htttps://github.com/',
++    placeholder: 'https://github.com/',
+     disabled: false
+   },
+   {
+     label: 'Slack Channel Link',
+     name: 'slackUrl',
+     type: 'text',
+-    placeholder: 'htttps://slack.com/',
++    placeholder: 'https://slack.com/',
+     disabled: false
+   },
+   {
+     label: 'Google Drive URL',
+     name: 'googleDriveUrl',
+     type: 'text',
+-    placeholder: 'htttps://drive.google.com/',
++    placeholder: 'https://drive.google.com/',
+     disabled: false,
+-    required: false
++    required: true,
++    pattern: /^https:\/\/drive\.google\.com\/.+$/, 
++    errorMessage: 'Invalid Google Drive URL'
+   },
+   {
+     label: 'HFLA Website URL',
+     name: 'hflaWebsiteUrl',
+     type: 'text',
+-    placeholder: 'htttps://hackforla.org/projects/',
++    placeholder: 'https://hackforla.org/projects/',
+     disabled: false,
+     required: false
+   },"
+hackforla/VRMS,1796,7cd87aa064d375842f5c382a7577e733b6c9289b,client/src/components/parts/form/ValidatedTextField.jsx,modified,28,19,47,"@@ -24,27 +24,36 @@ function ValidatedTextField({
+   locationRadios,
+   input,
+ }) {
+-  const inputObj = {
+-    pattern:
+-      input.name === 'location'
+-        ? locationType === 'remote'
+-          ? {
+-              value: input.value,
+-              message: input.errorMessage,
+-            }
+-          : {
+-              value: input.addressValue,
+-              message: input.addressError,
+-            }
+-        : { value: input.value, message: input.errorMessage },
+-  };
+-  if ('required' in input && input.required === false) {
+-    // if required is set to false, don't add required attribute to object
+-  } else {
+-    inputObj.required = `${input.name} is required`;
++  
++  const validationRules = {};
++
++  // Validation rules for Google Drive URL
++  if (input.required) {
++    validationRules.required = `${input.label || input.name} is required`
++  }
++  if(input.name === 'googleDriveUrl'){
++    validationRules.pattern = {
++      value: /^https:\/\/drive\.google\.com\/.+$/,
++      message: ""Invalid Google Drive URL"", // Pattern validation for Google Drive URL
++    };
++  }
++
++  if (input.name === 'location') {
++    if (locationType === 'remote') {
++      validationRules.pattern = {
++        value: input.value,
++        message: input.errorMessage || ""Invalid remote location URL"",
++      };
++    } else {
++      validationRules.pattern = {
++        value: input.addressValue,
++        message: input.addressError || ""Invalid physical address"",
++      };
++    }
+   }
++  
+   const registerObj = {
+-    ...register(input.name, inputObj),
++    ...register(input.name, validationRules),
+   }
+ 
+   return ("

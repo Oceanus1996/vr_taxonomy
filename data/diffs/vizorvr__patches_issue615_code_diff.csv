@@ -1,0 +1,308 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vizorvr/patches,615,2352c78,browser/plugins/three_material_shader.plugin.js,modified,1,2,3,"@@ -5,7 +5,7 @@
+ 
+ 		var that = this
+ 
+-		this.desc = 'Auto-generate a shader embedding user-defined main bodies tailored to correctly and optimally render the supplied mesh.'
++		this.desc = 'Shader Material'
+ 
+ 		this.input_slots = []
+ 
+@@ -111,7 +111,6 @@
+ 			})
+ 
+ 			that._editors[which].stateKey = stateKey
+-			that._editors[which]._ace
+ 		}
+ 
+ 		vertexButton.click(function() {"
+vizorvr/patches,615,2352c78,browser/scripts/application.js,modified,0,1,1,"@@ -1242,7 +1242,6 @@ Application.prototype.onKeyDown = function(e) {
+ 		this.alt_pressed = true;
+ 	}
+ 
+-
+ 	// number keys
+ 	else if (e.keyCode > 47 && e.keyCode < 58) { // 0-9
+ 		if (this.ctrl_pressed || this.shift_pressed || this.alt_pressed)"
+vizorvr/patches,615,2352c78,browser/scripts/mid-pane.js,modified,17,6,23,"@@ -1,11 +1,21 @@
+ (function() {
+ 
+ function MidPane() {
++	var that = this
+ 	this._tabs = []
+ 
+-	this._$pane = $('#mid-pane')
++	this._$pane = $('#shader-block')
+ 	this._$tabs = $('ul.nav-tabs', this._$pane)
+ 	this._$tabContent = $('.tab-content', this._$pane)
++
++	jQuery('div.block-header button').off('.midpane')
++	jQuery('div.block-header button.close-button', this._$pane).on('click.midpane', this.close.bind(this))
++	jQuery('div.block-header button.toggle-button', this._$pane).on('click.midpane', function(){
++		that._$pane.toggleClass('collapsed')
++		jQuery('div.tab-content', that._$pane).toggle()
++		return false
++	})
++	// @todo #761
+ }
+ 
+ MidPane.prototype._tabClosed = function(tab) {
+@@ -20,10 +30,10 @@ MidPane.prototype._tabClosed = function(tab) {
+ }
+ 
+ MidPane.prototype.show = function() {
+-	if (this._$pane.hasClass('pane-hidden')) {
+-		this._$pane.removeClass('pane-hidden')
+-		E2.app.onWindowResize()
+-	}
++	if (this._$pane.hasClass('uiopen')) return false
++	this._$pane.addClass('uiopen').show()
++	E2.app.onWindowResize()
++	return true
+ }
+ 
+ MidPane.prototype.closeAll = function() {
+@@ -33,8 +43,9 @@ MidPane.prototype.closeAll = function() {
+ }
+ 
+ MidPane.prototype.close = function() {
+-	this._$pane.addClass('pane-hidden')
++	this._$pane.removeClass('uiopen').hide()
+ 	E2.app.onWindowResize()
++	return true
+ }
+ 
+ // @returns tab body after creating tab header and content divs"
+vizorvr/patches,615,2352c78,browser/scripts/shader-editor.js,modified,9,13,22,"@@ -180,10 +180,12 @@ ShaderEditor.prototype.render = function(title, $dest) {
+ 	$dest.append($html)
+ 
+ 	this._ace = createAce(this._src, id)
++
+ 	this._ace.on('change', function() {
+ 		that.emit('changed', that._ace.getValue())
+ 		that.build()
+ 	})
++
+ 	this._ace.commands.addCommand({
+ 		name:'build',
+ 		bindKey: {
+@@ -192,19 +194,13 @@ ShaderEditor.prototype.render = function(title, $dest) {
+ 		},
+ 		exec: function() {
+ 			that.build(true)
+-	}})
++		}
++	})
+ 
+ 	this.drawInputs()
+ 
+-	function _onResize() {
+-		var height = $aceParent.height() - that._$inputEditor.height() - 20;
+-		that._ace.setOption('minLines', Math.floor(height / 16));
+-		that._ace.setOption('maxLines', Math.floor(height / 16));
+-	}
+-
+-    // E2.app.player.core.renderer.on('resize', _onResize)
+-
+-    _onResize()
++	that._ace.setOption('minLines', 50);
++	that._ace.setOption('maxLines', 50);
+ 
+ 	return this
+ }
+@@ -240,16 +236,16 @@ ShaderEditor.prototype.drawInputs = function() {
+ 
+ // ---- static methods
+ 
+-ShaderEditor.open = function(name, src, inputs)
+-{
++ShaderEditor.open = function(name, src, inputs) {
+ 	var editor
+ 	var tab = E2.app.midPane.newTab(name, function() {
+ 		if (editor)
+ 			editor.close()
+ 	})
+ 
+ 	editor = new ShaderEditor(window.Handlebars, src, inputs)
+-		.render(name, tab.body)
++
++	editor.render(name, tab.body)
+ 
+ 	editor.on('shown', tab.show)
+ 	editor.on('closed', tab.close)"
+vizorvr/patches,615,2352c78,browser/scripts/ui.js,modified,4,0,4,"@@ -57,6 +57,10 @@ VizorUI.prototype.init = function(e2) {	// normally the global E2 object
+ 	this.setupEventHandlers(e2,this.dom);
+ 
+ 	var dom = this.dom;
++
++	var shaderBlock = $('.shader-block')
++	shaderBlock.movable()
++
+ 	dom.presetsLib.movable();
+ 	dom.assetsLib.movable();
+ "
+vizorvr/patches,615,2352c78,less/editors.less,modified,57,20,77,"@@ -1,39 +1,77 @@
+ // E2.ShaderEditor
+ 
+-.shader-editor .input-editor {
++.shader-editor {
++  .input-editor {
+ 	overflow: auto;
+-}
+-
+-.shader-editor .input-button i {
+-	margin-right: 2px;
+-}
+-
+-.shader-editor .input-button {
++  }
++  .input-button {
+ 	border-radius: 3px;
+ 	margin: 1px;
+-}
+-
+-.shader-editor .input-remove-button {
++	i {
++		margin-right: 2px;
++	}
++  }
++  .input-remove-button {
+ 	@hclr: @brand-success;
+ 	color: @gray-dark;
+ 	background-color: @hclr;
+ 	border-color: @hclr;
++	&:hover {
++	  @hclr: @brand-danger;
++	  color: @gray-dark;
++	  background-color: @hclr;
++	  border-color: @hclr;
++	}
++  }
++  div.ace_editor {
++	max-height: 600px;
++  }
+ }
+ 
+-.shader-editor .input-remove-button:hover {
+-	@hclr: @brand-danger;
+-	color: @gray-dark;
+-	background-color: @hclr;
+-	border-color: @hclr;
++.shader-block {
++  left: 350px;
++  width: 660px;
++  z-index: 65;
++  .block-header {
++	width:100%;
++	display: -webkit-flex;
++	display: flex;
++	-webkit-justify-content: space-between;
++	justify-content: space-between;
++	height: 40px;
++  }
++  i.tab-close-button {
++	line-height: 1.4em;
++  }
++  ul.nav-tabs {
++	width:85%;
++  }
++
++  div.ace-tomorrow-night-eighties, {
++	background-color: rgba(0,0,0,0.15);
++  }
++  div.ace_gutter {
++	background-color: rgba(0,0,0,0.5);
++  }
++}
++
++form.addInputDialog select.form-control {
++  line-height: 1.2em;
++  font-weight: normal;
++  font-size: 100%;
++  height:auto;
+ }
+ 
+ .shader-ace {
+-	display: flex;
+-	justify-content: flex-end;
++  display: -webkit-flex;
++  display: flex;
++  -webkit-justify-content: flex-end;
++  justify-content: flex-end;
+ }
+ 
++
+ .ace_editor {
+-	z-index: 0
++  z-index: 0
+ }
+ 
+ // E2.EnvelopeEditor
+@@ -60,4 +98,3 @@
+   fill: #ff7f0e;
+   stroke: #ff7f0e;
+ }
+-"
+vizorvr/patches,615,2352c78,views/editor.handlebars,modified,20,0,20,"@@ -108,6 +108,26 @@
+ </div>
+ <div id=""breadcrumb""></div>
+ <div id=""progressbar""></div>
++
++<div class=""shader-block floating-box"" id=""shader-block"" style=""display:none"">
++		<div class=""block-header"">
++			<button class=""toggle-button"" id=""shader-toggle"" type=""button"">
++				<svg class=""icon-arrow-vertical""><use xlink:href=""#icon-arrow-vertical""></use></svg>
++			</button>
++			<ul class=""nav nav-tabs"" role=""tablist"">
++			</ul>
++			<button class=""close-button"" id=""shader-close"" type=""button"">
++				<svg class=""icon-assets-close""><use xlink:href=""#icon-close""></use></svg>
++			</button>
++		</div>
++
++		<div class=""tab-content"">
++			<div role=""tabpanel"" class=""tab-pane active"" id=""shader"">
++			</div>
++		</div>
++
++</div>
++
+ <div class=""presets-block vp-library floating-box uiopen"" id=""presets-lib"">
+ 		<div class=""block-header"">
+ 			<button class=""toggle-button"" id=""presets-toggle"" type=""button"">"
+vizorvr/patches,615,2352c78,views/ui/shader.handlebars,modified,12,13,25,"@@ -1,23 +1,22 @@
+ <div class=""flex-column shader-editor"">
+-	<div style=""width: 100%"">
++	<div style=""width: 100%;"">
+ 		<div class=""input-editor"">
+ 		</div>
+ 	</div>
+ 
+-	<div class=""shader-ace"">
+-		<div class=""pull-right"">
+-			<label>
+-				<input type=""checkbox"" class=""auto-build"" checked=""checked""/>
+-				Rebuild automatically
+-			</label>
++	<div class=""editor"" id=""{{id}}"" ></div>
+ 
+-			<button title=""Build (Alt-Enter)"" class=""compile-button btn btn-xs btn-default"">
+-				<i class=""fa fa-sm fa-refresh""></i>
+-				<span>Build</span>
+-			</button>
+-		</div>
++	<div style=""text-align:right"">
++		<label>
++			<input type=""checkbox"" class=""auto-build"" checked=""checked""/>
++			Rebuild automatically
++		</label>
++
++		<button title=""Build (Alt-Enter)"" class=""compile-button btn btn-xs btn-default"">
++			<i class=""fa fa-sm fa-refresh""></i>
++			<span>Build</span>
++		</button>
+ 	</div>
+ 
+-	<div class=""editor"" id=""{{id}}""></div>
+ </div>
+ "

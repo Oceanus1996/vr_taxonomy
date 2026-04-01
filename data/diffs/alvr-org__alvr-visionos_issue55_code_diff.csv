@@ -1,0 +1,969 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+alvr-org/alvr-visionos,55,b507a7c80781f0d57dfdd7a5e72c97ec7fde86de,ALVRClient.xcodeproj/project.pbxproj,modified,4,0,4,"@@ -23,6 +23,7 @@
+ 		C5E5903E2B6379EE00328ED6 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = C5E5903D2B6379EE00328ED6 /* Assets.xcassets */; };
+ 		D61E6FE02B71CE080076031A /* VideoHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = D61E6FDF2B71CE080076031A /* VideoHandler.swift */; };
+ 		D68FA8092B742F6F0052B7FF /* FFR.swift in Sources */ = {isa = PBXBuildFile; fileRef = D68FA8082B742F6F0052B7FF /* FFR.swift */; };
++		E702FBDC2B899B8700EE75D0 /* GlobalSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = E702FBDB2B899B8300EE75D0 /* GlobalSettings.swift */; };
+ /* End PBXBuildFile section */
+ 
+ /* Begin PBXCopyFilesBuildPhase section */
+@@ -61,6 +62,7 @@
+ 		D68FA8042B73D5DD0052B7FF /* ALVRClient.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = ALVRClient.xcconfig; sourceTree = ""<group>""; };
+ 		D68FA8052B73D6260052B7FF /* Override.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Override.xcconfig; sourceTree = ""<group>""; };
+ 		D68FA8082B742F6F0052B7FF /* FFR.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FFR.swift; sourceTree = ""<group>""; };
++		E702FBDB2B899B8300EE75D0 /* GlobalSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalSettings.swift; sourceTree = ""<group>""; };
+ /* End PBXFileReference section */
+ 
+ /* Begin PBXFrameworksBuildPhase section */
+@@ -119,6 +121,7 @@
+ 				C5E590312B6379ED00328ED6 /* ALVRClientApp.swift */,
+ 				C5E590492B637C7E00328ED6 /* ALVRClient-Bridging-Header.h */,
+ 				C5E590332B6379ED00328ED6 /* ContentView.swift */,
++				E702FBDB2B899B8300EE75D0 /* GlobalSettings.swift */,
+ 				C5E590352B6379ED00328ED6 /* Renderer.swift */,
+ 				D61E6FDF2B71CE080076031A /* VideoHandler.swift */,
+ 				8E458AB22B7E05FB0019FC73 /* EventHandler.swift */,
+@@ -222,6 +225,7 @@
+ 				D61E6FE02B71CE080076031A /* VideoHandler.swift in Sources */,
+ 				8E458AB32B7E05FB0019FC73 /* EventHandler.swift in Sources */,
+ 				8E1240FF2B7CC02E005B75F2 /* Entry.swift in Sources */,
++				E702FBDC2B899B8700EE75D0 /* GlobalSettings.swift in Sources */,
+ 				8E1241032B7CC0E1005B75F2 /* EntryControls.swift in Sources */,
+ 				D68FA8092B742F6F0052B7FF /* FFR.swift in Sources */,
+ 				C5E590342B6379ED00328ED6 /* ContentView.swift in Sources */,"
+alvr-org/alvr-visionos,55,b507a7c80781f0d57dfdd7a5e72c97ec7fde86de,ALVRClient/ALVRClientApp.swift,modified,6,3,9,"@@ -30,6 +30,7 @@ struct MetalRendererApp: App {
+     @State private var model = ViewModel()
+     @Environment(\.scenePhase) private var scenePhase
+     @State private var clientImmersionStyle: ImmersionStyle = .full
++    //@State private var clientHandVisibility: Visibility = .visible
+ 
+     var body: some Scene {
+         //Entry point, this is the default window chosen in Info.plist from UIApplicationPreferredDefaultSceneSessionRole
+@@ -44,7 +45,7 @@ struct MetalRendererApp: App {
+                     EventHandler.shared.start()
+                 }
+         }
+-        .defaultSize(width: 350, height: 300)
++        .defaultSize(width: 650, height: 600)
+         .windowStyle(.plain)
+         .onChange(of: scenePhase) {
+             switch scenePhase {
+@@ -57,7 +58,9 @@ struct MetalRendererApp: App {
+                 // Scene inactive, currently no action for this
+                 break
+             case .active:
+-                // Scene active, currently no action for this
++                // Scene active, make sure everything is started if it isn't
++                EventHandler.shared.initializeAlvr()
++                EventHandler.shared.start()
+                 break
+             @unknown default:
+                 break
+@@ -71,7 +74,7 @@ struct MetalRendererApp: App {
+             }
+         }
+         .immersionStyle(selection: $clientImmersionStyle, in: .full)
+-        //.upperLimbVisibility(.hidden) // TODO: make this an option
++        .upperLimbVisibility(GlobalSettings.shared.showHandsOverlaid ? .visible : .hidden)
+     }
+     
+ }"
+alvr-org/alvr-visionos,55,b507a7c80781f0d57dfdd7a5e72c97ec7fde86de,ALVRClient/ContentView.swift,modified,0,3,3,"@@ -1,8 +1,5 @@
+ //
+ //  ContentView.swift
+-//  ALVRClient
+-//
+-//  Created by Zhuowei Zhang on 1/26/24.
+ //
+ 
+ import SwiftUI"
+alvr-org/alvr-visionos,55,b507a7c80781f0d57dfdd7a5e72c97ec7fde86de,ALVRClient/Entry/Entry.swift,modified,30,1,31,"@@ -9,11 +9,40 @@ import SwiftUI
+ struct Entry: View {
+     @Environment(ViewModel.self) private var model
+     @ObservedObject var eventHandler = EventHandler.shared
++    @ObservedObject var globalSettings = GlobalSettings.shared
++    @State private var dontKeepSteamVRCenter = false
++    @State private var showHandsOverlaid = false
+ 
+     var body: some View {
+         VStack {
+             Text(""ALVR"")
+                 .font(.system(size: 50, weight: .bold))
++                .padding()
++            
++            Text(""Options:"")
++                .font(.system(size: 20, weight: .bold))
++            VStack {
++                Toggle(isOn: $showHandsOverlaid) {
++                    Text(""Show hands overlaid"")
++                }
++                .toggleStyle(.switch)
++                .onChange(of: showHandsOverlaid) {
++                    globalSettings.showHandsOverlaid = showHandsOverlaid
++                }
++                
++                Toggle(isOn: $dontKeepSteamVRCenter) {
++                    Text(""Crown Button long-press also recenters SteamVR"")
++                }
++                .toggleStyle(.switch)
++                .onChange(of: dontKeepSteamVRCenter) {
++                    globalSettings.keepSteamVRCenter = !dontKeepSteamVRCenter
++                }
++            }
++            .frame(width: 450)
++            .padding()
++            
++            Text(""Connection Information:"")
++                .font(.system(size: 20, weight: .bold))
+             
+             if eventHandler.hostname != """" && eventHandler.IP != """" {
+                 let columns = [
+@@ -30,7 +59,7 @@ struct Entry: View {
+                 .frame(width: 250, alignment: .center)
+             }
+         }
+-        .frame(minWidth: 350, minHeight: 200)
++        .frame(minWidth: 650, minHeight: 500)
+         .glassBackgroundEffect()
+         
+         EntryControls()"
+alvr-org/alvr-visionos,55,b507a7c80781f0d57dfdd7a5e72c97ec7fde86de,ALVRClient/EventHandler.swift,modified,21,7,28,"@@ -1,13 +1,12 @@
+ //
+ //  EventHandler.swift
+-//  ALVRClient
+-//
+ //
+ 
+ import Foundation
+ import Metal
+ import VideoToolbox
+ import Combine
++import AVKit
+ 
+ class EventHandler: ObservableObject {
+     static let shared = EventHandler()
+@@ -48,6 +47,7 @@ class EventHandler: ObservableObject {
+     init() {}
+     
+     func initializeAlvr() {
++        fixAudioForDirectStereo()
+         if !alvrInitialized {
+             print(""Initialize ALVR"")
+             alvrInitialized = true
+@@ -58,6 +58,7 @@ class EventHandler: ObservableObject {
+     }
+     
+     func start() {
++        fixAudioForDirectStereo()
+         if !inputRunning {
+             print(""Starting event thread"")
+             inputRunning = true
+@@ -70,12 +71,25 @@ class EventHandler: ObservableObject {
+     }
+     
+     func stop() {
+-        print(""Stopping"")
+-        inputRunning = false
+-        renderStarted = false
++        if renderStarted {
++            print(""Stopping"")
++            inputRunning = false
++            renderStarted = false
++            alvr_destroy()
++            alvrInitialized = false
++        }
+         updateConnectionState(.disconnected)
+-        alvr_destroy()
+-        alvrInitialized = false
++    }
++
++    func fixAudioForDirectStereo() {
++        let audioSession = AVAudioSession.sharedInstance()
++        do {
++            try audioSession.setCategory(.playAndRecord, options: [.mixWithOthers, .allowBluetoothA2DP, .allowAirPlay])
++            try audioSession.setPreferredOutputNumberOfChannels(2)
++            try audioSession.setIntendedSpatialExperience(.bypassed)
++        } catch {
++            print(""Failed to set the audio session configuration?"")
++        }
+     }
+ 
+     func handleAlvrEvents() {"
+alvr-org/alvr-visionos,55,b507a7c80781f0d57dfdd7a5e72c97ec7fde86de,ALVRClient/FFR.swift,modified,0,3,3,"@@ -1,8 +1,5 @@
+ //
+ //  FFR.swift
+-//  ALVRClient
+-//
+-//  Created by Shadowfacts on 2/7/24.
+ //
+ 
+ import Foundation"
+alvr-org/alvr-visionos,55,b507a7c80781f0d57dfdd7a5e72c97ec7fde86de,ALVRClient/GlobalSettings.swift,added,13,0,13,"@@ -0,0 +1,13 @@
++//
++//  GlobalSettings.swift
++//
++
++import Foundation
++
++class GlobalSettings: ObservableObject {
++    static let shared = GlobalSettings()
++    
++    // TODO: configuration persistence
++    var keepSteamVRCenter = true
++    var showHandsOverlaid = false
++}"
+alvr-org/alvr-visionos,55,b507a7c80781f0d57dfdd7a5e72c97ec7fde86de,ALVRClient/Info.plist,modified,4,0,4,"@@ -2,6 +2,10 @@
+ <!DOCTYPE plist PUBLIC ""-//Apple//DTD PLIST 1.0//EN"" ""http://www.apple.com/DTDs/PropertyList-1.0.dtd"">
+ <plist version=""1.0"">
+ <dict>
++	<key>NSHandsTrackingUsageDescription</key>
++	<string>ALVR would like to send hand positions and skeletons to SteamVR.</string>
++	<key>NSWorldSensingUsageDescription</key>
++	<string>ALVR would like to scan your surroundings for obstacles and playspace boundaries.</string>
+ 	<key>UIApplicationSceneManifest</key>
+ 	<dict>
+ 		<key>UIApplicationPreferredDefaultSceneSessionRole</key>"
+alvr-org/alvr-visionos,55,b507a7c80781f0d57dfdd7a5e72c97ec7fde86de,ALVRClient/Renderer.swift,modified,254,18,272,"@@ -13,8 +13,10 @@ import ObjectiveC
+ 
+ // The 256 byte aligned size of our uniform structure
+ let alignedUniformsSize = (MemoryLayout<UniformsArray>.size + 0xFF) & -0x100
++let alignedPlaneUniformSize = (MemoryLayout<PlaneUniform>.size + 0xFF) & -0x100
+ 
+ let maxBuffersInFlight = 3
++let maxPlanesDrawn = 512
+ 
+ enum RendererError: Error {
+     case badVertexDescriptor
+@@ -47,18 +49,23 @@ class Renderer {
+ 
+     public let device: MTLDevice
+     let commandQueue: MTLCommandQueue
+-    var dynamicUniformBuffer: MTLBuffer
++    
+     var pipelineState: MTLRenderPipelineState
+-    var depthState: MTLDepthStencilState
++    var depthStateAlways: MTLDepthStencilState
++    var depthStateGreater: MTLDepthStencilState
+     var colorMap: MTLTexture
+ 
+     let inFlightSemaphore = DispatchSemaphore(value: maxBuffersInFlight)
+ 
++    var dynamicUniformBuffer: MTLBuffer
+     var uniformBufferOffset = 0
+-
+     var uniformBufferIndex = 0
+-
+     var uniforms: UnsafeMutablePointer<UniformsArray>
++    
++    var dynamicPlaneUniformBuffer: MTLBuffer
++    var planeUniformBufferOffset = 0
++    var planeUniformBufferIndex = 0
++    var planeUniforms: UnsafeMutablePointer<PlaneUniform>
+ 
+     var rotation: Float = 0
+ 
+@@ -69,6 +76,7 @@ class Renderer {
+     var metalTextureCache: CVMetalTextureCache!
+     let mtlVertexDescriptor: MTLVertexDescriptor
+     var videoFramePipelineState: MTLRenderPipelineState!
++    var videoFrameDepthPipelineState: MTLRenderPipelineState!
+     var fullscreenQuadBuffer:MTLBuffer!
+     var lastIpd:Float = -1
+     
+@@ -78,14 +86,17 @@ class Renderer {
+         self.commandQueue = self.device.makeCommandQueue()!
+ 
+         let uniformBufferSize = alignedUniformsSize * maxBuffersInFlight
+-
+         self.dynamicUniformBuffer = self.device.makeBuffer(length:uniformBufferSize,
+                                                            options:[MTLResourceOptions.storageModeShared])!
+-
+         self.dynamicUniformBuffer.label = ""UniformBuffer""
+-
+         uniforms = UnsafeMutableRawPointer(dynamicUniformBuffer.contents()).bindMemory(to:UniformsArray.self, capacity:1)
+ 
++        let planeUniformBufferSize = alignedPlaneUniformSize * maxPlanesDrawn
++        self.dynamicPlaneUniformBuffer = self.device.makeBuffer(length:planeUniformBufferSize,
++                                                           options:[MTLResourceOptions.storageModeShared])!
++        self.dynamicPlaneUniformBuffer.label = ""PlaneUniformBuffer""
++        planeUniforms = UnsafeMutableRawPointer(dynamicPlaneUniformBuffer.contents()).bindMemory(to:PlaneUniform.self, capacity:1)
++
+         mtlVertexDescriptor = Renderer.buildMetalVertexDescriptor()
+ 
+         do {
+@@ -96,11 +107,15 @@ class Renderer {
+             fatalError(""Unable to compile render pipeline state.  Error info: \(error)"")
+         }
+ 
+-        let depthStateDescriptor = MTLDepthStencilDescriptor()
+-        // TODO(zhuowei): hax
+-        depthStateDescriptor.depthCompareFunction = MTLCompareFunction.greater
+-        depthStateDescriptor.isDepthWriteEnabled = true
+-        self.depthState = device.makeDepthStencilState(descriptor:depthStateDescriptor)!
++        let depthStateDescriptorAlways = MTLDepthStencilDescriptor()
++        depthStateDescriptorAlways.depthCompareFunction = MTLCompareFunction.always
++        depthStateDescriptorAlways.isDepthWriteEnabled = true
++        self.depthStateAlways = device.makeDepthStencilState(descriptor:depthStateDescriptorAlways)!
++        
++        let depthStateDescriptorGreater = MTLDepthStencilDescriptor()
++        depthStateDescriptorGreater.depthCompareFunction = MTLCompareFunction.greater
++        depthStateDescriptorGreater.isDepthWriteEnabled = true
++        self.depthStateGreater = device.makeDepthStencilState(descriptor:depthStateDescriptorGreater)!
+ 
+         do {
+             mesh = try Renderer.buildMesh(device: device, mtlVertexDescriptor: mtlVertexDescriptor)
+@@ -138,6 +153,12 @@ class Renderer {
+                                 mtlVertexDescriptor: mtlVertexDescriptor,
+                                 foveationVars: foveationVars
+             )
++            videoFrameDepthPipelineState = try! Renderer.buildRenderPipelineForVideoFrameDepthWithDevice(
++                                device: device,
++                                layerRenderer: layerRenderer,
++                                mtlVertexDescriptor: mtlVertexDescriptor,
++                                foveationVars: foveationVars
++            )
+             let renderThread = Thread {
+                 self.renderLoop()
+             }
+@@ -195,6 +216,34 @@ class Renderer {
+         return try device.makeRenderPipelineState(descriptor: pipelineDescriptor)
+     }
+     
++    // Depth-only renderer, for correcting after overlay render just so Apple's compositor isn't annoying about it
++    class func buildRenderPipelineForVideoFrameDepthWithDevice(device: MTLDevice,
++                                                          layerRenderer: LayerRenderer,
++                                                          mtlVertexDescriptor: MTLVertexDescriptor,
++                                                          foveationVars: FoveationVars) throws -> MTLRenderPipelineState {
++        /// Build a render state pipeline object
++
++        let library = device.makeDefaultLibrary()
++
++        let vertexFunction = library?.makeFunction(name: ""videoFrameVertexShader"")
++         
++        let fragmentConstants = FFR.makeFunctionConstants(foveationVars)
++        let fragmentFunction = try library?.makeFunction(name: ""videoFrameDepthFragmentShader"", constantValues: fragmentConstants)
++
++        let pipelineDescriptor = MTLRenderPipelineDescriptor()
++        pipelineDescriptor.label = ""VideoFrameDepthRenderPipeline""
++        pipelineDescriptor.vertexFunction = vertexFunction
++        pipelineDescriptor.fragmentFunction = fragmentFunction
++        pipelineDescriptor.vertexDescriptor = mtlVertexDescriptor
++
++        pipelineDescriptor.colorAttachments[0].pixelFormat = layerRenderer.configuration.colorFormat
++        pipelineDescriptor.depthAttachmentPixelFormat = layerRenderer.configuration.depthFormat
++
++        pipelineDescriptor.maxVertexAmplificationCount = layerRenderer.properties.viewCount
++        
++        return try device.makeRenderPipelineState(descriptor: pipelineDescriptor)
++    }
++    
+     class func buildRenderPipelineForVideoFrameWithDevice(device: MTLDevice,
+                                                           layerRenderer: LayerRenderer,
+                                                           mtlVertexDescriptor: MTLVertexDescriptor,
+@@ -275,22 +324,31 @@ class Renderer {
+ 
+         uniforms = UnsafeMutableRawPointer(dynamicUniformBuffer.contents() + uniformBufferOffset).bindMemory(to:UniformsArray.self, capacity:1)
+     }
++    
++    private func selectNextPlaneUniformBuffer() {
++        /// Update the state of our uniform buffers before rendering
++
++        planeUniformBufferIndex = (planeUniformBufferIndex + 1) % maxPlanesDrawn
++        planeUniformBufferOffset = alignedPlaneUniformSize * planeUniformBufferIndex
++        planeUniforms = UnsafeMutableRawPointer(dynamicPlaneUniformBuffer.contents() + planeUniformBufferOffset).bindMemory(to:PlaneUniform.self, capacity:1)
++    }
+ 
+     private func updateGameStateForVideoFrame(drawable: LayerRenderer.Drawable, framePose: simd_float4x4) {
+         let simdDeviceAnchor = drawable.deviceAnchor != nil ? drawable.deviceAnchor!.originFromAnchorTransform : matrix_identity_float4x4
+         
+         func uniforms(forViewIndex viewIndex: Int) -> Uniforms {
+             let view = drawable.views[viewIndex]
+             
+-            let viewMatrix = (framePose.inverse * simdDeviceAnchor).inverse
++            let viewMatrix = (simdDeviceAnchor * view.transform).inverse
++            let viewMatrixFrame = (framePose.inverse * simdDeviceAnchor).inverse
+             let projection = ProjectiveTransform3D(leftTangent: Double(view.tangents[0]),
+                                                    rightTangent: Double(view.tangents[1]),
+                                                    topTangent: Double(view.tangents[2]),
+                                                    bottomTangent: Double(view.tangents[3]),
+                                                    nearZ: Double(drawable.depthRange.y),
+                                                    farZ: Double(drawable.depthRange.x),
+                                                    reverseZ: true)
+-            return Uniforms(projectionMatrix: .init(projection), modelViewMatrix: viewMatrix, tangents: view.tangents)
++            return Uniforms(projectionMatrix: .init(projection), modelViewMatrixFrame: viewMatrixFrame, modelViewMatrix: viewMatrix, tangents: view.tangents)
+         }
+         
+         self.uniforms[0].uniforms.0 = uniforms(forViewIndex: 0)
+@@ -424,6 +482,182 @@ class Renderer {
+         EventHandler.shared.lastQueuedFrame = queuedFrame
+     }
+     
++    func planeToColor(plane: PlaneAnchor) -> simd_float4 {
++        let subtleChange = 0.75 + ((Float(plane.id.hashValue & 0xFF) / Float(0xff)) * 0.25)
++        switch(plane.classification) {
++            case .ceiling: // #62ea80
++                return simd_float4(0.3843137254901961, 0.9176470588235294, 0.5019607843137255, 1.0) * subtleChange
++            case .door: // #1a5ff4
++                return simd_float4(0.10196078431372549, 0.37254901960784315, 0.9568627450980393, 1.0) * subtleChange
++            case .floor: // #bf6505
++                return simd_float4(0.7490196078431373, 0.396078431372549, 0.0196078431372549, 1.0) * subtleChange
++            case .seat: // #ef67af
++                return simd_float4(0.9372549019607843, 0.403921568627451, 0.6862745098039216, 1.0) * subtleChange
++            case .table: // #c937d3
++                return simd_float4(0.788235294117647, 0.21568627450980393, 0.8274509803921568, 1.0) * subtleChange
++            case .wall: // #dced5e
++                return simd_float4(0.8627450980392157, 0.9294117647058824, 0.3686274509803922, 1.0) * subtleChange
++            case .window: // #4aefce
++                return simd_float4(0.2901960784313726, 0.9372549019607843, 0.807843137254902, 1.0) * subtleChange
++            case .unknown: // #0e576b
++                return simd_float4(0.054901960784313725, 0.3411764705882353, 0.4196078431372549, 1.0) * subtleChange
++            case .undetermined: // #749606
++                return simd_float4(0.4549019607843137, 0.5882352941176471, 0.023529411764705882, 1.0) * subtleChange
++            default:
++                return simd_float4(1.0, 0.0, 0.0, 1.0) * subtleChange // red
++        }
++    }
++    
++    func renderStreamingFrameDepth(drawable: LayerRenderer.Drawable, commandBuffer: MTLCommandBuffer, queuedFrame: QueuedFrame?, framePose: simd_float4x4) {
++        let renderPassDescriptor = MTLRenderPassDescriptor()
++        renderPassDescriptor.colorAttachments[0].texture = drawable.colorTextures[0]
++        renderPassDescriptor.colorAttachments[0].loadAction = .load
++        renderPassDescriptor.colorAttachments[0].storeAction = .dontCare
++        renderPassDescriptor.colorAttachments[0].clearColor = MTLClearColor(red: 0.0, green: 0.0, blue: 0.0, alpha: 0.0)
++        renderPassDescriptor.depthAttachment.texture = drawable.depthTextures[0]
++        renderPassDescriptor.depthAttachment.loadAction = .clear
++        renderPassDescriptor.depthAttachment.storeAction = .store
++        renderPassDescriptor.depthAttachment.clearDepth = 0.0
++        renderPassDescriptor.rasterizationRateMap = drawable.rasterizationRateMaps.first
++        if layerRenderer.configuration.layout == .layered {
++            renderPassDescriptor.renderTargetArrayLength = drawable.views.count
++        }
++        
++        /// Final pass rendering code here
++        guard let renderEncoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else {
++            fatalError(""Failed to create render encoder"")
++        }
++        
++        renderEncoder.label = ""Rerender depth""
++        
++        renderEncoder.pushDebugGroup(""Draw ALVR Frame Depth"")
++        renderEncoder.setCullMode(.back)
++        renderEncoder.setFrontFacing(.counterClockwise)
++        renderEncoder.setRenderPipelineState(videoFrameDepthPipelineState)
++        renderEncoder.setDepthStencilState(depthStateGreater)
++        
++        renderEncoder.setVertexBuffer(dynamicUniformBuffer, offset:uniformBufferOffset, index: BufferIndex.uniforms.rawValue)
++        renderEncoder.setVertexBuffer(dynamicPlaneUniformBuffer, offset:planeUniformBufferOffset, index: BufferIndex.planeUniforms.rawValue) // unused
++        
++        let viewports = drawable.views.map { $0.textureMap.viewport }
++        
++        renderEncoder.setViewports(viewports)
++        
++        if drawable.views.count > 1 {
++            var viewMappings = (0..<drawable.views.count).map {
++                MTLVertexAmplificationViewMapping(viewportArrayIndexOffset: UInt32($0),
++                                                  renderTargetArrayIndexOffset: UInt32($0))
++            }
++            renderEncoder.setVertexAmplificationCount(viewports.count, viewMappings: &viewMappings)
++        }
++        
++        guard let queuedFrame = queuedFrame else {
++            renderEncoder.endEncoding()
++            return
++        }
++        let pixelBuffer = queuedFrame.imageBuffer
++        // https://cs.android.com/android/platform/superproject/main/+/main:external/webrtc/sdk/objc/components/renderer/metal/RTCMTLNV12Renderer.mm;l=108;drc=a81e9c82fc3fbc984f0f110407d1e44c9c01958a
++        // TODO(zhuowei): yolo
++        //TODO: prevailing wisdom on stackoverflow says that the CVMetalTextureRef has to be held until
++        // rendering is complete, or the MtlTexture will be invalid?
++        
++        for i in 0...1 {
++            var textureOut:CVMetalTexture! = nil
++            var err:OSStatus = 0
++            let width = CVPixelBufferGetWidth(pixelBuffer)
++            let height = CVPixelBufferGetHeight(pixelBuffer)
++            if i == 0 {
++                err = CVMetalTextureCacheCreateTextureFromImage(
++                    nil, metalTextureCache, pixelBuffer, nil, .r8Unorm,
++                    width, height, 0, &textureOut);
++            } else {
++                err = CVMetalTextureCacheCreateTextureFromImage(
++                    nil, metalTextureCache, pixelBuffer, nil, .rg8Unorm,
++                    width/2, height/2, 1, &textureOut);
++            }
++            if err != 0 {
++                fatalError(""CVMetalTextureCacheCreateTextureFromImage \(err)"")
++            }
++            guard let metalTexture = CVMetalTextureGetTexture(textureOut) else {
++                fatalError(""CVMetalTextureCacheCreateTextureFromImage"")
++            }
++            renderEncoder.setFragmentTexture(metalTexture, index: i)
++        }
++        //let test = Unmanaged.passUnretained(pixelBuffer).toOpaque()
++        //print(""draw buf: \(test)"")
++        
++        renderEncoder.setVertexBuffer(fullscreenQuadBuffer, offset: 0, index: VertexAttribute.position.rawValue)
++        renderEncoder.setVertexBuffer(fullscreenQuadBuffer, offset: (3*4)*4, index: VertexAttribute.texcoord.rawValue)
++        renderEncoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
++        renderEncoder.popDebugGroup()
++        renderEncoder.endEncoding()
++    }
++    
++    func renderOverlay(drawable: LayerRenderer.Drawable, commandBuffer: MTLCommandBuffer, queuedFrame: QueuedFrame?, framePose: simd_float4x4)
++    {
++        // Toss out the depth buffer, keep colors
++        let renderPassDescriptor = MTLRenderPassDescriptor()
++        renderPassDescriptor.colorAttachments[0].texture = drawable.colorTextures[0]
++        renderPassDescriptor.colorAttachments[0].loadAction = .load
++        renderPassDescriptor.colorAttachments[0].storeAction = .store
++        renderPassDescriptor.colorAttachments[0].clearColor = MTLClearColor(red: 0.0, green: 0.0, blue: 0.0, alpha: 0.0)
++        renderPassDescriptor.depthAttachment.texture = drawable.depthTextures[0]
++        renderPassDescriptor.depthAttachment.loadAction = .clear
++        renderPassDescriptor.depthAttachment.storeAction = .dontCare
++        renderPassDescriptor.depthAttachment.clearDepth = 0.0
++        renderPassDescriptor.rasterizationRateMap = drawable.rasterizationRateMaps.first
++        if layerRenderer.configuration.layout == .layered {
++            renderPassDescriptor.renderTargetArrayLength = drawable.views.count
++        }
++        
++        let viewports = drawable.views.map { $0.textureMap.viewport }
++        
++        guard let renderEncoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDescriptor) else {
++            fatalError(""Failed to create render encoder"")
++        }
++        renderEncoder.label = ""Plane Render Encoder""
++        renderEncoder.pushDebugGroup(""Draw planes"")
++        renderEncoder.setCullMode(.back)
++        renderEncoder.setFrontFacing(.counterClockwise)
++        renderEncoder.setViewports(viewports)
++        renderEncoder.setVertexBuffer(dynamicUniformBuffer, offset:uniformBufferOffset, index: BufferIndex.uniforms.rawValue)
++        renderEncoder.setVertexBuffer(dynamicPlaneUniformBuffer, offset:planeUniformBufferOffset, index: BufferIndex.planeUniforms.rawValue) // unused
++        
++        if drawable.views.count > 1 {
++            var viewMappings = (0..<drawable.views.count).map {
++                MTLVertexAmplificationViewMapping(viewportArrayIndexOffset: UInt32($0),
++                                                  renderTargetArrayIndexOffset: UInt32($0))
++            }
++            renderEncoder.setVertexAmplificationCount(viewports.count, viewMappings: &viewMappings)
++        }
++        
++        renderEncoder.setRenderPipelineState(pipelineState)
++        renderEncoder.setDepthStencilState(depthStateGreater)
++        
++        WorldTracker.shared.lockPlaneAnchors()
++        for plane in WorldTracker.shared.planeAnchors {
++            let plane = plane.value
++            let faces = plane.geometry.meshFaces
++            renderEncoder.setVertexBuffer(plane.geometry.meshVertices.buffer, offset: 0, index: VertexAttribute.position.rawValue)
++            renderEncoder.setVertexBuffer(plane.geometry.meshVertices.buffer, offset: 0, index: VertexAttribute.texcoord.rawValue)
++            
++            //self.updateGameStateForVideoFrame(drawable: drawable, framePose: framePose, planeTransform: plane.originFromAnchorTransform)
++            selectNextPlaneUniformBuffer()
++            self.planeUniforms[0].planeTransform = plane.originFromAnchorTransform
++            self.planeUniforms[0].planeColor = planeToColor(plane: plane)
++            renderEncoder.setVertexBuffer(dynamicPlaneUniformBuffer, offset:planeUniformBufferOffset, index: BufferIndex.planeUniforms.rawValue)
++            
++            renderEncoder.drawIndexedPrimitives(type: faces.primitive == .triangle ? MTLPrimitiveType.triangle : MTLPrimitiveType.line,
++                                                indexCount: faces.count*3,
++                                                indexType: faces.bytesPerIndex == 2 ? MTLIndexType.uint16 : MTLIndexType.uint32,
++                                                indexBuffer: faces.buffer,
++                                                indexBufferOffset: 0)
++        }
++        WorldTracker.shared.unlockPlaneAnchors()
++        renderEncoder.popDebugGroup()
++        renderEncoder.endEncoding()
++    }
++    
+     func renderStreamingFrame(drawable: LayerRenderer.Drawable, commandBuffer: MTLCommandBuffer, queuedFrame: QueuedFrame?, framePose: simd_float4x4) {
+         self.updateDynamicBufferState()
+         
+@@ -450,17 +684,18 @@ class Renderer {
+         
+         renderEncoder.label = ""Primary Render Encoder""
+         
+-        renderEncoder.pushDebugGroup(""Draw Box"")
++        renderEncoder.pushDebugGroup(""Draw ALVR Frames"")
+         
+         renderEncoder.setCullMode(.back)
+         
+         renderEncoder.setFrontFacing(.counterClockwise)
+         
+         renderEncoder.setRenderPipelineState(videoFramePipelineState)
+         
+-        renderEncoder.setDepthStencilState(depthState)
++        renderEncoder.setDepthStencilState(depthStateAlways)
+         
+         renderEncoder.setVertexBuffer(dynamicUniformBuffer, offset:uniformBufferOffset, index: BufferIndex.uniforms.rawValue)
++        renderEncoder.setVertexBuffer(dynamicPlaneUniformBuffer, offset:planeUniformBufferOffset, index: BufferIndex.planeUniforms.rawValue) // unused
+         
+         let viewports = drawable.views.map { $0.textureMap.viewport }
+         
+@@ -506,14 +741,15 @@ class Renderer {
+             }
+             renderEncoder.setFragmentTexture(metalTexture, index: i)
+         }
+-        //let test = Unmanaged.passUnretained(pixelBuffer).toOpaque()
+-        //print(""draw buf: \(test)"")
+         
+         renderEncoder.setVertexBuffer(fullscreenQuadBuffer, offset: 0, index: VertexAttribute.position.rawValue)
+         renderEncoder.setVertexBuffer(fullscreenQuadBuffer, offset: (3*4)*4, index: VertexAttribute.texcoord.rawValue)
+         renderEncoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+         renderEncoder.popDebugGroup()
+         renderEncoder.endEncoding()
++        
++        //renderOverlay(drawable: drawable, commandBuffer: commandBuffer, queuedFrame: queuedFrame, framePose: framePose)
++        //renderStreamingFrameDepth(drawable: drawable, commandBuffer: commandBuffer, queuedFrame: queuedFrame, framePose: framePose)
+     }
+     
+     func renderLoop() {"
+alvr-org/alvr-visionos,55,b507a7c80781f0d57dfdd7a5e72c97ec7fde86de,ALVRClient/ShaderTypes.h,modified,9,1,10,"@@ -22,7 +22,8 @@ typedef NS_ENUM(EnumBackingType, BufferIndex)
+ {
+     BufferIndexMeshPositions = 0,
+     BufferIndexMeshGenerics  = 1,
+-    BufferIndexUniforms      = 2
++    BufferIndexUniforms      = 2,
++    BufferIndexPlaneUniforms = 3,
+ };
+ 
+ typedef NS_ENUM(EnumBackingType, VertexAttribute)
+@@ -39,6 +40,7 @@ typedef NS_ENUM(EnumBackingType, TextureIndex)
+ typedef struct
+ {
+     matrix_float4x4 projectionMatrix;
++    matrix_float4x4 modelViewMatrixFrame;
+     matrix_float4x4 modelViewMatrix;
+     simd_float4 tangents;
+ } Uniforms;
+@@ -48,6 +50,12 @@ typedef struct
+     Uniforms uniforms[2];
+ } UniformsArray;
+ 
++typedef struct
++{
++    matrix_float4x4 planeTransform;
++    simd_float4 planeColor;
++} PlaneUniform;
++
+ #endif /* ShaderTypes_h */
+ 
+ typedef NS_ENUM(EnumBackingType, ALVRFunctionConstant)"
+alvr-org/alvr-visionos,55,b507a7c80781f0d57dfdd7a5e72c97ec7fde86de,ALVRClient/Shaders.metal,modified,12,10,22,"@@ -21,34 +21,31 @@ typedef struct
+ typedef struct
+ {
+     float4 position [[position]];
++    float4 color;
+     float2 texCoord;
+ } ColorInOut;
+ 
+ vertex ColorInOut vertexShader(Vertex in [[stage_in]],
+                                ushort amp_id [[amplification_id]],
+-                               constant UniformsArray & uniformsArray [[ buffer(BufferIndexUniforms) ]])
++                               constant UniformsArray & uniformsArray [[ buffer(BufferIndexUniforms) ]],
++                               constant PlaneUniform & planeUniform [[ buffer(BufferIndexPlaneUniforms) ]])
+ {
+     ColorInOut out;
+ 
+     Uniforms uniforms = uniformsArray.uniforms[amp_id];
+     
+     float4 position = float4(in.position, 1.0);
+-    out.position = uniforms.projectionMatrix * uniforms.modelViewMatrix * position;
++    out.position = uniforms.projectionMatrix * uniforms.modelViewMatrix * planeUniform.planeTransform * position;
+     out.texCoord = in.texCoord;
++    out.color = planeUniform.planeColor;
+ 
+     return out;
+ }
+ 
+ fragment float4 fragmentShader(ColorInOut in [[stage_in]],
+                                texture2d<half> colorMap     [[ texture(TextureIndexColor) ]])
+ {
+-    constexpr sampler colorSampler(mip_filter::linear,
+-                                   mag_filter::linear,
+-                                   min_filter::linear);
+-
+-    half4 colorSample   = colorMap.sample(colorSampler, in.texCoord.xy);
+-
+-    return float4(colorSample);
++    return in.color;
+ }
+ 
+ // from ALVR
+@@ -142,12 +139,13 @@ vertex ColorInOut videoFrameVertexShader(Vertex in [[stage_in]],
+     else {
+         position.y *= uniforms.tangents[2];
+     }
+-    out.position = uniforms.projectionMatrix * uniforms.modelViewMatrix * position;
++    out.position = uniforms.projectionMatrix * uniforms.modelViewMatrixFrame * position;
+     if (amp_id == 0) {
+         out.texCoord = in.texCoord;
+     } else {
+         out.texCoord = float2(in.texCoord.x + 0.5, in.texCoord.y);
+     }
++    out.color = float4(1.0, 1.0, 1.0, 1.0);
+ 
+     return out;
+ }
+@@ -191,3 +189,7 @@ fragment float4 videoFrameFragmentShader(ColorInOut in [[stage_in]], texture2d<f
+     
+     return float4(color.rgb, 1.0);
+ }
++
++fragment float4 videoFrameDepthFragmentShader(ColorInOut in [[stage_in]], texture2d<float> in_tex_y, texture2d<float> in_tex_uv) {
++    return float4(0.0, 0.0, 0.0, 1.0);
++}"
+alvr-org/alvr-visionos,55,b507a7c80781f0d57dfdd7a5e72c97ec7fde86de,ALVRClient/WorldTracker.swift,modified,203,7,210,"@@ -1,7 +1,5 @@
+ //
+ //  WorldTracker.swift
+-//  ALVRClient
+-//
+ //
+ 
+ import Foundation
+@@ -13,28 +11,202 @@ class WorldTracker {
+     
+     let arSession: ARKitSession!
+     let worldTracking: WorldTrackingProvider!
++    let sceneReconstruction: SceneReconstructionProvider!
++    let planeDetection: PlaneDetectionProvider!
+     
+     var deviceAnchorsLock = NSObject()
+     var deviceAnchorsQueue = [UInt64]()
+     var deviceAnchorsDictionary = [UInt64: simd_float4x4]()
+     
++    // Playspace and boundaries state
++    var planeAnchors: [UUID: PlaneAnchor] = [:]
++    var worldAnchors: [UUID: WorldAnchor] = [:]
++    var worldTrackingAddedOriginAnchor = false
++    var worldTrackingSteamVRTransform: simd_float4x4 = matrix_identity_float4x4
++    var worldOriginAnchor: WorldAnchor = WorldAnchor(originFromAnchorTransform: matrix_identity_float4x4)
++    var planeLock = NSObject()
++    var lastUpdatedTs: TimeInterval = 0
++    var crownPressCount = 0
++    var sentPoses = 0
++    
+     static let maxPrediction = 30 * NSEC_PER_MSEC
+     static let deviceIdHead = alvr_path_string_to_id(""/user/head"")
+-
+     
+-    init(arSession: ARKitSession = ARKitSession(), worldTracking: WorldTrackingProvider = WorldTrackingProvider()) {
++    init(arSession: ARKitSession = ARKitSession(), worldTracking: WorldTrackingProvider = WorldTrackingProvider(), sceneReconstruction: SceneReconstructionProvider = SceneReconstructionProvider(), planeDetection: PlaneDetectionProvider = PlaneDetectionProvider(alignments: [.horizontal, .vertical])) {
+         self.arSession = arSession
+         self.worldTracking = worldTracking
++        self.sceneReconstruction = sceneReconstruction
++        self.planeDetection = planeDetection
++        
++        Task {
++            await processReconstructionUpdates()
++        }
++        Task {
++            await processPlaneUpdates()
++        }
++        Task {
++            await processWorldTrackingUpdates()
++        }
+     }
+     
+     func initializeAr() async  {
++    
++        // Reset playspace state
++        self.worldTrackingAddedOriginAnchor = false
++        self.worldTrackingSteamVRTransform = matrix_identity_float4x4
++        self.worldOriginAnchor = WorldAnchor(originFromAnchorTransform: matrix_identity_float4x4)
++        self.lastUpdatedTs = 0
++        self.crownPressCount = 0
++        self.sentPoses = 0
++        
+         do {
+-            try await arSession.run([worldTracking])
++            try await arSession.run([worldTracking, sceneReconstruction, planeDetection])
+         } catch {
+             fatalError(""Failed to initialize ARSession"")
+         }
+     }
+     
++    func processReconstructionUpdates() async {
++        for await update in sceneReconstruction.anchorUpdates {
++            //let meshAnchor = update.anchor
++            //print(meshAnchor.id, meshAnchor.originFromAnchorTransform)
++        }
++    }
++    
++    func processPlaneUpdates() async {
++        for await update in planeDetection.anchorUpdates {
++            //print(update.event, update.anchor.classification, update.anchor.id, update.anchor.description)
++            if update.anchor.classification == .window {
++                // Skip planes that are windows.
++                continue
++            }
++            switch update.event {
++            case .added, .updated:
++                updatePlane(update.anchor)
++            case .removed:
++                removePlane(update.anchor)
++            }
++            
++        }
++    }
++    
++    func anchorDistanceFromOrigin(anchor: WorldAnchor) -> Float {
++        let pos = anchor.originFromAnchorTransform.columns.3
++        return simd_distance(matrix_identity_float4x4.columns.3, pos)
++    }
++    
++    // We have an origin anchor which we use to maintain SteamVR's positions
++    // every time visionOS's centering changes.
++    func processWorldTrackingUpdates() async {
++        for await update in worldTracking.anchorUpdates {
++            print(update.event, update.anchor.id, update.anchor.description, update.timestamp)
++            
++            switch update.event {
++            case .added, .updated:
++                worldAnchors[update.anchor.id] = update.anchor
++                if !self.worldTrackingAddedOriginAnchor {
++                    print(""Early origin anchor?"", anchorDistanceFromOrigin(anchor: update.anchor), ""Current Origin,"", self.worldOriginAnchor.id)
++                    
++                    // If we randomly get an anchor added within 3.5m, consider that our origin
++                    if anchorDistanceFromOrigin(anchor: update.anchor) < 3.5 {
++                        print(""Set new origin!"")
++                        
++                        // This has a (positive) minor side-effect: all redundant anchors within 3.5m will get cleaned up,
++                        // though which anchor gets chosen will be arbitrary.
++                        // But there should only be one anyway.
++                        do {
++                            try await worldTracking.removeAnchor(self.worldOriginAnchor)
++                        }
++                        catch {
++                            // don't care
++                        }
++                    
++                        worldOriginAnchor = update.anchor
++                    }
++                }
++                
++                if update.anchor.id == worldOriginAnchor.id {
++                    self.worldOriginAnchor = update.anchor
++
++                    let anchorTransform = update.anchor.originFromAnchorTransform
++                    if GlobalSettings.shared.keepSteamVRCenter {
++                        self.worldTrackingSteamVRTransform = anchorTransform
++                    }
++                    
++                    // Crown-press shenanigans
++                    if update.event == .updated {
++                        let sinceLast = update.timestamp - lastUpdatedTs
++                        if sinceLast < 3.0 && sinceLast > 0.5 {
++                            crownPressCount += 1
++                        }
++                        else {
++                            crownPressCount = 0
++                        }
++                        lastUpdatedTs = update.timestamp
++                        
++                        // Triple-press crown to purge nearby anchors and recenter
++                        if crownPressCount >= 2 {
++                            print(""Reset world origin!"")
++                            
++                            // Purge all existing world anchors within 3.5m
++                            for anchorPurge in worldAnchors {
++                                do {
++                                    if anchorDistanceFromOrigin(anchor: update.anchor) < 3.5 {
++                                        try await worldTracking.removeAnchor(anchorPurge.value)
++                                    }
++                                }
++                                catch {
++                                    // don't care
++                                }
++                                worldAnchors.removeValue(forKey: anchorPurge.key)
++                            }
++                    
++                            self.worldOriginAnchor = WorldAnchor(originFromAnchorTransform: matrix_identity_float4x4)
++                            if GlobalSettings.shared.keepSteamVRCenter {
++                                self.worldTrackingSteamVRTransform = anchorTransform
++                            }
++                            
++                            do {
++                                try await worldTracking.addAnchor(self.worldOriginAnchor)
++                            }
++                            catch {
++                                // don't care
++                            }
++                            
++                            crownPressCount = 0
++                        }
++                    }
++                }
++                
++            case .removed:
++                break
++            }
++            
++            
++        }
++    }
++    
++    func updatePlane(_ anchor: PlaneAnchor) {
++        lockPlaneAnchors()
++        planeAnchors[anchor.id] = anchor
++        unlockPlaneAnchors()
++    }
++
++    func removePlane(_ anchor: PlaneAnchor) {
++        lockPlaneAnchors()
++        planeAnchors.removeValue(forKey: anchor.id)
++        unlockPlaneAnchors()
++    }
++    
++    func lockPlaneAnchors() {
++        objc_sync_enter(planeLock)
++    }
++    
++    func unlockPlaneAnchors() {
++         objc_sync_exit(planeLock)
++    }
++
++    
+     // TODO: figure out how stable Apple's predictions are into the future
+     
+     func sendTracking(targetTimestamp: Double) {
+@@ -61,6 +233,26 @@ class WorldTracker {
+             return
+         }
+         
++        // This is kinda fiddly: worldTracking doesn't have a way to get a list of existing anchors,
++        // and addAnchor only works while fully immersed mode is fully running.
++        // So we have to sandwich it in here where we know worldTracking is online.
++        //
++        // That aside, if we add an anchor at (0,0,0), we will get reports in processWorldTrackingUpdates()
++        // every time the user recenters.
++        if !self.worldTrackingAddedOriginAnchor && sentPoses > 300 {
++            self.worldTrackingAddedOriginAnchor = true
++            
++            Task {
++                do {
++                    try await worldTracking.addAnchor(self.worldOriginAnchor)
++                }
++                catch {
++                    // don't care
++                }
++            }
++        }
++        sentPoses += 1
++        
+         let targetTimestampNS = UInt64(targetTimestampWalkedBack * Double(NSEC_PER_SEC))
+         
+         deviceAnchorsQueue.append(targetTimestampNS)
+@@ -69,8 +261,12 @@ class WorldTracker {
+             deviceAnchorsDictionary.removeValue(forKey: val)
+         }
+         deviceAnchorsDictionary[targetTimestampNS] = deviceAnchor.originFromAnchorTransform
+-        let orientation = simd_quaternion(deviceAnchor.originFromAnchorTransform)
+-        let position = deviceAnchor.originFromAnchorTransform.columns.3
++
++        // Don't move SteamVR center/bounds when the headset recenters
++        var transform = self.worldTrackingSteamVRTransform.inverse * deviceAnchor.originFromAnchorTransform
++        
++        let orientation = simd_quaternion(transform)
++        let position = transform.columns.3
+         let pose = AlvrPose(orientation: AlvrQuat(x: orientation.vector.x, y: orientation.vector.y, z: orientation.vector.z, w: orientation.vector.w), position: (position.x, position.y, position.z))
+         var trackingMotion = AlvrDeviceMotion(device_id: WorldTracker.deviceIdHead, pose: pose, linear_velocity: (0, 0, 0), angular_velocity: (0, 0, 0))
+         let targetTimestampReqestedNS = UInt64(targetTimestamp * Double(NSEC_PER_SEC))"

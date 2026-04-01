@@ -1,0 +1,66 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+Unity-Technologies/EditorXR,445,3417cb7fb8415751273073dac63997fee661c94a,Scripts/Core/EditorVR.MiniWorlds.cs,modified,0,2,2,"@@ -383,8 +383,6 @@ internal void UpdateMiniWorlds()
+                             directSelection.ResumeGrabbers(incomingPreview.node);
+                         }
+ 
+-                        miniWorldRay.UpdatePreview(); // Otherwise the object is in the wrong position for a frame
+-
+                         if (!isContained)
+                             m_RayWasContained[originalRayOrigin] = false; //Prevent ray from showing
+                     }"
+Unity-Technologies/EditorXR,445,3417cb7fb8415751273073dac63997fee661c94a,Tools/TransformTool/TransformTool.cs,modified,18,7,25,"@@ -58,7 +58,7 @@ public void Reset()
+                 }
+             }
+ 
+-            public void UpdatePositions(IUsesSnapping usesSnapping)
++            public void UpdatePositions(IUsesSnapping usesSnapping, bool interpolate = true)
+             {
+                 if (suspended)
+                     return;
+@@ -71,13 +71,21 @@ public void UpdatePositions(IUsesSnapping usesSnapping)
+                     var position = grabbedObject.position;
+                     var rotation = grabbedObject.rotation;
+                     var targetPosition = rayOrigin.position + rayOrigin.rotation * m_PositionOffsets[i];
+-                    var targetRotation = rayOrigin.rotation * m_RotationOffsets[i];
++                    var targetRotation = rayOrigin.rotation * m_RotationOffsets[i];
+ 
+                     if (usesSnapping.DirectSnap(rayOrigin, grabbedObject, ref position, ref rotation, targetPosition, targetRotation))
+                     {
+-                        var deltaTime = Time.deltaTime;
+-                        grabbedObject.position = Vector3.Lerp(grabbedObject.position, position, k_DirectLazyFollowTranslate * deltaTime);
+-                        grabbedObject.rotation = Quaternion.Lerp(grabbedObject.rotation, rotation, k_DirectLazyFollowRotate * deltaTime);
++                        if (interpolate)
++                        {
++                            var deltaTime = Time.deltaTime;
++                            grabbedObject.position = Vector3.Lerp(grabbedObject.position, position, k_DirectLazyFollowTranslate * deltaTime);
++                            grabbedObject.rotation = Quaternion.Lerp(grabbedObject.rotation, rotation, k_DirectLazyFollowRotate * deltaTime);
++                        }
++                        else
++                        {
++                            grabbedObject.position = position;
++                            grabbedObject.rotation = rotation;
++                        }
+                     }
+                     else
+                     {
+@@ -595,7 +603,10 @@ public void Resume(Node node)
+         {
+             var grabData = GrabDataForNode(node);
+             if (grabData != null)
+-                grabData.suspended = false;
++            {
++                grabData.suspended = false;
++                grabData.UpdatePositions(this, false);
++            }
+         }
+ 
+         public Transform[] GetHeldObjects(Node node)
+@@ -616,7 +627,7 @@ public Transform[] GetHeldObjects(Node node)
+ 
+             grabData.TransferTo(destRayOrigin, deltaOffset);
+             this.ClearSnappingState(rayOrigin);
+-            grabData.UpdatePositions(this);
++            grabData.UpdatePositions(this, false);
+ 
+             // Prevent lock from getting stuck
+             this.RemoveRayVisibilitySettings(rayOrigin, this);"

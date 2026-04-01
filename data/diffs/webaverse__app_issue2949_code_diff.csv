@@ -1,0 +1,742 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+webaverse/app,2949,2f5bd865a6acd811d2f44b22c8973dd470e3c89f,avatars/avatars.js,modified,32,28,60,"@@ -79,7 +79,7 @@ const textEncoder = new TextEncoder();
+ 
+ // const y180Quaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
+ const maxIdleVelocity = 0.01;
+-const maxEyeTargetTime = 2000;
++const maxHeadTargetTime = 2000;
+ 
+ /* VRMSpringBoneImporter.prototype._createSpringBone = (_createSpringBone => {
+   const localVector = new THREE.Vector3();
+@@ -547,11 +547,13 @@ class Avatar {
+     // this.allHairBones = allHairBones;
+     this.hairBones = hairBones; */
+     
+-    this.eyeTarget = new THREE.Vector3();
+-    this.eyeTargetInverted = false;
+-    this.eyeTargetEnabled = false;
++    this.headTarget = new THREE.Vector3();
++    this.headTargetInverted = false;
++    this.headTargetEnabled = false;
++
+     this.eyeballTarget = new THREE.Vector3();
+     this.eyeballTargetPlane = new THREE.Plane();
++    this.needLimitEyeballTargetRange = false;
+     this.eyeballTargetEnabled = false;
+ 
+     if (options.hair) {
+@@ -957,9 +959,9 @@ class Avatar {
+     this.lastIsBackward = false;
+     this.lastBackwardFactor = 0;
+     this.backwardAnimationSpec = null;
+-    this.startEyeTargetQuaternion = new THREE.Quaternion();
+-    this.lastNeedsEyeTarget = false;
+-    this.lastEyeTargetTime = -Infinity;
++    this.startHeadTargetQuaternion = new THREE.Quaternion();
++    this.lastNeedsHeadTarget = false;
++    this.lastHeadTargetTime = -Infinity;
+ 
+     this.manuallySetMouth=false;
+   }
+@@ -1541,47 +1543,47 @@ class Avatar {
+       ); */
+     };
+ 
+-    const _updateEyeTarget = () => {
++    const _updateHeadTarget = () => {
+       const eyePosition = getEyePosition(this.modelBones);
+       const globalQuaternion = localQuaternion2.setFromRotationMatrix(
+-        this.eyeTargetInverted ?
++        this.headTargetInverted ?
+           localMatrix.lookAt(
+-            this.eyeTarget,
++            this.headTarget,
+             eyePosition,
+             upVector
+           )
+           :
+           localMatrix.lookAt(
+             eyePosition,
+-            this.eyeTarget,
++            this.headTarget,
+             upVector
+           )
+       );
+       // this.modelBoneOutputs.Root.updateMatrixWorld();
+       this.modelBoneOutputs.Neck.matrixWorld.decompose(localVector, localQuaternion, localVector2);
+ 
+-      const needsEyeTarget = this.eyeTargetEnabled && this.modelBones.Root.quaternion.angleTo(globalQuaternion) < Math.PI * 0.4;
+-      if (needsEyeTarget && !this.lastNeedsEyeTarget) {
+-        this.startEyeTargetQuaternion.copy(localQuaternion);
+-        this.lastEyeTargetTime = now;
+-      } else if (this.lastNeedsEyeTarget && !needsEyeTarget) {
+-        this.startEyeTargetQuaternion.copy(localQuaternion);
+-        this.lastEyeTargetTime = now;
++      const needsHeadTarget = this.headTargetEnabled && this.modelBones.Root.quaternion.angleTo(globalQuaternion) < Math.PI * 0.4;
++      if (needsHeadTarget && !this.lastNeedsHeadTarget) {
++        this.startHeadTargetQuaternion.copy(localQuaternion);
++        this.lastHeadTargetTime = now;
++      } else if (this.lastNeedsHeadTarget && !needsHeadTarget) {
++        this.startHeadTargetQuaternion.copy(localQuaternion);
++        this.lastHeadTargetTime = now;
+       }
+-      this.lastNeedsEyeTarget = needsEyeTarget;
++      this.lastNeedsHeadTarget = needsHeadTarget;
+ 
+-      const eyeTargetFactor = Math.min(Math.max((now - this.lastEyeTargetTime) / maxEyeTargetTime, 0), 1);
+-      if (needsEyeTarget) {
+-        localQuaternion.copy(this.startEyeTargetQuaternion)
+-          .slerp(globalQuaternion, cubicBezier(eyeTargetFactor));
++      const headTargetFactor = Math.min(Math.max((now - this.lastHeadTargetTime) / maxHeadTargetTime, 0), 1);
++      if (needsHeadTarget) {
++        localQuaternion.copy(this.startHeadTargetQuaternion)
++          .slerp(globalQuaternion, cubicBezier(headTargetFactor));
+         this.modelBoneOutputs.Neck.matrixWorld.compose(localVector, localQuaternion, localVector2)
+         this.modelBoneOutputs.Neck.matrix.copy(this.modelBoneOutputs.Neck.matrixWorld)
+           .premultiply(localMatrix2.copy(this.modelBoneOutputs.Neck.parent.matrixWorld).invert())
+           .decompose(this.modelBoneOutputs.Neck.position, this.modelBoneOutputs.Neck.quaternion, localVector2);
+       } else {
+-        if (eyeTargetFactor < 1) {
+-          localQuaternion2.copy(this.startEyeTargetQuaternion)
+-            .slerp(localQuaternion, cubicBezier(eyeTargetFactor));
++        if (headTargetFactor < 1) {
++          localQuaternion2.copy(this.startHeadTargetQuaternion)
++            .slerp(localQuaternion, cubicBezier(headTargetFactor));
+           localMatrix.compose(localVector.set(0, 0, 0), localQuaternion2, localVector2.set(1, 1, 1))
+             .premultiply(localMatrix2.copy(this.modelBoneOutputs.Neck.parent.matrixWorld).invert())
+             .decompose(localVector, localQuaternion, localVector2);
+@@ -1594,7 +1596,9 @@ class Avatar {
+       const rightEye = this.modelBoneOutputs['Eye_R'];
+ 
+       const lookerEyeballTarget = this.looker.update(now);
+-      const eyeballTarget = this.eyeballTargetEnabled ? this.eyeballTarget : lookerEyeballTarget;
++      let eyeballTargetEnabled = this.eyeballTargetEnabled;
++      if (this.needLimitEyeballTargetRange && !this.lastNeedsHeadTarget) eyeballTargetEnabled = false;
++      const eyeballTarget = eyeballTargetEnabled ? this.eyeballTarget : lookerEyeballTarget;
+ 
+       if (eyeballTarget && this.firstPersonCurves) {
+         const {
+@@ -1920,7 +1924,7 @@ class Avatar {
+     this.lerpShoulderTransforms();
+     this.legsManager.Update();
+ 
+-    _updateEyeTarget();
++    _updateHeadTarget();
+     _updateEyeballTarget();
+ 
+     this.modelBoneOutputs.Root.updateMatrixWorld();"
+webaverse/app,2949,2f5bd865a6acd811d2f44b22c8973dd470e3c89f,character-controller.js,modified,20,0,20,"@@ -169,8 +169,14 @@ class PlayerBase extends THREE.Object3D {
+       app.parent && app.parent.remove(app);
+     });
+ 
++    this.headTarget = new THREE.Vector3();
++    this.headTargetInverted = false;
++    this.headTargetEnabled = false;
++    
+     this.eyeballTarget = new THREE.Vector3();
++    this.needLimitEyeballTargetRange = false;
+     this.eyeballTargetEnabled = false;
++    
+     this.voicePack = null;
+     this.voiceEndpoint = null;
+   }
+@@ -485,6 +491,20 @@ class PlayerBase extends THREE.Object3D {
+       _emitEvents();
+     }
+   }
++  setTarget(target) { // set both head and eyeball target;
++    if (target) {
++      this.headTarget.copy(target);
++      this.headTargetInverted = true;
++      this.headTargetEnabled = true;
++
++      this.eyeballTarget.copy(target);
++      this.needLimitEyeballTargetRange = true;
++      this.eyeballTargetEnabled = true;
++    } else {
++      this.headTargetEnabled = false;
++      this.eyeballTargetEnabled = false;
++    }
++  }
+   destroy() {
+     // nothing
+   }"
+webaverse/app,2949,2f5bd865a6acd811d2f44b22c8973dd470e3c89f,game.js,modified,10,12,22,"@@ -992,31 +992,29 @@ const _gameUpdate = (timestamp, timeDiff) => {
+   };
+   _updateBehavior();
+   
+-  const _updateMouseLook = () => {
++  const _updateLook = () => {
+     if (localPlayer.avatar) {
+       if (mouseSelectedObject && mouseSelectedPosition) {
+         // console.log('got', mouseSelectedObject.position.toArray().join(','));
+-        localPlayer.avatar.eyeTarget.copy(mouseSelectedPosition);
+-        localPlayer.avatar.eyeTargetInverted = true;
+-        localPlayer.avatar.eyeTargetEnabled = true;
++        localPlayer.headTarget.copy(mouseSelectedPosition);
++        localPlayer.headTargetInverted = true;
++        localPlayer.headTargetEnabled = true;
+       } else if (!cameraManager.pointerLockElement && !cameraManager.target && lastMouseEvent) {
+         const renderer = getRenderer();
+         const size = renderer.getSize(localVector);
+         
+-        localPlayer.avatar.eyeTarget.set(-(lastMouseEvent.clientX/size.x-0.5), (lastMouseEvent.clientY/size.y-0.5), 1)
++        localPlayer.headTarget.set(-(lastMouseEvent.clientX/size.x-0.5), (lastMouseEvent.clientY/size.y-0.5), 1)
+           .unproject(camera);
+-        localPlayer.avatar.eyeTargetInverted = false;
+-        localPlayer.avatar.eyeTargetEnabled = true;
++        localPlayer.headTargetInverted = false;
++        localPlayer.headTargetEnabled = true;
+       } else if (zTargeting?.focusTargetReticle?.position) {
+-        localPlayer.avatar.eyeTarget.copy(zTargeting.focusTargetReticle.position);
+-        localPlayer.avatar.eyeTargetInverted = true;
+-        localPlayer.avatar.eyeTargetEnabled = true;
++        localPlayer.setTarget(zTargeting.focusTargetReticle.position);
+       } else {
+-        localPlayer.avatar.eyeTargetEnabled = false;
++        localPlayer.setTarget(null);
+       }
+     }
+   };
+-  _updateMouseLook();
++  _updateLook();
+ 
+   const crosshairEl = document.getElementById('crosshair');
+   if (crosshairEl) {"
+webaverse/app,2949,2f5bd865a6acd811d2f44b22c8973dd470e3c89f,metaverse_components/npc.js,modified,1,2,3,"@@ -159,8 +159,7 @@ try {
+           }
+         }
+ 
+-        app.npcPlayer.eyeballTarget.copy(localPlayer.position);
+-        app.npcPlayer.eyeballTargetEnabled = true;
++        app.npcPlayer.setTarget(localPlayer.position);
+ 
+         app.npcPlayer.updatePhysics(timestamp, timeDiff);
+         app.npcPlayer.updateAvatar(timestamp, timeDiff);"
+webaverse/app,2949,2f5bd865a6acd811d2f44b22c8973dd470e3c89f,player-avatar-binding.js,modified,15,1,16,"@@ -182,10 +182,23 @@ export function applyPlayerActionsToAvatar(player, rig) {
+   rig.hurtAnimation = (hurtAction?.animation) || '';
+   rig.hurtTime = player.actionInterpolants.hurt.get();
+ }
+-// returns whether eyes were applied
++// returns whether headTarget were applied
++export function applyPlayerHeadTargetToAvatar(player, rig) {
++  if (player.headTargetEnabled) {
++    rig.headTarget.copy(player.headTarget);
++    rig.headTargetInverted = player.headTargetInverted;
++    rig.headTargetEnabled = true;
++    return true;
++  } else {
++    rig.headTargetEnabled = false;
++    return false;
++  }
++}
++// returns whether eyes(eyeballs) were applied
+ export function applyPlayerEyesToAvatar(player, rig) {
+   if (player.eyeballTargetEnabled) {
+     rig.eyeballTarget.copy(player.eyeballTarget);
++    rig.needLimitEyeballTargetRange = player.needLimitEyeballTargetRange;
+     rig.eyeballTargetEnabled = true;
+     return true;
+   } else {
+@@ -238,6 +251,7 @@ export function applyPlayerToAvatar(player, session, rig, mirrors) {
+   
+   applyPlayerModesToAvatar(player, session, rig);
+   applyPlayerActionsToAvatar(player, rig);
++  applyPlayerHeadTargetToAvatar(player, rig);
+   applyPlayerEyesToAvatar(player, rig) || applyMirrorsToAvatar(player, rig, mirrors);
+   
+   applyFacePoseToAvatar(player, rig);"
+webaverse/app,2949,323b65e64dd400327914789b12d4b9f00c56c844,avatars/avatars.js,modified,28,32,60,"@@ -79,7 +79,7 @@ const textEncoder = new TextEncoder();
+ 
+ // const y180Quaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
+ const maxIdleVelocity = 0.01;
+-const maxHeadTargetTime = 2000;
++const maxEyeTargetTime = 2000;
+ 
+ /* VRMSpringBoneImporter.prototype._createSpringBone = (_createSpringBone => {
+   const localVector = new THREE.Vector3();
+@@ -547,13 +547,11 @@ class Avatar {
+     // this.allHairBones = allHairBones;
+     this.hairBones = hairBones; */
+     
+-    this.headTarget = new THREE.Vector3();
+-    this.headTargetInverted = false;
+-    this.headTargetEnabled = false;
+-
++    this.eyeTarget = new THREE.Vector3();
++    this.eyeTargetInverted = false;
++    this.eyeTargetEnabled = false;
+     this.eyeballTarget = new THREE.Vector3();
+     this.eyeballTargetPlane = new THREE.Plane();
+-    this.needLimitEyeballTargetRange = false;
+     this.eyeballTargetEnabled = false;
+ 
+     if (options.hair) {
+@@ -959,9 +957,9 @@ class Avatar {
+     this.lastIsBackward = false;
+     this.lastBackwardFactor = 0;
+     this.backwardAnimationSpec = null;
+-    this.startHeadTargetQuaternion = new THREE.Quaternion();
+-    this.lastNeedsHeadTarget = false;
+-    this.lastHeadTargetTime = -Infinity;
++    this.startEyeTargetQuaternion = new THREE.Quaternion();
++    this.lastNeedsEyeTarget = false;
++    this.lastEyeTargetTime = -Infinity;
+ 
+     this.manuallySetMouth=false;
+   }
+@@ -1543,47 +1541,47 @@ class Avatar {
+       ); */
+     };
+ 
+-    const _updateHeadTarget = () => {
++    const _updateEyeTarget = () => {
+       const eyePosition = getEyePosition(this.modelBones);
+       const globalQuaternion = localQuaternion2.setFromRotationMatrix(
+-        this.headTargetInverted ?
++        this.eyeTargetInverted ?
+           localMatrix.lookAt(
+-            this.headTarget,
++            this.eyeTarget,
+             eyePosition,
+             upVector
+           )
+           :
+           localMatrix.lookAt(
+             eyePosition,
+-            this.headTarget,
++            this.eyeTarget,
+             upVector
+           )
+       );
+       // this.modelBoneOutputs.Root.updateMatrixWorld();
+       this.modelBoneOutputs.Neck.matrixWorld.decompose(localVector, localQuaternion, localVector2);
+ 
+-      const needsHeadTarget = this.headTargetEnabled && this.modelBones.Root.quaternion.angleTo(globalQuaternion) < Math.PI * 0.4;
+-      if (needsHeadTarget && !this.lastNeedsHeadTarget) {
+-        this.startHeadTargetQuaternion.copy(localQuaternion);
+-        this.lastHeadTargetTime = now;
+-      } else if (this.lastNeedsHeadTarget && !needsHeadTarget) {
+-        this.startHeadTargetQuaternion.copy(localQuaternion);
+-        this.lastHeadTargetTime = now;
++      const needsEyeTarget = this.eyeTargetEnabled && this.modelBones.Root.quaternion.angleTo(globalQuaternion) < Math.PI * 0.4;
++      if (needsEyeTarget && !this.lastNeedsEyeTarget) {
++        this.startEyeTargetQuaternion.copy(localQuaternion);
++        this.lastEyeTargetTime = now;
++      } else if (this.lastNeedsEyeTarget && !needsEyeTarget) {
++        this.startEyeTargetQuaternion.copy(localQuaternion);
++        this.lastEyeTargetTime = now;
+       }
+-      this.lastNeedsHeadTarget = needsHeadTarget;
++      this.lastNeedsEyeTarget = needsEyeTarget;
+ 
+-      const headTargetFactor = Math.min(Math.max((now - this.lastHeadTargetTime) / maxHeadTargetTime, 0), 1);
+-      if (needsHeadTarget) {
+-        localQuaternion.copy(this.startHeadTargetQuaternion)
+-          .slerp(globalQuaternion, cubicBezier(headTargetFactor));
++      const eyeTargetFactor = Math.min(Math.max((now - this.lastEyeTargetTime) / maxEyeTargetTime, 0), 1);
++      if (needsEyeTarget) {
++        localQuaternion.copy(this.startEyeTargetQuaternion)
++          .slerp(globalQuaternion, cubicBezier(eyeTargetFactor));
+         this.modelBoneOutputs.Neck.matrixWorld.compose(localVector, localQuaternion, localVector2)
+         this.modelBoneOutputs.Neck.matrix.copy(this.modelBoneOutputs.Neck.matrixWorld)
+           .premultiply(localMatrix2.copy(this.modelBoneOutputs.Neck.parent.matrixWorld).invert())
+           .decompose(this.modelBoneOutputs.Neck.position, this.modelBoneOutputs.Neck.quaternion, localVector2);
+       } else {
+-        if (headTargetFactor < 1) {
+-          localQuaternion2.copy(this.startHeadTargetQuaternion)
+-            .slerp(localQuaternion, cubicBezier(headTargetFactor));
++        if (eyeTargetFactor < 1) {
++          localQuaternion2.copy(this.startEyeTargetQuaternion)
++            .slerp(localQuaternion, cubicBezier(eyeTargetFactor));
+           localMatrix.compose(localVector.set(0, 0, 0), localQuaternion2, localVector2.set(1, 1, 1))
+             .premultiply(localMatrix2.copy(this.modelBoneOutputs.Neck.parent.matrixWorld).invert())
+             .decompose(localVector, localQuaternion, localVector2);
+@@ -1596,9 +1594,7 @@ class Avatar {
+       const rightEye = this.modelBoneOutputs['Eye_R'];
+ 
+       const lookerEyeballTarget = this.looker.update(now);
+-      let eyeballTargetEnabled = this.eyeballTargetEnabled;
+-      if (this.needLimitEyeballTargetRange && !this.lastNeedsHeadTarget) eyeballTargetEnabled = false;
+-      const eyeballTarget = eyeballTargetEnabled ? this.eyeballTarget : lookerEyeballTarget;
++      const eyeballTarget = this.eyeballTargetEnabled ? this.eyeballTarget : lookerEyeballTarget;
+ 
+       if (eyeballTarget && this.firstPersonCurves) {
+         const {
+@@ -1924,7 +1920,7 @@ class Avatar {
+     this.lerpShoulderTransforms();
+     this.legsManager.Update();
+ 
+-    _updateHeadTarget();
++    _updateEyeTarget();
+     _updateEyeballTarget();
+ 
+     this.modelBoneOutputs.Root.updateMatrixWorld();"
+webaverse/app,2949,323b65e64dd400327914789b12d4b9f00c56c844,character-controller.js,modified,0,20,20,"@@ -169,14 +169,8 @@ class PlayerBase extends THREE.Object3D {
+       app.parent && app.parent.remove(app);
+     });
+ 
+-    this.headTarget = new THREE.Vector3();
+-    this.headTargetInverted = false;
+-    this.headTargetEnabled = false;
+-    
+     this.eyeballTarget = new THREE.Vector3();
+-    this.needLimitEyeballTargetRange = false;
+     this.eyeballTargetEnabled = false;
+-    
+     this.voicePack = null;
+     this.voiceEndpoint = null;
+   }
+@@ -491,20 +485,6 @@ class PlayerBase extends THREE.Object3D {
+       _emitEvents();
+     }
+   }
+-  setTarget(target) { // set both head and eyeball target;
+-    if (target) {
+-      this.headTarget.copy(target);
+-      this.headTargetInverted = true;
+-      this.headTargetEnabled = true;
+-
+-      this.eyeballTarget.copy(target);
+-      this.needLimitEyeballTargetRange = true;
+-      this.eyeballTargetEnabled = true;
+-    } else {
+-      this.headTargetEnabled = false;
+-      this.eyeballTargetEnabled = false;
+-    }
+-  }
+   destroy() {
+     // nothing
+   }"
+webaverse/app,2949,323b65e64dd400327914789b12d4b9f00c56c844,game.js,modified,12,10,22,"@@ -992,29 +992,31 @@ const _gameUpdate = (timestamp, timeDiff) => {
+   };
+   _updateBehavior();
+   
+-  const _updateLook = () => {
++  const _updateMouseLook = () => {
+     if (localPlayer.avatar) {
+       if (mouseSelectedObject && mouseSelectedPosition) {
+         // console.log('got', mouseSelectedObject.position.toArray().join(','));
+-        localPlayer.headTarget.copy(mouseSelectedPosition);
+-        localPlayer.headTargetInverted = true;
+-        localPlayer.headTargetEnabled = true;
++        localPlayer.avatar.eyeTarget.copy(mouseSelectedPosition);
++        localPlayer.avatar.eyeTargetInverted = true;
++        localPlayer.avatar.eyeTargetEnabled = true;
+       } else if (!cameraManager.pointerLockElement && !cameraManager.target && lastMouseEvent) {
+         const renderer = getRenderer();
+         const size = renderer.getSize(localVector);
+         
+-        localPlayer.headTarget.set(-(lastMouseEvent.clientX/size.x-0.5), (lastMouseEvent.clientY/size.y-0.5), 1)
++        localPlayer.avatar.eyeTarget.set(-(lastMouseEvent.clientX/size.x-0.5), (lastMouseEvent.clientY/size.y-0.5), 1)
+           .unproject(camera);
+-        localPlayer.headTargetInverted = false;
+-        localPlayer.headTargetEnabled = true;
++        localPlayer.avatar.eyeTargetInverted = false;
++        localPlayer.avatar.eyeTargetEnabled = true;
+       } else if (zTargeting?.focusTargetReticle?.position) {
+-        localPlayer.setTarget(zTargeting.focusTargetReticle.position);
++        localPlayer.avatar.eyeTarget.copy(zTargeting.focusTargetReticle.position);
++        localPlayer.avatar.eyeTargetInverted = true;
++        localPlayer.avatar.eyeTargetEnabled = true;
+       } else {
+-        localPlayer.setTarget(null);
++        localPlayer.avatar.eyeTargetEnabled = false;
+       }
+     }
+   };
+-  _updateLook();
++  _updateMouseLook();
+ 
+   const crosshairEl = document.getElementById('crosshair');
+   if (crosshairEl) {"
+webaverse/app,2949,323b65e64dd400327914789b12d4b9f00c56c844,metaverse_components/npc.js,modified,2,1,3,"@@ -159,7 +159,8 @@ try {
+           }
+         }
+ 
+-        app.npcPlayer.setTarget(localPlayer.position);
++        app.npcPlayer.eyeballTarget.copy(localPlayer.position);
++        app.npcPlayer.eyeballTargetEnabled = true;
+ 
+         app.npcPlayer.updatePhysics(timestamp, timeDiff);
+         app.npcPlayer.updateAvatar(timestamp, timeDiff);"
+webaverse/app,2949,323b65e64dd400327914789b12d4b9f00c56c844,player-avatar-binding.js,modified,1,15,16,"@@ -182,23 +182,10 @@ export function applyPlayerActionsToAvatar(player, rig) {
+   rig.hurtAnimation = (hurtAction?.animation) || '';
+   rig.hurtTime = player.actionInterpolants.hurt.get();
+ }
+-// returns whether headTarget were applied
+-export function applyPlayerHeadTargetToAvatar(player, rig) {
+-  if (player.headTargetEnabled) {
+-    rig.headTarget.copy(player.headTarget);
+-    rig.headTargetInverted = player.headTargetInverted;
+-    rig.headTargetEnabled = true;
+-    return true;
+-  } else {
+-    rig.headTargetEnabled = false;
+-    return false;
+-  }
+-}
+-// returns whether eyes(eyeballs) were applied
++// returns whether eyes were applied
+ export function applyPlayerEyesToAvatar(player, rig) {
+   if (player.eyeballTargetEnabled) {
+     rig.eyeballTarget.copy(player.eyeballTarget);
+-    rig.needLimitEyeballTargetRange = player.needLimitEyeballTargetRange;
+     rig.eyeballTargetEnabled = true;
+     return true;
+   } else {
+@@ -251,7 +238,6 @@ export function applyPlayerToAvatar(player, session, rig, mirrors) {
+   
+   applyPlayerModesToAvatar(player, session, rig);
+   applyPlayerActionsToAvatar(player, rig);
+-  applyPlayerHeadTargetToAvatar(player, rig);
+   applyPlayerEyesToAvatar(player, rig) || applyMirrorsToAvatar(player, rig, mirrors);
+   
+   applyFacePoseToAvatar(player, rig);"
+webaverse/app,2949,bccec215ff0373b68447bb1b34bc28412ccb9fa6,avatars/avatars.js,modified,32,28,60,"@@ -78,7 +78,7 @@ const textEncoder = new TextEncoder();
+ 
+ // const y180Quaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
+ const maxIdleVelocity = 0.01;
+-const maxEyeTargetTime = 2000;
++const maxHeadTargetTime = 2000;
+ 
+ /* VRMSpringBoneImporter.prototype._createSpringBone = (_createSpringBone => {
+   const localVector = new THREE.Vector3();
+@@ -546,11 +546,13 @@ class Avatar {
+     // this.allHairBones = allHairBones;
+     this.hairBones = hairBones; */
+     
+-    this.eyeTarget = new THREE.Vector3();
+-    this.eyeTargetInverted = false;
+-    this.eyeTargetEnabled = false;
++    this.headTarget = new THREE.Vector3();
++    this.headTargetInverted = false;
++    this.headTargetEnabled = false;
++
+     this.eyeballTarget = new THREE.Vector3();
+     this.eyeballTargetPlane = new THREE.Plane();
++    this.needLimitEyeballTargetRange = false;
+     this.eyeballTargetEnabled = false;
+ 
+     if (options.hair) {
+@@ -949,9 +951,9 @@ class Avatar {
+     this.lastIsBackward = false;
+     this.lastBackwardFactor = 0;
+     this.backwardAnimationSpec = null;
+-    this.startEyeTargetQuaternion = new THREE.Quaternion();
+-    this.lastNeedsEyeTarget = false;
+-    this.lastEyeTargetTime = -Infinity;
++    this.startHeadTargetQuaternion = new THREE.Quaternion();
++    this.lastNeedsHeadTarget = false;
++    this.lastHeadTargetTime = -Infinity;
+ 
+     this.manuallySetMouth=false;
+   }
+@@ -1468,47 +1470,47 @@ class Avatar {
+       ); */
+     };
+ 
+-    const _updateEyeTarget = () => {
++    const _updateHeadTarget = () => {
+       const eyePosition = getEyePosition(this.modelBones);
+       const globalQuaternion = localQuaternion2.setFromRotationMatrix(
+-        this.eyeTargetInverted ?
++        this.headTargetInverted ?
+           localMatrix.lookAt(
+-            this.eyeTarget,
++            this.headTarget,
+             eyePosition,
+             upVector
+           )
+           :
+           localMatrix.lookAt(
+             eyePosition,
+-            this.eyeTarget,
++            this.headTarget,
+             upVector
+           )
+       );
+       // this.modelBoneOutputs.Root.updateMatrixWorld();
+       this.modelBoneOutputs.Neck.matrixWorld.decompose(localVector, localQuaternion, localVector2);
+ 
+-      const needsEyeTarget = this.eyeTargetEnabled && this.modelBones.Root.quaternion.angleTo(globalQuaternion) < Math.PI * 0.4;
+-      if (needsEyeTarget && !this.lastNeedsEyeTarget) {
+-        this.startEyeTargetQuaternion.copy(localQuaternion);
+-        this.lastEyeTargetTime = now;
+-      } else if (this.lastNeedsEyeTarget && !needsEyeTarget) {
+-        this.startEyeTargetQuaternion.copy(localQuaternion);
+-        this.lastEyeTargetTime = now;
++      const needsHeadTarget = this.headTargetEnabled && this.modelBones.Root.quaternion.angleTo(globalQuaternion) < Math.PI * 0.4;
++      if (needsHeadTarget && !this.lastNeedsHeadTarget) {
++        this.startHeadTargetQuaternion.copy(localQuaternion);
++        this.lastHeadTargetTime = now;
++      } else if (this.lastNeedsHeadTarget && !needsHeadTarget) {
++        this.startHeadTargetQuaternion.copy(localQuaternion);
++        this.lastHeadTargetTime = now;
+       }
+-      this.lastNeedsEyeTarget = needsEyeTarget;
++      this.lastNeedsHeadTarget = needsHeadTarget;
+ 
+-      const eyeTargetFactor = Math.min(Math.max((now - this.lastEyeTargetTime) / maxEyeTargetTime, 0), 1);
+-      if (needsEyeTarget) {
+-        localQuaternion.copy(this.startEyeTargetQuaternion)
+-          .slerp(globalQuaternion, cubicBezier(eyeTargetFactor));
++      const headTargetFactor = Math.min(Math.max((now - this.lastHeadTargetTime) / maxHeadTargetTime, 0), 1);
++      if (needsHeadTarget) {
++        localQuaternion.copy(this.startHeadTargetQuaternion)
++          .slerp(globalQuaternion, cubicBezier(headTargetFactor));
+         this.modelBoneOutputs.Neck.matrixWorld.compose(localVector, localQuaternion, localVector2)
+         this.modelBoneOutputs.Neck.matrix.copy(this.modelBoneOutputs.Neck.matrixWorld)
+           .premultiply(localMatrix2.copy(this.modelBoneOutputs.Neck.parent.matrixWorld).invert())
+           .decompose(this.modelBoneOutputs.Neck.position, this.modelBoneOutputs.Neck.quaternion, localVector2);
+       } else {
+-        if (eyeTargetFactor < 1) {
+-          localQuaternion2.copy(this.startEyeTargetQuaternion)
+-            .slerp(localQuaternion, cubicBezier(eyeTargetFactor));
++        if (headTargetFactor < 1) {
++          localQuaternion2.copy(this.startHeadTargetQuaternion)
++            .slerp(localQuaternion, cubicBezier(headTargetFactor));
+           localMatrix.compose(localVector.set(0, 0, 0), localQuaternion2, localVector2.set(1, 1, 1))
+             .premultiply(localMatrix2.copy(this.modelBoneOutputs.Neck.parent.matrixWorld).invert())
+             .decompose(localVector, localQuaternion, localVector2);
+@@ -1521,7 +1523,9 @@ class Avatar {
+       const rightEye = this.modelBoneOutputs['Eye_R'];
+ 
+       const lookerEyeballTarget = this.looker.update(now);
+-      const eyeballTarget = this.eyeballTargetEnabled ? this.eyeballTarget : lookerEyeballTarget;
++      let eyeballTargetEnabled = this.eyeballTargetEnabled;
++      if (this.needLimitEyeballTargetRange && !this.lastNeedsHeadTarget) eyeballTargetEnabled = false;
++      const eyeballTarget = eyeballTargetEnabled ? this.eyeballTarget : lookerEyeballTarget;
+ 
+       if (eyeballTarget && this.firstPersonCurves) {
+         const {
+@@ -1847,7 +1851,7 @@ class Avatar {
+     this.shoulderTransforms.Update();
+     this.legsManager.Update();
+ 
+-    _updateEyeTarget();
++    _updateHeadTarget();
+     _updateEyeballTarget();
+ 
+     this.modelBoneOutputs.Root.updateMatrixWorld();"
+webaverse/app,2949,bccec215ff0373b68447bb1b34bc28412ccb9fa6,character-controller.js,modified,20,0,20,"@@ -168,8 +168,14 @@ class PlayerBase extends THREE.Object3D {
+       app.parent && app.parent.remove(app);
+     });
+ 
++    this.headTarget = new THREE.Vector3();
++    this.headTargetInverted = false;
++    this.headTargetEnabled = false;
++    
+     this.eyeballTarget = new THREE.Vector3();
++    this.needLimitEyeballTargetRange = false;
+     this.eyeballTargetEnabled = false;
++    
+     this.voicePack = null;
+     this.voiceEndpoint = null;
+   }
+@@ -484,6 +490,20 @@ class PlayerBase extends THREE.Object3D {
+       _emitEvents();
+     }
+   }
++  setTarget(target) { // set both head and eyeball target;
++    if (target) {
++      this.headTarget.copy(target);
++      this.headTargetInverted = true;
++      this.headTargetEnabled = true;
++
++      this.eyeballTarget.copy(target);
++      this.needLimitEyeballTargetRange = true;
++      this.eyeballTargetEnabled = true;
++    } else {
++      this.headTargetEnabled = false;
++      this.eyeballTargetEnabled = false;
++    }
++  }
+   destroy() {
+     // nothing
+   }"
+webaverse/app,2949,bccec215ff0373b68447bb1b34bc28412ccb9fa6,game.js,modified,10,12,22,"@@ -992,31 +992,29 @@ const _gameUpdate = (timestamp, timeDiff) => {
+   };
+   _updateBehavior();
+   
+-  const _updateMouseLook = () => {
++  const _updateLook = () => {
+     if (localPlayer.avatar) {
+       if (mouseSelectedObject && mouseSelectedPosition) {
+         // console.log('got', mouseSelectedObject.position.toArray().join(','));
+-        localPlayer.avatar.eyeTarget.copy(mouseSelectedPosition);
+-        localPlayer.avatar.eyeTargetInverted = true;
+-        localPlayer.avatar.eyeTargetEnabled = true;
++        localPlayer.headTarget.copy(mouseSelectedPosition);
++        localPlayer.headTargetInverted = true;
++        localPlayer.headTargetEnabled = true;
+       } else if (!cameraManager.pointerLockElement && !cameraManager.target && lastMouseEvent) {
+         const renderer = getRenderer();
+         const size = renderer.getSize(localVector);
+         
+-        localPlayer.avatar.eyeTarget.set(-(lastMouseEvent.clientX/size.x-0.5), (lastMouseEvent.clientY/size.y-0.5), 1)
++        localPlayer.headTarget.set(-(lastMouseEvent.clientX/size.x-0.5), (lastMouseEvent.clientY/size.y-0.5), 1)
+           .unproject(camera);
+-        localPlayer.avatar.eyeTargetInverted = false;
+-        localPlayer.avatar.eyeTargetEnabled = true;
++        localPlayer.headTargetInverted = false;
++        localPlayer.headTargetEnabled = true;
+       } else if (zTargeting?.focusTargetReticle?.position) {
+-        localPlayer.avatar.eyeTarget.copy(zTargeting.focusTargetReticle.position);
+-        localPlayer.avatar.eyeTargetInverted = true;
+-        localPlayer.avatar.eyeTargetEnabled = true;
++        localPlayer.setTarget(zTargeting.focusTargetReticle.position);
+       } else {
+-        localPlayer.avatar.eyeTargetEnabled = false;
++        localPlayer.setTarget(null);
+       }
+     }
+   };
+-  _updateMouseLook();
++  _updateLook();
+ 
+   const crosshairEl = document.getElementById('crosshair');
+   if (crosshairEl) {"
+webaverse/app,2949,bccec215ff0373b68447bb1b34bc28412ccb9fa6,metaverse_components/npc.js,modified,1,2,3,"@@ -159,8 +159,7 @@ try {
+           }
+         }
+ 
+-        app.npcPlayer.eyeballTarget.copy(localPlayer.position);
+-        app.npcPlayer.eyeballTargetEnabled = true;
++        app.npcPlayer.setTarget(localPlayer.position);
+ 
+         app.npcPlayer.updatePhysics(timestamp, timeDiff);
+         app.npcPlayer.updateAvatar(timestamp, timeDiff);"
+webaverse/app,2949,bccec215ff0373b68447bb1b34bc28412ccb9fa6,player-avatar-binding.js,modified,15,1,16,"@@ -179,10 +179,23 @@ export function applyPlayerActionsToAvatar(player, rig) {
+   rig.hurtAnimation = (hurtAction?.animation) || '';
+   rig.hurtTime = player.actionInterpolants.hurt.get();
+ }
+-// returns whether eyes were applied
++// returns whether headTarget were applied
++export function applyPlayerHeadTargetToAvatar(player, rig) {
++  if (player.headTargetEnabled) {
++    rig.headTarget.copy(player.headTarget);
++    rig.headTargetInverted = player.headTargetInverted;
++    rig.headTargetEnabled = true;
++    return true;
++  } else {
++    rig.headTargetEnabled = false;
++    return false;
++  }
++}
++// returns whether eyes(eyeballs) were applied
+ export function applyPlayerEyesToAvatar(player, rig) {
+   if (player.eyeballTargetEnabled) {
+     rig.eyeballTarget.copy(player.eyeballTarget);
++    rig.needLimitEyeballTargetRange = player.needLimitEyeballTargetRange;
+     rig.eyeballTargetEnabled = true;
+     return true;
+   } else {
+@@ -235,6 +248,7 @@ export function applyPlayerToAvatar(player, session, rig, mirrors) {
+   
+   applyPlayerModesToAvatar(player, session, rig);
+   applyPlayerActionsToAvatar(player, rig);
++  applyPlayerHeadTargetToAvatar(player, rig);
+   applyPlayerEyesToAvatar(player, rig) || applyMirrorsToAvatar(player, rig, mirrors);
+   
+   applyFacePoseToAvatar(player, rig);"

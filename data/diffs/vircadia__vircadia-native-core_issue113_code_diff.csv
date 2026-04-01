@@ -1,0 +1,158 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vircadia/vircadia-native-core,113,cb0a080,interface/resources/qml/hifi/audio/Audio.qml,modified,6,9,15,"@@ -44,7 +44,6 @@ Rectangle {
+         return (root.parent !== null) && root.parent.objectName == ""loader"";
+     }
+ 
+-
+     property bool isVR: AudioScriptingInterface.context === ""VR""
+     property real rightMostInputLevelPos: root.width
+     //placeholder for control sizes and paddings
+@@ -128,16 +127,16 @@ Rectangle {
+             anchors.top: flickView.top;
+             anchors.right: flickView.right;
+             anchors.bottom: flickView.bottom;
+-            anchors.rightMargin: -verticalScrollWidth; //compensate flickView's right margin
++            z: 100  // Display over top of separators.
++
+             background: Item {
+                 implicitWidth: verticalScrollWidth;
+                 Rectangle {
+-                    color: hifi.colors.darkGray30;
++                    color: hifi.colors.baseGrayShadow
+                     radius: 4;
+                     anchors {
+                         fill: parent;
+-                        topMargin: -1;  // Finesse size
+-                        bottomMargin: -2;
++                        topMargin: 2  // Finess position
+                     }
+                 }
+             }
+@@ -148,9 +147,7 @@ Rectangle {
+                     color: hifi.colors.white30;
+                     anchors {
+                         fill: parent;
+-                        leftMargin: 2;  // Finesse size and position.
+-                        topMargin: 1;
+-                        bottomMargin: 1;
++                        topMargin: 1;  // Finesse position.
+                     }
+                 }
+             }
+@@ -338,7 +335,6 @@ Rectangle {
+             anchors.topMargin: 10;
+         }
+ 
+-
+         Item {
+             id: inputDeviceHeader
+             x: margins.paddings;
+@@ -688,4 +684,5 @@ Rectangle {
+             anchors.topMargin: 10;
+         }
+     }
++
+ }"
+vircadia/vircadia-native-core,113,cb0a080,interface/resources/qml/hifi/tablet/tabletWindows/TabletPreferencesDialog.qml,modified,43,2,45,"@@ -9,6 +9,7 @@
+ //
+ 
+ import QtQuick 2.5
++import QtQuick.Controls 2.2
+ 
+ import "".""
+ import ""./preferences""
+@@ -33,7 +34,10 @@ Item {
+     property bool gotoPreviousAppFromScript: false
+ 
+     property var tablet;
+-  
++
++    readonly property real verticalScrollWidth: 10
++    readonly property real verticalScrollShaft: 8
++
+     function saveAll() {
+         dialog.forceActiveFocus();  // Accept any text box edits in progress.
+ 
+@@ -103,6 +107,43 @@ Item {
+             height: parent.height
+             contentWidth: parent.width
+             contentHeight: getSectionsHeight();
++
++            anchors.top: main.top
++            anchors.bottom: main.bottom
++
++            ScrollBar.vertical: ScrollBar {
++                policy: ScrollBar.AlwaysOn
++                parent: scrollView.parent
++                anchors.top: scrollView.top
++                anchors.right: scrollView.right
++                anchors.bottom: scrollView.bottom
++                z: 100  // Display over top of separators.
++
++                background: Item {
++                    implicitWidth: verticalScrollWidth
++                    Rectangle {
++                        color: hifi.colors.baseGrayShadow
++                        radius: 4
++                        anchors {
++                            fill: parent
++                            bottomMargin: 1
++                        }
++                    }
++                }
++                contentItem: Item {
++                    implicitWidth: verticalScrollShaft
++                    Rectangle {
++                        radius: verticalScrollShaft/2
++                        color: hifi.colors.white30
++                        anchors {
++                            fill: parent
++                            topMargin: 1
++                            bottomMargin: 1
++                        }
++                    }
++                }
++            }
++
+             Column {
+                 width: 480
+                 Component {
+@@ -183,7 +224,7 @@ Item {
+                 for (var i = 0; i < sections.length; i++) {
+                     totalHeight += sections[i].height + sections[i].getPreferencesHeight();
+                 }
+-                var bottomPadding = 170;
++                var bottomPadding = 30;
+                 return (totalHeight + bottomPadding);
+             }
+         }"
+vircadia/vircadia-native-core,113,cb0a080,interface/resources/qml/windows/ScrollingWindow.qml,modified,1,3,4,"@@ -97,11 +97,10 @@ Windows.Window {
+                 background: Item {
+                     implicitWidth: verticalScrollWidth
+                     Rectangle {
+-                        color: hifi.colors.darkGray30
++                        color: hifi.colors.baseGrayShadow
+                         radius: 4
+                         anchors {
+                             fill: parent
+-                            topMargin: -1  // Finesse size
+                             bottomMargin: -2
+                         }
+                     }
+@@ -113,7 +112,6 @@ Windows.Window {
+                         color: hifi.colors.white30
+                         anchors {
+                             fill: parent
+-                            leftMargin: 2  // Finesse size and position.
+                             topMargin: 1
+                             bottomMargin: 1
+                         }"
+vircadia/vircadia-native-core,113,dbe359f,hifi_singleton.py,modified,1,1,2,"@@ -46,7 +46,7 @@ def __enter__(self):
+                     self.fh = None
+                 # print is horked here so write directly to stdout.
+                 with open(1, mode=""w"", closefd=False) as _stdout:
+-                    _stdout.write(""Couldn't aquire lock, retrying in 10 seconds\n"")
++                    _stdout.write(f""Couldn't aquire lock {self.path}, retrying in 10 seconds\n"")
+                     _stdout.flush()
+                 time.sleep(10)
+         return self"

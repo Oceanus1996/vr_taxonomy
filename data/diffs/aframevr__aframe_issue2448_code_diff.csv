@@ -1,0 +1,35 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe,2448,3178d75811d2731ffbaf9d24875b3541b03def52,src/components/tracked-controls.js,modified,9,3,12,"@@ -84,9 +84,15 @@ module.exports.Component = registerComponent('tracked-controls', {
+       dolly.updateMatrix();
+ 
+       // Apply transforms.
+-      if (vrDisplay && vrDisplay.stageParameters) {
+-        standingMatrix.fromArray(vrDisplay.stageParameters.sittingToStandingTransform);
+-        dolly.applyMatrix(standingMatrix);
++      if (vrDisplay) {
++        if (vrDisplay.stageParameters) {
++          standingMatrix.fromArray(vrDisplay.stageParameters.sittingToStandingTransform);
++          dolly.applyMatrix(standingMatrix);
++        } else {
++          // Apply default camera height
++          dolly.position.y += el.sceneEl.camera.el.getAttribute('camera').userHeight;
++          dolly.updateMatrix();
++        }
+       }
+ 
+       // Decompose."
+aframevr/aframe,2448,3178d75811d2731ffbaf9d24875b3541b03def52,src/systems/tracked-controls.js,modified,4,4,8,"@@ -14,10 +14,10 @@ module.exports.System = registerSystem('tracked-controls', {
+     // Throttle the (renamed) tick handler to minimum 10ms interval.
+     this.tick = utils.throttle(this.throttledTick, 10, this);
+     if (!navigator.getVRDisplays) { return; }
+-    navigator.getVRDisplays().then(function (displays) {
+-      if (displays.length > 0) {
+-        self.vrDisplay = displays[0];
+-      }
++    this.sceneEl.addEventListener('enter-vr', function () {
++      navigator.getVRDisplays().then(function (displays) {
++        if (displays.length) { self.vrDisplay = displays[0]; }
++      });
+     });
+   },
+ "

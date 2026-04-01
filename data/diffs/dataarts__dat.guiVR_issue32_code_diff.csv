@@ -1,0 +1,70 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+dataarts/dat.guiVR,32,33a383b7b87a17dd04345c405242211694d42577,build/datguivr.js,modified,16,4,20,
+dataarts/dat.guiVR,32,33a383b7b87a17dd04345c405242211694d42577,examples/index.html,modified,15,0,15,"@@ -34,6 +34,21 @@
+       //  instance of DATGUIVR, only one is needed
+       const gui = DATGUIVR();
+ 
++      //  you can use the mouse to interact with the GUI on-screen!
++      gui.setMouseEnabled( true );
++
++      //  or turn it off when going into VR
++      window.addEventListener( 'vrdisplaypresentchange', function( e ){
++        if( e.display.isPresenting ){
++          gui.setMouseEnabled( false );
++        }
++        else{
++          gui.setMouseEnabled( true );
++        }
++      }, false );
++
++
++
+       //  add an input object (any Object3D like ViveController or Camera)
+       //  you can add multiple objects
+       const guiInputRight = gui.addInputObject( controllers[ 0 ] );"
+dataarts/dat.guiVR,32,33a383b7b87a17dd04345c405242211694d42577,examples/js/datguivr.js,modified,16,4,20,
+dataarts/dat.guiVR,32,33a383b7b87a17dd04345c405242211694d42577,modules/datguivr/index.js,modified,13,3,16,"@@ -47,7 +47,11 @@ export default function DATGUIVR({
+   const controllers = [];
+   const hitscanObjects = [];
+ 
++  let mouseEnabled = false;
+ 
++  function setMouseEnabled( flag ){
++    mouseEnabled = flag;
++  }
+ 
+ 
+ 
+@@ -319,7 +323,9 @@ export default function DATGUIVR({
+   function update() {
+     requestAnimationFrame( update );
+ 
+-    mouseInput.intersections = performMouseInput( hitscanObjects, mouseInput );
++    if( mouseEnabled ){
++      mouseInput.intersections = performMouseInput( hitscanObjects, mouseInput );
++    }
+ 
+     inputObjects.forEach( function( {box,object,raycast,laser,cursor} = {}, index ){
+       object.updateMatrixWorld();
+@@ -342,7 +348,10 @@ export default function DATGUIVR({
+     });
+ 
+     const inputs = inputObjects.slice();
+-    inputs.push( mouseInput );
++
++    if( mouseEnabled ){
++      inputs.push( mouseInput );
++    }
+ 
+     controllers.forEach( function( controller ){
+       controller.update( inputs );
+@@ -386,7 +395,8 @@ export default function DATGUIVR({
+   return {
+     addInputObject,
+     add,
+-    addFolder
++    addFolder,
++    setMouseEnabled
+   };
+ 
+ }"

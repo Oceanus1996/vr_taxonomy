@@ -1,0 +1,1153 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+secondlife/viewer,944,78cd3c3,indra/newview/skins/default/xui/en/panel_notification.xml,modified,3,0,3,"@@ -39,6 +39,7 @@
+       name=""text_box""
+       read_only=""true""
+       text_color=""White""
++      use_color=""false""
+       top=""10""
+       visible=""false"" 
+       width=""285""
+@@ -52,6 +53,7 @@
+       left=""10""
+       name=""caution_text_box""
+       text_color=""NotifyCautionBoxColor""
++      use_color=""false""
+       top=""10""
+       visible=""false""
+       width=""285""
+@@ -73,6 +75,7 @@
+       read_only=""true""
+       text_color=""White""
+       text_readonly_color=""White""
++      use_color=""false""
+       top=""10""
+       visible=""false""
+       width=""285"""
+secondlife/viewer,944,5e10850,indra/llui/lltextbase.cpp,modified,3,0,3,"@@ -168,6 +168,7 @@ LLTextBase::Params::Params()
+ 	trusted_content(""trusted_content"", true),
+ 	always_show_icons(""always_show_icons"", false),
+ 	use_ellipses(""use_ellipses"", false),
++	use_emoji(""use_emoji"", true),
+ 	use_color(""use_color"", true),
+ 	parse_urls(""parse_urls"", false),
+ 	force_urls_external(""force_urls_external"", false),
+@@ -227,6 +228,7 @@ LLTextBase::LLTextBase(const LLTextBase::Params &p)
+ 	mPlainText ( p.plain_text ),
+ 	mWordWrap(p.wrap),
+ 	mUseEllipses( p.use_ellipses ),
++	mUseEmoji(p.use_emoji),
+ 	mUseColor(p.use_color),
+ 	mParseHTML(p.parse_urls),
+ 	mForceUrlsExternal(p.force_urls_external),
+@@ -903,6 +905,7 @@ S32 LLTextBase::insertStringNoUndo(S32 pos, const LLWString &wstr, LLTextBase::s
+ 	}
+ 
+ 	// Insert special segments where necessary (insertSegment takes care of splitting normal text segments around them for us)
++	if (mUseEmoji)
+ 	{
+ 		LLStyleSP emoji_style;
+ 		LLEmojiDictionary* ed = LLEmojiDictionary::instanceExists() ? LLEmojiDictionary::getInstance() : NULL;"
+secondlife/viewer,944,5e10850,indra/llui/lltextbase.h,modified,9,4,13,"@@ -328,6 +328,7 @@ class LLTextBase
+ 								plain_text,
+ 								wrap,
+ 								use_ellipses,
++								use_emoji,
+ 								use_color,
+ 								parse_urls,
+ 								force_urls_external,
+@@ -407,12 +408,15 @@ class LLTextBase
+ 	virtual void			onSpellCheckPerformed(){}
+ 
+ 	// used by LLTextSegment layout code
+-	bool					getWordWrap() { return mWordWrap; }
+-	bool					getUseEllipses() { return mUseEllipses; }
+-	bool					getUseColor() { return mUseColor; }
++	bool					getWordWrap() const { return mWordWrap; }
++	bool					getUseEllipses() const { return mUseEllipses; }
++	bool					getUseEmoji() const { return mUseEmoji; }
++	void					setUseEmoji(bool value) { mUseEmoji = value; }
++	bool					getUseColor() const { return mUseColor; }
++	void					setUseColor(bool value) { mUseColor = value; }
+ 	bool					truncate(); // returns true of truncation occurred
+ 
+-	bool					isContentTrusted() {return mTrustedContent;}
++	bool					isContentTrusted() const { return mTrustedContent; }
+ 	void					setContentTrusted(bool trusted_content) { mTrustedContent = trusted_content; }
+ 
+ 	// TODO: move into LLTextSegment?
+@@ -715,6 +719,7 @@ class LLTextBase
+ 	bool						mParseHighlights;	// highlight user-defined keywords
+ 	bool                		mWordWrap;
+ 	bool						mUseEllipses;
++	bool						mUseEmoji;
+ 	bool						mUseColor;
+ 	bool						mTrackEnd;			// if true, keeps scroll position at end of document during resize
+ 	bool						mReadOnly;"
+secondlife/viewer,944,5e10850,indra/newview/lltoastnotifypanel.cpp,modified,15,21,36,"@@ -50,8 +50,8 @@ S32 BUTTON_WIDTH = 90;
+ 
+ 
+ //static
+-const LLFontGL* LLToastNotifyPanel::sFont = NULL;
+-const LLFontGL* LLToastNotifyPanel::sFontSmall = NULL;
++const std::string LLToastNotifyPanel::sFontDefault(""Emoji"");
++const std::string LLToastNotifyPanel::sFontScript(""SansSerif"");
+ 
+ LLToastNotifyPanel::button_click_signal_t LLToastNotifyPanel::sButtonClickSignal;
+ 
+@@ -85,11 +85,15 @@ LLButton* LLToastNotifyPanel::createButton(const LLSD& form_element, BOOL is_opt
+ 	mBtnCallbackData.push_back(userdata);
+ 
+ 	LLButton::Params p;
+-	bool make_small_btn = form_element[""index""].asInteger() == -1 || form_element[""index""].asInteger() == -2;
+-	const LLFontGL* font = make_small_btn ? sFontSmall: sFont; // for block and ignore buttons in script dialog
+-	p.name = form_element[""name""].asString();
+-	p.label = form_element[""text""].asString();
+-	p.tool_tip = form_element[""text""].asString();
++	S32 index = form_element[""index""].asInteger();
++	std::string name = form_element[""name""].asString();
++	std::string text = form_element[""text""].asString();
++	bool make_small_btn = index == -1 || index == -2; // for block and ignore buttons in script dialog
++	const LLFontGL* font = LLFontGL::getFont(LLFontDescriptor(
++		mIsScriptDialog ? sFontScript : sFontDefault, make_small_btn ? ""Small"" : ""Medium"", 0));
++	p.name = name;
++	p.label = text;
++	p.tool_tip = text;
+ 	p.font = font;
+ 	p.rect.height = BTN_HEIGHT;
+ 	p.click_callback.function(boost::bind(&LLToastNotifyPanel::onClickButton, userdata));
+@@ -256,19 +260,12 @@ void LLToastNotifyPanel::init( LLRect rect, bool show_images )
+ {
+     deleteAllChildren();
+ 
+-    mTextBox = NULL;
+-    mInfoPanel = NULL;
+-    mControlPanel = NULL;
+-    mNumOptions = 0;
+-    mNumButtons = 0;
+-    mAddedDefaultBtn = false;
+-
+ 	LLRect current_rect = getRect();
+ 
+ 	setXMLFilename("""");
+ 	buildFromFile(""panel_notification.xml"");
+ 
+-    if(rect != LLRect::null)
++    if (rect != LLRect::null)
+     {
+         this->setShape(rect);
+     }
+@@ -295,12 +292,6 @@ void LLToastNotifyPanel::init( LLRect rect, bool show_images )
+     // setup parameters
+     // get a notification message
+     mMessage = mNotification->getMessage();
+-    // init font variables
+-    if (!sFont)
+-    {
+-        sFont = LLFontGL::getFontSansSerif();
+-        sFontSmall = LLFontGL::getFontSansSerifSmall();
+-    }
+     // initialize
+     setFocusRoot(!mIsTip);
+     // get a form for the notification
+@@ -318,15 +309,18 @@ void LLToastNotifyPanel::init( LLRect rect, bool show_images )
+     if (mIsCaution && !mIsTip)
+     {
+         mTextBox = getChild<LLTextBox>(""caution_text_box"");
++        mTextBox->setFont(LLFontGL::getFont(LLFontDescriptor(mIsScriptDialog ? sFontScript : sFontDefault, ""Medium"", LLFontGL::BOLD)));
+     }
+     else
+     {
+         mTextBox = getChild<LLTextEditor>(""text_editor_box""); 
++        mTextBox->setFont(LLFontGL::getFont(LLFontDescriptor(mIsScriptDialog ? sFontScript : sFontDefault, ""Medium"", 0)));
+     }
+ 
+     mTextBox->setMaxTextLength(LLToastPanel::MAX_TEXT_LENGTH);
+     mTextBox->setVisible(TRUE);
+     mTextBox->setPlainText(!show_images);
++    mTextBox->setUseEmoji(!mIsScriptDialog);
+     mTextBox->setContentTrusted(is_content_trusted);
+     mTextBox->setValue(mNotification->getMessage());
+ 	mTextBox->setIsFriendCallback(LLAvatarActions::isFriend);"
+secondlife/viewer,944,5e10850,indra/newview/lltoastnotifypanel.h,modified,11,11,22,"@@ -102,9 +102,9 @@ class LLToastNotifyPanel: public LLCheckBoxToastPanel, public LLInstanceTracker<
+ 	//std::vector<index_button_pair_t> mButtons;
+ 
+ 	// panel elements
+-	LLTextBase*		mTextBox;
+-	LLPanel*		mInfoPanel;		// a panel, that contains an information
+-	LLPanel*		mControlPanel;	// a panel, that contains buttons (if present)
++	LLTextBase* mTextBox { nullptr };
++	LLPanel* mInfoPanel { nullptr };    // panel for text information
++	LLPanel* mControlPanel { nullptr }; // panel for buttons (if present)
+ 
+ 	// internal handler for button being clicked
+ 	static void onClickButton(void* data);
+@@ -124,17 +124,17 @@ class LLToastNotifyPanel: public LLCheckBoxToastPanel, public LLInstanceTracker<
+ 	 */
+ 	//void disableRespondedOptions(const LLNotificationPtr& notification);
+ 
+-	bool mIsTip;
+-	bool mAddedDefaultBtn;
+-	bool mIsScriptDialog;
+-	bool mIsCaution; 
++    bool mIsTip { false };
++	bool mAddedDefaultBtn { false };
++	bool mIsScriptDialog { false };
++	bool mIsCaution { false };
+ 
+ 	std::string mMessage;
+-	S32 mNumOptions;
+-	S32 mNumButtons;
++	S32 mNumOptions { 0 };
++	S32 mNumButtons { 0 };
+ 
+-	static const LLFontGL* sFont;
+-	static const LLFontGL* sFontSmall;
++	static const std::string sFontDefault;
++	static const std::string sFontScript;
+ };
+ 
+ class LLIMToastNotifyPanel : public LLToastNotifyPanel"
+secondlife/viewer,944,5e10850,indra/newview/skins/default/xui/en/panel_notification.xml,modified,0,16,16,"@@ -32,21 +32,6 @@
+     <text
+       border_visible=""false""
+       follows=""left|right|top|bottom""
+-      font=""SansSerif""
+-      height=""85""
+-      layout=""topleft""
+-      left=""10""
+-      name=""text_box""
+-      read_only=""true""
+-      text_color=""White""
+-      top=""10""
+-      visible=""false"" 
+-      width=""285""
+-      wrap=""true""/>
+-    <text
+-      border_visible=""false""
+-      follows=""left|right|top|bottom""
+-      font=""SansSerifBold""
+       height=""85""
+       layout=""topleft""
+       left=""10""
+@@ -64,7 +49,6 @@
+       embedded_items=""false""
+       enabled=""false""
+       follows=""left|right|top|bottom""
+-      font=""SansSerif""
+       height=""85"" 
+       layout=""topleft""
+       left=""10"""
+secondlife/viewer,944,977168e,indra/llui/lltextbase.cpp,modified,3,0,3,"@@ -168,6 +168,7 @@ LLTextBase::Params::Params()
+ 	trusted_content(""trusted_content"", true),
+ 	always_show_icons(""always_show_icons"", false),
+ 	use_ellipses(""use_ellipses"", false),
++	use_emoji(""use_emoji"", true),
+ 	use_color(""use_color"", true),
+ 	parse_urls(""parse_urls"", false),
+ 	force_urls_external(""force_urls_external"", false),
+@@ -227,6 +228,7 @@ LLTextBase::LLTextBase(const LLTextBase::Params &p)
+ 	mPlainText ( p.plain_text ),
+ 	mWordWrap(p.wrap),
+ 	mUseEllipses( p.use_ellipses ),
++	mUseEmoji(p.use_emoji),
+ 	mUseColor(p.use_color),
+ 	mParseHTML(p.parse_urls),
+ 	mForceUrlsExternal(p.force_urls_external),
+@@ -903,6 +905,7 @@ S32 LLTextBase::insertStringNoUndo(S32 pos, const LLWString &wstr, LLTextBase::s
+ 	}
+ 
+ 	// Insert special segments where necessary (insertSegment takes care of splitting normal text segments around them for us)
++	if (mUseEmoji)
+ 	{
+ 		LLStyleSP emoji_style;
+ 		LLEmojiDictionary* ed = LLEmojiDictionary::instanceExists() ? LLEmojiDictionary::getInstance() : NULL;"
+secondlife/viewer,944,977168e,indra/llui/lltextbase.h,modified,9,4,13,"@@ -328,6 +328,7 @@ class LLTextBase
+ 								plain_text,
+ 								wrap,
+ 								use_ellipses,
++								use_emoji,
+ 								use_color,
+ 								parse_urls,
+ 								force_urls_external,
+@@ -407,12 +408,15 @@ class LLTextBase
+ 	virtual void			onSpellCheckPerformed(){}
+ 
+ 	// used by LLTextSegment layout code
+-	bool					getWordWrap() { return mWordWrap; }
+-	bool					getUseEllipses() { return mUseEllipses; }
+-	bool					getUseColor() { return mUseColor; }
++	bool					getWordWrap() const { return mWordWrap; }
++	bool					getUseEllipses() const { return mUseEllipses; }
++	bool					getUseEmoji() const { return mUseEmoji; }
++	void					setUseEmoji(bool value) { mUseEmoji = value; }
++	bool					getUseColor() const { return mUseColor; }
++	void					setUseColor(bool value) { mUseColor = value; }
+ 	bool					truncate(); // returns true of truncation occurred
+ 
+-	bool					isContentTrusted() {return mTrustedContent;}
++	bool					isContentTrusted() const { return mTrustedContent; }
+ 	void					setContentTrusted(bool trusted_content) { mTrustedContent = trusted_content; }
+ 
+ 	// TODO: move into LLTextSegment?
+@@ -715,6 +719,7 @@ class LLTextBase
+ 	bool						mParseHighlights;	// highlight user-defined keywords
+ 	bool                		mWordWrap;
+ 	bool						mUseEllipses;
++	bool						mUseEmoji;
+ 	bool						mUseColor;
+ 	bool						mTrackEnd;			// if true, keeps scroll position at end of document during resize
+ 	bool						mReadOnly;"
+secondlife/viewer,944,977168e,indra/newview/lltoastnotifypanel.cpp,modified,15,21,36,"@@ -50,8 +50,8 @@ S32 BUTTON_WIDTH = 90;
+ 
+ 
+ //static
+-const LLFontGL* LLToastNotifyPanel::sFont = NULL;
+-const LLFontGL* LLToastNotifyPanel::sFontSmall = NULL;
++const std::string LLToastNotifyPanel::sFontDefault(""Emoji"");
++const std::string LLToastNotifyPanel::sFontScript(""SansSerif"");
+ 
+ LLToastNotifyPanel::button_click_signal_t LLToastNotifyPanel::sButtonClickSignal;
+ 
+@@ -85,11 +85,15 @@ LLButton* LLToastNotifyPanel::createButton(const LLSD& form_element, BOOL is_opt
+ 	mBtnCallbackData.push_back(userdata);
+ 
+ 	LLButton::Params p;
+-	bool make_small_btn = form_element[""index""].asInteger() == -1 || form_element[""index""].asInteger() == -2;
+-	const LLFontGL* font = make_small_btn ? sFontSmall: sFont; // for block and ignore buttons in script dialog
+-	p.name = form_element[""name""].asString();
+-	p.label = form_element[""text""].asString();
+-	p.tool_tip = form_element[""text""].asString();
++	S32 index = form_element[""index""].asInteger();
++	std::string name = form_element[""name""].asString();
++	std::string text = form_element[""text""].asString();
++	bool make_small_btn = index == -1 || index == -2; // for block and ignore buttons in script dialog
++	const LLFontGL* font = LLFontGL::getFont(LLFontDescriptor(
++		mIsScriptDialog ? sFontScript : sFontDefault, make_small_btn ? ""Small"" : ""Medium"", 0));
++	p.name = name;
++	p.label = text;
++	p.tool_tip = text;
+ 	p.font = font;
+ 	p.rect.height = BTN_HEIGHT;
+ 	p.click_callback.function(boost::bind(&LLToastNotifyPanel::onClickButton, userdata));
+@@ -256,19 +260,12 @@ void LLToastNotifyPanel::init( LLRect rect, bool show_images )
+ {
+     deleteAllChildren();
+ 
+-    mTextBox = NULL;
+-    mInfoPanel = NULL;
+-    mControlPanel = NULL;
+-    mNumOptions = 0;
+-    mNumButtons = 0;
+-    mAddedDefaultBtn = false;
+-
+ 	LLRect current_rect = getRect();
+ 
+ 	setXMLFilename("""");
+ 	buildFromFile(""panel_notification.xml"");
+ 
+-    if(rect != LLRect::null)
++    if (rect != LLRect::null)
+     {
+         this->setShape(rect);
+     }
+@@ -295,12 +292,6 @@ void LLToastNotifyPanel::init( LLRect rect, bool show_images )
+     // setup parameters
+     // get a notification message
+     mMessage = mNotification->getMessage();
+-    // init font variables
+-    if (!sFont)
+-    {
+-        sFont = LLFontGL::getFontSansSerif();
+-        sFontSmall = LLFontGL::getFontSansSerifSmall();
+-    }
+     // initialize
+     setFocusRoot(!mIsTip);
+     // get a form for the notification
+@@ -318,15 +309,18 @@ void LLToastNotifyPanel::init( LLRect rect, bool show_images )
+     if (mIsCaution && !mIsTip)
+     {
+         mTextBox = getChild<LLTextBox>(""caution_text_box"");
++        mTextBox->setFont(LLFontGL::getFont(LLFontDescriptor(mIsScriptDialog ? sFontScript : sFontDefault, ""Medium"", LLFontGL::BOLD)));
+     }
+     else
+     {
+         mTextBox = getChild<LLTextEditor>(""text_editor_box""); 
++        mTextBox->setFont(LLFontGL::getFont(LLFontDescriptor(mIsScriptDialog ? sFontScript : sFontDefault, ""Medium"", 0)));
+     }
+ 
+     mTextBox->setMaxTextLength(LLToastPanel::MAX_TEXT_LENGTH);
+     mTextBox->setVisible(TRUE);
+     mTextBox->setPlainText(!show_images);
++    mTextBox->setUseEmoji(!mIsScriptDialog);
+     mTextBox->setContentTrusted(is_content_trusted);
+     mTextBox->setValue(mNotification->getMessage());
+ 	mTextBox->setIsFriendCallback(LLAvatarActions::isFriend);"
+secondlife/viewer,944,977168e,indra/newview/lltoastnotifypanel.h,modified,11,11,22,"@@ -102,9 +102,9 @@ class LLToastNotifyPanel: public LLCheckBoxToastPanel, public LLInstanceTracker<
+ 	//std::vector<index_button_pair_t> mButtons;
+ 
+ 	// panel elements
+-	LLTextBase*		mTextBox;
+-	LLPanel*		mInfoPanel;		// a panel, that contains an information
+-	LLPanel*		mControlPanel;	// a panel, that contains buttons (if present)
++	LLTextBase* mTextBox { nullptr };
++	LLPanel* mInfoPanel { nullptr };    // panel for text information
++	LLPanel* mControlPanel { nullptr }; // panel for buttons (if present)
+ 
+ 	// internal handler for button being clicked
+ 	static void onClickButton(void* data);
+@@ -124,17 +124,17 @@ class LLToastNotifyPanel: public LLCheckBoxToastPanel, public LLInstanceTracker<
+ 	 */
+ 	//void disableRespondedOptions(const LLNotificationPtr& notification);
+ 
+-	bool mIsTip;
+-	bool mAddedDefaultBtn;
+-	bool mIsScriptDialog;
+-	bool mIsCaution; 
++    bool mIsTip { false };
++	bool mAddedDefaultBtn { false };
++	bool mIsScriptDialog { false };
++	bool mIsCaution { false };
+ 
+ 	std::string mMessage;
+-	S32 mNumOptions;
+-	S32 mNumButtons;
++	S32 mNumOptions { 0 };
++	S32 mNumButtons { 0 };
+ 
+-	static const LLFontGL* sFont;
+-	static const LLFontGL* sFontSmall;
++	static const std::string sFontDefault;
++	static const std::string sFontScript;
+ };
+ 
+ class LLIMToastNotifyPanel : public LLToastNotifyPanel"
+secondlife/viewer,944,977168e,indra/newview/skins/default/xui/en/panel_notification.xml,modified,0,16,16,"@@ -32,21 +32,6 @@
+     <text
+       border_visible=""false""
+       follows=""left|right|top|bottom""
+-      font=""SansSerif""
+-      height=""85""
+-      layout=""topleft""
+-      left=""10""
+-      name=""text_box""
+-      read_only=""true""
+-      text_color=""White""
+-      top=""10""
+-      visible=""false"" 
+-      width=""285""
+-      wrap=""true""/>
+-    <text
+-      border_visible=""false""
+-      follows=""left|right|top|bottom""
+-      font=""SansSerifBold""
+       height=""85""
+       layout=""topleft""
+       left=""10""
+@@ -64,7 +49,6 @@
+       embedded_items=""false""
+       enabled=""false""
+       follows=""left|right|top|bottom""
+-      font=""SansSerif""
+       height=""85"" 
+       layout=""topleft""
+       left=""10"""
+secondlife/viewer,944,1781e2d,indra/llui/llbutton.h,modified,1,1,2,"@@ -251,7 +251,7 @@ class LLButton
+ 	void			setFont(const LLFontGL *font)		
+ 		{ mGLFont = ( font ? font : LLFontGL::getFontSansSerif()); }
+ 	const LLFontGL* getFont() const { return mGLFont; }
+-
++	const std::string& getText() const { return getCurrentLabel().getString(); }
+ 
+ 	S32				getLastDrawCharsCount() const { return mLastDrawCharsCount; }
+ 	bool			labelIsTruncated() const;"
+secondlife/viewer,944,1781e2d,indra/llui/llcheckboxctrl.h,modified,1,1,2,"@@ -117,7 +117,7 @@ class LLCheckBoxCtrl
+ 	std::string			getLabel() const;
+ 
+ 	void				setFont( const LLFontGL* font ) { mFont = font; }
+-	const LLFontGL*		getFont() { return mFont; }
++	const LLFontGL*		getFont() const { return mFont; }
+ 	
+ 	virtual void		setControlName(const std::string& control_name, LLView* context);
+ "
+secondlife/viewer,944,1781e2d,indra/llui/lllineeditor.cpp,modified,0,13,13,"@@ -1761,19 +1761,6 @@ void LLLineEditor::drawBackground()
+ 	}
+ }
+ 
+-//virtual 
+-const std::string LLLineEditor::getToolTip() const
+-{
+-    if (sDebugUnicode)
+-    {
+-        std::string text = getText();
+-        std::string tooltip = utf8str_showBytesUTF8(text);
+-        return tooltip;
+-    }
+-
+-    return LLUICtrl::getToolTip();
+-}
+-
+ //virtual 
+ void LLLineEditor::draw()
+ {"
+secondlife/viewer,944,1781e2d,indra/llui/lllineeditor.h,modified,2,3,5,"@@ -176,7 +176,6 @@ class LLLineEditor
+ 	void				onSpellCheckSettingsChange();
+ 
+ 	// view overrides
+-	/*virtual*/ const std::string getToolTip() const override;
+ 	/*virtual*/ void	draw() override;
+ 	/*virtual*/ void	reshape(S32 width, S32 height, BOOL called_from_parent = TRUE) override;
+ 	/*virtual*/ void	onFocusReceived() override;
+@@ -204,7 +203,7 @@ class LLLineEditor
+ 
+ 	void			setText(const LLStringExplicit &new_text);
+ 
+-	const std::string& getText() const		{ return mText.getString(); }
++	const std::string& getText() const override { return mText.getString(); }
+ 	LLWString       getWText() const	{ return mText.getWString(); }
+ 	LLWString getConvertedText() const; // trimmed text with paragraphs converted to newlines
+ 
+@@ -236,7 +235,7 @@ class LLLineEditor
+ 	const LLColor4& getReadOnlyFgColor() const	{ return mReadOnlyFgColor.get(); }
+ 	const LLColor4& getTentativeFgColor() const { return mTentativeFgColor.get(); }
+ 
+-	const LLFontGL* getFont() const { return mGLFont; }
++	const LLFontGL* getFont() const override { return mGLFont; }
+ 	void setFont(const LLFontGL* font);
+ 
+ 	void			setIgnoreArrowKeys(BOOL b)		{ mIgnoreArrowKeys = b; }"
+secondlife/viewer,944,1781e2d,indra/llui/lltextbase.cpp,modified,3,16,19,"@@ -1286,19 +1286,6 @@ BOOL LLTextBase::handleToolTip(S32 x, S32 y, MASK mask)
+ 	return LLUICtrl::handleToolTip(x, y, mask);
+ }
+ 
+-//virtual 
+-const std::string LLTextBase::getToolTip() const
+-{
+-    if (sDebugUnicode)
+-    {
+-        std::string text = getText();
+-        std::string tooltip = utf8str_showBytesUTF8(text);
+-        return tooltip;
+-    }
+-
+-    return LLUICtrl::getToolTip();
+-}
+-
+ //virtual 
+ void LLTextBase::reshape(S32 width, S32 height, BOOL called_from_parent)
+ {
+@@ -2182,10 +2169,10 @@ void LLTextBase::setText(const LLStringExplicit &utf8str, const LLStyle::Params&
+ 	onValueChange(0, getLength());
+ }
+ 
+-//virtual
+-std::string LLTextBase::getText() const
++// virtual
++const std::string& LLTextBase::getText() const
+ {
+-	return getViewModel()->getValue().asString();
++	return getViewModel()->getStringValue();
+ }
+ 
+ // IDEVO - icons can be UI image names or UUID sent from"
+secondlife/viewer,944,1781e2d,indra/llui/lltextbase.h,modified,2,3,5,"@@ -366,7 +366,6 @@ class LLTextBase
+ 	/*virtual*/ BOOL		handleToolTip(S32 x, S32 y, MASK mask) override;
+ 
+ 	// LLView interface
+-	/*virtual*/ const std::string getToolTip() const override;
+ 	/*virtual*/ void		reshape(S32 width, S32 height, BOOL called_from_parent = TRUE) override;
+ 	/*virtual*/ void		draw() override;
+ 
+@@ -422,7 +421,7 @@ class LLTextBase
+ 	// Text accessors
+ 	// TODO: add optional style parameter
+ 	virtual void			setText(const LLStringExplicit &utf8str , const LLStyle::Params& input_params = LLStyle::Params()); // uses default style
+-	virtual std::string		getText() const;
++	/*virtual*/ const std::string& getText() const override;
+ 	void					setMaxTextLength(S32 length) { mMaxTextByteLength = length; }
+ 	S32						getMaxTextLength() { return mMaxTextByteLength; }
+ 
+@@ -495,7 +494,7 @@ class LLTextBase
+ 	bool					scrolledToStart();
+ 	bool					scrolledToEnd();
+ 
+-	const LLFontGL*			getFont() const					{ return mFont; }
++	const LLFontGL*			getFont() const override { return mFont; }
+ 
+ 	virtual void			appendLineBreakSegment(const LLStyle::Params& style_params);
+ 	virtual void			appendImageSegment(const LLStyle::Params& style_params);"
+secondlife/viewer,944,1781e2d,indra/llui/llview.cpp,modified,28,0,28,"@@ -898,6 +898,34 @@ F32 LLView::getTooltipTimeout()
+     : tooltip_delay);
+ }
+ 
++// virtual
++const std::string LLView::getToolTip() const
++{
++    if (sDebugUnicode)
++    {
++        std::string text = getText();
++        if (!text.empty())
++        {
++            const std::string& name = getName();
++            std::string tooltip = llformat(""Name: \""%s\"""", name.c_str());
++
++            if (const LLFontGL* font = getFont())
++            {
++                tooltip += llformat(""\nFont: %s (%s)"",
++                    font->getFontDesc().getName().c_str(),
++                    font->getFontDesc().getSize().c_str()
++                );
++            }
++
++            tooltip += ""\n\n"" + utf8str_showBytesUTF8(text);
++
++            return tooltip;
++        }
++    }
++
++    return mToolTipMsg.getString();
++}
++
+ BOOL LLView::handleToolTip(S32 x, S32 y, MASK mask)
+ {
+ 	BOOL handled = FALSE;"
+secondlife/viewer,944,1781e2d,indra/llui/llview.h,modified,4,2,6,"@@ -243,8 +243,10 @@ class LLView
+ 
+ 	ECursorType	getHoverCursor() { return mHoverCursor; }
+ 
+-    static F32 getTooltipTimeout();
+-	virtual const std::string getToolTip() const			{ return mToolTipMsg.getString(); }
++	static F32 getTooltipTimeout();
++	virtual const std::string getToolTip() const;
++	virtual const std::string& getText() const { return LLStringUtil::null; }
++	virtual const LLFontGL* getFont() const { return nullptr; }
+ 
+ 	void		sendChildToFront(LLView* child);
+ 	void		sendChildToBack(LLView* child);"
+secondlife/viewer,944,1781e2d,indra/llui/llviewmodel.cpp,modified,23,12,35,"@@ -81,7 +81,7 @@ void LLTextViewModel::setValue(const LLSD& value)
+ {
+ 	// approximate LLSD storage usage
+ 	LLViewModel::setValue(value);
+-    mDisplay = utf8str_to_wstring(value.asString());
++    mDisplay = utf8str_to_wstring(mStringValue = value.asString());
+ 
+     // mDisplay and mValue agree
+     mUpdateFromDisplay = false;
+@@ -101,23 +101,34 @@ void LLTextViewModel::setDisplay(const LLWString& value)
+     mUpdateFromDisplay = true;
+ }
+ 
+-LLSD LLTextViewModel::getValue() const
++inline void updateFromDisplayIfNeeded(const LLTextViewModel* model)
+ {
+-    // Has anyone called setDisplay() since the last setValue()? If so, have
+-    // to convert mDisplay back to UTF8.
+-    if (mUpdateFromDisplay)
++    // Has anyone called setDisplay() since the last setValue()?
++    // If so, have to convert mDisplay back to UTF8.
++    if (model->mUpdateFromDisplay)
+     {
+-        // The fact that we're lazily updating fields in this object should be
+-        // transparent to clients, which is why this method is left
+-        // conventionally const. Nor do we particularly want to make these
+-        // members mutable. Just cast away constness in this one place.
+-        LLTextViewModel* nthis = const_cast<LLTextViewModel*>(this);
++        // The fact that we're lazily updating fields
++        // in this object should be transparent to clients,
++        // which is why this method is left conventionally const.
++        // Nor do we particularly want to make these members mutable.
++        // Just cast away constness in this one place.
++        LLTextViewModel* nthis = const_cast<LLTextViewModel*>(model);
+         nthis->mUpdateFromDisplay = false;
+-        nthis->mValue = wstring_to_utf8str(mDisplay);
++        nthis->mValue = nthis->mStringValue = wstring_to_utf8str(model->mDisplay);
+     }
+-    return LLViewModel::getValue();
+ }
+ 
++LLSD LLTextViewModel::getValue() const
++{
++    updateFromDisplayIfNeeded(this);
++    return mValue;
++}
++
++const std::string& LLTextViewModel::getStringValue() const
++{
++    updateFromDisplayIfNeeded(this);
++    return mStringValue;
++}
+ 
+ ////////////////////////////////////////////////////////////////////////////
+ "
+secondlife/viewer,944,1781e2d,indra/llui/llviewmodel.h,modified,6,0,6,"@@ -100,6 +100,7 @@ class LLTextViewModel: public LLViewModel
+ 	// LLViewModel functions
+     virtual void setValue(const LLSD& value);
+     virtual LLSD getValue() const;
++    const std::string& getStringValue() const;
+ 
+ 	// New functions
+     /// Get the stored value in string form
+@@ -114,12 +115,17 @@ class LLTextViewModel: public LLViewModel
+     void setDisplay(const LLWString& value);
+ 	
+ private:
++    std::string mStringValue;
++
+     /// To avoid converting every widget's stored value from LLSD to LLWString
+     /// every frame, cache the converted value
+     LLWString mDisplay;
++
+     /// As the user edits individual characters (setDisplay()), defer
+     /// LLWString-to-UTF8 conversions until s/he's done.
+     bool mUpdateFromDisplay;
++
++    friend void updateFromDisplayIfNeeded(const LLTextViewModel* model);
+ };
+ 
+ /**"
+secondlife/viewer,944,1781e2d,indra/newview/llexpandabletextbox.h,modified,1,1,2,"@@ -121,7 +121,7 @@ class LLExpandableTextBox : public LLUICtrl
+ 	/**
+ 	 * Returns text
+ 	 */
+-	virtual std::string getText() const { return mText; }
++	virtual const std::string& getText() const { return mText; }
+ 
+ 	/**
+ 	 * Sets text"
+secondlife/viewer,944,1781e2d,indra/newview/llfloateremojipicker.cpp,modified,5,5,10,"@@ -128,7 +128,7 @@ class LLEmojiGridIcon : public LLScrollingPanel
+         , const LLEmojiSearchResult& emoji)
+         : LLScrollingPanel(panel_params)
+         , mData(emoji)
+-        , mText(LLWString(1, emoji.Character))
++        , mChar(LLWString(1, emoji.Character))
+     {
+     }
+ 
+@@ -139,7 +139,7 @@ class LLEmojiGridIcon : public LLScrollingPanel
+         F32 x = getRect().getWidth() / 2;
+         F32 y = getRect().getHeight() / 2;
+         LLFontGL::getFontEmojiLarge()->render(
+-            mText,                      // wstr
++            mChar,                      // wstr
+             0,                          // begin_offset
+             x,                          // x
+             y,                          // y
+@@ -154,11 +154,11 @@ class LLEmojiGridIcon : public LLScrollingPanel
+     virtual void updatePanel(BOOL allow_modify) override {}
+ 
+     const LLEmojiSearchResult& getData() const { return mData; }
+-    LLWString getText() const { return mText; }
++    const LLWString& getChar() const { return mChar; }
+ 
+ private:
+     const LLEmojiSearchResult mData;
+-    const LLWString mText;
++    const LLWString mChar;
+ };
+ 
+ class LLEmojiPreviewPanel : public LLPanel
+@@ -924,7 +924,7 @@ void LLFloaterEmojiPicker::onEmojiMouseUp(LLUICtrl* ctrl)
+ 
+     if (LLEmojiGridIcon* icon = dynamic_cast<LLEmojiGridIcon*>(ctrl))
+     {
+-        LLSD value(wstring_to_utf8str(icon->getText()));
++        LLSD value(wstring_to_utf8str(icon->getChar()));
+         setValue(value);
+ 
+         onCommit();"
+secondlife/viewer,944,326055b,indra/newview/lltoastnotifypanel.cpp,modified,2,2,4,"@@ -298,8 +298,8 @@ void LLToastNotifyPanel::init( LLRect rect, bool show_images )
+     // init font variables
+     if (!sFont)
+     {
+-        sFont = LLFontGL::getFontSansSerif();
+-        sFontSmall = LLFontGL::getFontSansSerifSmall();
++        sFont = LLFontGL::getFontEmojiMedium();
++        sFontSmall = LLFontGL::getFontEmojiSmall();
+     }
+     // initialize
+     setFocusRoot(!mIsTip);"
+secondlife/viewer,944,326055b,indra/newview/skins/default/xui/en/panel_notification.xml,modified,5,5,10,"@@ -32,7 +32,7 @@
+     <text
+       border_visible=""false""
+       follows=""left|right|top|bottom""
+-      font=""SansSerif""
++      font=""Emoji""
+       height=""85""
+       layout=""topleft""
+       left=""10""
+@@ -46,7 +46,7 @@
+     <text
+       border_visible=""false""
+       follows=""left|right|top|bottom""
+-      font=""SansSerifBold""
++      font=""EmojiBold""
+       height=""85""
+       layout=""topleft""
+       left=""10""
+@@ -57,14 +57,14 @@
+       width=""285""
+       wrap=""true""/>
+     <text_editor
+-    	h_pad=""0""
+-	v_pad=""0""
++      h_pad=""0""
++      v_pad=""0""
+       bg_readonly_color=""Transparent""
+       border_visible=""false""
+       embedded_items=""false""
+       enabled=""false""
+       follows=""left|right|top|bottom""
+-      font=""SansSerif""
++      font=""Emoji""
+       height=""85"" 
+       layout=""topleft""
+       left=""10"""
+secondlife/viewer,944,b9423a2,indra/llui/llbutton.h,modified,1,1,2,"@@ -251,7 +251,7 @@ class LLButton
+ 	void			setFont(const LLFontGL *font)		
+ 		{ mGLFont = ( font ? font : LLFontGL::getFontSansSerif()); }
+ 	const LLFontGL* getFont() const { return mGLFont; }
+-
++	const std::string& getText() const { return getCurrentLabel().getString(); }
+ 
+ 	S32				getLastDrawCharsCount() const { return mLastDrawCharsCount; }
+ 	bool			labelIsTruncated() const;"
+secondlife/viewer,944,b9423a2,indra/llui/llcheckboxctrl.h,modified,1,1,2,"@@ -117,7 +117,7 @@ class LLCheckBoxCtrl
+ 	std::string			getLabel() const;
+ 
+ 	void				setFont( const LLFontGL* font ) { mFont = font; }
+-	const LLFontGL*		getFont() { return mFont; }
++	const LLFontGL*		getFont() const { return mFont; }
+ 	
+ 	virtual void		setControlName(const std::string& control_name, LLView* context);
+ "
+secondlife/viewer,944,b9423a2,indra/llui/lllineeditor.cpp,modified,0,13,13,"@@ -1761,19 +1761,6 @@ void LLLineEditor::drawBackground()
+ 	}
+ }
+ 
+-//virtual 
+-const std::string LLLineEditor::getToolTip() const
+-{
+-    if (sDebugUnicode)
+-    {
+-        std::string text = getText();
+-        std::string tooltip = utf8str_showBytesUTF8(text);
+-        return tooltip;
+-    }
+-
+-    return LLUICtrl::getToolTip();
+-}
+-
+ //virtual 
+ void LLLineEditor::draw()
+ {"
+secondlife/viewer,944,b9423a2,indra/llui/lllineeditor.h,modified,2,3,5,"@@ -176,7 +176,6 @@ class LLLineEditor
+ 	void				onSpellCheckSettingsChange();
+ 
+ 	// view overrides
+-	/*virtual*/ const std::string getToolTip() const override;
+ 	/*virtual*/ void	draw() override;
+ 	/*virtual*/ void	reshape(S32 width, S32 height, BOOL called_from_parent = TRUE) override;
+ 	/*virtual*/ void	onFocusReceived() override;
+@@ -204,7 +203,7 @@ class LLLineEditor
+ 
+ 	void			setText(const LLStringExplicit &new_text);
+ 
+-	const std::string& getText() const		{ return mText.getString(); }
++	const std::string& getText() const override { return mText.getString(); }
+ 	LLWString       getWText() const	{ return mText.getWString(); }
+ 	LLWString getConvertedText() const; // trimmed text with paragraphs converted to newlines
+ 
+@@ -236,7 +235,7 @@ class LLLineEditor
+ 	const LLColor4& getReadOnlyFgColor() const	{ return mReadOnlyFgColor.get(); }
+ 	const LLColor4& getTentativeFgColor() const { return mTentativeFgColor.get(); }
+ 
+-	const LLFontGL* getFont() const { return mGLFont; }
++	const LLFontGL* getFont() const override { return mGLFont; }
+ 	void setFont(const LLFontGL* font);
+ 
+ 	void			setIgnoreArrowKeys(BOOL b)		{ mIgnoreArrowKeys = b; }"
+secondlife/viewer,944,b9423a2,indra/llui/lltextbase.cpp,modified,3,16,19,"@@ -1286,19 +1286,6 @@ BOOL LLTextBase::handleToolTip(S32 x, S32 y, MASK mask)
+ 	return LLUICtrl::handleToolTip(x, y, mask);
+ }
+ 
+-//virtual 
+-const std::string LLTextBase::getToolTip() const
+-{
+-    if (sDebugUnicode)
+-    {
+-        std::string text = getText();
+-        std::string tooltip = utf8str_showBytesUTF8(text);
+-        return tooltip;
+-    }
+-
+-    return LLUICtrl::getToolTip();
+-}
+-
+ //virtual 
+ void LLTextBase::reshape(S32 width, S32 height, BOOL called_from_parent)
+ {
+@@ -2182,10 +2169,10 @@ void LLTextBase::setText(const LLStringExplicit &utf8str, const LLStyle::Params&
+ 	onValueChange(0, getLength());
+ }
+ 
+-//virtual
+-std::string LLTextBase::getText() const
++// virtual
++const std::string& LLTextBase::getText() const
+ {
+-	return getViewModel()->getValue().asString();
++	return getViewModel()->getStringValue();
+ }
+ 
+ // IDEVO - icons can be UI image names or UUID sent from"
+secondlife/viewer,944,b9423a2,indra/llui/lltextbase.h,modified,2,3,5,"@@ -366,7 +366,6 @@ class LLTextBase
+ 	/*virtual*/ BOOL		handleToolTip(S32 x, S32 y, MASK mask) override;
+ 
+ 	// LLView interface
+-	/*virtual*/ const std::string getToolTip() const override;
+ 	/*virtual*/ void		reshape(S32 width, S32 height, BOOL called_from_parent = TRUE) override;
+ 	/*virtual*/ void		draw() override;
+ 
+@@ -422,7 +421,7 @@ class LLTextBase
+ 	// Text accessors
+ 	// TODO: add optional style parameter
+ 	virtual void			setText(const LLStringExplicit &utf8str , const LLStyle::Params& input_params = LLStyle::Params()); // uses default style
+-	virtual std::string		getText() const;
++	/*virtual*/ const std::string& getText() const override;
+ 	void					setMaxTextLength(S32 length) { mMaxTextByteLength = length; }
+ 	S32						getMaxTextLength() { return mMaxTextByteLength; }
+ 
+@@ -495,7 +494,7 @@ class LLTextBase
+ 	bool					scrolledToStart();
+ 	bool					scrolledToEnd();
+ 
+-	const LLFontGL*			getFont() const					{ return mFont; }
++	const LLFontGL*			getFont() const override { return mFont; }
+ 
+ 	virtual void			appendLineBreakSegment(const LLStyle::Params& style_params);
+ 	virtual void			appendImageSegment(const LLStyle::Params& style_params);"
+secondlife/viewer,944,b9423a2,indra/llui/llview.cpp,modified,28,0,28,"@@ -898,6 +898,34 @@ F32 LLView::getTooltipTimeout()
+     : tooltip_delay);
+ }
+ 
++// virtual
++const std::string LLView::getToolTip() const
++{
++    if (sDebugUnicode)
++    {
++        std::string text = getText();
++        if (!text.empty())
++        {
++            const std::string& name = getName();
++            std::string tooltip = llformat(""Name: \""%s\"""", name.c_str());
++
++            if (const LLFontGL* font = getFont())
++            {
++                tooltip += llformat(""\nFont: %s (%s)"",
++                    font->getFontDesc().getName().c_str(),
++                    font->getFontDesc().getSize().c_str()
++                );
++            }
++
++            tooltip += ""\n\n"" + utf8str_showBytesUTF8(text);
++
++            return tooltip;
++        }
++    }
++
++    return mToolTipMsg.getString();
++}
++
+ BOOL LLView::handleToolTip(S32 x, S32 y, MASK mask)
+ {
+ 	BOOL handled = FALSE;"
+secondlife/viewer,944,b9423a2,indra/llui/llview.h,modified,4,2,6,"@@ -243,8 +243,10 @@ class LLView
+ 
+ 	ECursorType	getHoverCursor() { return mHoverCursor; }
+ 
+-    static F32 getTooltipTimeout();
+-	virtual const std::string getToolTip() const			{ return mToolTipMsg.getString(); }
++	static F32 getTooltipTimeout();
++	virtual const std::string getToolTip() const;
++	virtual const std::string& getText() const { return LLStringUtil::null; }
++	virtual const LLFontGL* getFont() const { return nullptr; }
+ 
+ 	void		sendChildToFront(LLView* child);
+ 	void		sendChildToBack(LLView* child);"
+secondlife/viewer,944,b9423a2,indra/llui/llviewmodel.cpp,modified,23,12,35,"@@ -81,7 +81,7 @@ void LLTextViewModel::setValue(const LLSD& value)
+ {
+ 	// approximate LLSD storage usage
+ 	LLViewModel::setValue(value);
+-    mDisplay = utf8str_to_wstring(value.asString());
++    mDisplay = utf8str_to_wstring(mStringValue = value.asString());
+ 
+     // mDisplay and mValue agree
+     mUpdateFromDisplay = false;
+@@ -101,23 +101,34 @@ void LLTextViewModel::setDisplay(const LLWString& value)
+     mUpdateFromDisplay = true;
+ }
+ 
+-LLSD LLTextViewModel::getValue() const
++inline void updateFromDisplayIfNeeded(const LLTextViewModel* model)
+ {
+-    // Has anyone called setDisplay() since the last setValue()? If so, have
+-    // to convert mDisplay back to UTF8.
+-    if (mUpdateFromDisplay)
++    // Has anyone called setDisplay() since the last setValue()?
++    // If so, have to convert mDisplay back to UTF8.
++    if (model->mUpdateFromDisplay)
+     {
+-        // The fact that we're lazily updating fields in this object should be
+-        // transparent to clients, which is why this method is left
+-        // conventionally const. Nor do we particularly want to make these
+-        // members mutable. Just cast away constness in this one place.
+-        LLTextViewModel* nthis = const_cast<LLTextViewModel*>(this);
++        // The fact that we're lazily updating fields
++        // in this object should be transparent to clients,
++        // which is why this method is left conventionally const.
++        // Nor do we particularly want to make these members mutable.
++        // Just cast away constness in this one place.
++        LLTextViewModel* nthis = const_cast<LLTextViewModel*>(model);
+         nthis->mUpdateFromDisplay = false;
+-        nthis->mValue = wstring_to_utf8str(mDisplay);
++        nthis->mValue = nthis->mStringValue = wstring_to_utf8str(model->mDisplay);
+     }
+-    return LLViewModel::getValue();
+ }
+ 
++LLSD LLTextViewModel::getValue() const
++{
++    updateFromDisplayIfNeeded(this);
++    return mValue;
++}
++
++const std::string& LLTextViewModel::getStringValue() const
++{
++    updateFromDisplayIfNeeded(this);
++    return mStringValue;
++}
+ 
+ ////////////////////////////////////////////////////////////////////////////
+ "
+secondlife/viewer,944,b9423a2,indra/llui/llviewmodel.h,modified,6,0,6,"@@ -100,6 +100,7 @@ class LLTextViewModel: public LLViewModel
+ 	// LLViewModel functions
+     virtual void setValue(const LLSD& value);
+     virtual LLSD getValue() const;
++    const std::string& getStringValue() const;
+ 
+ 	// New functions
+     /// Get the stored value in string form
+@@ -114,12 +115,17 @@ class LLTextViewModel: public LLViewModel
+     void setDisplay(const LLWString& value);
+ 	
+ private:
++    std::string mStringValue;
++
+     /// To avoid converting every widget's stored value from LLSD to LLWString
+     /// every frame, cache the converted value
+     LLWString mDisplay;
++
+     /// As the user edits individual characters (setDisplay()), defer
+     /// LLWString-to-UTF8 conversions until s/he's done.
+     bool mUpdateFromDisplay;
++
++    friend void updateFromDisplayIfNeeded(const LLTextViewModel* model);
+ };
+ 
+ /**"
+secondlife/viewer,944,b9423a2,indra/newview/llexpandabletextbox.h,modified,1,1,2,"@@ -121,7 +121,7 @@ class LLExpandableTextBox : public LLUICtrl
+ 	/**
+ 	 * Returns text
+ 	 */
+-	virtual std::string getText() const { return mText; }
++	virtual const std::string& getText() const { return mText; }
+ 
+ 	/**
+ 	 * Sets text"
+secondlife/viewer,944,b9423a2,indra/newview/llfloateremojipicker.cpp,modified,5,5,10,"@@ -128,7 +128,7 @@ class LLEmojiGridIcon : public LLScrollingPanel
+         , const LLEmojiSearchResult& emoji)
+         : LLScrollingPanel(panel_params)
+         , mData(emoji)
+-        , mText(LLWString(1, emoji.Character))
++        , mChar(LLWString(1, emoji.Character))
+     {
+     }
+ 
+@@ -139,7 +139,7 @@ class LLEmojiGridIcon : public LLScrollingPanel
+         F32 x = getRect().getWidth() / 2;
+         F32 y = getRect().getHeight() / 2;
+         LLFontGL::getFontEmojiLarge()->render(
+-            mText,                      // wstr
++            mChar,                      // wstr
+             0,                          // begin_offset
+             x,                          // x
+             y,                          // y
+@@ -154,11 +154,11 @@ class LLEmojiGridIcon : public LLScrollingPanel
+     virtual void updatePanel(BOOL allow_modify) override {}
+ 
+     const LLEmojiSearchResult& getData() const { return mData; }
+-    LLWString getText() const { return mText; }
++    const LLWString& getChar() const { return mChar; }
+ 
+ private:
+     const LLEmojiSearchResult mData;
+-    const LLWString mText;
++    const LLWString mChar;
+ };
+ 
+ class LLEmojiPreviewPanel : public LLPanel
+@@ -924,7 +924,7 @@ void LLFloaterEmojiPicker::onEmojiMouseUp(LLUICtrl* ctrl)
+ 
+     if (LLEmojiGridIcon* icon = dynamic_cast<LLEmojiGridIcon*>(ctrl))
+     {
+-        LLSD value(wstring_to_utf8str(icon->getText()));
++        LLSD value(wstring_to_utf8str(icon->getChar()));
+         setValue(value);
+ 
+         onCommit();"
+secondlife/viewer,944,b9147fa,indra/newview/lltoastnotifypanel.cpp,modified,2,2,4,"@@ -298,8 +298,8 @@ void LLToastNotifyPanel::init( LLRect rect, bool show_images )
+     // init font variables
+     if (!sFont)
+     {
+-        sFont = LLFontGL::getFontSansSerif();
+-        sFontSmall = LLFontGL::getFontSansSerifSmall();
++        sFont = LLFontGL::getFontEmojiMedium();
++        sFontSmall = LLFontGL::getFontEmojiSmall();
+     }
+     // initialize
+     setFocusRoot(!mIsTip);"
+secondlife/viewer,944,b9147fa,indra/newview/skins/default/xui/en/panel_notification.xml,modified,5,5,10,"@@ -32,7 +32,7 @@
+     <text
+       border_visible=""false""
+       follows=""left|right|top|bottom""
+-      font=""SansSerif""
++      font=""Emoji""
+       height=""85""
+       layout=""topleft""
+       left=""10""
+@@ -46,7 +46,7 @@
+     <text
+       border_visible=""false""
+       follows=""left|right|top|bottom""
+-      font=""SansSerifBold""
++      font=""EmojiBold""
+       height=""85""
+       layout=""topleft""
+       left=""10""
+@@ -57,14 +57,14 @@
+       width=""285""
+       wrap=""true""/>
+     <text_editor
+-    	h_pad=""0""
+-	v_pad=""0""
++      h_pad=""0""
++      v_pad=""0""
+       bg_readonly_color=""Transparent""
+       border_visible=""false""
+       embedded_items=""false""
+       enabled=""false""
+       follows=""left|right|top|bottom""
+-      font=""SansSerif""
++      font=""Emoji""
+       height=""85"" 
+       layout=""topleft""
+       left=""10"""

@@ -1,0 +1,253 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+secondlife/viewer,3170,c02bade,indra/llinventory/llsettingssky.cpp,modified,17,0,17,"@@ -1180,6 +1180,7 @@ void LLSettingsSky::loadValuesFromLLSD()
+     mHDRMax = 2.0f;
+     mHDRMin = 0.5f;
+     mHDROffset = 1.0f;
++    mTonemapMix = 1.0f;
+ 
+     mSunTextureId = settings[SETTING_SUN_TEXTUREID].asUUID();
+     mMoonTextureId = settings[SETTING_MOON_TEXTUREID].asUUID();
+@@ -2055,6 +2056,22 @@ F32 LLSettingsSky::getHDROffset() const
+     return mHDROffset;
+ }
+ 
++F32 LLSettingsSky::getTonemapMix() const
++{
++    if (mCanAutoAdjust)
++        return 0.0f;
++
++    return mTonemapMix;
++}
++
++void LLSettingsSky::setTonemapMix(F32 mix)
++{
++    if (mCanAutoAdjust)
++        return;
++
++    mTonemapMix = mix;
++}
++
+ void LLSettingsSky::setGamma(F32 val)
+ {
+     mGamma = val;"
+secondlife/viewer,3170,c02bade,indra/llinventory/llsettingssky.h,modified,3,0,3,"@@ -212,6 +212,8 @@ class LLSettingsSky: public LLSettingsBase
+     F32 getHDRMin() const;
+     F32 getHDRMax() const;
+     F32 getHDROffset() const;
++    F32 getTonemapMix() const;
++    void setTonemapMix(F32 mix);
+ 
+     void setGamma(F32 val);
+ 
+@@ -384,6 +386,7 @@ class LLSettingsSky: public LLSettingsBase
+     F32 mCloudVariance;
+     F32 mCloudShadow;
+     F32 mCloudScale;
++    F32 mTonemapMix;
+     F32 mHDROffset;
+     F32 mHDRMax;
+     F32 mHDRMin;"
+secondlife/viewer,3170,c02bade,indra/newview/llsettingsvo.cpp,modified,6,0,6,"@@ -804,10 +804,16 @@ void LLSettingsVOSky::applySpecial(void *ptarget, bool force)
+     static LLCachedControl<F32> sunlight_scale(gSavedSettings, ""RenderSkySunlightScale"", 1.5f);
+     static LLCachedControl<F32> sunlight_hdr_scale(gSavedSettings, ""RenderHDRSkySunlightScale"", 1.5f);
+     static LLCachedControl<F32> ambient_scale(gSavedSettings, ""RenderSkyAmbientScale"", 1.5f);
++    static LLCachedControl<F32> tonemap_mix_setting(gSavedSettings, ""RenderTonemapMix"", 1.f);
+ 
+     // sky is a ""classic"" sky following pre SL 7.0 shading
+     bool classic_mode = psky->canAutoAdjust();
+ 
++    if (!classic_mode)
++    {
++        psky->setTonemapMix(tonemap_mix_setting);
++    }
++
+     shader->uniform1f(LLShaderMgr::SKY_SUNLIGHT_SCALE, hdr ? sunlight_hdr_scale : sunlight_scale);
+     shader->uniform1f(LLShaderMgr::SKY_AMBIENT_SCALE, ambient_scale);
+     shader->uniform1i(LLShaderMgr::CLASSIC_MODE, classic_mode);"
+secondlife/viewer,3170,c02bade,indra/newview/pipeline.cpp,modified,1,11,12,"@@ -7150,17 +7150,7 @@ void LLPipeline::tonemap(LLRenderTarget* src, LLRenderTarget* dst)
+ 
+         static LLCachedControl<U32> tonemap_type_setting(gSavedSettings, ""RenderTonemapType"", 0U);
+         shader.uniform1i(tonemap_type, tonemap_type_setting);
+-
+-        static LLCachedControl<F32> tonemap_mix_setting(gSavedSettings, ""RenderTonemapMix"", 1.f);
+-        if (psky->canAutoAdjust())
+-        {
+-            // Legacy skies
+-            shader.uniform1f(tonemap_mix, 0.f);
+-        }
+-        else
+-        {
+-            shader.uniform1f(tonemap_mix, tonemap_mix_setting());
+-        }
++        shader.uniform1f(tonemap_mix, psky->getTonemapMix());
+ 
+         mScreenTriangleVB->setBuffer();
+         mScreenTriangleVB->drawArrays(LLRender::TRIANGLES, 0, 3);"
+secondlife/viewer,3170,34b897e,indra/llinventory/llsettingssky.cpp,modified,9,0,9,"@@ -1180,6 +1180,7 @@ void LLSettingsSky::loadValuesFromLLSD()
+     mHDRMax = 2.0f;
+     mHDRMin = 0.5f;
+     mHDROffset = 1.0f;
++    mTonemapMix = 1.0f;
+ 
+     mSunTextureId = settings[SETTING_SUN_TEXTUREID].asUUID();
+     mMoonTextureId = settings[SETTING_MOON_TEXTUREID].asUUID();
+@@ -2055,6 +2056,14 @@ F32 LLSettingsSky::getHDROffset() const
+     return mHDROffset;
+ }
+ 
++F32 LLSettingsSky::getTonemapMix() const
++{
++    if (mCanAutoAdjust)
++        return 0.0f;
++
++    return mTonemapMix;
++}
++
+ void LLSettingsSky::setGamma(F32 val)
+ {
+     mGamma = val;"
+secondlife/viewer,3170,34b897e,indra/llinventory/llsettingssky.h,modified,2,0,2,"@@ -212,6 +212,7 @@ class LLSettingsSky: public LLSettingsBase
+     F32 getHDRMin() const;
+     F32 getHDRMax() const;
+     F32 getHDROffset() const;
++    F32 getTonemapMix() const;
+ 
+     void setGamma(F32 val);
+ 
+@@ -384,6 +385,7 @@ class LLSettingsSky: public LLSettingsBase
+     F32 mCloudVariance;
+     F32 mCloudShadow;
+     F32 mCloudScale;
++    F32 mTonemapMix;
+     F32 mHDROffset;
+     F32 mHDRMax;
+     F32 mHDRMin;"
+secondlife/viewer,3170,34b897e,indra/newview/pipeline.cpp,modified,1,9,10,"@@ -7152,15 +7152,7 @@ void LLPipeline::tonemap(LLRenderTarget* src, LLRenderTarget* dst)
+         shader.uniform1i(tonemap_type, tonemap_type_setting);
+ 
+         static LLCachedControl<F32> tonemap_mix_setting(gSavedSettings, ""RenderTonemapMix"", 1.f);
+-        if (psky->canAutoAdjust())
+-        {
+-            // Legacy skies
+-            shader.uniform1f(tonemap_mix, 0.f);
+-        }
+-        else
+-        {
+-            shader.uniform1f(tonemap_mix, tonemap_mix_setting());
+-        }
++        shader.uniform1f(tonemap_mix, psky->getTonemapMix());
+ 
+         mScreenTriangleVB->setBuffer();
+         mScreenTriangleVB->drawArrays(LLRender::TRIANGLES, 0, 3);"
+secondlife/viewer,3170,f33897d,indra/llinventory/llsettingssky.cpp,modified,0,9,9,"@@ -1180,7 +1180,6 @@ void LLSettingsSky::loadValuesFromLLSD()
+     mHDRMax = 2.0f;
+     mHDRMin = 0.5f;
+     mHDROffset = 1.0f;
+-    mTonemapMix = 1.0f;
+ 
+     mSunTextureId = settings[SETTING_SUN_TEXTUREID].asUUID();
+     mMoonTextureId = settings[SETTING_MOON_TEXTUREID].asUUID();
+@@ -2056,14 +2055,6 @@ F32 LLSettingsSky::getHDROffset() const
+     return mHDROffset;
+ }
+ 
+-F32 LLSettingsSky::getTonemapMix() const
+-{
+-    if (mCanAutoAdjust)
+-        return 0.0f;
+-
+-    return mTonemapMix;
+-}
+-
+ void LLSettingsSky::setGamma(F32 val)
+ {
+     mGamma = val;"
+secondlife/viewer,3170,f33897d,indra/llinventory/llsettingssky.h,modified,0,2,2,"@@ -212,7 +212,6 @@ class LLSettingsSky: public LLSettingsBase
+     F32 getHDRMin() const;
+     F32 getHDRMax() const;
+     F32 getHDROffset() const;
+-    F32 getTonemapMix() const;
+ 
+     void setGamma(F32 val);
+ 
+@@ -385,7 +384,6 @@ class LLSettingsSky: public LLSettingsBase
+     F32 mCloudVariance;
+     F32 mCloudShadow;
+     F32 mCloudScale;
+-    F32 mTonemapMix;
+     F32 mHDROffset;
+     F32 mHDRMax;
+     F32 mHDRMin;"
+secondlife/viewer,3170,f33897d,indra/newview/pipeline.cpp,modified,9,1,10,"@@ -7152,7 +7152,15 @@ void LLPipeline::tonemap(LLRenderTarget* src, LLRenderTarget* dst)
+         shader.uniform1i(tonemap_type, tonemap_type_setting);
+ 
+         static LLCachedControl<F32> tonemap_mix_setting(gSavedSettings, ""RenderTonemapMix"", 1.f);
+-        shader.uniform1f(tonemap_mix, psky->getTonemapMix());
++        if (psky->canAutoAdjust())
++        {
++            // Legacy skies
++            shader.uniform1f(tonemap_mix, 0.f);
++        }
++        else
++        {
++            shader.uniform1f(tonemap_mix, tonemap_mix_setting());
++        }
+ 
+         mScreenTriangleVB->setBuffer();
+         mScreenTriangleVB->drawArrays(LLRender::TRIANGLES, 0, 3);"
+secondlife/viewer,3170,1b4814f,indra/llinventory/llsettingssky.cpp,modified,0,9,9,"@@ -1180,7 +1180,6 @@ void LLSettingsSky::loadValuesFromLLSD()
+     mHDRMax = 2.0f;
+     mHDRMin = 0.5f;
+     mHDROffset = 1.0f;
+-    mTonemapMix = 1.0f;
+ 
+     mSunTextureId = settings[SETTING_SUN_TEXTUREID].asUUID();
+     mMoonTextureId = settings[SETTING_MOON_TEXTUREID].asUUID();
+@@ -2056,14 +2055,6 @@ F32 LLSettingsSky::getHDROffset() const
+     return mHDROffset;
+ }
+ 
+-F32 LLSettingsSky::getTonemapMix() const
+-{
+-    if (mCanAutoAdjust)
+-        return 0.0f;
+-
+-    return mTonemapMix;
+-}
+-
+ void LLSettingsSky::setGamma(F32 val)
+ {
+     mGamma = val;"
+secondlife/viewer,3170,1b4814f,indra/llinventory/llsettingssky.h,modified,0,2,2,"@@ -212,7 +212,6 @@ class LLSettingsSky: public LLSettingsBase
+     F32 getHDRMin() const;
+     F32 getHDRMax() const;
+     F32 getHDROffset() const;
+-    F32 getTonemapMix() const;
+ 
+     void setGamma(F32 val);
+ 
+@@ -385,7 +384,6 @@ class LLSettingsSky: public LLSettingsBase
+     F32 mCloudVariance;
+     F32 mCloudShadow;
+     F32 mCloudScale;
+-    F32 mTonemapMix;
+     F32 mHDROffset;
+     F32 mHDRMax;
+     F32 mHDRMin;"
+secondlife/viewer,3170,1b4814f,indra/newview/pipeline.cpp,modified,9,1,10,"@@ -7152,7 +7152,15 @@ void LLPipeline::tonemap(LLRenderTarget* src, LLRenderTarget* dst)
+         shader.uniform1i(tonemap_type, tonemap_type_setting);
+ 
+         static LLCachedControl<F32> tonemap_mix_setting(gSavedSettings, ""RenderTonemapMix"", 1.f);
+-        shader.uniform1f(tonemap_mix, psky->getTonemapMix());
++        if (psky->canAutoAdjust())
++        {
++            // Legacy skies
++            shader.uniform1f(tonemap_mix, 0.f);
++        }
++        else
++        {
++            shader.uniform1f(tonemap_mix, tonemap_mix_setting());
++        }
+ 
+         mScreenTriangleVB->setBuffer();
+         mScreenTriangleVB->drawArrays(LLRender::TRIANGLES, 0, 3);"

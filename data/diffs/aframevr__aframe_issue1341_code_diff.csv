@@ -1,0 +1,978 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe,1341,be807ca334ede6d0b26ffdc8ef38a2e129e4fe81,CHANGELOG.md,modified,16,0,16,"@@ -1,3 +1,19 @@
++## 0.3.0
++
++0.3.0 improves performance and interactivity.
++
++### Major Changes
++
++- Geometries default to be [BufferGeometry](http://threejs.org/docs/#Reference/Core/BufferGeometry)s, saving memory at the cost of being more difficult to manually manipulate. Use `geometry=""buffer: false""` to disable. (#633)
++
++### Enhancements
++
++- `AFRAME.registerGeometry` API such that each geometry type has its own distinct schema. (#1162)
++
++## Fixes
++
++- Fixed primitives not correctly merging properties with defined components. (#1324)
++
+ ## 0.2.0
+ 
+ 0.2.0 improves extensibility:"
+aframevr/aframe,1341,be807ca334ede6d0b26ffdc8ef38a2e129e4fe81,examples/animation-aframe-logo/index.html,modified,9,7,16,"@@ -45,9 +45,9 @@
+           <a-animation attribute=""scale"" to=""1 1 1"" begin=""800"" dur=""600""
+                        easing=""ease-out""></a-animation>
+           <a-box width=""12.45"" depth="".1"" height=""14"" color=""#F2E646""
+-                 translate=""0 7 .52"" shader=""flat""></a-box>
++                 position=""0 7 .52"" shader=""flat""></a-box>
+           <a-box width=""12.5"" depth=""1"" height=""14"" color=""#EF2D5E""
+-                 translate=""0 7 0""></a-box>
++                 position=""0 7 0""></a-box>
+         </a-entity>
+ 
+         <!-- Clouds -->
+@@ -93,11 +93,13 @@
+         </a-entity>
+ 
+         <!-- Shadow -->
+-        <a-plane width=""12.5"" height=""20"" position=""0 .01 10"" translate=""0 10 0""
+-                 color=""#21897C"" rotation=""-90 0 0"">
+-          <a-animation attribute=""scale"" from=""1 0 1"" to=""1 1 1"" easing=""ease-out"" begin=""600""
+-                       dur=""1000"" fill=""backwards""></a-animation>
+-        </a-plane>
++        <a-entity rotation=""-90 0 0"">
++          <a-plane width=""12.5"" height=""20"" position=""0 0 0.1"" pivot=""0 -10 0""
++                   color=""#21897C"">
++            <a-animation attribute=""scale"" from=""1 0 1"" to=""1 1 1"" easing=""ease-out""
++                         begin=""600"" dur=""1000"" fill=""both""></a-animation>
++          </a-plane>
++        </a-entity>
+ 
+         <!-- Base -->
+         <a-entity>"
+aframevr/aframe,1341,be807ca334ede6d0b26ffdc8ef38a2e129e4fe81,examples/animation-generic-logo/index.html,modified,4,4,8,"@@ -41,20 +41,20 @@
+ 
+         <a-entity id=""dots1"" rotation=""0 0 45"">
+           <a-animation attribute=""scale"" from=""1 0 1"" to=""1 0.6 1"" begin=""800"" dur=""750"" fill=""both"" easing=""ease-out""></a-animation>
+-          <a-cylinder position=""0 2 0"" radius=""0.04"" height=""2"" translate=""0 -1 0"" color=""#EF2D5E"" open-ended=""true"" side=""double"">
++          <a-cylinder position=""0 2 0"" radius=""0.04"" height=""2"" color=""#EF2D5E"" open-ended=""true"" side=""double"">
+             <a-animation attribute=""scale"" from=""1 1.25 1"" to=""1 0 1"" begin=""800"" dur=""750"" fill=""both"" easing=""ease-out""></a-animation>
+           </a-cylinder>
+-          <a-cylinder position=""0 -2 0"" radius=""0.04"" height=""2"" translate=""0 1 0"" color=""#EF2D5E"" open-ended=""true"" side=""double"">
++          <a-cylinder position=""0 -2 0"" radius=""0.04"" height=""2"" color=""#EF2D5E"" open-ended=""true"" side=""double"">
+             <a-animation attribute=""scale"" from=""1 1.25 1"" to=""1 0 1"" begin=""800"" dur=""750"" fill=""both"" easing=""ease-out""></a-animation>
+           </a-cylinder>
+         </a-entity>
+ 
+         <a-entity id=""dots1"" rotation=""0 0 -45"">
+           <a-animation attribute=""scale"" from=""1 0 1"" to=""1 0.6 1"" begin=""800"" dur=""750"" fill=""both"" easing=""ease-out""></a-animation>
+-          <a-cylinder position=""0 2 0"" radius=""0.04"" height=""2"" translate=""0 -1 0"" color=""#EF2D5E"" open-ended=""true"" side=""double"">
++          <a-cylinder position=""0 2 0"" radius=""0.04"" height=""2"" color=""#EF2D5E"" open-ended=""true"" side=""double"">
+             <a-animation attribute=""scale"" from=""1 1.25 1"" to=""1 0 1"" begin=""800"" dur=""750"" fill=""both"" easing=""ease-out""></a-animation>
+           </a-cylinder>
+-          <a-cylinder position=""0 -2 0"" radius=""0.04"" height=""2"" translate=""0 1 0"" color=""#EF2D5E"" open-ended=""true"" side=""double"">
++          <a-cylinder position=""0 -2 0"" radius=""0.04"" height=""2"" color=""#EF2D5E"" open-ended=""true"" side=""double"">
+             <a-animation attribute=""scale"" from=""1 1.25 1"" to=""1 0 1"" begin=""800"" dur=""750"" fill=""both"" easing=""ease-out""></a-animation>
+           </a-cylinder>
+         </a-entity>"
+aframevr/aframe,1341,be807ca334ede6d0b26ffdc8ef38a2e129e4fe81,examples/animation-pivots/index.html,added,70,0,70,"@@ -0,0 +1,70 @@
++<!DOCTYPE html>
++<html>
++  <head>
++    <meta charset=""utf-8"">
++    <title>Animations: Pivots</title>
++    <meta name=""description"" content=""Animations: Pivots - A-Frame"">
++    <script src=""../../dist/aframe.js""></script>
++  </head>
++  <body>
++    <a-scene>
++      <a-assets>
++        <a-mixin id=""cylinder""
++                 geometry=""primitive: cylinder; height: 2; openEnded: true; radius: 2""
++                 material=""side: double"">
++        <a-mixin id=""scale"" attribute=""scale"" from=""1 1.125 1"" to=""1 0 1""
++                 dur=""2000""></a-mixin>
++      </a-assets>
++
++      <a-entity position=""0 0 8"">
++        <a-camera></a-camera>
++      </a-entity>
++
++      <!-- 1 -->
++      <!-- Animate cylinder scales on the Y-axis. -->
++      <a-entity position=""-5 0 0"">
++        <a-cylinder mixin=""cylinder"" position=""0 2 0"" color=""#4CC3D9"">
++          <a-animation mixin=""scale""></a-animation>
++        </a-cylinder>
++
++        <a-cylinder mixin=""cylinder"" position=""0 -2 0"" color=""#7BC8A4"">
++          <a-animation mixin=""scale""></a-animation>
++        </a-cylinder>
++
++      </a-entity>
++
++      <!-- 2 -->
++      <!-- Animate cylinder scales on the Y-axis. -->
++      <!-- Move cylinder pivots to top and bottom edges using pivot and position. -->
++      <a-entity>
++        <a-cylinder mixin=""cylinder"" position=""0 1 0"" pivot=""0 1 0"" color=""#4CC3D9"">
++          <a-animation mixin=""scale""></a-animation>
++        </a-cylinder>
++
++        <a-cylinder mixin=""cylinder"" position=""0 -1 0"" pivot=""0 -1 0"" color=""#7BC8A4"">
++          <a-animation mixin=""scale""></a-animation>
++        </a-cylinder>
++      </a-entity>
++
++      <!-- 3 -->
++      <!-- Animate the cylinder scales on the Y-axis -->
++      <!-- Move cylinder pivots to top and bottom edges using pivot and position. -->
++      <!-- Animate the parent entity scale on the Y-axis. -->
++      <a-entity position=""5 0 0"">
++        <a-animation mixin=""scale"" from=""1 0 1"" to=""1 1 1""></a-animation>
++
++        <a-cylinder mixin=""cylinder"" position=""0 2 0"" pivot=""0 -1 0"" color=""#4CC3D9"">
++          <a-animation mixin=""scale""></a-animation>
++        </a-cylinder>
++
++        <a-cylinder mixin=""cylinder"" position=""0 -2 0"" pivot=""0 1 0"" color=""#7BC8A4"">
++          <a-animation mixin=""scale""></a-animation>
++        </a-cylinder>
++      </a-entity>
++
++      <a-sky src=""../_skies/gray-gradient-1.jpg""></a-sky>
++      <a-light type=""directional"" color=""#FFF"" intensity=""0.2"" position=""-1 2 1""></a-light>
++      <a-light type=""ambient"" color=""#FFF""></a-light>
++    </a-scene>
++  </body>
++</html>"
+aframevr/aframe,1341,be807ca334ede6d0b26ffdc8ef38a2e129e4fe81,examples/animation-plane-reveals/index.html,modified,20,16,36,"@@ -8,34 +8,38 @@
+   </head>
+   <body>
+     <a-scene>
+-
+-      <!-- A series of planes that use translate, position and animated scales to reveal themselves -->
+-
+-      <a-entity position=""-2 0 -3"" rotation=""0 35 0"">
+-
+-        <a-plane width=""4"" height=""1"" position=""0 6 0"" translate=""2 -0.5 0"" color=""#F16745"">
+-          <a-animation attribute=""scale"" from=""1 0 1"" to=""1 1 1"" dur=""750"" begin=""500"" fill=""backwards""></a-animation>
++      <a-assets>
++        <a-mixin id=""plane"" geometry=""height: 1; width: 4"" pivot=""-2 0.5 0""></a-mixin>
++      </a-assets>
++
++      <!-- Series of planes that use pivot, position, and animated scales to reveal themselves. -->
++      <a-entity position=""-2 -1 -3"" rotation=""0 35 0"">
++        <a-plane mixin=""plane"" position=""0 6 0"" color=""#F16745"">
++          <a-animation attribute=""scale"" from=""1 0 1"" to=""1 1 1"" dur=""750"" begin=""500""
++                       fill=""backwards""></a-animation>
+         </a-plane>
+ 
+-        <a-plane width=""4"" height=""1"" position=""0 4 0"" translate=""2 -0.5 0"" color=""#7BC8A4"">
+-          <a-animation attribute=""scale"" from=""0 1 1"" to=""1 1 1"" dur=""750"" begin=""500"" fill=""backwards""></a-animation>
++        <a-plane mixin=""plane"" position=""0 4 0"" color=""#7BC8A4"">
++          <a-animation attribute=""scale"" from=""0 1 1"" to=""1 1 1"" dur=""750"" begin=""500""
++                       fill=""backwards""></a-animation>
+         </a-plane>
+ 
+-        <a-plane width=""4"" height=""1"" position=""0 2 0"" translate=""2 -0.5 0"" color=""#4CC3D9"">
+-          <a-animation attribute=""scale"" from=""0 0 0"" to=""1 0.05 1"" dur=""500"" begin=""500""></a-animation>
+-          <a-animation attribute=""scale"" from=""1 0.05 1"" to=""1 1 1"" dur=""250"" begin=""1000"" fill=""both""></a-animation>
++        <a-plane mixin=""plane"" position=""0 2 0"" color=""#4CC3D9"">
++          <a-animation attribute=""scale"" from=""0 0 0"" to=""1 0.05 1"" dur=""500""
++                       begin=""500""></a-animation>
++          <a-animation attribute=""scale"" from=""1 0.05 1"" to=""1 1 1"" dur=""250"" begin=""1000""
++                       fill=""both""></a-animation>
+         </a-plane>
+ 
+-        <a-plane width=""4"" height=""1"" position=""0 0 0"" translate=""2 -0.5 0"" color=""#EF2D5E"">
+-          <a-animation attribute=""rotation"" from=""90 0 0"" to=""0 0 0"" dur=""750"" begin=""500"" fill=""backwards""></a-animation>
++        <a-plane mixin=""plane"" position=""0 0 0"" color=""#EF2D5E"">
++          <a-animation attribute=""rotation"" from=""90 0 0"" to=""0 0 0"" dur=""750"" begin=""500""x
++                        fill=""backwards""></a-animation>
+         </a-plane>
+-
+       </a-entity>
+ 
+       <a-sky src=""../_skies/gray-gradient-1.jpg""></a-sky>
+       <a-light type=""directional"" color=""#fff"" intensity=""0.2"" position=""-1 2 1""></a-light>
+       <a-light type=""ambient"" color=""#fff""></a-light>
+-
+     </a-scene>
+   </body>
+ </html>"
+aframevr/aframe,1341,be807ca334ede6d0b26ffdc8ef38a2e129e4fe81,examples/animation-translates/index.html,removed,0,66,66,"@@ -1,66 +0,0 @@
+-<!DOCTYPE html>
+-<html>
+-  <head>
+-    <meta charset=""utf-8"">
+-    <title>Animations: Translates</title>
+-    <meta name=""description"" content=""Animations: Translates - A-Frame"">
+-    <script src=""../../dist/aframe.js""></script>
+-  </head>
+-  <body>
+-    <a-scene>
+-      <a-entity position=""0 0 8"">
+-        <a-camera></a-camera>
+-      </a-entity>
+-
+-      <!-- 1 -->
+-      <!-- Animate the cylinder scales on the Y-axes -->
+-      <a-entity position=""-5 0 0"">
+-        <a-cylinder position=""0 2 0"" radius=""2"" height=""2"" color=""#4CC3D9"" open-ended=""true"" side=""double"">
+-          <a-animation attribute=""scale"" from=""1 1.25 1"" to=""1 0 1"" dur=""2000"" fill=""forwards""></a-animation>
+-        </a-cylinder>
+-
+-        <a-cylinder position=""0 -2 0"" radius=""2"" height=""2"" color=""#7BC8A4"" open-ended=""true"" side=""double"">
+-          <a-animation attribute=""scale"" from=""1 1.25 1"" to=""1 0 1"" dur=""2000"" fill=""forwards""></a-animation>
+-        </a-cylinder>
+-
+-      </a-entity>
+-
+-      <!-- 2 -->
+-      <!-- Animate the cylinder scales on the Y-axes -->
+-      <!-- Move the cylinder translates to the top and bottom edges, respectively, with translate and position -->
+-      <a-entity>
+-
+-        <a-cylinder position=""0 2 0"" radius=""2"" height=""2"" translate=""0 -1 0"" color=""#4CC3D9"" open-ended=""true"" side=""double"">
+-          <a-animation attribute=""scale"" from=""1 1.25 1"" to=""1 0 1"" dur=""2000"" fill=""forwards""></a-animation>
+-        </a-cylinder>
+-
+-        <a-cylinder position=""0 -2 0"" radius=""2"" height=""2"" translate=""0 1 0"" color=""#7BC8A4"" open-ended=""true"" side=""double"">
+-          <a-animation attribute=""scale"" from=""1 1.25 1"" to=""1 0 1"" dur=""2000"" fill=""forwards""></a-animation>
+-        </a-cylinder>
+-
+-      </a-entity>
+-
+-      <!-- 3 -->
+-      <!-- Animate the cylinder scales on the Y-axes -->
+-      <!-- Move the cylinder translates to the top and bottom edges, respectively, with translate and position -->
+-      <!-- Animate the parent entity scale on the Y-axis -->
+-      <a-entity position=""5 0 0"">
+-        <a-animation attribute=""scale"" from=""1 0 1"" to=""1 1 1"" dur=""2000"" fill=""forwards""></a-animation>
+-
+-        <a-cylinder position=""0 2 0"" radius=""2"" height=""2"" translate=""0 -1 0"" color=""#4CC3D9"" open-ended=""true"" side=""double"">
+-          <a-animation attribute=""scale"" from=""1 1.25 1"" to=""1 0 1"" dur=""2000"" fill=""forwards""></a-animation>
+-        </a-cylinder>
+-
+-        <a-cylinder position=""0 -2 0"" radius=""2"" height=""2"" translate=""0 1 0"" color=""#7BC8A4"" open-ended=""true"" side=""double"">
+-          <a-animation attribute=""scale"" from=""1 1.25 1"" to=""1 0 1"" dur=""2000"" fill=""forwards""></a-animation>
+-        </a-cylinder>
+-
+-      </a-entity>
+-
+-      <a-sky src=""../_skies/gray-gradient-1.jpg""></a-sky>
+-      <a-light type=""directional"" color=""#FFF"" intensity=""0.2"" position=""-1 2 1""></a-light>
+-      <a-light type=""ambient"" color=""#FFF""></a-light>
+-
+-    </a-scene>
+-  </body>
+-</html>"
+aframevr/aframe,1341,be807ca334ede6d0b26ffdc8ef38a2e129e4fe81,examples/animation-unfold/index.html,modified,24,16,40,"@@ -8,34 +8,42 @@
+   </head>
+   <body>
+     <a-scene>
+-      <!-- A series of nested boards that unfold one by one -->
++      <a-assets>
++        <a-mixin id=""board"" geometry=""depth: .05; height: 1; width: 6"" material=""shader: flat""
++                 pivot=""0 0.5 0"" position=""0 -1 0""></a-mixin>
++        <a-mixin id=""unhinge"" attribute=""rotation"" to=""0 0 0"" dur=""1000"" fill=""both""></a-mixin>
++      </a-assets>
++
++      <!-- Series of nested boards that unfold one by one. -->
+       <a-entity position=""0 0 -4"" scale=""1 1 1"">
++        <!-- Animate rotation and position of group for extra visual flair. -->
++        <a-animation attribute=""position"" to=""0 5 -4"" dur=""2000""></a-animation>
++        <a-animation attribute=""rotation"" from=""0 60 0"" to=""0 30 0"" dur=""2500""></a-animation>
++
++        <!-- Pivot and position are used to set the ""hinge"" of each board to it's top edge. -->
++        <a-box mixin=""board"" color=""#F16745"">
++          <a-animation mixin=""unhinge"" from=""-20 0 0"" begin=""1000""></a-animation>
+ 
+-        <!-- Animations rotate and position the group for a bit of extra visual flair. -->
+-        <a-animation attribute=""position"" to=""0 4.5 -4"" dur=""2000"" fill=""forwards""></a-animation>
+-        <a-animation attribute=""rotation"" from=""0 60 0"" to=""0 30 0"" dur=""2500"" fill=""forwards""></a-animation>
++          <a-box mixin=""board"" color=""#FFC65D"">
++            <a-animation mixin=""unhinge"" from=""-175 0 0"" begin=""250""></a-animation>
+ 
+-        <!-- Translate and position are used to set the ""hinge"" of each board to it's top edge.  -->
+-        <a-box width=""6"" height=""1"" depth="".05"" translate=""0 -0.5 0"" color=""#F16745"">
+-          <a-animation attribute=""rotation"" from=""-90 0 0"" to=""0 0 0"" dur=""1000"" fill=""forwards""></a-animation>
++            <a-box mixin=""board"" color=""#7BC8A4"">
++              <a-animation mixin=""unhinge"" from=""-180 0 0"" begin=""500""></a-animation>
+ 
+-          <a-box position=""0 -1 0"" width=""6"" height=""1"" depth="".05"" translate=""0 -0.5 0"" color=""#FFC65D"">
+-            <a-animation attribute=""rotation"" from=""-175 0 0"" to=""0 0 0"" dur=""1000"" begin=""250"" fill=""both""></a-animation>
++              <a-box mixin=""board"" color=""#4CC3D9"">
++                <a-animation mixin=""unhinge"" from=""-180 0 0"" begin=""750""></a-animation>
+ 
+-            <a-box position=""0 -1 0"" width=""6"" height=""1"" depth="".05"" translate=""0 -0.5 0"" color=""#7BC8A4"">
+-              <a-animation attribute=""rotation"" from=""-180 0 0"" to=""0 0 0"" dur=""1000"" begin=""500"" fill=""both""></a-animation>
+-              <a-box position=""0 -1 0"" width=""6"" height=""1"" depth="".05"" translate=""0 -0.5 0"" color=""#4CC3D9"">
+-                <a-animation attribute=""rotation"" from=""-180 0 0"" to=""0 0 0"" dur=""1000"" begin=""750"" fill=""both""></a-animation>
+-                <a-box position=""0 -1 0"" width=""6"" height=""1"" depth="".05"" translate=""0 -0.5 0"" color=""#93648D"">
+-                  <a-animation attribute=""rotation"" from=""-180 0 0"" to=""0 0 0"" dur=""1000"" begin=""1000"" fill=""both""></a-animation>
++                <a-box mixin=""board"" color=""#93648D"">
++                  <a-animation mixin=""unhinge"" from=""-180 0 0"" begin=""1000""></a-animation>
+                 </a-box>
+               </a-box>
+             </a-box>
+           </a-box>
+         </a-box>
+       </a-entity>
+ 
+-      <a-image position=""0 -1 0"" src=""../_images/radial-shadow-2.png"" rotation=""-90 0 0"" scale=""6 6 6""></a-image>
++      <a-image position=""0 -1 0"" src=""../_images/radial-shadow-2.png"" rotation=""-90 0 0""
++               scale=""6 6 6""></a-image>
+       <a-sky color=""#ECECEC""></a-sky>
+       <a-light type=""directional"" color=""#fff"" intensity=""0.2"" position=""-1 2 1""></a-light>
+       <a-light type=""ambient"" color=""#fff""></a-light>"
+aframevr/aframe,1341,be807ca334ede6d0b26ffdc8ef38a2e129e4fe81,examples/animation-warps/index.html,modified,20,20,40,"@@ -18,59 +18,59 @@
+         <!-- Green -->
+         <a-entity>
+           <a-animation attribute=""scale"" from=""1 0 1"" to=""1 1 1"" dur=""2000"" fill=""both""></a-animation>
+-          <a-cylinder position=""0 2 0"" radius=""2"" height=""2"" translate=""0 -1 0"" color=""#7BC8A4"" open-ended=""true"" side=""double"">
++          <a-cylinder position=""0 2 0"" radius=""2"" height=""2"" color=""#7BC8A4"" open-ended=""true"" side=""double"">
+             <a-animation attribute=""scale"" from=""1 1.25 1"" to=""1 0 1"" dur=""2000"" fill=""both""></a-animation>
+           </a-cylinder>
+ 
+-          <a-cylinder position=""0 -2 0"" radius=""2"" height=""2"" translate=""0 1 0"" color=""#7BC8A4"" open-ended=""true"" side=""double"">
++          <a-cylinder position=""0 -2 0"" radius=""2"" height=""2"" color=""#7BC8A4"" open-ended=""true"" side=""double"">
+             <a-animation attribute=""scale"" from=""1 1.25 1"" to=""1 0 1"" dur=""2000"" fill=""both""></a-animation>
+           </a-cylinder>
+         </a-entity>
+ 
+         <!-- Orange -->
+         <a-entity>
+           <a-animation attribute=""scale"" from=""0.9 0 0.9"" to=""0.9 1 0.9"" begin=""200"" dur=""2000"" fill=""both""></a-animation>
+-          <a-cylinder position=""0 2 0"" radius=""2"" height=""2"" translate=""0 -1 0"" color=""#F16745"" open-ended=""true"" side=""double"">
++          <a-cylinder position=""0 2 0"" radius=""2"" height=""2"" color=""#F16745"" open-ended=""true"" side=""double"">
+             <a-animation attribute=""scale"" from=""1 1.25 1"" to=""1 0 1"" begin=""200"" dur=""2000"" fill=""both""></a-animation>
+           </a-cylinder>
+ 
+-          <a-cylinder position=""0 -2 0"" radius=""2"" height=""2"" translate=""0 1 0"" color=""#F16745"" open-ended=""true"" side=""double"">
++          <a-cylinder position=""0 -2 0"" radius=""2"" height=""2"" color=""#F16745"" open-ended=""true"" side=""double"">
+             <a-animation attribute=""scale"" from=""1 1.25 1"" to=""1 0 1"" begin=""200"" dur=""2000"" fill=""both""></a-animation>
+           </a-cylinder>
+         </a-entity>
+ 
+         <!-- Blue -->
+         <a-entity>
+           <a-animation attribute=""scale"" from=""0.8 0 0.8"" to=""0.8 1 0.8"" begin=""400"" dur=""2000"" fill=""both""></a-animation>
+-          <a-cylinder position=""0 2 0"" radius=""2"" height=""2"" translate=""0 -1 0"" color=""#4CC3D9"" open-ended=""true"" side=""double"">
++          <a-cylinder position=""0 2 0"" radius=""2"" height=""2"" color=""#4CC3D9"" open-ended=""true"" side=""double"">
+             <a-animation attribute=""scale"" from=""1 1.25 1"" to=""1 0 1"" begin=""400"" dur=""2000"" fill=""both""></a-animation>
+           </a-cylinder>
+ 
+-          <a-cylinder position=""0 -2 0"" radius=""2"" height=""2"" translate=""0 1 0"" color=""#4CC3D9"" open-ended=""true"" side=""double"">
++          <a-cylinder position=""0 -2 0"" radius=""2"" height=""2"" color=""#4CC3D9"" open-ended=""true"" side=""double"">
+             <a-animation attribute=""scale"" from=""1 1.25 1"" to=""1 0 1"" begin=""400"" dur=""2000"" fill=""both""></a-animation>
+           </a-cylinder>
+         </a-entity>
+ 
+         <!-- Yellow -->
+         <a-entity>
+           <a-animation attribute=""scale"" from=""0.7 0 0.7"" to=""0.7 1 0.7"" begin=""600"" dur=""2000"" fill=""both""></a-animation>
+-          <a-cylinder position=""0 2 0"" radius=""2"" height=""2"" translate=""0 -1 0"" color=""#FFC65D"" open-ended=""true"" side=""double"">
++          <a-cylinder position=""0 2 0"" radius=""2"" height=""2"" color=""#FFC65D"" open-ended=""true"" side=""double"">
+             <a-animation attribute=""scale"" from=""1 1.25 1"" to=""1 0 1"" begin=""600"" dur=""2000"" fill=""both""></a-animation>
+           </a-cylinder>
+ 
+-          <a-cylinder position=""0 -2 0"" radius=""2"" height=""2"" translate=""0 1 0"" color=""#FFC65D"" open-ended=""true"" side=""double"">
++          <a-cylinder position=""0 -2 0"" radius=""2"" height=""2"" color=""#FFC65D"" open-ended=""true"" side=""double"">
+             <a-animation attribute=""scale"" from=""1 1.25 1"" to=""1 0 1"" begin=""600"" dur=""2000"" fill=""both""></a-animation>
+           </a-cylinder>
+         </a-entity>
+ 
+         <!-- Purple -->
+         <a-entity>
+           <a-animation attribute=""scale"" from=""0.6 0 0.6"" to=""0.6 1 0.6"" begin=""800"" dur=""2000"" fill=""both""></a-animation>
+-          <a-cylinder position=""0 2 0"" radius=""2"" height=""2"" translate=""0 -1 0"" color=""#93648D"" open-ended=""true"" side=""double"">
++          <a-cylinder position=""0 2 0"" radius=""2"" height=""2"" color=""#93648D"" open-ended=""true"" side=""double"">
+             <a-animation attribute=""scale"" from=""1 1.25 1"" to=""1 0 1"" begin=""800"" dur=""2000"" fill=""both""></a-animation>
+           </a-cylinder>
+ 
+-          <a-cylinder position=""0 -2 0"" radius=""2"" height=""2"" translate=""0 1 0"" color=""#93648D"" open-ended=""true"" side=""double"">
++          <a-cylinder position=""0 -2 0"" radius=""2"" height=""2"" color=""#93648D"" open-ended=""true"" side=""double"">
+             <a-animation attribute=""scale"" from=""1 1.25 1"" to=""1 0 1"" begin=""800"" dur=""2000"" fill=""both""></a-animation>
+           </a-cylinder>
+         </a-entity>
+@@ -87,59 +87,59 @@
+         <!-- Green -->
+         <a-entity>
+           <a-animation attribute=""scale"" from=""1 0 1"" to=""1 1 1"" dur=""2000"" fill=""both""></a-animation>
+-          <a-cylinder position=""0 2 0"" radius=""2"" height=""2"" translate=""0 -1 0"" color=""#7BC8A4"" open-ended=""true"" side=""double"">
++          <a-cylinder position=""0 2 0"" radius=""2"" height=""2"" color=""#7BC8A4"" open-ended=""true"" side=""double"">
+             <a-animation attribute=""scale"" from=""1 40 1"" to=""1 0 1"" dur=""2000"" fill=""both""></a-animation>
+           </a-cylinder>
+ 
+-          <a-cylinder position=""0 -2 0"" radius=""2"" height=""2"" translate=""0 1 0"" color=""#7BC8A4"" open-ended=""true"" side=""double"">
++          <a-cylinder position=""0 -2 0"" radius=""2"" height=""2"" color=""#7BC8A4"" open-ended=""true"" side=""double"">
+             <a-animation attribute=""scale"" from=""1 40 1"" to=""1 0 1"" dur=""2000"" fill=""both""></a-animation>
+           </a-cylinder>
+         </a-entity>
+ 
+         <!-- Orange -->
+         <a-entity>
+           <a-animation attribute=""scale"" from=""0.9 0 0.9"" to=""0.9 1 0.9"" begin=""200"" dur=""2000"" fill=""both""></a-animation>
+-          <a-cylinder position=""0 2 0"" radius=""2"" height=""2"" translate=""0 -1 0"" color=""#F16745"" open-ended=""true"" side=""double"">
++          <a-cylinder position=""0 2 0"" radius=""2"" height=""2"" color=""#F16745"" open-ended=""true"" side=""double"">
+             <a-animation attribute=""scale"" from=""1 40 1"" to=""1 0 1"" begin=""200"" dur=""2000"" fill=""both""></a-animation>
+           </a-cylinder>
+ 
+-          <a-cylinder position=""0 -2 0"" radius=""2"" height=""2"" translate=""0 1 0"" color=""#F16745"" open-ended=""true"" side=""double"">
++          <a-cylinder position=""0 -2 0"" radius=""2"" height=""2"" color=""#F16745"" open-ended=""true"" side=""double"">
+             <a-animation attribute=""scale"" from=""1 40 1"" to=""1 0 1"" begin=""200"" dur=""2000"" fill=""both""></a-animation>
+           </a-cylinder>
+         </a-entity>
+ 
+         <!-- Blue -->
+         <a-entity>
+           <a-animation attribute=""scale"" from=""0.8 0 0.8"" to=""0.8 1 0.8"" begin=""400"" dur=""2000"" fill=""both""></a-animation>
+-          <a-cylinder position=""0 2 0"" radius=""2"" height=""2"" translate=""0 -1 0"" color=""#4CC3D9"" open-ended=""true"" side=""double"">
++          <a-cylinder position=""0 2 0"" radius=""2"" height=""2"" color=""#4CC3D9"" open-ended=""true"" side=""double"">
+             <a-animation attribute=""scale"" from=""1 40 1"" to=""1 0 1"" begin=""400"" dur=""2000"" fill=""both""></a-animation>
+           </a-cylinder>
+ 
+-          <a-cylinder position=""0 -2 0"" radius=""2"" height=""2"" translate=""0 1 0"" color=""#4CC3D9"" open-ended=""true"" side=""double"">
++          <a-cylinder position=""0 -2 0"" radius=""2"" height=""2"" color=""#4CC3D9"" open-ended=""true"" side=""double"">
+             <a-animation attribute=""scale"" from=""1 40 1"" to=""1 0 1"" begin=""400"" dur=""2000"" fill=""both""></a-animation>
+           </a-cylinder>
+         </a-entity>
+ 
+         <!-- Yellow -->
+         <a-entity>
+           <a-animation attribute=""scale"" from=""0.7 0 0.7"" to=""0.7 1 0.7"" begin=""600"" dur=""2000"" fill=""both""></a-animation>
+-          <a-cylinder position=""0 2 0"" radius=""2"" height=""2"" translate=""0 -1 0"" color=""#FFC65D"" open-ended=""true"" side=""double"">
++          <a-cylinder position=""0 2 0"" radius=""2"" height=""2"" color=""#FFC65D"" open-ended=""true"" side=""double"">
+             <a-animation attribute=""scale"" from=""1 40 1"" to=""1 0 1"" begin=""600"" dur=""2000"" fill=""both""></a-animation>
+           </a-cylinder>
+ 
+-          <a-cylinder position=""0 -2 0"" radius=""2"" height=""2"" translate=""0 1 0"" color=""#FFC65D"" open-ended=""true"" side=""double"">
++          <a-cylinder position=""0 -2 0"" radius=""2"" height=""2"" color=""#FFC65D"" open-ended=""true"" side=""double"">
+             <a-animation attribute=""scale"" from=""1 40 1"" to=""1 0 1"" begin=""600"" dur=""2000"" fill=""both""></a-animation>
+           </a-cylinder>
+         </a-entity>
+ 
+         <!-- Purple -->
+         <a-entity>
+           <a-animation attribute=""scale"" from=""0.6 0 0.6"" to=""0.6 1 0.6"" begin=""800"" dur=""2000"" fill=""both""></a-animation>
+-          <a-cylinder position=""0 2 0"" radius=""2"" height=""2"" translate=""0 -1 0"" color=""#93648D"" open-ended=""true"" side=""double"">
++          <a-cylinder position=""0 2 0"" radius=""2"" height=""2"" color=""#93648D"" open-ended=""true"" side=""double"">
+             <a-animation attribute=""scale"" from=""1 40 1"" to=""1 0 1"" begin=""800"" dur=""2000"" fill=""both""></a-animation>
+           </a-cylinder>
+ 
+-          <a-cylinder position=""0 -2 0"" radius=""2"" height=""2"" translate=""0 1 0"" color=""#93648D"" open-ended=""true"" side=""double"">
++          <a-cylinder position=""0 -2 0"" radius=""2"" height=""2"" color=""#93648D"" open-ended=""true"" side=""double"">
+             <a-animation attribute=""scale"" from=""1 40 1"" to=""1 0 1"" begin=""800"" dur=""2000"" fill=""both""></a-animation>
+           </a-cylinder>
+         </a-entity>"
+aframevr/aframe,1341,be807ca334ede6d0b26ffdc8ef38a2e129e4fe81,examples/index.html,modified,2,2,4,"@@ -130,7 +130,7 @@ <h2>Animations</h2>
+       <li><a href=""animation-arms/"">Arms</a></li>
+       <li><a href=""animation-plane-reveals/"">Plane Reveals</a></li>
+       <li><a href=""animation-generic-logo/"">Generic Logo</a></li>
+-      <li><a href=""animation-translates/"">Translates</a></li>
++      <li><a href=""animation-pivots/"">Pivots</a></li>
+       <li><a href=""animation-unfold/"">Unfold</a></li>
+       <li><a href=""animation-warps/"">Warps</a></li>
+     </ul>
+@@ -146,14 +146,14 @@ <h2>Tests</h2>
+       <li><a href=""test-fog/"">Fog</a></li>
+       <li><a href=""test-geometries/"">Geometries</a></li>
+       <li><a href=""test-geometry-gallery/"">Geometry Gallery</a></li>
+-      <li><a href=""test-geometry-translation/"">Geometry Translation</a></li>
+       <li><a href=""test-lights/"">Lights</a></li>
+       <li><a href=""test-look-at/"">Look-At</a></li>
+       <li><a href=""test-mixin/"">Mixin</a></li>
+       <li><a href=""test-model/"">Model</a></li>
+       <li><a href=""test-opacity/"">Opacity</a></li>
+       <li><a href=""test-panoexplorer/"">Pano Explorer</a></li>
+       <li><a href=""test-physical/"">Physically-Based Materials</a></li>
++      <li><a href=""test-pivot/"">Pivot</a></li>
+       <li><a href=""test-shaders/"">Shaders</a></li>
+       <li><a href=""test-texture/"">Texture</a></li>
+       <li><a href=""test-towers/"">Towers</a></li>"
+aframevr/aframe,1341,be807ca334ede6d0b26ffdc8ef38a2e129e4fe81,examples/showcase-anime-UI/index.html,modified,14,14,28,"@@ -43,98 +43,98 @@
+           <a-plane width=""1"" height=""4"" shader=""flat"" color=""#B4E2F8"">
+             <a-animation attribute=""visible"" from=""false"" to=""true"" begin=""350"" dur=""1"" fill=""both""></a-animation>
+           </a-plane>
+-          <a-plane width=""6"" height=""4"" translate=""-3 0 0"" color=""#586266"" opacity=""0.6"" position=""0 0 -.01""></a-plane>
++          <a-plane width=""6"" height=""4"" color=""#586266"" opacity=""0.6"" position=""0 0 -.01""></a-plane>
+         </a-entity>
+ 
+         <a-entity position=""1 0 0"" scale=""0.05 0.05 0.05"">
+           <a-plane width=""1"" height=""4"" shader=""flat"" color=""#B4E2F8"">
+             <a-animation attribute=""visible"" from=""false"" to=""true"" begin=""400"" dur=""1"" fill=""both""></a-animation>
+           </a-plane>
+-          <a-plane width=""6"" height=""4"" translate=""-3 0 0"" color=""#586266"" opacity=""0.6"" position=""0 0 -.01""></a-plane>
++          <a-plane width=""6"" height=""4"" color=""#586266"" opacity=""0.6"" position=""0 0 -.01""></a-plane>
+         </a-entity>
+ 
+         <a-entity position=""2 0 0"" scale=""0.05 0.05 0.05"">
+           <a-plane width=""1"" height=""4"" shader=""flat"" color=""#B4E2F8"">
+             <a-animation attribute=""visible"" from=""false"" to=""true"" begin=""450"" dur=""1"" fill=""both""></a-animation>
+           </a-plane>
+-          <a-plane width=""6"" height=""4"" translate=""-3 0 0"" color=""#586266"" opacity=""0.6"" position=""0 0 -.01""></a-plane>
++          <a-plane width=""6"" height=""4"" color=""#586266"" opacity=""0.6"" position=""0 0 -.01""></a-plane>
+         </a-entity>
+ 
+         <a-entity position=""3 0 0"" scale=""0.05 0.05 0.05"">
+           <a-plane width=""1"" height=""4"" shader=""flat"" color=""#B4E2F8"">
+             <a-animation attribute=""visible"" from=""false"" to=""true"" begin=""500"" dur=""1"" fill=""both""></a-animation>
+           </a-plane>
+-          <a-plane width=""6"" height=""4"" translate=""-3 0 0"" color=""#586266"" opacity=""0.6"" position=""0 0 -.01""></a-plane>
++          <a-plane width=""6"" height=""4"" color=""#586266"" opacity=""0.6"" position=""0 0 -.01""></a-plane>
+         </a-entity>
+ 
+         <a-entity position=""4 0 0"" scale=""0.05 0.05 0.05"">
+           <a-plane width=""1"" height=""4"" shader=""flat"" color=""#B4E2F8"">
+             <a-animation attribute=""visible"" from=""false"" to=""true"" begin=""550"" dur=""1"" fill=""both""></a-animation>
+           </a-plane>
+-          <a-plane width=""6"" height=""4"" translate=""-3 0 0"" color=""#586266"" opacity=""0.6"" position=""0 0 -.01""></a-plane>
++          <a-plane width=""6"" height=""4"" color=""#586266"" opacity=""0.6"" position=""0 0 -.01""></a-plane>
+         </a-entity>
+ 
+         <a-entity position=""5 0 0"" scale=""0.05 0.05 0.05"">
+           <a-plane width=""1"" height=""4"" shader=""flat"" color=""#B4E2F8"">
+             <a-animation attribute=""visible"" from=""false"" to=""true"" begin=""600"" dur=""1"" fill=""both""></a-animation>
+           </a-plane>
+-          <a-plane width=""6"" height=""4"" translate=""-3 0 0"" color=""#586266"" opacity=""0.6"" position=""0 0 -.01""></a-plane>
++          <a-plane width=""6"" height=""4"" color=""#586266"" opacity=""0.6"" position=""0 0 -.01""></a-plane>
+         </a-entity>
+ 
+         <a-entity position=""6 0 0"" scale=""0.05 0.05 0.05"">
+           <a-plane width=""1"" height=""4"" shader=""flat"" color=""#B4E2F8"">
+             <a-animation attribute=""visible"" from=""false"" to=""true"" begin=""650"" dur=""1"" fill=""both""></a-animation>
+           </a-plane>
+-          <a-plane width=""6"" height=""4"" translate=""-3 0 0"" color=""#586266"" opacity=""0.6"" position=""0 0 -.01""></a-plane>
++          <a-plane width=""6"" height=""4"" color=""#586266"" opacity=""0.6"" position=""0 0 -.01""></a-plane>
+         </a-entity>
+ 
+         <a-entity position=""7 0 0"" scale=""0.05 0.05 0.05"">
+           <a-plane width=""1"" height=""4"" shader=""flat"" color=""#B4E2F8"">
+             <a-animation attribute=""visible"" from=""false"" to=""true"" begin=""700"" dur=""1"" fill=""both""></a-animation>
+           </a-plane>
+-          <a-plane width=""6"" height=""4"" translate=""-3 0 0"" color=""#586266"" opacity=""0.6"" position=""0 0 -.01""></a-plane>
++          <a-plane width=""6"" height=""4"" color=""#586266"" opacity=""0.6"" position=""0 0 -.01""></a-plane>
+         </a-entity>
+ 
+         <a-entity position=""8 0 0"" scale=""0.05 0.05 0.05"">
+           <a-plane width=""1"" height=""4"" shader=""flat"" color=""#B4E2F8"">
+             <a-animation attribute=""visible"" from=""false"" to=""true"" begin=""750"" dur=""1"" fill=""both""></a-animation>
+           </a-plane>
+-          <a-plane width=""6"" height=""4"" translate=""-3 0 0"" color=""#586266"" opacity=""0.6"" position=""0 0 -.01""></a-plane>
++          <a-plane width=""6"" height=""4"" color=""#586266"" opacity=""0.6"" position=""0 0 -.01""></a-plane>
+         </a-entity>
+ 
+         <a-entity position=""9 0 0"" scale=""0.05 0.05 0.05"">
+           <a-plane width=""1"" height=""4"" shader=""flat"" color=""#B4E2F8"">
+             <a-animation attribute=""visible"" from=""false"" to=""true"" begin=""800"" dur=""1"" fill=""both""></a-animation>
+           </a-plane>
+-          <a-plane width=""6"" height=""4"" translate=""-3 0 0"" color=""#586266"" opacity=""0.6"" position=""0 0 -.01""></a-plane>
++          <a-plane width=""6"" height=""4"" color=""#586266"" opacity=""0.6"" position=""0 0 -.01""></a-plane>
+         </a-entity>
+ 
+         <a-entity position=""10 0 0"" scale=""0.05 0.05 0.05"">
+           <a-plane width=""1"" height=""4"" shader=""flat"" color=""#B4E2F8"">
+             <a-animation attribute=""visible"" from=""false"" to=""true"" begin=""850"" dur=""1"" fill=""both""></a-animation>
+           </a-plane>
+-          <a-plane width=""6"" height=""4"" translate=""-3 0 0"" color=""#586266"" opacity=""0.6"" position=""0 0 -.01""></a-plane>
++          <a-plane width=""6"" height=""4"" color=""#586266"" opacity=""0.6"" position=""0 0 -.01""></a-plane>
+         </a-entity>
+ 
+         <a-entity position=""11 0 0"" scale=""0.05 0.05 0.05"">
+           <a-plane width=""1"" height=""4"" shader=""flat"" color=""#B4E2F8"">
+             <a-animation attribute=""visible"" from=""false"" to=""true"" begin=""900"" dur=""1"" fill=""both""></a-animation>
+           </a-plane>
+-          <a-plane width=""6"" height=""4"" translate=""-3 0 0"" color=""#586266"" opacity=""0.6"" position=""0 0 -.01""></a-plane>
++          <a-plane width=""6"" height=""4"" color=""#586266"" opacity=""0.6"" position=""0 0 -.01""></a-plane>
+         </a-entity>
+ 
+         <a-entity position=""12 0 0"" scale=""0.05 0.05 0.05"">
+           <a-plane width=""1"" height=""4"" shader=""flat"" color=""#B4E2F8"">
+             <a-animation attribute=""visible"" from=""false"" to=""true"" begin=""950"" dur=""1"" fill=""both""></a-animation>
+           </a-plane>
+-          <a-plane width=""6"" height=""4"" translate=""-3 0 0"" color=""#586266"" opacity=""0.6"" position=""0 0 -.01""></a-plane>
++          <a-plane width=""6"" height=""4"" color=""#586266"" opacity=""0.6"" position=""0 0 -.01""></a-plane>
+         </a-entity>
+ 
+         <a-entity position=""13 0 0"" scale=""0.05 0.05 0.05"">
+           <a-plane width=""1"" height=""4"" shader=""flat"" color=""#B4E2F8"">
+             <a-animation attribute=""visible"" from=""false"" to=""true"" begin=""1000"" dur=""1"" fill=""both""></a-animation>
+           </a-plane>
+-          <a-plane width=""6"" height=""4"" translate=""-3 0 0"" color=""#586266"" opacity=""0.6"" position=""0 0 -.01""></a-plane>
++          <a-plane width=""6"" height=""4"" color=""#586266"" opacity=""0.6"" position=""0 0 -.01""></a-plane>
+         </a-entity>
+       </a-entity>
+ "
+aframevr/aframe,1341,be807ca334ede6d0b26ffdc8ef38a2e129e4fe81,examples/showcase-spheres-and-fog/index.html,modified,103,69,172,"@@ -3,118 +3,152 @@
+   <head>
+     <meta charset=""utf-8"">
+     <title>Spheres &amp; Fog</title>
+-    <meta name=""description"" content=""Spheres &amp; Fog — A-Frame"">
++    <meta name=""description"" content=""Spheres &amp; Fog - A-Frame"">
+     <script src=""../../dist/aframe.js""></script>
+   </head>
+   <body>
+     <a-scene fog=""type: linear; color: #AAB; far: 30; near: 0"">
+-
+-      <!-- Ground highlight -->
+-      <a-image position=""0 -.2 5"" src=""../_images/radial-highlight-1.png"" rotation=""-90 0 0"" scale=""30 30 30""></a-image>
++      <!-- Ground Highlight -->
++      <a-image position=""0 -.2 5"" src=""../_images/radial-highlight-1.png"" rotation=""-90 0 0""
++               scale=""30 30 30""></a-image>
+ 
+       <!-- Orange -->
+-      <a-sphere position=""0 0 -5"" translate=""0 4.2 0"" radius=""4.2"" color=""#F16745"" roughness=""0.8"" width-segments=""52"" height-segments=""52"">
+-        <a-image src=""../_images/radial-shadow-3.png"" rotation=""-90 0 0"" scale=""3 3 3""></a-image>
+-      </a-sphere>
++      <a-entity position=""0 0 -5"">
++        <a-sphere position=""0 4.2 0"" radius=""4.2"" color=""#F16745""
++                  roughness=""0.8"" width-segments=""52"" height-segments=""52""></a-sphere>
++        <a-image src=""../_images/radial-shadow-3.png"" rotation=""-90 0 0""
++                 scale=""3 3 3""></a-image>
++      </a-entity>
+ 
+       <!-- Green -->
+-      <a-sphere position=""-3 0 0"" translate=""0 1.75 0"" radius=""1.75"" color=""#7BC8A4"" roughness=""0.2"">
+-        <a-image src=""../_images/radial-shadow-3.png"" rotation=""-90 0 0"" scale=""1.75 1.75 1.75""></a-image>
+-      </a-sphere>
++      <a-entity position=""-3 0 0"">
++        <a-sphere position=""0 1.75 0"" radius=""1.75"" color=""#7BC8A4"" roughness=""0.2""></a-sphere>
++        <a-image src=""../_images/radial-shadow-3.png"" rotation=""-90 0 0""
++                 scale=""1.75 1.75 1.75""></a-image>
++      </a-entity>
+ 
+       <!-- Blue -->
+-      <a-sphere position=""1 0 0"" translate=""0 1 0"" radius=""1"" color=""#4CC3D9"" metalness=""0.1"">
+-        <a-image src=""../_images/radial-shadow-3.png"" rotation=""-90 0 0"" scale=""1 1 1""></a-image>
+-      </a-sphere>
++      <a-entity position=""1 0 0"">
++        <a-sphere position=""0 1 0"" radius=""1"" color=""#4CC3D9"" metalness=""0.1""></a-sphere>
++        <a-image src=""../_images/radial-shadow-3.png"" rotation=""-90 0 0""
++                 scale=""1 1 1""></a-image>
++      </a-entity>
+ 
+       <!-- Yellow -->
+-      <a-sphere position=""3 0 1"" translate=""0 0.5 0"" radius=""0.5"" color=""#FFC65D"">
+-        <a-image src=""../_images/radial-shadow-3.png"" rotation=""-90 0 0"" scale=""0.5 0.5 0.5""></a-image>
+-      </a-sphere>
+-
+-      <!-- Purple -->
+-      <a-sphere position=""-0.5 0 2"" translate=""0 0.25 0"" radius=""0.25"" color=""#93648D"">
+-        <a-image src=""../_images/radial-shadow-3.png"" rotation=""-90 0 0"" scale=""0.25 0.25 0.25""></a-image>
+-      </a-sphere>
++      <a-entity position=""3 0 1"">
++        <a-sphere position=""0 0.5 0"" radius=""0.5"" color=""#FFC65D""></a-sphere>
++        <a-image src=""../_images/radial-shadow-3.png"" rotation=""-90 0 0""
++                 scale=""0.5 0.5 0.5""></a-image>
++      </a-entity>
+ 
+       <!-- Purple -->
+-      <a-sphere position=""20 0 -2"" translate=""0 10 0"" radius=""10"" color=""#93648D"" segments-width=""52"" segments-height=""52"">
+-        <a-image src=""../_images/radial-shadow-3.png"" rotation=""-90 0 0"" scale=""9 9 9""></a-image>
+-      </a-sphere>
++      <a-entity position=""20 0 -2"">
++        <a-sphere position=""0 10 0"" radius=""10"" color=""#93648D""
++                  segments-width=""52"" segments-height=""52""></a-sphere>
++        <a-image src=""../_images/radial-shadow-3.png"" rotation=""-90 0 0""
++                 scale=""9 9 9""></a-image>
++      </a-entity>
+ 
+-      <!-- White -->
+-      <a-sphere position=""-24 0 -34"" translate=""0 18 0"" radius=""18"" color=""#FFC65D"" segments-width=""52"" segments-height=""52"">
+-        <a-image src=""../_images/radial-shadow-3.png"" rotation=""-90 0 0"" scale=""8 8 8""></a-image>
+-      </a-sphere>
++      <!-- Yellow -->
++      <a-entity position=""-24 0 -34"">
++        <a-sphere position=""0 18 0"" radius=""18"" color=""#FFC65D""></a-sphere>
++        <a-image src=""../_images/radial-shadow-3.png"" rotation=""-90 0 0""
++                 scale=""8 8 8""></a-image>
++      </a-entity>
+ 
+       <!-- Green -->
+-      <a-sphere position=""25 0 20"" translate=""0 12 0"" radius=""12"" color=""#7BC8A4"">
+-        <a-image src=""../_images/radial-shadow-3.png"" rotation=""-90 0 0"" scale=""8 8 8""></a-image>
+-      </a-sphere>
++      <a-entity position=""25 0 20"">
++        <a-sphere position=""0 12 0"" radius=""12"" color=""#7BC8A4""></a-sphere>
++        <a-image src=""../_images/radial-shadow-3.png"" rotation=""-90 0 0""
++                 scale=""8 8 8""></a-image>
++      </a-entity>
+ 
+       <!-- White -->
+-      <a-sphere position=""-15 0 5"" translate=""0 3 0"" radius=""3"" color=""#ECECEC"">
+-        <a-image src=""../_images/radial-shadow-3.png"" rotation=""-90 0 0"" scale=""3 3 3""></a-image>
+-      </a-sphere>
++      <a-entity position=""-15 0 5"">
++        <a-sphere position=""0 3 0"" radius=""3"" color=""#ECECEC""></a-sphere>
++        <a-image src=""../_images/radial-shadow-3.png"" rotation=""-90 0 0""
++                 scale=""3 3 3""></a-image>
++      </a-entity>
+ 
+       <!-- Orange -->
+-      <a-sphere position=""-6 0 6"" translate=""0 1 0"" radius=""1"" color=""#F16745"" roughness=""0.8"">
+-        <a-image src=""../_images/radial-shadow-3.png"" rotation=""-90 0 0"" scale=""1 1 1""></a-image>
+-      </a-sphere>
++      <a-entity position=""-6 0 6"">
++        <a-sphere position=""0 1 0"" radius=""1"" color=""#F16745"" roughness=""0.8""></a-sphere>
++        <a-image src=""../_images/radial-shadow-3.png"" rotation=""-90 0 0""
++                 scale=""1 1 1""></a-image>
++      </a-entity>
+ 
+       <!-- Yellow -->
+-      <a-sphere position=""-20 0 30"" translate=""0 30 0"" radius=""30"" color=""#FFC65D"" roughness=""0.6"" width-segments=""52"" height-segments=""52"">
+-        <a-image src=""../_images/radial-shadow-3.png"" rotation=""-90 0 0"" scale=""15 15 15""></a-image>
+-      </a-sphere>
++      <a-entity position=""-20 0 30"">
++        <a-sphere position=""0 30 0"" radius=""30"" color=""#FFC65D"" roughness=""0.6""></a-sphere>
++        <a-image src=""../_images/radial-shadow-3.png"" rotation=""-90 0 0""
++                 scale=""15 15 15""></a-image>
++      </a-entity>
+ 
+       <!-- Blue -->
+-      <a-sphere position=""-1 0 14"" translate=""0 2 0"" radius=""2"" color=""#4CC3D9"">
+-        <a-image src=""../_images/radial-shadow-3.png"" rotation=""-90 0 0"" scale=""2 2 2""></a-image>
+-      </a-sphere>
++      <a-entity position=""-1 0 14"">
++        <a-sphere position=""0 2 0"" radius=""2"" color=""#4CC3D9""></a-sphere>
++        <a-image src=""../_images/radial-shadow-3.png"" rotation=""-90 0 0""
++                 scale=""2 2 2""></a-image>
++      </a-entity>
+ 
+       <!-- Orange -->
+-      <a-sphere position=""10 0 15"" translate=""0 4 0"" radius=""4"" color=""#F16745"" roughness=""1"">
+-        <a-image src=""../_images/radial-shadow-3.png"" rotation=""-90 0 0"" scale=""2 2 2""></a-image>
+-      </a-sphere>
++      <a-entity position=""10 0 15"">
++        <a-sphere position=""0 4 0"" radius=""4"" color=""#F16745"" roughness=""1""></a-sphere>
++        <a-image src=""../_images/radial-shadow-3.png"" rotation=""-90 0 0""
++                 scale=""2 2 2""></a-image>
++      </a-entity>
+ 
+       <!-- Blue -->
+-      <a-sphere position=""6 0 4"" translate=""0 1.5 0"" radius=""1.5"" color=""#4CC3D9"" metalness=""0.1"">
+-        <a-image src=""../_images/radial-shadow-3.png"" rotation=""-90 0 0"" scale=""1.5 1.5 1.5""></a-image>
+-      </a-sphere>
++      <a-entity position=""6 0 4"">
++        <a-sphere position=""0 1.5 0"" radius=""1.5"" color=""#4CC3D9"" metalness=""0.1""></a-sphere>
++        <a-image src=""../_images/radial-shadow-3.png"" rotation=""-90 0 0""
++                 scale=""1.5 1.5 1.5""></a-image>
++      </a-entity>
+ 
+       <!-- Yellow -->
+-      <a-sphere position=""5 0 14"" translate=""0 .6 0"" radius="".6"" color=""#FFC65D"">
+-        <a-image src=""../_images/radial-shadow-3.png"" rotation=""-90 0 0"" scale=""0.6 0.6 0.6""></a-image>
+-      </a-sphere>
++      <a-entity position=""5 0 14"">
++        <a-sphere position=""0 .6 0"" radius="".6"" color=""#FFC65D""></a-sphere>
++        <a-image src=""../_images/radial-shadow-3.png"" rotation=""-90 0 0""
++                 scale=""0.6 0.6 0.6""></a-image>
++      </a-entity>
+ 
+       <!-- Purple -->
+-      <a-sphere position=""5 0 25"" translate=""0 2 0"" radius=""2"" color=""#93648D"">
+-        <a-image src=""../_images/radial-shadow-3.png"" rotation=""-90 0 0"" scale=""2 2 2""></a-image>
+-      </a-sphere>
++      <a-entity position=""5 0 25"">
++        <a-sphere position=""0 2 0"" radius=""2"" color=""#93648D""></a-sphere>
++        <a-image src=""../_images/radial-shadow-3.png"" rotation=""-90 0 0""
++                 scale=""2 2 2""></a-image>
++      </a-entity>
+ 
+       <!-- White -->
+-      <a-sphere position=""2 0 15"" translate=""0 0.2 0"" radius=""0.2"" color=""#ECECEC"" width-segments=""16"" height-segments=""16"">
+-        <a-image src=""../_images/radial-shadow-3.png"" rotation=""-90 0 0"" scale=""0.2 0.2 0.2"" opacity=""0.5""></a-image>
+-      </a-sphere>
++      <a-entity position=""2 0 15"">
++        <a-sphere position=""0 0.2 0"" radius=""0.2"" color=""#ECECEC""></a-sphere>
++        <a-image src=""../_images/radial-shadow-3.png"" rotation=""-90 0 0""
++                 scale=""0.2 0.2 0.2"" opacity=""0.5""></a-image>
++      </a-entity>
+ 
+       <!-- Purple -->
+-      <a-sphere position=""4 0 10"" translate=""0 0.15 0"" radius=""0.15"" color=""#93648D"" width-segments=""16"" height-segments=""16"">
+-        <a-image src=""../_images/radial-shadow-3.png"" rotation=""-90 0 0"" scale=""0.25 0.25 0.25"" opacity=""0.6""></a-image>
+-      </a-sphere>
++      <a-entity position=""4 0 10"">
++        <a-sphere position=""0 0.15 0"" radius=""0.15"" color=""#93648D""></a-sphere>
++        <a-image src=""../_images/radial-shadow-3.png"" rotation=""-90 0 0""
++                 scale=""0.25 0.25 0.25"" opacity=""0.6""></a-image>
++      </a-entity>
+ 
+       <!-- Blue -->
+-      <a-sphere position=""4 0 11"" translate=""0 0.1 0"" radius=""0.1"" color=""#4CC3D9"" width-segments=""16"" height-segments=""16"">
+-        <a-image src=""../_images/radial-shadow-3.png"" rotation=""-90 0 0"" scale=""0.15 0.15 0.15"" opacity=""0.6""></a-image>
+-      </a-sphere>
++      <a-entity position=""4 0 11"">
++        <a-sphere position=""0 0.1 0"" radius=""0.1"" color=""#4CC3D9""></a-sphere>
++        <a-image src=""../_images/radial-shadow-3.png"" rotation=""-90 0 0""
++                 scale=""0.15 0.15 0.15"" opacity=""0.6""></a-image>
++      </a-entity>
+ 
+       <!-- Green -->
+-      <a-sphere position=""5 0 11"" translate=""0 0.3 0"" radius=""0.3"" color=""#7BC8A4"" width-segments=""16"" height-segments=""16"">
+-        <a-image src=""../_images/radial-shadow-3.png"" rotation=""-90 0 0"" scale=""0.25 0.25 0.25"" opacity=""0.6""></a-image>
+-      </a-sphere>
++      <a-entity position=""5 0 11"">
++        <a-sphere position=""0 0.3 0"" radius=""0.3"" color=""#7BC8A4""></a-sphere>
++        <a-image src=""../_images/radial-shadow-3.png"" rotation=""-90 0 0""
++                 scale=""0.25 0.25 0.25"" opacity=""0.6""></a-image>
++      </a-entity>
+ 
+-      <!-- Lighting and background -->
++      <!-- Background -->
+       <a-sky color=""#AAB""></a-sky>
+-
+     </a-scene>
+   </body>
+ </html>"
+aframevr/aframe,1341,be807ca334ede6d0b26ffdc8ef38a2e129e4fe81,examples/test-pivot/index.html,renamed,11,12,23,"@@ -2,19 +2,19 @@
+ <html>
+   <head>
+     <meta charset=""utf-8"">
+-    <title>Geometry Translation</title>
+-    <meta name=""description"" content=""Geometry Translation - A-Frame"">
++    <title>Pivot Component</title>
++    <meta name=""description"" content=""Pivot Component- A-Frame"">
+     <script src=""../../dist/aframe.js""></script>
+   </head>
+   <body>
+-    <a-scene stats=""true"">
++    <a-scene>
+       <a-assets>
+-        <a-mixin id=""wing"" geometry=""primitive: box; depth: .005; height: 1;
+-                                     translate: -0.25 0 0; width: 0.5""
+-                           material=""color: red"" rotation=""0 0 0""
+-                           scale=""1 1.25 1""></a-mixin>
+-        <a-mixin id=""flap"" attribute=""rotation"" direction=""alternate"" fill=""forwards""
+-                           repeat=""indefinite""></a-mixin>
++        <a-mixin id=""flap"" attribute=""rotation"" direction=""alternate""
++                 repeat=""indefinite""></a-mixin>
++        <a-mixin id=""rotate"" attribute=""rotation"" repeat=""indefinite""></a-mixin>
++        <a-mixin id=""wing"" geometry=""primitive: box; depth: .005; height: 1; width: 0.5""
++                           material=""color: #9D0B28"" rotation=""0 0 0""
++                           pivot=""0.25 0 0"" scale=""1 1.25 1""></a-mixin>
+       </a-assets>
+ 
+       <!-- Camera. -->
+@@ -27,10 +27,9 @@
+                 material=""color: #335; shader: flat"" scale=""1 1 -1"">
+       </a-entity>
+ 
+-      <!-- Butterfly with pivoting wings via translation. -->
++      <!-- Butterfly with pivoting wings. -->
+       <a-entity position=""0 2.5 -5"">
+-        <a-animation attribute=""rotation"" to=""0 360 0"" fill=""forwards"" dur=""3000""
+-                     easing=""linear"" repeat=""indefinite""></a-animation>
++        <a-animation mixin=""rotate"" to=""0 360 0"" dur=""3000"" easing=""linear""></a-animation>
+         <a-entity rotation=""0 90 0"" position=""2.5 0 0"">
+           <a-entity rotation=""-45 0 90"">
+             <a-entity mixin=""wing"">"
+aframevr/aframe,1341,be807ca334ede6d0b26ffdc8ef38a2e129e4fe81,src/extras/components/index.js,added,1,0,1,"@@ -0,0 +1 @@
++require('./pivot');"
+aframevr/aframe,1341,be807ca334ede6d0b26ffdc8ef38a2e129e4fe81,src/extras/components/pivot.js,added,47,0,47,"@@ -0,0 +1,47 @@
++var registerComponent = require('../../core/component').registerComponent;
++var THREE = require('../../lib/three');
++
++var originalPosition = new THREE.Vector3();
++var originalRotation = new THREE.Vector3();
++
++/**
++ * Wrap el.object3D within an outer group. Apply pivot to el.object3D as position.
++ */
++registerComponent('pivot', {
++  dependencies: ['position'],
++
++  schema: {type: 'vec3'},
++
++  init: function () {
++    var data = this.data;
++    var el = this.el;
++    var originalParent = el.object3D.parent;
++    var originalGroup = el.object3D;
++    var outerGroup = new THREE.Group();
++
++    originalPosition.copy(originalGroup.position);
++    originalRotation.copy(originalGroup.rotation);
++
++    // Detach current group from parent.
++    originalParent.remove(originalGroup);
++    outerGroup.add(originalGroup);
++
++    // Set new group as the outer group.
++    originalParent.add(outerGroup);
++
++    // Set outer group as new object3D.
++    el.object3D = outerGroup;
++
++    // Apply pivot to original group.
++    originalGroup.position.set(-1 * data.x, -1 * data.y, -1 * data.z);
++
++    // Offset the pivot so that world position not affected.
++    // And restore position onto outer group.
++    outerGroup.position.set(data.x + originalPosition.x, data.y + originalPosition.y,
++                            data.z + originalPosition.z);
++
++    // Transfer rotation to outer group.
++    outerGroup.rotation.copy(originalGroup.rotation);
++    originalGroup.rotation.set(0, 0, 0);
++  }
++});"
+aframevr/aframe,1341,be807ca334ede6d0b26ffdc8ef38a2e129e4fe81,src/extras/primitives/getMeshMixin.js,modified,0,1,1,"@@ -16,7 +16,6 @@ module.exports = function getMeshMixin () {
+       shader: 'material.shader',
+       side: 'material.side',
+       src: 'material.src',
+-      translate: 'geometry.translate',
+       transparent: 'material.transparent'
+     },
+ "
+aframevr/aframe,1341,be807ca334ede6d0b26ffdc8ef38a2e129e4fe81,src/index.js,modified,1,0,1,"@@ -44,6 +44,7 @@ require('./core/a-cubemap');
+ require('./core/a-mixin');
+ 
+ // Extras.
++require('./extras/components/');
+ require('./extras/declarative-events/');
+ require('./extras/primitives/');
+ "
+aframevr/aframe,1341,be807ca334ede6d0b26ffdc8ef38a2e129e4fe81,tests/extras/components/pivot.test.js,added,40,0,40,"@@ -0,0 +1,40 @@
++/* global assert, process, setup, suite, test */
++var helpers = require('../../helpers');
++var THREE = require('lib/three');
++
++var positionVec3 = new THREE.Vector3();
++
++suite('pivot', function () {
++  setup(function (done) {
++    var el = this.el = helpers.entityFactory();
++    el.setAttribute('geometry', {primitive: 'box'});
++    el.addEventListener('loaded', function () {
++      done();
++    });
++  });
++
++  test('does not translate object', function () {
++    var el = this.el;
++    el.setAttribute('pivot', '0 0.5 0');
++    // Grab world coordinates.
++    el.sceneEl.object3D.updateMatrixWorld();
++    positionVec3.setFromMatrixPosition(el.getObject3D('mesh').matrixWorld);
++    assert.shallowDeepEqual(positionVec3, {x: 0, y: 0, z: 0});
++  });
++
++  test('sets proper pivot point', function () {
++    var el = this.el;
++
++    // Rotate without pivot, center will stay in place.
++    el.setAttribute('rotation', '180 0 0');
++    el.sceneEl.object3D.updateMatrixWorld();
++    positionVec3.setFromMatrixPosition(el.getObject3D('mesh').matrixWorld);
++    assert.shallowDeepEqual(positionVec3.floor(), {x: 0, y: 0, z: 0});
++
++    // Set pivot, check that world position is changed.
++    el.setAttribute('pivot', '0 0.5 0');
++    el.sceneEl.object3D.updateMatrixWorld();
++    positionVec3.setFromMatrixPosition(el.getObject3D('mesh').matrixWorld);
++    assert.shallowDeepEqual(positionVec3.floor(), {x: 0, y: 1, z: -1});
++  });
++});"

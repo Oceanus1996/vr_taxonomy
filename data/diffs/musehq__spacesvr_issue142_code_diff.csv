@@ -1,0 +1,770 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+musehq/spacesvr,142,0d4253269782a1c1cfb6582eb14905f3f5cd74ea,examples/worlds/Workshop.tsx,modified,5,0,5,"@@ -8,6 +8,7 @@ import {
+   Switch,
+   LostWorld,
+   Camera,
++  Dialogue,
+ } from ""spacesvr"";
+ import Title from ""../ideas/Title"";
+ import Link from ""../ideas/Link"";
+@@ -62,6 +63,10 @@ export default function Workshop() {
+         </Link>
+       </group>
+       <group position-x={-6} position-z={-3}>
++        <Dialogue
++          position={[0, 1, 5]}
++          dialogue={[{ key: ""init"", text: ""hello world"" }]}
++        />
+         <mesh position-y={0.5}>
+           <boxBufferGeometry args={[1, 1, 1]} />
+           <meshNormalMaterial />"
+musehq/spacesvr,142,0d4253269782a1c1cfb6582eb14905f3f5cd74ea,package.json,modified,1,1,2,"@@ -1,6 +1,6 @@
+ {
+   ""name"": ""spacesvr"",
+-  ""version"": ""2.7.0"",
++  ""version"": ""2.7.1"",
+   ""private"": true,
+   ""description"": ""A standardized reality for future of the 3D Web"",
+   ""keywords"": ["
+musehq/spacesvr,142,0d4253269782a1c1cfb6582eb14905f3f5cd74ea,src/ideas/index.ts,modified,1,0,1,"@@ -20,6 +20,7 @@ export * from ""./modifiers/Floating"";
+ export * from ""./modifiers/LookAtPlayer"";
+ export * from ""./modifiers/Spinning"";
+ export * from ""./modifiers/VisualEffect"";
++export * from ""./ui/Dialogue"";
+ export * from ""./ui/TextInput"";
+ export * from ""./ui/Arrow"";
+ export * from ""./ui/Button"";"
+musehq/spacesvr,142,0d4253269782a1c1cfb6582eb14905f3f5cd74ea,src/ideas/modifiers/Tool/modifiers/Draggable.tsx,modified,3,5,8,"@@ -18,14 +18,12 @@ export default function Draggable(props: DraggableProps) {
+   const { set, distance, enabled, children } = props;
+ 
+   const toolbelt = useToolbelt();
+-  const { viewport, size, gl } = useThree();
++  const { size, gl } = useThree();
+   const { device } = useEnvironment();
+   const { raycaster } = usePlayer();
+ 
+   const group = useRef<Group>(null);
+ 
+-  const aspect = size.width / viewport.width;
+-
+   const DOWN_SWIPE_DIST = size.height * 0.28;
+   const SIDE_SWIPE_DIST = size.width * 0.3;
+ 
+@@ -46,8 +44,8 @@ export default function Draggable(props: DraggableProps) {
+ 
+         set({
+           pos: [
+-            (delta.x / aspect) * distance * 0.7,
+-            (-delta.y / aspect) * distance * (delta.y < 0 ? 0.15 : 0.5),
++            delta.x * 0.003 * distance * 0.7,
++            -delta.y * 0.003 * distance * (delta.y < 0 ? 0.15 : 0.5),
+             0,
+           ],
+         });"
+musehq/spacesvr,142,0d4253269782a1c1cfb6582eb14905f3f5cd74ea,src/ideas/ui/Button.tsx,modified,2,1,3,"@@ -76,7 +76,8 @@ export function Button(props: ButtonProps) {
+   // keep dimensions up to date
+   useLayoutEffect(() => {
+     textRef.current.addEventListener(""synccomplete"", () => {
+-      const info = textRef.current.textRenderInfo;
++      const info = textRef.current?.textRenderInfo;
++      if (!info) return;
+       const w = info.blockBounds[2] - info.blockBounds[0];
+       const h = info.blockBounds[3] - info.blockBounds[1];
+       setDims([w, h]);"
+musehq/spacesvr,142,0d4253269782a1c1cfb6582eb14905f3f5cd74ea,src/ideas/ui/Dialogue/ideas/Bubbles.tsx,added,67,0,67,"@@ -0,0 +1,67 @@
++import { useEffect, useMemo, useRef, useState } from ""react"";
++import { useLimitedFrame } from ""../../../../logic/limiter"";
++import {
++  Group,
++  InstancedMesh,
++  MathUtils,
++  Object3D,
++  SphereBufferGeometry,
++  Vector3,
++} from ""three"";
++import { useIdeaMaterial } from ""../logic/ideaMat"";
++import { GroupProps, useThree } from ""@react-three/fiber"";
++
++type BubblesProps = {
++  numStops: number;
++  enabled: boolean;
++  offset: GroupProps[""position""];
++};
++
++export default function Bubbles(props: BubblesProps) {
++  const { numStops, enabled, offset } = props;
++
++  const group = useRef<Group>(null);
++  const mesh = useRef<InstancedMesh>(null);
++
++  const clock = useThree((st) => st.clock);
++
++  const [pos] = useState(new Vector3());
++  const [obj] = useState(new Object3D());
++  const startTime = useRef(0);
++  useEffect(() => {
++    startTime.current = clock.elapsedTime;
++  }, [enabled]);
++  useLimitedFrame(40, ({ clock }) => {
++    if (!mesh.current || !group.current) return;
++
++    group.current.updateMatrix();
++    group.current.matrix.decompose(pos, obj.quaternion, obj.scale);
++    for (let i = 0; i < numStops; i++) {
++      const perc = i / (numStops - 1);
++      obj.position.set(perc * pos.x, perc * pos.y, perc * pos.z);
++      const sc = 0.01 + perc * 0.05;
++      const delay = 60 / 1000;
++      const time = 400 / 1000;
++      const delta = clock.elapsedTime - startTime.current;
++      const iter = enabled ? i : numStops - i - 1;
++      const x = MathUtils.clamp((delta - iter * delay) / time, 0, 1);
++      let val = (Math.cos(Math.PI * x) + 1) / 2;
++      if (enabled) val = 1 - val;
++      obj.scale.setScalar(sc * 0.2 * val);
++      obj.updateMatrix();
++      mesh.current.setMatrixAt(i, obj.matrix);
++    }
++
++    mesh.current.instanceMatrix.needsUpdate = true;
++  });
++
++  const geo = useMemo(() => new SphereBufferGeometry(4, 32, 16), []);
++  const mat = useIdeaMaterial(undefined, 4);
++
++  return (
++    <>
++      <group position={offset} ref={group} />
++      <instancedMesh args={[geo, mat, numStops]} ref={mesh} />
++    </>
++  );
++}"
+musehq/spacesvr,142,0d4253269782a1c1cfb6582eb14905f3f5cd74ea,src/ideas/ui/Dialogue/ideas/VisualDecisions.tsx,added,159,0,159,"@@ -0,0 +1,159 @@
++import { Decision } from ""../logic/types"";
++import { useEffect, useMemo, useState } from ""react"";
++// @ts-ignore
++import { Text as TextImpl } from ""troika-three-text"";
++import { Triplet } from ""@react-three/cannon"";
++import { Idea } from ""../../../../logic/basis"";
++import { Button } from ""../../../../ideas/ui/Button"";
++import { FacePlayer } from ""../../../../ideas/modifiers/FacePlayer"";
++
++type DecisionProps = {
++  decisions: Decision[];
++  width: number;
++  setCurKey: (key: string) => void;
++};
++
++export default function VisualDecisions(props: DecisionProps) {
++  const { decisions, setCurKey, width } = props;
++
++  const FONT_FILE =
++    ""https://d27rt3a60hh1lx.cloudfront.net/fonts/Quicksand_Bold.otf"";
++  const FONT_SIZE = 0.05;
++  const OUTLINE_WIDTH = FONT_SIZE * 0.1;
++  const PADDING_Y = 0.065;
++  const SPACING_Y = 0.015;
++  const SPACING_X = 0.08;
++  const PADDING_X = 0.025;
++
++  const [dimMap] = useState(() => new Map<string, { w: number; h: number }>());
++  const [ready, setReady] = useState(false);
++
++  // for every new set of values, generate a new text object and store width
++  // keep ready state in sync with whether all values have been measured
++  useEffect(() => {
++    if (decisions.every((d) => dimMap.has(d.name))) return;
++    setReady(false);
++    for (const decision of decisions) {
++      if (dimMap.has(decision.name)) continue;
++      setReady(false);
++      const t = new TextImpl();
++      t.text = decision.name;
++      t.font = FONT_FILE;
++      t.fontSize = FONT_SIZE;
++      t.maxWidth = width;
++      t.outlineWidth = OUTLINE_WIDTH;
++      t.sync(() => {
++        const { blockBounds } = t.textRenderInfo;
++        const w = blockBounds[2] - blockBounds[0];
++        const h = blockBounds[3] - blockBounds[1];
++        dimMap.set(decision.name, { w, h });
++        if (decisions.every((d) => dimMap.has(d.name))) setReady(true);
++      });
++    }
++  }, [decisions, dimMap, FONT_SIZE, FONT_FILE, width, OUTLINE_WIDTH]);
++
++  const objValues = useMemo(() => {
++    type Line = { y: number; decisions: Decision[] };
++    const lines: Line[] = [];
++    let thisLineWidth = 0;
++    let thisLineIndex = 0;
++    let y = -FONT_SIZE;
++    let lastHei = 0;
++
++    // calculate lines and y positions
++    for (const decision of decisions) {
++      const wid =
++        (dimMap.get(decision.name)?.w || 0) + PADDING_X * 2 + SPACING_X;
++      const hei = dimMap.get(decision.name)?.h || 0;
++
++      if (thisLineWidth + wid <= width) {
++        if (!lines[thisLineIndex]) lines.push({ y, decisions: [] });
++        lines[thisLineIndex].decisions.push(decision);
++        lastHei = hei;
++        thisLineWidth += wid;
++      } else {
++        // by default, overflow means new line
++        thisLineIndex++;
++        const hei = dimMap.get(decision.name)?.h || 0;
++        y -= lastHei / 2 + SPACING_Y + PADDING_Y + hei / 2;
++
++        if (hei > FONT_SIZE + OUTLINE_WIDTH * 2) {
++          // if it's taller than one line, force it to be on its own line
++          lines.push({ y, decisions: [decision] });
++          y -= hei / 2 + PADDING_Y + SPACING_Y;
++          thisLineIndex++;
++          thisLineWidth = 0;
++          lastHei = hei;
++        } else {
++          // add to this new line
++          lines.push({ y, decisions: [decision] });
++          thisLineWidth += wid;
++          lastHei = hei;
++        }
++      }
++    }
++
++    // from lines, calculate x positions by centering each decision within its line
++    type ObjEntry = { decision: Decision; position: Triplet };
++    const objMap: ObjEntry[] = [];
++    for (const line of lines) {
++      const lineObjMap: ObjEntry[] = [];
++      // place each decision in the center then shift left
++      let x = 0;
++      for (const decision of line.decisions) {
++        const wid = dimMap.get(decision.name)?.w || 0;
++        x -= wid / 2;
++        lineObjMap.push({ decision, position: [x, line.y, 0] });
++        x -= wid / 2 + PADDING_X * 2 + SPACING_X;
++      }
++      // shift all decisions in the line to the right
++      const lineWid = -x - PADDING_X * 2 - SPACING_X;
++      const shift = lineWid / 2;
++      for (const obj of lineObjMap) {
++        obj.position[0] += shift;
++      }
++      objMap.push(...lineObjMap);
++    }
++
++    return objMap;
++  }, [decisions, dimMap, width, ready]);
++
++  const [offset] = useState(Math.random());
++  const ideaMap = useMemo(() => {
++    const map = new Map<string, Idea>();
++    for (const decision of decisions) {
++      const m = (offset + decisions.indexOf(decision) / decisions.length) % 1;
++      const s = 0.7;
++      map.set(decision.name, new Idea(m, s, decision.utility || 0.8));
++    }
++    return map;
++  }, [decisions, offset]);
++
++  if (!ready) return null;
++
++  return (
++    <>
++      {objValues.map(({ decision, position }, i) => (
++        <group
++          key={decision.name + i + position.toString()}
++          position={position}
++        >
++          <FacePlayer>
++            <Button
++              font={FONT_FILE}
++              fontSize={FONT_SIZE}
++              maxWidth={width}
++              idea={ideaMap.get(decision.name)}
++              onClick={() => {
++                if (decision.onClick) decision.onClick();
++                if (decision.nextKey) setCurKey(decision.nextKey || """");
++              }}
++            >
++              {decision.name}
++            </Button>
++          </FacePlayer>
++        </group>
++      ))}
++    </>
++  );
++}"
+musehq/spacesvr,142,0d4253269782a1c1cfb6582eb14905f3f5cd74ea,src/ideas/ui/Dialogue/ideas/VisualInteraction.tsx,added,100,0,100,"@@ -0,0 +1,100 @@
++import { useEffect, useMemo, useState } from ""react"";
++import { animated, useSpring } from ""@react-spring/three"";
++import { Text } from ""@react-three/drei"";
++import { TextInput } from ""../../TextInput"";
++import { Interaction } from ""../logic/types"";
++import VisualDecisions from ""./VisualDecisions"";
++
++const FONT_FILE =
++  ""https://d27rt3a60hh1lx.cloudfront.net/fonts/Quicksand_Bold.otf"";
++
++type InteractionProps = {
++  interaction: Interaction;
++  enabled: boolean;
++  width: number;
++  height: number;
++  setCurKey: (key: string) => void;
++};
++
++export default function VisualInteraction(props: InteractionProps) {
++  const { interaction, enabled, width, height, setCurKey } = props;
++  const { effect, text, input, decisions } = interaction;
++
++  const [prevEnabled, setPrevEnabled] = useState(false);
++
++  const { posZ, scaleY } = useSpring({
++    posZ: enabled ? 0.003 : -0.003,
++    scaleY: enabled ? 1 : 0,
++  });
++
++  const onSubmit = useMemo(() => {
++    if (!decisions)
++      return () => {
++        return;
++      };
++    for (const decision of decisions) {
++      if (decision.name === ""submit"") {
++        return () => {
++          if (decision.onClick) decision.onClick();
++          if (decision.nextKey) setCurKey(decision.nextKey || """");
++        };
++      }
++    }
++  }, [decisions, setCurKey]);
++
++  useEffect(() => {
++    if (prevEnabled !== enabled) {
++      setPrevEnabled(enabled);
++      if (enabled && effect) {
++        effect().then((newKey: string) => {
++          if (newKey) {
++            setCurKey(newKey);
++          }
++        });
++      }
++    }
++  }, [effect, setCurKey, prevEnabled, enabled]);
++
++  const textStyles: Partial<typeof Text.defaultProps> = {
++    font: FONT_FILE,
++    maxWidth: 0.8,
++    textAlign: ""center"",
++    fontSize: 0.06,
++    outlineWidth: 0.0065,
++    renderOrder: 10,
++  };
++
++  if (!enabled) return null;
++
++  return (
++    <animated.group
++      name={`interaction-${text}`}
++      position-z={posZ}
++      scale-y={scaleY}
++    >
++      <Text {...textStyles} anchorY={input ? ""bottom"" : ""middle""}>
++        {text}
++      </Text>
++      {input && (input.persist || enabled) && (
++        <TextInput
++          value={input.value}
++          onChange={input.setValue}
++          position-y={-0.065}
++          onSubmit={onSubmit}
++          fontSize={0.06}
++          width={width * 0.825}
++          type={input.type === ""email"" ? ""text"" : input.type}
++        />
++      )}
++      <group position-y={-height / 2}>
++        {decisions && (
++          <VisualDecisions
++            decisions={decisions}
++            width={width}
++            setCurKey={setCurKey}
++          />
++        )}
++      </group>
++    </animated.group>
++  );
++}"
+musehq/spacesvr,142,0d4253269782a1c1cfb6582eb14905f3f5cd74ea,src/ideas/ui/Dialogue/index.tsx,added,86,0,86,"@@ -0,0 +1,86 @@
++import { GroupProps } from ""@react-three/fiber"";
++import { useRef, useState } from ""react"";
++import { DoubleSide, Group } from ""three"";
++import { RoundedBox } from ""@react-three/drei"";
++import { animated, useSpring } from ""@react-spring/three"";
++import { useLimitedFrame } from ""../../../logic/limiter"";
++import { DialogueFSM } from ""./logic/types"";
++import Bubbles from ""./ideas/Bubbles"";
++import VisualInteraction from ""./ideas/VisualInteraction"";
++import { FacePlayer } from ""../../modifiers/FacePlayer"";
++export * from ""./logic/types"";
++
++type DialogueProps = {
++  dialogue: DialogueFSM;
++  numStops?: number;
++  side?: ""left"" | ""right"";
++  offset?: GroupProps[""position""];
++  enabled?: boolean;
++  face?: boolean;
++} & GroupProps;
++
++export function Dialogue(props: DialogueProps) {
++  const {
++    numStops = 5,
++    enabled = true,
++    side = ""left"",
++    offset = [side === ""right"" ? 0.4 : -0.4, 0, 0],
++    dialogue,
++    face = true,
++    ...rest
++  } = props;
++
++  const [curKey, setCurKey] = useState(""init"");
++  const { scale } = useSpring({
++    scale: enabled ? 1 : 0,
++    delay: enabled ? (numStops + 1) * 60 : 0,
++  });
++
++  const group = useRef<Group>(null);
++
++  useLimitedFrame(40, ({ camera }) => {
++    if (!group.current) return;
++    group.current.position.x += side === ""right"" ? WIDTH : -WIDTH;
++    group.current.lookAt(camera.position);
++    group.current.position.set(0, 0, 0);
++  });
++
++  const WIDTH = 1;
++  const HEIGHT = 0.35;
++  const DEPTH = 0.125;
++  const POS_X = side === ""right"" ? WIDTH / 2 : -WIDTH / 2;
++  const RADIUS = Math.min(WIDTH, HEIGHT, DEPTH) * 0.5;
++
++  return (
++    <group name=""dialogue"" {...rest}>
++      <FacePlayer enabled={face}>
++        <Bubbles numStops={numStops} enabled={enabled} offset={offset} />
++        <group name=""main-dialogue"" position={offset}>
++          <group name=""look-at"" ref={group}>
++            <animated.group scale={scale} position-x={POS_X}>
++              <RoundedBox
++                args={[WIDTH, HEIGHT, DEPTH]}
++                radius={RADIUS}
++                smoothness={6}
++              >
++                <meshStandardMaterial color=""#aaa"" side={DoubleSide} />
++              </RoundedBox>
++              <group name=""interactions"" position-z={DEPTH / 2 + 0.003}>
++                {dialogue.map((interaction) => (
++                  <VisualInteraction
++                    key={interaction.key}
++                    interaction={interaction}
++                    enabled={interaction.key === curKey}
++                    setCurKey={setCurKey}
++                    width={WIDTH}
++                    height={HEIGHT}
++                  />
++                ))}
++              </group>
++            </animated.group>
++          </group>
++        </group>
++      </FacePlayer>
++    </group>
++  );
++}"
+musehq/spacesvr,142,0d4253269782a1c1cfb6582eb14905f3f5cd74ea,src/ideas/ui/Dialogue/logic/ideaMat.ts,added,214,0,214,"@@ -0,0 +1,214 @@
++import { useMemo } from ""react"";
++import { Idea } from ""../../../../logic/basis"";
++import { useLimitedFrame } from ""../../../../logic/limiter"";
++import { Color, DoubleSide, MeshStandardMaterial, Uniform } from ""three"";
++import { useSpring } from ""@react-spring/three"";
++
++export const useIdeaMaterial = (idea: Idea | undefined, radius: number) => {
++  const hex = useMemo(() => idea?.getHex() || ""#808080"", [idea]);
++  const seed = useMemo(() => Math.random(), []);
++  const color = useMemo(() => new Color(hex), [hex]);
++
++  const { col } = useSpring({ col: hex });
++
++  const NOISE_AMPLITUDE = 0.82;
++  const NOISE_FREQ = 0.154;
++
++  const mat = useMemo(() => {
++    const material = new MeshStandardMaterial({
++      metalness: 0.18,
++      roughness: 0.49,
++      envMapIntensity: 0.66,
++      side: DoubleSide,
++    });
++
++    material.onBeforeCompile = function (shader) {
++      shader.uniforms.radius = new Uniform(radius);
++      shader.uniforms.time = new Uniform(0);
++      shader.uniforms.color = new Uniform(color);
++      shader.uniforms.radiusVariationAmplitude = new Uniform(NOISE_AMPLITUDE);
++      shader.uniforms.radiusNoiseFrequency = new Uniform(NOISE_FREQ);
++
++      const uniforms = `
++        uniform float radius;
++        uniform float time;
++        uniform vec3 color;
++        uniform float radiusVariationAmplitude;
++        uniform float radiusNoiseFrequency;
++      `;
++
++      shader.vertexShader =
++        uniforms +
++        vertHead +
++        shader.vertexShader.replace(""#include <begin_vertex>"", vert);
++
++      shader.fragmentShader =
++        uniforms +
++        shader.fragmentShader.replace(""#include <dithering_fragment>"", frag);
++
++      material.userData.shader = shader;
++    };
++
++    return material;
++  }, [radius, color, NOISE_AMPLITUDE, NOISE_FREQ, frag, vert]);
++
++  useLimitedFrame(50, ({ clock }) => {
++    if (!mat?.userData?.shader) return;
++
++    mat.userData.shader.uniforms.time.value =
++      clock.elapsedTime / 6 + seed * 100;
++
++    mat.userData.shader.uniforms.color.value.set(col.get());
++  });
++
++  return mat;
++};
++
++export const vertHead = `
++    // Description : Array and textureless GLSL 2D/3D/4D simplex
++    //               noise functions.
++    //      Author : Ian McEwan, Ashima Arts.
++    //  Maintainer : ijm
++    //     Lastmod : 20110822 (ijm)
++    //     License : Copyright (C) 2011 Ashima Arts. All rights reserved.
++    //               Distributed under the MIT License. See LICENSE file.
++    //               https://github.com/ashima/webgl-noise
++    //
++    
++    vec3 mod289(vec3 x) {
++      return x - floor(x * (1.0 / 289.0)) * 289.0;
++    }
++    
++    vec4 mod289(vec4 x) {
++      return x - floor(x * (1.0 / 289.0)) * 289.0;
++    }
++    
++    vec4 permute(vec4 x) {
++         return mod289(((x*34.0)+1.0)*x);
++    }
++    
++    vec4 taylorInvSqrt(vec4 r)
++    {
++      return 1.79284291400159 - 0.85373472095314 * r;
++    }
++    
++    float snoise(vec3 v)
++      {
++      const vec2  C = vec2(1.0/6.0, 1.0/3.0) ;
++      const vec4  D = vec4(0.0, 0.5, 1.0, 2.0);
++    
++    // First corner
++      vec3 i  = floor(v + dot(v, C.yyy) );
++      vec3 x0 =   v - i + dot(i, C.xxx) ;
++    
++    // Other corners
++      vec3 g = step(x0.yzx, x0.xyz);
++      vec3 l = 1.0 - g;
++      vec3 i1 = min( g.xyz, l.zxy );
++      vec3 i2 = max( g.xyz, l.zxy );
++    
++      //   x0 = x0 - 0.0 + 0.0 * C.xxx;
++      //   x1 = x0 - i1  + 1.0 * C.xxx;
++      //   x2 = x0 - i2  + 2.0 * C.xxx;
++      //   x3 = x0 - 1.0 + 3.0 * C.xxx;
++      vec3 x1 = x0 - i1 + C.xxx;
++      vec3 x2 = x0 - i2 + C.yyy; // 2.0*C.x = 1/3 = C.y
++      vec3 x3 = x0 - D.yyy;      // -1.0+3.0*C.x = -0.5 = -D.y
++    
++    // Permutations
++      i = mod289(i);
++      vec4 p = permute( permute( permute(
++                 i.z + vec4(0.0, i1.z, i2.z, 1.0 ))
++               + i.y + vec4(0.0, i1.y, i2.y, 1.0 ))
++               + i.x + vec4(0.0, i1.x, i2.x, 1.0 ));
++    
++    // Gradients: 7x7 points over a square, mapped onto an octahedron.
++    // The ring size 17*17 = 289 is close to a multiple of 49 (49*6 = 294)
++      float n_ = 0.142857142857; // 1.0/7.0
++      vec3  ns = n_ * D.wyz - D.xzx;
++    
++      vec4 j = p - 49.0 * floor(p * ns.z * ns.z);  //  mod(p,7*7)
++    
++      vec4 x_ = floor(j * ns.z);
++      vec4 y_ = floor(j - 7.0 * x_ );    // mod(j,N)
++    
++      vec4 x = x_ *ns.x + ns.yyyy;
++      vec4 y = y_ *ns.x + ns.yyyy;
++      vec4 h = 1.0 - abs(x) - abs(y);
++    
++      vec4 b0 = vec4( x.xy, y.xy );
++      vec4 b1 = vec4( x.zw, y.zw );
++    
++      //vec4 s0 = vec4(lessThan(b0,0.0))*2.0 - 1.0;
++      //vec4 s1 = vec4(lessThan(b1,0.0))*2.0 - 1.0;
++      vec4 s0 = floor(b0)*2.0 + 1.0;
++      vec4 s1 = floor(b1)*2.0 + 1.0;
++      vec4 sh = -step(h, vec4(0.0));
++    
++      vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy ;
++      vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww ;
++    
++      vec3 p0 = vec3(a0.xy,h.x);
++      vec3 p1 = vec3(a0.zw,h.y);
++      vec3 p2 = vec3(a1.xy,h.z);
++      vec3 p3 = vec3(a1.zw,h.w);
++    
++    //Normalise gradients
++      vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2, p2), dot(p3,p3)));
++      p0 *= norm.x;
++      p1 *= norm.y;
++      p2 *= norm.z;
++      p3 *= norm.w;
++    
++    // Mix final noise value
++      vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
++      m = m * m;
++      return 42.0 * dot( m*m, vec4( dot(p0,x0), dot(p1,x1),
++                                    dot(p2,x2), dot(p3,x3) ) );
++      }
++              
++    
++    float fsnoise(float val1, float val2, float val3){
++      return snoise(vec3(val1,val2,val3));
++    }
++    
++    vec3 distortFunct(vec3 transformed, float factor) {
++      float radiusVariation = -fsnoise(
++        transformed.x * radiusNoiseFrequency + time,
++        transformed.y * radiusNoiseFrequency + time,
++        transformed.z * radiusNoiseFrequency + time 
++      ) * radiusVariationAmplitude * factor;
++      return normalize(transformed) * (radiusVariation + radius);
++    }
++    
++    vec3 orthogonal(vec3 v) {
++      return normalize(abs(v.x) > abs(v.z) ? vec3(-v.y, v.x, 0.0)
++      : vec3(0.0, -v.z, v.y));
++    }
++    
++    vec3 distortNormal(vec3 position, vec3 distortedPosition, vec3 normal){
++      vec3 tangent1 = orthogonal(normal);
++      vec3 tangent2 = normalize(cross(normal, tangent1));
++      vec3 nearby1 = position + tangent1 * 0.1;
++      vec3 nearby2 = position + tangent2 * 0.1;
++      vec3 distorted1 = distortFunct(nearby1, 1.0);
++      vec3 distorted2 = distortFunct(nearby2, 1.0);
++      return normalize(cross(distorted1 - distortedPosition, distorted2 - distortedPosition));
++    }
++`;
++
++export const vert = `
++    #include <begin_vertex>
++    float updateTime = time / 10.0;
++    transformed = distortFunct(transformed, 1.0);
++    vec3 distortedNormal = distortNormal(position, transformed, normal);
++    vNormal = normal + distortedNormal;
++    gl_Position = projectionMatrix * modelViewMatrix * vec4(transformed,1.);
++`;
++
++export const frag = `
++    #include <dithering_fragment>
++    float angle = clamp(dot(normalize(vNormal), vec3(0., -1., 0.)), 0., 1.);
++    gl_FragColor = vec4(gl_FragColor.rgb * color, gl_FragColor.a);  
++    gl_FragColor.rgb = mix(gl_FragColor.rgb, mix(color, vec3(0.), 0.5), angle);
++`;"
+musehq/spacesvr,142,0d4253269782a1c1cfb6582eb14905f3f5cd74ea,src/ideas/ui/Dialogue/logic/types.ts,added,22,0,22,"@@ -0,0 +1,22 @@
++export type Decision = {
++  name: string;
++  action?: () => void;
++  utility?: number;
++  nextKey?: string;
++  onClick?: () => any;
++};
++
++export type Interaction = {
++  key: string;
++  effect?: () => Promise<any>;
++  text: string;
++  input?: {
++    value: string;
++    setValue: (s: string) => string | void;
++    type?: ""text"" | ""password"" | ""email"";
++    persist?: boolean;
++  };
++  decisions?: Decision[];
++};
++
++export type DialogueFSM = Interaction[];"
+musehq/spacesvr,142,0d4253269782a1c1cfb6582eb14905f3f5cd74ea,src/layers/Environment/ui/PauseMenu/index.tsx,modified,1,1,2,"@@ -48,7 +48,7 @@ export default function PauseMenu(props: PauseMenuProps) {
+   const PAUSE_ITEMS: PauseItem[] = [
+     ...pauseMenuItems,
+     {
+-      text: ""v2.7.0"",
++      text: ""v2.7.1"",
+       link: ""https://www.npmjs.com/package/spacesvr"",
+     },
+     ...menuItems,"
+musehq/spacesvr,142,0d4253269782a1c1cfb6582eb14905f3f5cd74ea,src/layers/Player/components/controls/PointerLockControls.tsx,modified,1,2,3,"@@ -2,7 +2,6 @@ import { useEffect, useCallback, useRef } from ""react"";
+ import { useThree } from ""@react-three/fiber"";
+ import { Euler } from ""three"";
+ import { PauseEvent, useEnvironment } from ""../../../Environment"";
+-import { isTyping } from ""../../../../logic/dom"";
+ 
+ const MIN_POLAR_ANGLE = 0; // radians
+ const MAX_POLAR_ANGLE = Math.PI; // radians
+@@ -32,7 +31,7 @@ export default function PointerLockCamera() {
+   // update camera while controls are locked
+   const onMouseMove = useCallback(
+     (event: MouseEvent) => {
+-      if (!isLocked.current || isTyping()) return;
++      if (!isLocked.current) return;
+ 
+       const movementX =
+         // @ts-ignore"
+musehq/spacesvr,142,0d4253269782a1c1cfb6582eb14905f3f5cd74ea,src/tools/Camera/components/Instruction.tsx,modified,0,1,1,"@@ -57,7 +57,6 @@ export default function Instruction(props: InstructionProps) {
+             position-x={-0.035}
+             position-z={0.1}
+             rotation-x={-0.3}
+-            onPress={() => setOpen(!open)}
+           />
+         </Floating>
+       )}"
+musehq/spacesvr,142,0d4253269782a1c1cfb6582eb14905f3f5cd74ea,src/tools/Camera/logic/photo.ts,modified,1,1,2,"@@ -66,7 +66,7 @@ export const usePhotography = (
+     // increase/decrease fov on scroll
+     const onScroll = (e: WheelEvent) => {
+       if (!cam.current) return;
+-      const fov = MathUtils.clamp(cam.current.fov + e.deltaY * 0.05, 10, 75);
++      const fov = MathUtils.clamp(cam.current.fov + e.deltaY * 0.05, 10, 85);
+       setFov(fov);
+     };
+     window.addEventListener(""wheel"", onScroll);"

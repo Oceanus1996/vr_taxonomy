@@ -1,0 +1,98 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch,gpt_bug_detection
+aframevr/aframe,2906,eb300f6f5a0271f04c8f34b05f63e61b4106af96,src/components/line.js,modified,2,2,4,"@@ -5,7 +5,7 @@ module.exports.Component = registerComponent('line', {
+   schema: {
+     start: {type: 'vec3', default: {x: 0, y: 0, z: 0}},
+     end: {type: 'vec3', default: {x: 0, y: 0, z: 0}},
+-    color: {type: 'color', default: '#74BEC1'},
++    color: {type: 'color', default: '#fff'},
+     opacity: {type: 'number', default: 1},
+     visible: {default: true}
+   },
+@@ -69,5 +69,5 @@ module.exports.Component = registerComponent('line', {
+ 
+ function isEqualVec3 (a, b) {
+   if (!a || !b) { return false; }
+-  return a.x !== b.x || a.y !== b.y || a.z !== b.z;
++  return (a.x === b.x && a.y === b.y && a.z === b.z);
+ }","{""has_bug"": true, ""bugs"": [{""line_start"": 40, ""line_end"": 40, ""description"": ""The function isEqualVec3 is incorrectly used to check for equality. The comment suggests that it was previously doing the opposite, which indicates a logic error in the condition."", ""buggy_code"": ""if (!isEqualVec3(data.start, oldData.start))""}, {""line_start"": 47, ""line_end"": 47, ""description"": ""The function isEqualVec3 is incorrectly used to check for equality. The comment suggests that it was previously doing the opposite, which indicates a logic error in the condition."", ""buggy_code"": ""if (!isEqualVec3(data.end, oldData.end))""}, {""line_start"": 26, ""line_end"": 26, ""description"": ""The BufferAttribute is created with a size of 2 * 3, which implies it can hold 6 values, but the code only updates the first 6 values. This could lead to confusion or errors if the array is expected to hold more data."", ""buggy_code"": ""geometry.addAttribute('position', new THREE.BufferAttribute(new Float32Array(2 * 3), 3));""}]}"
+aframevr/aframe,2906,eb300f6f5a0271f04c8f34b05f63e61b4106af96,tests/components/line.test.js,added,80,0,80,"@@ -0,0 +1,80 @@
++/* global assert, process, setup, suite, test */
++var entityFactory = require('../helpers').entityFactory;
++
++suite('line', function () {
++  setup(function (done) {
++    var el = this.el = entityFactory();
++    el.setAttribute('line', '');
++    if (el.hasLoaded) { done(); }
++    el.addEventListener('loaded', function () {
++      done();
++    });
++  });
++
++  suite('init', function () {
++    test('set start and end position', function () {
++      var el = this.el;
++      el.setAttribute('line', {start: '1 2 3', end: '4 5 6'});
++      var positionArray = el.components.line.geometry.attributes.position.array;
++      assert.equal(positionArray[0], 1);
++      assert.equal(positionArray[1], 2);
++      assert.equal(positionArray[2], 3);
++      assert.equal(positionArray[3], 4);
++      assert.equal(positionArray[4], 5);
++      assert.equal(positionArray[5], 6);
++    });
++
++    test('set start but no end position', function () {
++      var el = this.el;
++      el.setAttribute('line', {start: '1 2 3'});
++      var positionArray = el.components.line.geometry.attributes.position.array;
++      assert.equal(positionArray[0], 1);
++      assert.equal(positionArray[1], 2);
++      assert.equal(positionArray[2], 3);
++      assert.equal(positionArray[3], 0);
++      assert.equal(positionArray[4], 0);
++      assert.equal(positionArray[5], 0);
++    });
++
++    test('set end but no start position', function () {
++      var el = this.el;
++      el.setAttribute('line', {end: '4 5 6'});
++      var positionArray = el.components.line.geometry.attributes.position.array;
++      assert.equal(positionArray[0], 0);
++      assert.equal(positionArray[1], 0);
++      assert.equal(positionArray[2], 0);
++      assert.equal(positionArray[3], 4);
++      assert.equal(positionArray[4], 5);
++      assert.equal(positionArray[5], 6);
++    });
++
++    test('set end and move it', function () {
++      var el = this.el;
++      el.setAttribute('line', {end: '4 5 6'});
++      var positionArray = el.components.line.geometry.attributes.position.array;
++      assert.equal(positionArray[0], 0);
++      assert.equal(positionArray[1], 0);
++      assert.equal(positionArray[2], 0);
++      assert.equal(positionArray[3], 4);
++      assert.equal(positionArray[4], 5);
++      assert.equal(positionArray[5], 6);
++
++      el.setAttribute('line', {end: '7 8 9'});
++      assert.equal(positionArray[0], 0);
++      assert.equal(positionArray[1], 0);
++      assert.equal(positionArray[2], 0);
++      assert.equal(positionArray[3], 7);
++      assert.equal(positionArray[4], 8);
++      assert.equal(positionArray[5], 9);
++    });
++
++    test('modify color', function () {
++      var el = this.el;
++      el.setAttribute('line', {color: '#f9a'});
++
++      var material = el.components.line.material;
++
++      assert.equal(material.color.getHexString(), 'ff99aa');
++    });
++  });
++});","{""has_bug"": true, ""bugs"": [{""line_start"": 19, ""line_end"": 24, ""description"": ""The assertions for positionArray values assume that the values are being set correctly. If the line component does not handle the input correctly, these assertions will fail. The logic for setting the start and end positions may not be implemented correctly."", ""buggy_code"": ""assert.equal(positionArray[0], 1);\nassert.equal(positionArray[1], 2);\nassert.equal(positionArray[2], 3);\nassert.equal(positionArray[3], 4);\nassert.equal(positionArray[4], 5);\nassert.equal(positionArray[5], 6);""}, {""line_start"": 31, ""line_end"": 36, ""description"": ""The assertions for positionArray values assume that the default values for the end position are zero. If the line component does not handle the input correctly, these assertions will fail. The logic for setting the start position without an end position may not be implemented correctly."", ""buggy_code"": ""assert.equal(positionArray[3], 0);\nassert.equal(positionArray[4], 0);\nassert.equal(positionArray[5], 0);""}, {""line_start"": 43, ""line_end"": 48, ""description"": ""The assertions for positionArray values assume that the default values for the start position are zero. If the line component does not handle the input correctly, these assertions will fail. The logic for setting the end position without a start position may not be implemented correctly."", ""buggy_code"": ""assert.equal(positionArray[0], 0);\nassert.equal(positionArray[1], 0);\nassert.equal(positionArray[2], 0);\nassert.equal(positionArray[3], 4);\nassert.equal(positionArray[4], 5);\nassert.equal(positionArray[5], 6);""}, {""line_start"": 63, ""line_end"": 68, ""description"": ""The assertions for positionArray values after modifying the end position assume that the previous values are retained. If the line component does not handle the input correctly, these assertions will fail. The logic for updating the end position may not be implemented correctly."", ""buggy_code"": ""assert.equal(positionArray[0], 0);\nassert.equal(positionArray[1], 0);\nassert.equal(positionArray[2], 0);\nassert.equal(positionArray[3], 7);\nassert.equal(positionArray[4], 8);\nassert.equal(positionArray[5], 9);""}]}"

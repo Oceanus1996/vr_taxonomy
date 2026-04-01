@@ -1,0 +1,285 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+exokitxr/exokit,983,5f0c5e1,deps/exokit-bindings/egl/src/egl.cc,modified,5,0,5,"@@ -151,6 +151,10 @@ NAN_METHOD(GetFramebufferSize) {
+   info.GetReturnValue().Set(result);
+ }
+ 
++NAN_METHOD(GetDevicePixelRatio) {
++  info.GetReturnValue().Set(JS_NUM(1));
++}
++
+ EGLContext GetGLContext(NATIVEwindow *window) {
+   return window->context;
+ }
+@@ -369,6 +373,7 @@ Local<Object> makeWindow() {
+   Nan::SetMethod(target, ""setWindowPos"", egl::SetWindowPos);
+   Nan::SetMethod(target, ""getWindowPos"", egl::GetWindowPos);
+   Nan::SetMethod(target, ""getFramebufferSize"", egl::GetFramebufferSize);
++  Nan::SetMethod(target, ""getDevicePixelRatio"", egl::GetDevicePixelRatio);
+   Nan::SetMethod(target, ""iconifyWindow"", egl::IconifyWindow);
+   Nan::SetMethod(target, ""restoreWindow"", egl::RestoreWindow);
+   Nan::SetMethod(target, ""setEventHandler"", egl::SetEventHandler);"
+exokitxr/exokit,983,5f0c5e1,deps/exokit-bindings/glfw/src/glfw.cc,modified,14,0,14,"@@ -968,6 +968,19 @@ NAN_METHOD(GetFramebufferSize) {
+   info.GetReturnValue().Set(result);
+ }
+ 
++double GetDevicePixelRatio() {
++  NATIVEwindow *window = CreateNativeWindow(100, 100, false, nullptr);
++  int width, height;
++  glfwGetFramebufferSize(window, &width, &height);
++  glfwDestroyWindow(window);
++  return (double)width/100.0;
++}
++
++NAN_METHOD(GetDevicePixelRatio) {
++  double devicePixelRatio = GetDevicePixelRatio();
++  info.GetReturnValue().Set(JS_NUM(devicePixelRatio));
++}
++
+ NATIVEwindow *GetGLContext(NATIVEwindow *window) {
+   return window;
+ }
+@@ -1748,6 +1761,7 @@ Local<Object> makeWindow() {
+   Nan::SetMethod(target, ""setWindowPos"", glfw::SetWindowPos);
+   Nan::SetMethod(target, ""getWindowPos"", glfw::GetWindowPos);
+   Nan::SetMethod(target, ""getFramebufferSize"", glfw::GetFramebufferSize);
++  Nan::SetMethod(target, ""getDevicePixelRatio"", glfw::GetDevicePixelRatio);
+   Nan::SetMethod(target, ""iconifyWindow"", glfw::IconifyWindow);
+   Nan::SetMethod(target, ""restoreWindow"", glfw::RestoreWindow);
+   Nan::SetMethod(target, ""setEventHandler"", glfw::SetEventHandler);"
+exokitxr/exokit,983,5f0c5e1,examples/fakeDisplay.js,modified,26,6,32,"@@ -10,14 +10,31 @@ window._makeFakeDisplay = () => {
+         exclusive: true,
+       });
+ 
+-      fakeDisplay.layers = layers;
++      await new Promise((accept, reject) => {
++        session.requestAnimationFrame((timestamp, frame) => {
++          fakeDisplay.layers = layers;
+ 
+-      renderer.vr.enabled = true;
+-      renderer.vr.setDevice(fakeDisplay);
+-      renderer.vr.setSession(session, {
+-        frameOfReferenceType: 'stage',
++          renderer.vr.enabled = true;
++          renderer.vr.setDevice(fakeDisplay);
++          renderer.vr.setSession(session, {
++            frameOfReferenceType: 'stage',
++          });
++          renderer.vr.setAnimationLoop(animate);
++          
++          const viewport = session.baseLayer.getViewport(frame.views[0]);
++          const height = viewport.height;
++          const fullWidth = (() => {
++            let result = 0;
++            for (let i = 0; i < frame.views.length; i++) {
++              result += session.baseLayer.getViewport(frame.views[i]).width;
++            }
++            return result;
++          })();
++          renderer.setSize(fullWidth, height);
++          
++          accept();
++        });
+       });
+-      renderer.vr.setAnimationLoop(animate);
+     } else {
+       await fakeDisplay.requestPresent([
+         {
+@@ -30,6 +47,9 @@ window._makeFakeDisplay = () => {
+       renderer.vr.enabled = true;
+       renderer.vr.setDevice(fakeDisplay);
+       renderer.vr.setAnimationLoop(animate);
++      
++      const {renderWidth: width, renderHeight: height} = display.getEyeParameters('left');
++      renderer.setSize(width * 2, height);
+     }
+ 
+     const context = renderer.getContext();"
+exokitxr/exokit,983,5f0c5e1,examples/realitytabs.html,modified,1,1,2,"@@ -556,7 +556,7 @@
+   // camera.position.z = 1;
+ 
+   const renderer = new THREE.WebGLRenderer( { antialias: true } );
+-  renderer.setPixelRatio( window.devicePixelRatio );
++  // renderer.setPixelRatio( window.devicePixelRatio );
+   renderer.setSize( window.innerWidth, window.innerHeight );
+   document.body.appendChild(renderer.domElement);
+ "
+exokitxr/exokit,983,5f0c5e1,src/VR.js,modified,4,4,8,"@@ -381,8 +381,8 @@ class FakeVRDisplay extends VRDisplay {
+ 
+   requestPresent(layers) {
+     return Promise.resolve().then(() => {
+-      GlobalContext.xrState.renderWidth[0] = this.window.innerWidth * this.window.devicePixelRatio / 2;
+-      GlobalContext.xrState.renderHeight[0] = this.window.innerHeight * this.window.devicePixelRatio;
++      GlobalContext.xrState.renderWidth[0] = this.window.innerWidth / 2;
++      GlobalContext.xrState.renderHeight[0] = this.window.innerHeight;
+ 
+       if (this.onrequestpresent) {
+         this.onrequestpresent(layers);
+@@ -411,8 +411,8 @@ class FakeVRDisplay extends VRDisplay {
+   requestSession({exclusive = true} = {}) {
+     const self = this;
+ 
+-    GlobalContext.xrState.renderWidth[0] = this.window.innerWidth * this.window.devicePixelRatio / 2;
+-    GlobalContext.xrState.renderHeight[0] = this.window.innerHeight * this.window.devicePixelRatio;
++    GlobalContext.xrState.renderWidth[0] = this.window.innerWidth / 2;
++    GlobalContext.xrState.renderHeight[0] = this.window.innerHeight;
+ 
+     const session = {
+       addEventListener(e, fn) {"
+exokitxr/exokit,983,5f0c5e1,src/Window.js,modified,9,1,10,"@@ -426,7 +426,15 @@ const _makeWindow = (options = {}, parent = null, top = null) => {
+ 
+   window.innerWidth = defaultCanvasSize[0];
+   window.innerHeight = defaultCanvasSize[1];
+-  window.devicePixelRatio = 1;
++  Object.defineProperty(window, 'devicePixelRatio', {
++    get() {
++      if (!GlobalContext.xrState.devicePixelRatio[0]) {
++        GlobalContext.xrState.devicePixelRatio[0] = nativeWindow.getDevicePixelRatio();
++      }
++      return GlobalContext.xrState.devicePixelRatio[0];
++    },
++    set(devicePixelRatio) {},
++  });
+   window.document = null;
+   const location = new Location(options.url);
+   Object.defineProperty(window, 'location', {"
+exokitxr/exokit,983,5f0c5e1,src/index.js,modified,40,30,70,"@@ -175,31 +175,34 @@ nativeBindings.nativeGl.onconstruct = (gl, canvas) => {
+     gl.setWindowHandle(windowHandle);
+     gl.setDefaultVao(vao);
+ 
+-    const nativeWindowSize = nativeWindow.getFramebufferSize(windowHandle);
++    /* const nativeWindowSize = nativeWindow.getFramebufferSize(windowHandle);
+     const nativeWindowHeight = nativeWindowSize.height;
+     const nativeWindowWidth = nativeWindowSize.width;
+ 
+-    // Calculate devicePixelRatio.
+-    window.devicePixelRatio = nativeWindowWidth / canvasWidth;
+-
+     // Tell DOM how large the window is.
+-    window.innerHeight = nativeWindowHeight / window.devicePixelRatio;
+-    window.innerWidth = nativeWindowWidth / window.devicePixelRatio;
++    window.innerHeight = nativeWindowSize.height;
++    window.innerWidth = nativeWindowSize.width; */
+ 
+     const title = `Exokit ${version}`;
+     nativeWindow.setWindowTitle(windowHandle, title);
+ 
++    const [fbo, tex, depthTex, msFbo, msTex, msDepthTex] = nativeWindow.createRenderTarget(gl, canvasWidth, canvasHeight, sharedColorTexture, sharedDepthStencilTexture, sharedMsColorTexture, sharedMsDepthStencilTexture);
++    gl.setDefaultFramebuffer(msFbo);
++    gl.framebuffer = {
++      msFbo,
++      msTex,
++      msDepthTex,
++      fbo,
++      tex,
++      depthTex,
++    };
++    gl.resize = (width, height) => {
++      nativeWindow.setCurrentWindowContext(windowHandle);
++      nativeWindow.resizeRenderTarget(gl, width, height, fbo, tex, depthTex, msFbo, msTex, msDepthTex);
++    };
++
+     const {hidden} = document;
+     if (hidden) {
+-      const [fbo, tex, depthTex, msFbo, msTex, msDepthTex] = nativeWindow.createRenderTarget(gl, canvasWidth, canvasHeight, sharedColorTexture, sharedDepthStencilTexture, sharedMsColorTexture, sharedMsDepthStencilTexture);
+-
+-      gl.setDefaultFramebuffer(msFbo);
+-
+-      gl.resize = (width, height) => {
+-        nativeWindow.setCurrentWindowContext(windowHandle);
+-        nativeWindow.resizeRenderTarget(gl, width, height, fbo, tex, depthTex, msFbo, msTex, msDepthTex);
+-      };
+-
+       // TODO: handle multiple child canvases
+       document.framebuffer = {
+         canvas,
+@@ -210,11 +213,6 @@ nativeBindings.nativeGl.onconstruct = (gl, canvas) => {
+         tex,
+         depthTex,
+       };
+-    } else {
+-      gl.resize = (width, height) => {
+-        nativeWindow.setCurrentWindowContext(windowHandle);
+-        nativeWindow.resizeRenderTarget(gl, width, height, sharedFramebuffer, sharedColorTexture, sharedDepthStencilTexture, sharedMsFramebuffer, sharedMsColorTexture, sharedMsDepthStencilTexture);
+-      };
+     }
+ 
+     const ondomchange = () => {
+@@ -477,6 +475,7 @@ class XRState {
+       }
+       return result;
+     })();
++    this.devicePixelRatio = _makeTypedArray(Uint32Array, 1);
+   }
+ }
+ const xrState = GlobalContext.xrState = new XRState();
+@@ -1170,13 +1169,13 @@ nativeBindings.nativeWindow.setEventHandler((type, data) => {
+         break;
+       }
+       case 'framebufferResize': {
+-        const {width, height} = data;
++        /* const {width, height} = data;
+         innerWidth = width;
+         innerHeight = height;
+ 
+         window.innerWidth = innerWidth / window.devicePixelRatio;
+         window.innerHeight = innerHeight / window.devicePixelRatio;
+-        window.dispatchEvent(new window.Event('resize'));
++        window.dispatchEvent(new window.Event('resize')); */
+         break;
+       }
+       case 'keydown': {
+@@ -1385,7 +1384,8 @@ const _startRenderLoop = () => {
+ 
+             const width = vrPresentState.glContext.canvas.width * (args.blit ? 0.5 : 1);
+             const height = vrPresentState.glContext.canvas.height;
+-            nativeWindow.blitFrameBuffer(context, vrPresentState.msFbo, 0, width, height, width, height, true, false, false);
++            const {width: dWidth, height: dHeight} = nativeWindow.getFramebufferSize(windowHandle);
++            nativeWindow.blitFrameBuffer(context, vrPresentState.msFbo, 0, width, height, dWidth, dHeight, true, false, false);
+           } else if (vrPresentState.glContext === context && vrPresentState.system && vrPresentState.hasPose) {
+             if (vrPresentState.layers.length > 0) {
+               const {openVRDisplay} = window[symbols.mrDisplaysSymbol];
+@@ -1400,7 +1400,8 @@ const _startRenderLoop = () => {
+ 
+             const width = vrPresentState.glContext.canvas.width * (args.blit ? 0.5 : 1);
+             const height = vrPresentState.glContext.canvas.height;
+-            nativeWindow.blitFrameBuffer(context, vrPresentState.msFbo, 0, width, height, width, height, true, false, false);
++            const {width: dWidth, height: dHeight} = nativeWindow.getFramebufferSize(windowHandle);
++            nativeWindow.blitFrameBuffer(context, vrPresentState.fbo, 0, width, height, dWidth, dHeight, true, false, false);
+           } else if (oculusMobileVrPresentState.glContext === context && oculusMobileVrPresentState.hasPose) {
+             if (oculusMobileVrPresentState.layers.length > 0) {
+               const {oculusMobileVrDisplay} = window[symbols.mrDisplaysSymbol];
+@@ -1423,10 +1424,19 @@ const _startRenderLoop = () => {
+ 
+             mlPresentState.mlContext.SubmitFrame(mlPresentState.mlTex, mlPresentState.mlGlContext.canvas.width, mlPresentState.mlGlContext.canvas.height);
+             mlPresentState.mlHasPose = false;
+-          } else if (fakePresentState.layers.length > 0) {
+-            const {fakeVrDisplay} = window[symbols.mrDisplaysSymbol];
+-            _decorateModelViewProjections(fakePresentState.layers, fakeVrDisplay, 1);
+-            nativeWindow.composeLayers(context, 0, fakePresentState.layers);
++          } else {
++            if (fakePresentState.layers.length > 0) {
++              const {fakeVrDisplay} = window[symbols.mrDisplaysSymbol];
++              _decorateModelViewProjections(fakePresentState.layers, fakeVrDisplay, 1);
++              nativeWindow.composeLayers(context, context.framebuffer.fbo, fakePresentState.layers);
++            } else {
++              nativeWindow.blitFrameBuffer(context, context.framebuffer.msFbo, context.framebuffer.fbo, context.canvas.width, context.canvas.height, context.canvas.width, context.canvas.height, true, false, false);
++            }
++
++            const width = context.canvas.width * (args.blit ? 0.5 : 1);
++            const height = context.canvas.height;
++            const {width: dWidth, height: dHeight} = nativeWindow.getFramebufferSize(windowHandle);
++            nativeWindow.blitFrameBuffer(context, context.framebuffer.fbo, 0, width, height, dWidth, dHeight, true, false, false);
+           }
+         }
+ 
+@@ -2106,8 +2116,8 @@ const _startRenderLoop = () => {
+ let currentRenderLoop = _startRenderLoop();
+ 
+ const _bindWindow = (window, newWindowCb) => {
+-  window.innerWidth = innerWidth;
+-  window.innerHeight = innerHeight;
++  // window.innerWidth = innerWidth;
++  // window.innerHeight = innerHeight;
+ 
+   window.on('navigate', newWindowCb);
+   window.document.on('paste', e => {"

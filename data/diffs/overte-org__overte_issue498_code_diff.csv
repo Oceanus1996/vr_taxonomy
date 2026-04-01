@@ -1,0 +1,77 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+overte-org/overte,498,6b8f460,scripts/system/create/edit.js,modified,1,1,2,"@@ -156,7 +156,7 @@
+ 
+     selectionManager.addEventListener(function () {
+         selectionDisplay.updateHandles();
+-        entityIconOverlayManager.updatePositions();
++        entityIconOverlayManager.updatePositions(selectionManager.selections);
+         entityShapeVisualizer.setEntities(selectionManager.selections);
+     });
+ "
+overte-org/overte,498,6b8f460,scripts/system/create/entityList/entityList.js,modified,4,0,4,"@@ -109,6 +109,10 @@ var EntityListTool = function(shouldUseEditTabletApp, selectionManager) {
+             // ignore events that we emitted from the entity list itself
+             return;
+         }
++        // Otherwise this will emit tens of events every second when objects are moved.
++        if (!isSelectionUpdate) {
++            return;
++        }
+         var selectedIDs = [];
+ 
+         for (var i = 0; i < that.selectionManager.selections.length; i++) {"
+overte-org/overte,498,6b8f460,scripts/system/create/entitySelectionTool/entitySelectionTool.js,modified,2,2,4,"@@ -1082,8 +1082,8 @@ SelectionDisplay = (function() {
+         text: """",
+         textColor: { red: 0, green: 0, blue: 0 },
+         backgroundColor: { red: 255, green: 255, blue: 255 },
+-        textAlpha: 0.7,
+-        backgroundAlpha: 0.7,
++        textAlpha: 1.0,
++        backgroundAlpha: 1.0,
+         visible: false,
+         billboardMode: ""full"",
+         renderLayer: ""front"","
+overte-org/overte,498,6b8f460,scripts/system/libraries/entityIconOverlayManager.js,modified,24,11,35,"@@ -16,20 +16,33 @@ EntityIconOverlayManager = function(entityTypes, getOverlayPropertiesFunc) {
+     // Map from EntityItemID to EntityItemID object
+     var entityIDs = {};
+ 
++    function updateEntity(entityID) {
++        var properties = Entities.getEntityProperties(entityID);
++        var overlayProperties = {
++            position: properties.position
++        };
++        if (getOverlayPropertiesFunc) {
++            var customProperties = getOverlayPropertiesFunc(entityID, properties);
++            for (var key in customProperties) {
++                overlayProperties[key] = customProperties[key];
++            }
++        }
++        Entities.editEntity(entityOverlays[entityID], overlayProperties);
++    }
++
+     this.updatePositions = function(ids) {
+-        for (var id in entityIDs) {
+-            var entityID = entityIDs[id];
+-            var properties = Entities.getEntityProperties(entityID);
+-            var overlayProperties = {
+-                position: properties.position
+-            };
+-            if (getOverlayPropertiesFunc) {
+-                var customProperties = getOverlayPropertiesFunc(entityID, properties);
+-                for (var key in customProperties) {
+-                    overlayProperties[key] = customProperties[key];
++        if (ids) {
++            for (var index in ids) {
++                var id = ids[index];
++                if (entityIDs[id]) {
++                    updateEntity(entityIDs[id]);
+                 }
+             }
+-            Entities.editEntity(entityOverlays[entityID], overlayProperties);
++        } else {
++            for (var id in entityIDs) {
++                var entityID = entityIDs[id];
++                updateEntity(entityID);
++            }
+         }
+     };
+ "

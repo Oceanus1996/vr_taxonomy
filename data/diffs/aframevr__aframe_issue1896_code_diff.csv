@@ -1,0 +1,82 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe,1896,e7f322430d5cc097b246c693abe880f95455be3e,docs/components/look-controls.md,modified,6,3,9,"@@ -25,9 +25,12 @@ component][components-camera].
+ 
+ ## Properties
+ 
+-| Property  | Description                        | Default Value |
+-|-----------|-----------------------------------------------------
+-| enabled   | Whether look controls are enabled. | true          |
++| Property         | Description                                                      | Default Value |
++|------------------|------------------------------------------------------------------|---------------|
++| enabled          | Whether look controls are enabled.                               | true          |
++| hmdEnabled       | Whether to use VR headset pose in VR mode.                       | true          |
++| reverseMouseDrag | Whether to reverse mouse drag.                                   | false         |
++| standing         | Whether standing mode is enabled (passed to `THREE.VRControls`). | true          |
+ 
+ ## Caveats
+ "
+aframevr/aframe,1896,e7f322430d5cc097b246c693abe880f95455be3e,docs/primitives/a-camera.md,modified,9,8,17,"@@ -25,14 +25,15 @@ and `0 0 0` in VR mode. Read about the [`camera.userHeight` property][userheight
+ 
+ ## Attributes
+ 
+-| Attribute             | Component Mapping     | Default Value |
+-|-----------------------|-----------------------|---------------|
+-| far                   | camera.far            | 10000         |
+-| fov                   | camera.fov            | 80            |
+-| look-controls-enabled | look-controls.enabled | true          |
+-| near                  | camera.near           | 0.5           |
+-| user-height           | camera.userHeight     | 1.6           |
+-| wasd-controls-enabled | wasd-controls.enabled | true          |
++| Attribute             | Component Mapping              | Default Value |
++|-----------------------|--------------------------------|---------------|
++| far                   | camera.far                     | 10000         |
++| fov                   | camera.fov                     | 80            |
++| look-controls-enabled | look-controls.enabled          | true          |
++| near                  | camera.near                    | 0.5           |
++| user-height           | camera.userHeight              | 1.6           |
++| reverse-mouse-drag    | look-controls.reverseMouseDrag | false         |
++| wasd-controls-enabled | wasd-controls.enabled          | true          |
+ 
+ ## Manually Positioning the Camera
+ "
+aframevr/aframe,1896,e7f322430d5cc097b246c693abe880f95455be3e,src/components/look-controls.js,modified,14,5,19,"@@ -13,6 +13,7 @@ module.exports.Component = registerComponent('look-controls', {
+   schema: {
+     enabled: {default: true},
+     hmdEnabled: {default: true},
++    reverseMouseDrag: {default: false},
+     standing: {default: true}
+   },
+ 
+@@ -148,11 +149,19 @@ module.exports.Component = registerComponent('look-controls', {
+         currentRotation = this.el.getAttribute('rotation');
+         deltaRotation = this.calculateDeltaRotation();
+         // Mouse look only if HMD disabled or no info coming from the sensors
+-        rotation = {
+-          x: currentRotation.x + deltaRotation.x,
+-          y: currentRotation.y + deltaRotation.y,
+-          z: currentRotation.z
+-        };
++        if (this.data.reverseMouseDrag) {
++          rotation = {
++            x: currentRotation.x - deltaRotation.x,
++            y: currentRotation.y - deltaRotation.y,
++            z: currentRotation.z
++          };
++        } else {
++          rotation = {
++            x: currentRotation.x + deltaRotation.x,
++            y: currentRotation.y + deltaRotation.y,
++            z: currentRotation.z
++          };
++        }
+       } else {
+         // Mouse rotation ignored with an active headset.
+         // The user head rotation takes priority"
+aframevr/aframe,1896,e7f322430d5cc097b246c693abe880f95455be3e,src/extras/primitives/primitives/a-camera.js,modified,1,0,1,"@@ -17,6 +17,7 @@ registerPrimitive('a-camera', {
+     'look-controls-enabled': 'look-controls.enabled',
+     near: 'camera.near',
+     'wasd-controls-enabled': 'wasd-controls.enabled',
++    'reverse-mouse-drag': 'look-controls.reverseMouseDrag',
+     'user-height': 'camera.userHeight',
+     zoom: 'camera.zoom'
+   },"

@@ -1,0 +1,667 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+XRTK/com.xrtk.core,233,0401b85cc2eecd28f084a69b4c718ed359c2f664,XRTK-Core/Packages/com.xrtk.core/Definitions/Controllers/MixedRealityControllerVisualizationProfile.cs,modified,34,12,46,"@@ -55,14 +55,14 @@ public bool UseDefaultModels
+         }
+ 
+         [SerializeField]
+-        [Tooltip(""Override Left Controller Model."")]
++        [Tooltip(""Default Left Controller Model.\nNote: If an override profile model is not found for a specific controller, the fallback is the global model for the specific hand."")]
+         private GameObject globalLeftHandModel;
+ 
+         /// <summary>
+-        /// The Default controller model when there is no specific controller model for the Left hand or when no hand is specified (Handedness = none)
++        /// The Default controller model, for when there is no specific controller model for the Left hand or when no hand is specified (Handedness = none)
+         /// </summary>
+         /// <remarks>
+-        /// If the default model for the left hand controller can not be found, the controller will fall back and use this for visualization.
++        /// If the default model for the left hand controller can not be found, the controller will fall back and use this setting for visualization.
+         /// </remarks>
+         public GameObject GlobalLeftHandModel
+         {
+@@ -71,20 +71,39 @@ public GameObject GlobalLeftHandModel
+         }
+ 
+         [SerializeField]
+-        [Tooltip(""Override Right Controller Model.\nNote: If the default model is not found, the fallback is the global right hand model."")]
++        [Tooltip(""Default Right Controller Model.\nNote: If an override profile model is not found for a specific controller, the fallback is the global model for the specific hand."")]
+         private GameObject globalRightHandModel;
+ 
+         /// <summary>
+-        /// The Default controller model when there is no specific controller model for the Right hand.
++        /// The Default controller pose action, for when there is no specific pose for specific controller / hand combination.
+         /// </summary>
+         /// <remarks>
+-        /// If the default model for the right hand controller can not be found, the controller will fall back and use this for visualization.
++        /// If the default model for the right hand controller can not be found, the controller will fall back and use this setting for visualization.
+         /// </remarks>
+         public GameObject GlobalRightHandModel
+         {
+             get => globalRightHandModel;
+             private set => globalRightHandModel = value;
+         }
++        
++        [SerializeField]
++        [Tooltip(""Default Pose Action.\nNote: If an override profile is not found for a specific controller, the default pose action is used."")]
++        private MixedRealityInputAction globalPointerPose;
++
++        /// <summary>
++        /// The Default controller model, for when there is no specific controller model for the Left hand or when no hand is specified (Handedness = none)
++        /// </summary>
++        /// <remarks>
++        /// If the pointer pose action for the specific controller can not be found, the controller will fall back and use this setting for visualization.
++        /// </remarks>        
++        /// <remarks>
++        /// If the default model for the right hand controller can not be found, the controller will fall back and use this setting for visualization.
++        /// </remarks>
++        public MixedRealityInputAction GlobalPointerPose
++        {
++            get => globalPointerPose;
++            private set => globalPointerPose = value;
++        }
+ 
+         [SerializeField]
+         private MixedRealityControllerVisualizationSetting[] controllerVisualizationSettings = new MixedRealityControllerVisualizationSetting[0];
+@@ -99,20 +118,23 @@ public GameObject GlobalRightHandModel
+         /// </summary>
+         /// <param name=""controllerType"">The type of controller to query for</param>
+         /// <param name=""hand"">The specific hand assigned to the controller</param>
+-        public GameObject GetControllerModelOverride(Type controllerType, Handedness hand)
++        /// <param name=""overrideModel"">Outputs the supplied model for an overridden visualization (if available), can return null </param>
++        /// <returns>Returns whether the override visualization should use the System model (if available) or not</returns>
++        public bool GetControllerModelOverride(Type controllerType, Handedness hand, out GameObject overrideModel)
+         {
++            overrideModel = null;
++
+             for (int i = 0; i < controllerVisualizationSettings.Length; i++)
+             {
+-                if (!controllerVisualizationSettings[i].UseDefaultModel &&
+-                    controllerVisualizationSettings[i].ControllerType != null &&
++                if (controllerVisualizationSettings[i].ControllerType != null &&
+                     controllerVisualizationSettings[i].ControllerType.Type == controllerType &&
+                     (controllerVisualizationSettings[i].Handedness == hand || controllerVisualizationSettings[i].Handedness == Handedness.Both))
+                 {
+-                    return controllerVisualizationSettings[i].OverrideControllerModel;
++                    overrideModel = controllerVisualizationSettings[i].OverrideControllerModel;
++                    return controllerVisualizationSettings[i].UseDefaultModel;
+                 }
+             }
+-
+-            return null;
++            return false;
+         }
+ 
+         /// <summary>"
+XRTK/com.xrtk.core,233,0401b85cc2eecd28f084a69b4c718ed359c2f664,XRTK-Core/Packages/com.xrtk.core/Inspectors/Data/EditorWindowOptions.json,modified,191,181,372,"@@ -224,187 +224,6 @@
+                 false
+             ]
+         },
+-        {
+-            ""Controller"": 4,
+-            ""Handedness"": 2,
+-            ""InputLabelPositions"": [
+-                {
+-                    ""x"": -43.0,
+-                    ""y"": 165.0
+-                },
+-                {
+-                    ""x"": 5.0,
+-                    ""y"": 289.0
+-                },
+-                {
+-                    ""x"": 7.0,
+-                    ""y"": 330.0
+-                },
+-                {
+-                    ""x"": 8.0,
+-                    ""y"": 351.0
+-                },
+-                {
+-                    ""x"": 6.0,
+-                    ""y"": 309.0
+-                },
+-                {
+-                    ""x"": 434.0,
+-                    ""y"": 268.0
+-                },
+-                {
+-                    ""x"": 267.0,
+-                    ""y"": 30.0
+-                },
+-                {
+-                    ""x"": 267.0,
+-                    ""y"": 68.0
+-                },
+-                {
+-                    ""x"": 268.0,
+-                    ""y"": 88.0
+-                },
+-                {
+-                    ""x"": 267.0,
+-                    ""y"": 49.0
+-                },
+-                {
+-                    ""x"": 418.0,
+-                    ""y"": 163.0
+-                },
+-                {
+-                    ""x"": -43.0,
+-                    ""y"": 204.0
+-                },
+-                {
+-                    ""x"": 418.0,
+-                    ""y"": 182.0
+-                },
+-                {
+-                    ""x"": -42.0,
+-                    ""y"": 184.0
+-                },
+-                {
+-                    ""x"": 420.0,
+-                    ""y"": 202.0
+-                },
+-                {
+-                    ""x"": 419.0,
+-                    ""y"": 222.0
+-                }
+-            ],
+-            ""IsLabelFlipped"": [
+-                true,
+-                true,
+-                true,
+-                true,
+-                true,
+-                false,
+-                false,
+-                false,
+-                false,
+-                false,
+-                false,
+-                true,
+-                false,
+-                true,
+-                false,
+-                false
+-            ]
+-        },
+-        {
+-            ""Controller"": 4,
+-            ""Handedness"": 1,
+-            ""InputLabelPositions"": [
+-                {
+-                    ""x"": 482.0,
+-                    ""y"": 158.0
+-                },
+-                {
+-                    ""x"": 433.0,
+-                    ""y"": 295.0
+-                },
+-                {
+-                    ""x"": 433.0,
+-                    ""y"": 334.0
+-                },
+-                {
+-                    ""x"": 433.0,
+-                    ""y"": 355.0
+-                },
+-                {
+-                    ""x"": 433.0,
+-                    ""y"": 315.0
+-                },
+-                {
+-                    ""x"": -14.0,
+-                    ""y"": 268.0
+-                },
+-                {
+-                    ""x"": 171.0,
+-                    ""y"": 28.0
+-                },
+-                {
+-                    ""x"": 171.0,
+-                    ""y"": 67.0
+-                },
+-                {
+-                    ""x"": 171.0,
+-                    ""y"": 87.0
+-                },
+-                {
+-                    ""x"": 172.0,
+-                    ""y"": 47.0
+-                },
+-                {
+-                    ""x"": 15.0,
+-                    ""y"": 168.0
+-                },
+-                {
+-                    ""x"": 480.0,
+-                    ""y"": 179.0
+-                },
+-                {
+-                    ""x"": 16.0,
+-                    ""y"": 141.0
+-                },
+-                {
+-                    ""x"": 15.0,
+-                    ""y"": 188.0
+-                },
+-                {
+-                    ""x"": 479.0,
+-                    ""y"": 198.0
+-                },
+-                {
+-                    ""x"": 15.0,
+-                    ""y"": 207.0
+-                },
+-                {
+-                    ""x"": 14.0,
+-                    ""y"": 225.0
+-                }
+-            ],
+-            ""IsLabelFlipped"": [
+-                false,
+-                false,
+-                false,
+-                false,
+-                false,
+-                true,
+-                true,
+-                true,
+-                true,
+-                true,
+-                true,
+-                false,
+-                true,
+-                true,
+-                false,
+-                true,
+-                true
+-            ]
+-        },
+         {
+             ""Controller"": 2,
+             ""Handedness"": 1,
+@@ -755,6 +574,197 @@
+                 true,
+                 true
+             ]
++        },
++        {
++            ""Controller"": 4,
++            ""Handedness"": 1,
++            ""InputLabelPositions"": [
++                {
++                    ""x"": 444.0,
++                    ""y"": 11.0
++                },
++                {
++                    ""x"": 334.0,
++                    ""y"": 427.0
++                },
++                {
++                    ""x"": 336.0,
++                    ""y"": 468.0
++                },
++                {
++                    ""x"": 336.0,
++                    ""y"": 487.0
++                },
++                {
++                    ""x"": 335.0,
++                    ""y"": 447.0
++                },
++                {
++                    ""x"": 86.0,
++                    ""y"": 343.0
++                },
++                {
++                    ""x"": 86.0,
++                    ""y"": 363.0
++                },
++                {
++                    ""x"": 112.0,
++                    ""y"": 30.0
++                },
++                {
++                    ""x"": 112.0,
++                    ""y"": 67.0
++                },
++                {
++                    ""x"": 112.0,
++                    ""y"": 86.0
++                },
++                {
++                    ""x"": 112.0,
++                    ""y"": 49.0
++                },
++                {
++                    ""x"": 394.0,
++                    ""y"": 275.0
++                },
++                {
++                    ""x"": 394.0,
++                    ""y"": 314.0
++                },
++                {
++                    ""x"": 394.0,
++                    ""y"": 255.0
++                },
++                {
++                    ""x"": 394.0,
++                    ""y"": 295.0
++                },
++                {
++                    ""x"": 394.0,
++                    ""y"": 335.0
++                },
++                {
++                    ""x"": 8.0,
++                    ""y"": 198.0
++                },
++                {
++                    ""x"": 8.0,
++                    ""y"": 218.0
++                }
++            ],
++            ""IsLabelFlipped"": [
++                false,
++                true,
++                true,
++                true,
++                true,
++                false,
++                false,
++                false,
++                false,
++                false,
++                false,
++                true,
++                true,
++                true,
++                true,
++                true,
++                false,
++                false
++            ]
++        },
++        {
++            ""Controller"": 4,
++            ""Handedness"": 2,
++            ""InputLabelPositions"": [
++                {
++                    ""x"": -106.0,
++                    ""y"": 26.0
++                },
++                {
++                    ""x"": 90.0,
++                    ""y"": 426.0
++                },
++                {
++                    ""x"": 90.0,
++                    ""y"": 467.0
++                },
++                {
++                    ""x"": 90.0,
++                    ""y"": 487.0
++                },
++                {
++                    ""x"": 90.0,
++                    ""y"": 447.0
++                },
++                {
++                    ""x"": 328.0,
++                    ""y"": 348.0
++                },
++                {
++                    ""x"": 329.0,
++                    ""y"": 370.0
++                },
++                {
++                    ""x"": 435.0,
++                    ""y"": 37.0
++                },
++                {
++                    ""x"": 435.0,
++                    ""y"": 56.0
++                },
++                {
++                    ""x"": 435.0,
++                    ""y"": 74.0
++                },
++                {
++                    ""x"": 435.0,
++                    ""y"": 93.0
++                },
++                {
++                    ""x"": 7.0,
++                    ""y"": 256.0
++                },
++                {
++                    ""x"": 7.0,
++                    ""y"": 292.0
++                },
++                {
++                    ""x"": 7.0,
++                    ""y"": 274.0
++                },
++                {
++                    ""x"": 7.0,
++                    ""y"": 310.0
++                },
++                {
++                    ""x"": 419.0,
++                    ""y"": 202.0
++                },
++                {
++                    ""x"": 420.0,
++                    ""y"": 221.0
++                }
++            ],
++            ""IsLabelFlipped"": [
++                true,
++                false,
++                false,
++                false,
++                false,
++                true,
++                true,
++                false,
++                false,
++                false,
++                false,
++                false,
++                false,
++                false,
++                false,
++                true,
++                true
++            ]
+         }
+     ]
+ }
+\ No newline at end of file"
+XRTK/com.xrtk.core,233,0401b85cc2eecd28f084a69b4c718ed359c2f664,XRTK-Core/Packages/com.xrtk.core/Inspectors/Profiles/MixedRealityControllerVisualizationProfileInspector.cs,modified,5,1,6,"@@ -30,6 +30,7 @@ public class MixedRealityControllerVisualizationProfileInspector : BaseMixedReal
+         private SerializedProperty useDefaultModels;
+         private SerializedProperty globalLeftHandModel;
+         private SerializedProperty globalRightHandModel;
++        private SerializedProperty globalPointerPose;
+         private SerializedProperty controllerVisualizationSettings;
+ 
+         private MixedRealityControllerVisualizationProfile controllerVisualizationProfile;
+@@ -51,6 +52,7 @@ protected override void OnEnable()
+             useDefaultModels = serializedObject.FindProperty(""useDefaultModels"");
+             globalLeftHandModel = serializedObject.FindProperty(""globalLeftHandModel"");
+             globalRightHandModel = serializedObject.FindProperty(""globalRightHandModel"");
++            globalPointerPose = serializedObject.FindProperty(""globalPointerPose"");
+             controllerVisualizationSettings = serializedObject.FindProperty(""controllerVisualizationSettings"");
+         }
+ 
+@@ -112,6 +114,8 @@ public override void OnInspectorGUI()
+                     globalRightHandModel.objectReferenceValue = rightHandModelPrefab;
+                 }
+ 
++                EditorGUILayout.PropertyField(globalPointerPose);
++
+                 EditorGUIUtility.labelWidth = defaultLabelWidth;
+ 
+                 RenderControllerList(controllerVisualizationSettings);
+@@ -246,7 +250,7 @@ private bool CheckVisualizer(GameObject modelPrefab)
+         {
+             if (modelPrefab == null) { return true; }
+ 
+-            if (PrefabUtility.GetPrefabInstanceStatus(modelPrefab) == PrefabInstanceStatus.NotAPrefab)
++            if (PrefabUtility.GetPrefabAssetType(modelPrefab) == PrefabAssetType.NotAPrefab)
+             {
+                 Debug.LogWarning(""Assigned GameObject must be a prefab"");
+                 return false;"
+XRTK/com.xrtk.core,233,0401b85cc2eecd28f084a69b4c718ed359c2f664,XRTK-Core/Packages/com.xrtk.core/Providers/Controllers/BaseController.cs,modified,48,26,74,"@@ -186,8 +186,21 @@ public bool SetupConfiguration(Type controllerType)
+         /// <param name=""glbData"">The raw binary glb data of the controller model, typically loaded from the driver.</param>
+         /// <param name=""useAlternatePoseAction"">Should the visualizer be assigned the alternate pose actions?</param>
+         /// <returns>True, if controller model is being properly rendered.</returns>
++        /// <remarks>
++        /// (Given a user can, have no system default and override specific controller types with a system default, OR, enable a system system default but override that default for specific controllers)
++        /// Flow is as follows:
++        /// 1. Check if either there is a global setting for an system override and if there is a specific customization for that controller type
++        /// 2. If either the there is a system data and either the 
++        /// 
++        /// </remarks>
+         internal async Task TryRenderControllerModelAsync(Type controllerType, byte[] glbData = null, bool useAlternatePoseAction = false)
+         {
++            if (controllerType == null)
++            {
++                Debug.LogError(""Unknown type of controller, cannot render"");
++                return;
++            }
++
+             var visualizationProfile = MixedRealityToolkit.Instance.ActiveProfile.InputSystemProfile.ControllerVisualizationProfile;
+ 
+             if (visualizationProfile == null)
+@@ -199,34 +212,23 @@ internal async Task TryRenderControllerModelAsync(Type controllerType, byte[] gl
+             if (!visualizationProfile.RenderMotionControllers) { return; }
+ 
+             GameObject controllerModel = null;
++            Utilities.Gltf.Schema.GltfObject gltfObject = null;
++
++            // If a specific controller template exists, check if it wants to override the global model, or use the system default specifically (in case global default is not used)
++            bool useSystemDefaultModels = visualizationProfile.GetControllerModelOverride(controllerType, ControllerHandedness, out controllerModel);
+ 
+-            // If a specific controller template wants to override the global model, assign that instead.
+-            if (!visualizationProfile.UseDefaultModels)
++            // If an override is not configured for defaults and has no model, then use the system default check
++            if (!useSystemDefaultModels && controllerModel == null)
+             {
+-                controllerModel = visualizationProfile.GetControllerModelOverride(controllerType, ControllerHandedness);
++                useSystemDefaultModels = visualizationProfile.UseDefaultModels;
+             }
+ 
+-            // Attempt to load the controller model from glbData.
+-            if (controllerModel == null && glbData != null)
++            // if we have model data from the platform and the controller has been configured to use the default model, attempt to load the controller model from glbData.
++            if (glbData != null && useSystemDefaultModels)
+             {
+-                var gltfObject = GltfUtility.GetGltfObjectFromGlb(glbData);
++                gltfObject = GltfUtility.GetGltfObjectFromGlb(glbData);
+                 await gltfObject.ConstructAsync();
+                 controllerModel = gltfObject.GameObjectReference;
+-                controllerModel.name = $""{controllerType.Name}_Visualization"";
+-                controllerModel.transform.SetParent(MixedRealityToolkit.Instance.MixedRealityPlayspace.transform);
+-                var visualizationType = visualizationProfile.GetControllerVisualizationTypeOverride(controllerType, ControllerHandedness) ??
+-                                        visualizationProfile.ControllerVisualizationType;
+-                controllerModel.AddComponent(visualizationType.Type);
+-                Visualizer = controllerModel.GetComponent<IMixedRealityControllerVisualizer>();
+-
+-                if (Visualizer != null)
+-                {
+-                    Visualizer.Controller = this;
+-                    SetupController(Visualizer);
+-                    return; // Nothing left to do;
+-                }
+-
+-                Debug.LogWarning($""Failed to attach a valid IMixedRealityControllerVisualizer to {controllerModel.name}"");
+             }
+ 
+             // If we didn't get an override model, and we didn't load the driver model,
+@@ -244,21 +246,36 @@ internal async Task TryRenderControllerModelAsync(Type controllerType, byte[] gl
+                 }
+             }
+ 
+-            // If we've got a controller model prefab, then place it in the scene.
++            // If we've got a controller model, then place it in the scene and get/attach the visualizer.
+             if (controllerModel != null)
+             {
+-                var controllerObject = UnityEngine.Object.Instantiate(controllerModel, MixedRealityToolkit.Instance.MixedRealityPlayspace);
+-                controllerObject.name = $""{controllerType.Name}_{controllerObject.name}"";
+-                Visualizer = controllerObject.GetComponent<IMixedRealityControllerVisualizer>();
++                //If the model was loaded from a system template
++                if (useSystemDefaultModels && gltfObject != null)
++                {
++                    controllerModel.name = $""{controllerType.Name}_Visualization"";
++                    controllerModel.transform.SetParent(MixedRealityToolkit.Instance.MixedRealityPlayspace.transform);
++                    var visualizationType = visualizationProfile.GetControllerVisualizationTypeOverride(controllerType, ControllerHandedness) ??
++                                            visualizationProfile.ControllerVisualizationType;
++                    controllerModel.AddComponent(visualizationType.Type);
++                    Visualizer = controllerModel.GetComponent<IMixedRealityControllerVisualizer>();
++                }
++                //If the model was a prefab
++                else
++                {
++                    var controllerObject = UnityEngine.Object.Instantiate(controllerModel, MixedRealityToolkit.Instance.MixedRealityPlayspace);
++                    controllerObject.name = $""{controllerType.Name}_Visualization"";
++                    Visualizer = controllerObject.GetComponent<IMixedRealityControllerVisualizer>();
++                }
+ 
++                //If a visualizer exists, set it up and bind it to the controller
+                 if (Visualizer != null)
+                 {
+                     Visualizer.Controller = this;
+                     SetupController(Visualizer);
+                 }
+                 else
+                 {
+-                    Debug.LogError($""{controllerObject.name} is missing a IMixedRealityControllerVisualizer component!"");
++                    Debug.LogWarning($""Failed to attach a valid IMixedRealityControllerVisualizer to {controllerType.Name}"");
+                 }
+             }
+ 
+@@ -281,6 +298,11 @@ void SetupController(IMixedRealityControllerVisualizer visualizer)
+                     visualizer.UseSourcePoseData = false;
+                     visualizer.PoseAction = altPoseAction;
+                 }
++                else if(visualizationProfile.GlobalPointerPose != MixedRealityInputAction.None)
++                {
++                    visualizer.UseSourcePoseData = false;
++                    visualizer.PoseAction = visualizationProfile.GlobalPointerPose;
++                }
+                 else
+                 {
+                     Debug.LogError(""Failed to get pose actions for controller visual."");"
+XRTK/com.xrtk.core,233,0401b85cc2eecd28f084a69b4c718ed359c2f664,XRTK-Core/Packages/com.xrtk.core/Providers/Controllers/OpenVR/OculusTouchOpenVRController.cs,modified,6,4,10,"@@ -31,8 +31,9 @@ public OculusTouchOpenVRController(TrackingState trackingState, Handedness contr
+             new MixedRealityInteractionMapping(1, ""Axis1D.PrimaryIndexTrigger"", AxisType.SingleAxis, DeviceInputType.Trigger, ControllerMappingLibrary.AXIS_9),
+             new MixedRealityInteractionMapping(2, ""Axis1D.PrimaryIndexTrigger Touch"", AxisType.Digital, DeviceInputType.TriggerTouch, KeyCode.JoystickButton14),
+             new MixedRealityInteractionMapping(3, ""Axis1D.PrimaryIndexTrigger Near Touch"", AxisType.Digital, DeviceInputType.TriggerNearTouch, ControllerMappingLibrary.AXIS_13),
+-            new MixedRealityInteractionMapping(4, ""Axis1D.PrimaryIndexTrigger Press"", AxisType.Digital, DeviceInputType.TriggerPress, ControllerMappingLibrary.AXIS_9),
+-            new MixedRealityInteractionMapping(5, ""Axis1D.PrimaryHandTrigger Press"", AxisType.SingleAxis, DeviceInputType.Trigger, ControllerMappingLibrary.AXIS_11),
++            new MixedRealityInteractionMapping(4, ""Axis1D.PrimaryIndexTrigger Press"", AxisType.Digital, DeviceInputType.TriggerPress, KeyCode.JoystickButton14),
++            new MixedRealityInteractionMapping(5, ""Axis1D.PrimaryHandTrigger"", AxisType.SingleAxis, DeviceInputType.Trigger, ControllerMappingLibrary.AXIS_11),
++            new MixedRealityInteractionMapping(5, ""Axis1D.PrimaryHandTrigger Press"", AxisType.Digital, DeviceInputType.TriggerPress, KeyCode.JoystickButton4),
+             new MixedRealityInteractionMapping(6, ""Axis2D.PrimaryThumbstick"", AxisType.DualAxis, DeviceInputType.ThumbStick, ControllerMappingLibrary.AXIS_1, ControllerMappingLibrary.AXIS_2),
+             new MixedRealityInteractionMapping(7, ""Button.PrimaryThumbstick Touch"", AxisType.Digital, DeviceInputType.ThumbStickTouch, KeyCode.JoystickButton16),
+             new MixedRealityInteractionMapping(8, ""Button.PrimaryThumbstick Near Touch"", AxisType.Digital, DeviceInputType.ThumbNearTouch, ControllerMappingLibrary.AXIS_15),
+@@ -53,8 +54,9 @@ public OculusTouchOpenVRController(TrackingState trackingState, Handedness contr
+             new MixedRealityInteractionMapping(1, ""Axis1D.SecondaryIndexTrigger"", AxisType.SingleAxis, DeviceInputType.Trigger, ControllerMappingLibrary.AXIS_10),
+             new MixedRealityInteractionMapping(2, ""Axis1D.SecondaryIndexTrigger Touch"", AxisType.Digital, DeviceInputType.TriggerTouch, KeyCode.JoystickButton15),
+             new MixedRealityInteractionMapping(3, ""Axis1D.SecondaryIndexTrigger Near Touch"", AxisType.Digital, DeviceInputType.TriggerNearTouch, ControllerMappingLibrary.AXIS_14),
+-            new MixedRealityInteractionMapping(4, ""Axis1D.SecondaryIndexTrigger Press"", AxisType.Digital, DeviceInputType.TriggerPress, ControllerMappingLibrary.AXIS_10),
+-            new MixedRealityInteractionMapping(5, ""Axis1D.SecondaryHandTrigger Press"", AxisType.SingleAxis, DeviceInputType.Trigger, ControllerMappingLibrary.AXIS_12),
++            new MixedRealityInteractionMapping(4, ""Axis1D.SecondaryIndexTrigger Press"", AxisType.Digital, DeviceInputType.TriggerPress, KeyCode.JoystickButton15),
++            new MixedRealityInteractionMapping(5, ""Axis1D.SecondaryHandTrigger"", AxisType.SingleAxis, DeviceInputType.Trigger, ControllerMappingLibrary.AXIS_12),
++            new MixedRealityInteractionMapping(5, ""Axis1D.SecondaryHandTrigger Press"", AxisType.Digital, DeviceInputType.TriggerPress, KeyCode.JoystickButton5),
+             new MixedRealityInteractionMapping(6, ""Axis2D.SecondaryThumbstick"", AxisType.DualAxis, DeviceInputType.ThumbStick, ControllerMappingLibrary.AXIS_4, ControllerMappingLibrary.AXIS_5),
+             new MixedRealityInteractionMapping(7, ""Button.SecondaryThumbstick Touch"", AxisType.Digital, DeviceInputType.ThumbStickTouch, KeyCode.JoystickButton17),
+             new MixedRealityInteractionMapping(8, ""Button.SecondaryThumbstick Near Touch"", AxisType.Digital, DeviceInputType.ThumbNearTouch, ControllerMappingLibrary.AXIS_16),"
+XRTK/com.xrtk.core,233,0401b85cc2eecd28f084a69b4c718ed359c2f664,XRTK-Core/Packages/com.xrtk.core/Providers/Controllers/OpenVR/OpenVRDataProvider.cs,modified,1,1,2,"@@ -121,7 +121,7 @@ protected override SupportedControllerType GetCurrentControllerType(string joyst
+                 return SupportedControllerType.None;
+             }
+ 
+-            if (joystickName.Contains(""Oculus Rift CV1""))
++            if (joystickName.Contains(""Oculus Rift CV1"") || joystickName.Contains(""Oculus Touch""))
+             {
+                 return SupportedControllerType.OculusTouch;
+             }"

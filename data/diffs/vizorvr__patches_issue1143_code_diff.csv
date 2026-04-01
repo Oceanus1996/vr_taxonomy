@@ -1,0 +1,812 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vizorvr/patches,1143,69e3b37,browser/plugins/array_switch_modulator.plugin.js,modified,15,7,22,"@@ -31,7 +31,7 @@ var ArraySwitch = E2.plugins.array_switch_modulator = function ArraySwitch(core,
+ 	this.node = node
+ 	this.lsg = new LinkedSlotGroup(core, node, [], [this.output_slots[0]])
+ 
+-	this.number = -1
++	this.number = 0
+ 	this.values = []
+ 
+ 	this.node.on('slotAdded', function() {
+@@ -84,20 +84,26 @@ ArraySwitch.prototype.update_input = function(slot, data) {
+ 				this.number = n
+ 			}
+ 
+-			return 
++			for (var i=0; i < this.dynInputs.length; i++)
++				this.dynInputs[i].inactive = (i !== this.number)
++
++			return
+ 		}
+ 	} else { // dynamic slot
+ 		this.values[slot.index] = data
+ 	}
+ }
+ 
+ ArraySwitch.prototype.update_state = function() {
++	if (this.number >= this.values.length) {
++		this.updated = (this.value !== undefined)
++		this.value = undefined
++		return
++	}
++
+ 	if (this.value !== this.values[this.number]) {
+ 		this.value = this.values[this.number]
+ 		this.updated = true
+-
+-		for (var i=0; i < this.dynInputs.length; i++)
+-			this.dynInputs[i].inactive = (i !== this.number)
+ 	}
+ 	else {
+ 		this.updated = false
+@@ -111,7 +117,9 @@ ArraySwitch.prototype.update_output = function(slot) {
+ 	if (this.value !== undefined)
+ 		return this.value
+ 
+-	return this.core.get_default_value(this.lsg.dt)
++	var def = this.core.get_default_value(this.lsg.dt)
++
++	return def
+ }
+ 
+ ArraySwitch.prototype.connection_changed = function(on, conn, slot) {
+@@ -128,7 +136,7 @@ ArraySwitch.prototype.state_changed = function(ui) {
+ 			slots[i].inactive = false
+ 		}
+ 		
+-		this.number = -1
++		this.number = 0
+ 		this.value = this.lsg.infer_dt()
+ 	}
+ };"
+vizorvr/patches,1143,69e3b37,browser/plugins/three_gaze_clicker.plugin.js,modified,6,3,9,"@@ -148,6 +148,9 @@
+ 
+ 			var i, j, clickerIdx
+ 
++			var clickerDepth = -0.01
++			var clickerRadius = 0.0008
++
+ 			// clickerIdx:
+ 			//   -1 = left eye
+ 			//    0 = mono
+@@ -175,7 +178,7 @@
+ 						//	f *= fadeoutfactor
+ 						//}
+ 
+-						that.vertices[idx].set(x * f * 0.0008 + horizOffset, y * f * 0.0008, -0.01)
++						that.vertices[idx].set(x * f * clickerRadius + horizOffset, y * f * clickerRadius, clickerDepth)
+ 
+ 						idx++
+ 					}
+@@ -196,6 +199,7 @@
+ 			this.geometry = new this.GeometryGenerator(this)
+ 			this.material = new THREE.MeshBasicMaterial({color:0xffffff})
+ 			this.object3d = new THREE.Mesh(this.geometry, this.material)
++			this.object3d.matrixAutoUpdate = false
+ 		}
+ 
+ 		return this.object3d
+@@ -267,8 +271,7 @@
+ 
+ 		var mesh = this.get_mesh()
+ 
+-		mesh.position.copy(this.camera.position)
+-		mesh.quaternion.copy(this.camera.quaternion)
++		mesh.matrix.copy(this.camera.matrixWorld)
+ 
+ 		if (this.scene.hasClickableObjects && this.showIcon !== false) {
+ 			this.geometry.update(this.clickFactor, Math.max(1.0 - Math.max(0.0, this.clickTime - this.clickDelay) * 10.0, 0.0))"
+vizorvr/patches,1143,69e3b37,browser/scripts/autoSlotGroup.js,modified,3,0,3,"@@ -42,3 +42,6 @@ AutoSlotGroup.prototype.updateFreeSlots = function() {
+ 	}
+ }
+ 
++if (typeof(module) !== 'undefined') {
++	module.exports.AutoSlotGroup = AutoSlotGroup
++}"
+vizorvr/patches,1143,69e3b37,browser/scripts/node.js,modified,73,38,111,"@@ -361,6 +361,42 @@ Node.prototype._cascadeFlowOff = function(conn) {
+ 	}
+ }
+ 
++Node.prototype._update_input = function(inp, pl, conns, needs_update) {
++	var result = {dirty: false, needs_update: needs_update}
++	var sn = inp.src_node;
++
++	result.dirty = sn.update_recursive(conns);
++
++	// TODO: Sampling the output value out here might seem spurious, but isn't:
++	// Some plugin require the ability to set their updated flag in update_output().
++	// Ideally, these should be rewritten to not do so, and this state should
++	// be moved into the clause below to save on function calls.
++	var value = sn.plugin.update_output(inp.src_slot);
++
++	if (sn.plugin.updated && (!sn.plugin.query_output || sn.plugin.query_output(inp.src_slot))) {
++		if (inp.dst_slot.array && !inp.src_slot.array) {
++			value = [value]
++		} else if (!inp.dst_slot.array && inp.src_slot.array) {
++			value = value[0]
++		}
++
++		pl.update_input(inp.dst_slot, inp.dst_slot.validate ? inp.dst_slot.validate(value) : value);
++
++		pl.updated = true;
++		result.needs_update = true;
++
++		if (inp.ui && !inp.ui.flow) {
++			result.dirty = true;
++			inp.ui.flow = true;
++		}
++	} else if(inp.ui && inp.ui.flow) {
++		inp.ui.flow = false;
++		result.dirty = true;
++	}
++
++	return result
++}
++
+ Node.prototype.update_recursive = function(conns) {
+ 	var dirty = false;
+ 
+@@ -373,46 +409,36 @@ Node.prototype.update_recursive = function(conns) {
+ 	var pl = this.plugin;
+ 	var needs_update = this.inputs_changed || pl.updated;
+ 
+-	for(var i = 0, len = inputs.length; i < len; i++) {
+-		var inp = inputs[i];
+-		
++	var secondPassUpdateInputs = []
++
++	// first pass input update: update active inputs
++	for (var i = 0, len = inputs.length; i < len; ++i) {
++		var inp = inputs[i]
++
+ 		if (inp.dst_slot.inactive) {
+ 			if(inp.ui && inp.ui.flow) {
+ 				this._cascadeFlowOff(inp)
+ 				dirty = true;
+ 			}
++			secondPassUpdateInputs.push(inp)
++
+ 			continue;
+ 		}
+-		
+-		var sn = inp.src_node;
+-		 
+-		dirty = sn.update_recursive(conns) || dirty;
+-	
+-		// TODO: Sampling the output value out here might seem spurious, but isn't:
+-		// Some plugin require the ability to set their updated flag in update_output().
+-		// Ideally, these should be rewritten to not do so, and this state should
+-		// be moved into the clause below to save on function calls.
+-		var value = sn.plugin.update_output(inp.src_slot);
+-
+-		if (sn.plugin.updated && (!sn.plugin.query_output || sn.plugin.query_output(inp.src_slot))) {
+-			if (inp.dst_slot.array && !inp.src_slot.array) {
+-				value = [value]
+-			} else if (!inp.dst_slot.array && inp.src_slot.array) {
+-				value = value[0]
+-			}
+ 
+-			pl.update_input(inp.dst_slot, inp.dst_slot.validate ? inp.dst_slot.validate(value) : value);
++		var result = this._update_input(inp, pl, conns, needs_update)
+ 
+-			pl.updated = true;
+-			needs_update = true;
+-	
+-			if (inp.ui && !inp.ui.flow) {
+-				dirty = true;
+-				inp.ui.flow = true;
+-			}
+-		} else if(inp.ui && inp.ui.flow) {
+-			inp.ui.flow = false;
+-			dirty = true;
++		dirty = dirty || result.dirty
++		needs_update = needs_update || result.needs_update
++	}
++
++	// second pass input update: update any inputs that were activated
++	for (var i = 0, len = secondPassUpdateInputs.length; i < len; ++i) {
++		var inp = secondPassUpdateInputs[i]
++		if (!inp.dst_slot.inactive) {
++			var result = this._update_input(inp, pl, conns, needs_update)
++
++			dirty = dirty || result.dirty
++			needs_update = needs_update || result.needs_update
+ 		}
+ 	}
+ 
+@@ -676,14 +702,16 @@ LinkedSlotGroup.prototype.connection_changed = function(on, conn, slot) {
+ 		var otherSlot = (slot.type === E2.slot_type.input) ? conn.src_slot : conn.dst_slot
+ 		this.set_dt(otherSlot.dt)
+ 
+-		if (otherSlot.array)
+-			this.setArrayness(true)
++		this.setArrayness(otherSlot.array)
+ 
+ 		return true;
+ 	}
+ 	
+ 	if(!on && this.n_connected === 0) {
+ 		this.set_dt(this.core.datatypes.ANY);
++
++		this.setArrayness(false)
++
+ 		return true;
+ 	}
+ 	
+@@ -694,15 +722,18 @@ LinkedSlotGroup.prototype.infer_dt = function() {
+ 	var node = this.node;
+ 	var dt = null;
+ 	var any_dt = this.core.datatypes.ANY.id;
+-	
++
++	var anyConnectionIsArray = false
++
+ 	for(var i = 0, len = node.inputs.length; i < len; i++) {
+ 		var c = node.inputs[i];
+ 		
+ 		if(this.inputs.indexOf(c.dst_slot) !== -1) {
+ 			dt = c.src_slot.dt.id !== any_dt ? c.src_slot.dt : dt;
+ 
+-			if (c.src_slot.array)
+-				this.setArrayness(true)
++			if (c.src_slot.array) {
++				anyConnectionIsArray = true
++			}
+ 
+ 			this.n_connected++;
+ 		}
+@@ -713,11 +744,15 @@ LinkedSlotGroup.prototype.infer_dt = function() {
+ 		
+ 		if(this.outputs.indexOf(c.src_slot) !== -1) {
+ 			dt = c.dst_slot.dt.id !== any_dt ? c.dst_slot.dt : dt;
+-			if (c.dst_slot.array)
+-				this.setArrayness(true)
++
++			if (c.dst_slot.array) {
++				anyConnectionIsArray = true
++			}
+ 			this.n_connected++;
+ 		}
+ 	}
++
++	this.setArrayness(anyConnectionIsArray)
+ 	
+ 	if (dt) {
+ 		this.set_dt(dt);"
+vizorvr/patches,1143,69e3b37,browser/test/integration/array_switch_modulator.js,added,296,0,296,"@@ -0,0 +1,296 @@
++var assert = require('assert');
++
++var reset = require('../unit/plugins/helpers').reset;
++var loadPlugin = require('../unit/plugins/helpers').loadPlugin;
++
++global.E2 = {}
++var Application = require('../../scripts/application')
++
++global._ = require('lodash')
++global.EventEmitter = require('../../scripts/event-emitter')
++global.Node = require('../../scripts/node').Node
++global.LinkedSlotGroup = require('../../scripts/node').LinkedSlotGroup
++global.AutoSlotGroup = require('../../scripts/autoSlotGroup').AutoSlotGroup
++global.Graph = require('../../scripts/graph')
++global.Flux = require('../../vendor/flux')
++global.Plugin = require('../../scripts/plugin');
++global.Store = require('../../scripts/stores/store');
++global.GraphStore = require('../../scripts/stores/graphStore');
++global.PeopleManager = function() {}
++global.PeopleStore = function() {
++	this.list = function(){ return [] }
++}
++
++global.NodeUI = function() {
++	this.dom = [$()]
++	this.dom.remove = function(){}
++	this.dom.position = this.dom[0].position
++	this.dom.width = this.dom[0].width
++	this.dom.height = this.dom[0].height
++	this.dom[0].style = {}
++}
++
++global.PresetManager = function() {}
++
++require('../../scripts/commands/graphEditCommands')
++
++global.TextureCache = function(){}
++
++function Color() {}
++Color.prototype.setRGB = function(r, g, b) {
++	this.r = r
++	this.g = g
++	this.b = b
++}
++
++global.THREE = {
++	Vector3: function(){},
++	Matrix4: function(){},
++	Color: Color,
++	Material: function(){},
++	MeshBasicMaterial: function(){},
++	PerspectiveCamera: function(){}
++}
++global.THREE.Matrix4.prototype.identity = function() {}
++
++global.UndoManager = require('../../scripts/commands/undoManager.js')
++global.GraphApi = require('../../scripts/graphApi.js')
++global.Connection = require('../../scripts/connection.js').Connection
++global.ConnectionUI = require('../../scripts/connection.js').ConnectionUI
++global.ConnectionUI.prototype.resolve_slot_divs = function() {
++	this.src_slot_div = $()
++	this.dst_slot_div = $()
++}
++global.navigator = { userAgent: 'test' }
++global.mixpanel = { track: function() {} }
++
++describe('array_switch_modulator', function() {
++
++	global.window = global
++
++	var Core = require('../../scripts/core')
++
++	function PluginManager() {
++		EventEmitter.call(this)
++		this.keybyid = {}
++		var that = this
++		process.nextTick(function() {
++			that.emit('ready')
++		})
++	}
++	PluginManager.prototype = Object.create(EventEmitter.prototype)
++	PluginManager.prototype.create = function(id, node) {
++		if (!E2.plugins[id])
++			loadPlugin(id)
++		console.log('load', id, !!E2.plugins[id])
++		var p = new E2.plugins[id](core, node)
++		p.id = id
++		return p
++	}
++
++	global.PluginManager = PluginManager
++
++	// global.Node.prototype.initialise = function(){}
++
++	function TreeNode() {}
++	TreeNode.prototype.add_child = function() { return new TreeNode() }
++	global.TreeNode = TreeNode
++
++	beforeEach(function() {
++		global.window = { location: { pathname: 'test/test' } }
++		var dummyCore = reset()
++		E2.commands.graph = require('../../scripts/commands/graphEditCommands')
++
++		require('../../scripts/variables')
++		require('../../scripts/util')
++
++		app = E2.app = new Application()
++		app.updateCanvas = function() {}
++		core = E2.core = new Core()
++		core.renderer = dummyCore.renderer
++		E2.app.player = { core: core }
++		core.active_graph = new Graph(core, null, new TreeNode())
++		core.root_graph = core.active_graph
++		core.graphs = [ core.active_graph ]
++
++		// throw any errors
++		global.msg = function(txt) {
++			if (/^ERROR/.test(txt))
++				throw new Error(txt)
++		}
++
++	})
++
++	function connect(graph, a, aidx, b, bidx, dyn) {
++		var ss = a.plugin.output_slots[aidx]
++		var ds = dyn ? b.getDynamicInputSlots()[bidx] : b.plugin.input_slots[bidx]
++
++		assert.ok(ss)
++		assert.ok(ds)
++
++		var conn = new Connection(a, b, ss, ds)
++		conn.uid = E2.uid()
++
++		conn.patch_up()
++		E2.app.graphApi.connect(graph, conn)
++		E2.app.onLocalConnectionChanged(conn)
++		conn.signal_change(true)
++
++		return conn
++	}
++
++	function disconnect(graph, conn) {
++		E2.app.graphApi.disconnect(graph, conn)
++		E2.app.onLocalConnectionChanged(conn)
++		conn.signal_change(false)
++	}
++
++	it('clears arrayness', function() {
++		var graph = E2.core.active_graph
++
++		var floatNode1 = E2.app.instantiatePlugin('const_float_generator')
++		var floatNode2 = E2.app.instantiatePlugin('const_float_generator')
++		var inputsToArrayNode = E2.app.instantiatePlugin('inputs_to_array')
++		var arraySwitchModulator = E2.app.instantiatePlugin('array_switch_modulator')
++
++		var pullerNode = E2.app.instantiatePlugin('float_display')
++
++		connect(graph, floatNode1, 0, inputsToArrayNode, 0, true)
++		connect(graph, floatNode2, 0, inputsToArrayNode, 1, true)
++
++		E2.app.graphApi.addSlot(graph, arraySwitchModulator, {
++			type: E2.slot_type.input,
++			name: '0',
++			dt: arraySwitchModulator.plugin.lsg.dt
++		})
++
++		// connect array to revolver
++		var arrayConn = connect(graph, inputsToArrayNode, 0, arraySwitchModulator, 0, true)
++
++		floatNode1.plugin.state.val = 10
++		floatNode2.plugin.state.val = 20
++
++		connect(graph, arraySwitchModulator, 1, pullerNode, 0)
++
++		arraySwitchModulator.plugin.lsg.infer_dt()
++
++		// pull array, expect [10, 20]
++		arraySwitchModulator.plugin.update_input({index: 0}, 0)
++		graph.update()
++		arraySwitchModulator.plugin.update_state()
++		assert.deepEqual(arraySwitchModulator.plugin.update_output({index: 0}), [10, 20])
++
++		// disconnect
++		disconnect(graph, arrayConn)
++
++		// check with no inputs
++		arraySwitchModulator.plugin.update_input({index: 0}, 0)
++		graph.update()
++		arraySwitchModulator.plugin.update_state()
++		assert.deepEqual(arraySwitchModulator.plugin.update_output({index: 0}), 0)
++
++		// connect a single float
++		connect(graph, floatNode1, 0, arraySwitchModulator, 0, true)
++		arraySwitchModulator.plugin.lsg.infer_dt()
++
++		graph.update()
++		arraySwitchModulator.plugin.update_state()
++		assert.deepEqual(arraySwitchModulator.plugin.update_output({index: 0}), 10)
++	})
++
++	it('propagates arrayness', function() {
++		var graph = E2.core.active_graph
++
++		var floatNode1 = E2.app.instantiatePlugin('const_float_generator')
++		var floatNode2 = E2.app.instantiatePlugin('const_float_generator')
++		var floatNode3 = E2.app.instantiatePlugin('const_float_generator')
++		var inputsToArrayNode1 = E2.app.instantiatePlugin('inputs_to_array')
++		var inputsToArrayNode2 = E2.app.instantiatePlugin('inputs_to_array')
++		var arraySwitchModulator = E2.app.instantiatePlugin('array_switch_modulator')
++
++		var pullerNode = E2.app.instantiatePlugin('float_display')
++
++		connect(graph, floatNode1, 0, inputsToArrayNode1, 0, true)
++		connect(graph, floatNode2, 0, inputsToArrayNode1, 1, true)
++
++		connect(graph, floatNode2, 0, inputsToArrayNode2, 0, true)
++		connect(graph, floatNode3, 0, inputsToArrayNode2, 1, true)
++
++		E2.app.graphApi.addSlot(graph, arraySwitchModulator, {
++			type: E2.slot_type.input,
++			name: '0',
++			dt: arraySwitchModulator.plugin.lsg.dt
++		})
++
++		E2.app.graphApi.addSlot(graph, arraySwitchModulator, {
++			type: E2.slot_type.input,
++			name: '1',
++			dt: arraySwitchModulator.plugin.lsg.dt
++		})
++
++		// connect arrays to revolver
++		var arrayConn1 = connect(graph, inputsToArrayNode1, 0, arraySwitchModulator, 0, true)
++		var arrayConn2 = connect(graph, inputsToArrayNode2, 0, arraySwitchModulator, 1, true)
++
++		floatNode1.plugin.state.val = 10
++		floatNode2.plugin.state.val = 20
++		floatNode3.plugin.state.val = 30
++
++		connect(graph, arraySwitchModulator, 1, pullerNode, 0)
++
++		arraySwitchModulator.plugin.lsg.infer_dt()
++
++		// length
++		assert.equal(arraySwitchModulator.plugin.update_output({index: 1}), 2)
++
++		// select the second array, expect [20, 30]
++		arraySwitchModulator.plugin.update_input({index: 0}, 1)
++		graph.update()
++		arraySwitchModulator.plugin.update_state()
++		assert.deepEqual(arraySwitchModulator.plugin.update_output({index: 0}), [20, 30])
++
++		// select the first array, expect [10, 20]
++		arraySwitchModulator.plugin.update_input({index: 0}, 0)
++		graph.update()
++		arraySwitchModulator.plugin.update_state()
++		assert.deepEqual(arraySwitchModulator.plugin.update_output({index: 0}), [10, 20])
++
++		// disconnect
++		E2.app.graphApi.disconnect(graph, arrayConn1)
++		E2.app.onLocalConnectionChanged(arrayConn1)
++
++		E2.app.graphApi.disconnect(graph, arrayConn2)
++		E2.app.onLocalConnectionChanged(arrayConn1)
++
++		// connect non-arrays to revolver
++		var floatConn1 = connect(graph, floatNode1, 0, arraySwitchModulator, 0, true)
++		var floatConn2 = connect(graph, floatNode2, 0, arraySwitchModulator, 1, true)
++
++		arraySwitchModulator.plugin.lsg.infer_dt()
++
++		floatNode1.plugin.state.val = 40
++		floatNode2.plugin.state.val = 50
++		floatNode1.plugin.updated = true
++		floatNode2.plugin.updated = true
++
++		graph.update()
++
++		// length
++		assert.equal(arraySwitchModulator.plugin.update_output({index: 1}), 2)
++
++		// select first input, expect 40
++		arraySwitchModulator.plugin.update_input({index: 0}, 0)
++		graph.update()
++		arraySwitchModulator.plugin.update_state()
++		assert.deepEqual(arraySwitchModulator.plugin.update_output({index: 0}), 40)
++
++		// select second input, expect 50
++		// ATTENTION: this doesn't work - pending bug #1090
++		arraySwitchModulator.plugin.update_input({index: 0}, 1)
++		graph.update()
++		arraySwitchModulator.plugin.update_state()
++		assert.deepEqual(arraySwitchModulator.plugin.update_output({index: 0}), 50)
++	})
++})
++
++"
+vizorvr/patches,1143,69e3b37,browser/test/unit/plugins/array_switch_modulator.js,added,151,0,151,"@@ -0,0 +1,151 @@
++var assert = require('assert')
++
++var reset = require('./helpers').reset
++var loadPlugin = require('./helpers').loadPlugin
++
++describe('array_switch_modulator', function() {
++	var plugin, core
++
++	beforeEach(function() {
++		core = reset()
++		loadPlugin('array_switch_modulator')
++		var node = new Node()
++		plugin = new E2.plugins.array_switch_modulator(core, node)
++		plugin.state_changed()
++
++		node.add_slot(E2.slot_type.input, {
++			type: E2.slot_type.input,
++			name: '0',
++			dt: plugin.lsg.dt
++		})
++
++		node.add_slot(E2.slot_type.input, {
++			type: E2.slot_type.input,
++			name: '1',
++			dt: plugin.lsg.dt
++		})
++
++		node.add_slot(E2.slot_type.input, {
++			type: E2.slot_type.input,
++			name: '1',
++			dt: plugin.lsg.dt
++		})
++	})
++
++	it('uses the correct input count', function() {
++		plugin.update_state()
++		var output = plugin.update_output({index: 1})
++		assert.equal(output, 3)
++
++		plugin.update_input({ index: 0, uid: 1 }, 10)
++		plugin.update_input({ index: 1, uid: 2 }, 20)
++
++		plugin.update_state()
++		output = plugin.update_output({index: 1})
++		assert.equal(output, 3)
++	})
++
++	it('defaults to input 0', function() {
++		plugin.update_input({index: 0, uid: 1}, 100)
++		plugin.update_input({index: 1, uid: 2}, 200)
++
++		plugin.update_state()
++
++		var output = plugin.update_output({index: 0})
++		assert.equal(output, 100)
++	})
++
++	it('gives a null default value', function() {
++		plugin.update_state()
++
++		var output = plugin.update_output({index: 0})
++		assert.equal(output, null)
++
++		plugin.update_input({index: 0, uid: 1}, 100)
++		plugin.update_state()
++		var output = plugin.update_output({index: 0})
++		assert.equal(output, 100)
++
++		plugin.update_input({index: 0, uid: 1}, null)
++		plugin.update_state()
++		var output = plugin.update_output({index: 0})
++		assert.equal(output, null)
++	})
++
++	it('selects the correct input', function() {
++		plugin.update_input({index: 0, uid: 1}, 10)
++		plugin.update_input({index: 1, uid: 2}, 20)
++		plugin.update_input({index: 2, uid: 3}, 30)
++
++		// select input 1
++		plugin.update_input({index: 0}, 1)
++
++		plugin.update_state()
++
++		var output = plugin.update_output({index: 0})
++		assert.equal(output, 20)
++
++		// select input 0
++		plugin.update_input({index: 0}, 0)
++
++		plugin.update_state()
++
++		output = plugin.update_output({index: 0})
++		assert.equal(output, 10)
++
++		// select input 2
++		plugin.update_input({index: 0}, 2)
++
++		plugin.update_state()
++
++		output = plugin.update_output({index: 0})
++		assert.equal(output, 30)
++
++	})
++
++	it ('updates inputs', function() {
++		var output
++
++		// set initial values
++		plugin.update_input({index: 0, uid: 1}, 10)
++		plugin.update_input({index: 1, uid: 2}, 20)
++		plugin.update_input({index: 2, uid: 3}, 30)
++
++		// check all inputs for their initial values
++		plugin.update_input({index: 0}, 0)
++		plugin.update_state()
++		output = plugin.update_output({index: 0})
++		assert.equal(output, 10)
++
++		plugin.update_input({index: 0}, 1)
++		plugin.update_state()
++		output = plugin.update_output({index: 0})
++		assert.equal(output, 20)
++
++		plugin.update_input({index: 0}, 2)
++		plugin.update_state()
++		output = plugin.update_output({index: 0})
++		assert.equal(output, 30)
++
++		// reset all inputs
++		plugin.update_input({index: 0, uid: 1}, 40)
++		plugin.update_input({index: 1, uid: 2}, 50)
++		plugin.update_input({index: 2, uid: 3}, 60)
++
++		// check all inputs for their new values
++		plugin.update_input({index: 0}, 0)
++		plugin.update_state()
++		output = plugin.update_output({index: 0})
++		assert.equal(output, 40)
++
++		plugin.update_input({index: 0}, 1)
++		plugin.update_state()
++		output = plugin.update_output({index: 0})
++		assert.equal(output, 50)
++
++		plugin.update_input({index: 0}, 2)
++		plugin.update_state()
++		output = plugin.update_output({index: 0})
++		assert.equal(output, 60)
++	})
++})"
+vizorvr/patches,1143,69e3b37,browser/test/unit/plugins/helpers.js,modified,5,1,6,"@@ -10,6 +10,10 @@ global.clone = _.cloneDeep.bind(_)
+ global.SubGraphPlugin = require(browserPath+'scripts/subGraphPlugin.js')
+ global.Plugin = require(browserPath+'scripts/plugin.js')
+ 
++global.EventEmitter = require('events').EventEmitter
++global.Node = require(browserPath+'scripts/node.js').Node
++global.LinkedSlotGroup = require(browserPath+'scripts/node.js').LinkedSlotGroup
++
+ exports.slot = function slot(index, type, dt) {
+ 	return {
+ 		index: index,
+@@ -112,7 +116,7 @@ exports.reset = function() {
+ 		},
+ 		graphs: [],
+ 		get_default_value: function(dt) {
+-			return dt
++			return null
+ 		}
+ 	};
+ "
+vizorvr/patches,1143,69e3b37,controllers/graphController.js,modified,19,2,21,"@@ -5,6 +5,7 @@ var fsPath = require('path')
+ var assetHelper = require('../models/asset-helper')
+ var templateCache = new(require('../lib/templateCache'))
+ var helper = require('./controllerHelpers')
++var isStringEmpty = require('../lib/stringUtil').isStringEmpty
+ 
+ var EditLog = require('../models/editLog')
+ 
+@@ -124,7 +125,6 @@ GraphController.prototype.latest = function(req, res) {
+ 	});
+ }
+ 
+-
+ // GET /embed/fthr/dunes-world
+ GraphController.prototype.embed = function(req, res, next) {
+ 	this._service.findByPath(req.params.path)
+@@ -148,11 +148,28 @@ GraphController.prototype.graphLanding = function(req, res, next) {
+ 		if (!graph)
+ 			return next()
+ 
++		// Get displayed values for graph and owner
++		// 'this-is-a-graph' => 'This Is A Graph'
++		var graphName = graph.name.split('-')
++			.map(s => s.charAt(0).toUpperCase() + s.slice(1))
++			.join(' ');
++		// Figure out if the graph owner has a fullname
++		// Use that if does, else use the username for display
++		var graphOwner;
++		var creator = graph._creator;
++		if (creator.name && !isStringEmpty(creator.name)) {
++			graphOwner = creator.name;
++		} else {
++			graphOwner = graph.owner;
++		}
++
+ 		res.render('graph/show', {
+ 			layout: 'player',
+ 			graph: graph,
+ 			graphMinUrl: graph.url,
+-			autoplay: true
++			autoplay: true,
++			graphName: graphName,
++			graphOwner: graphOwner
+ 		})
+ 	}).catch(next)
+ }"
+vizorvr/patches,1143,69e3b37,lib/stringUtil.js,added,3,0,3,"@@ -0,0 +1,3 @@
++exports.isStringEmpty = function isStringEmpty(str) {
++	return (str.length === 0 || !str.trim());
++}"
+vizorvr/patches,1143,69e3b37,views/graph/show.handlebars,modified,3,3,6,"@@ -5,8 +5,8 @@
+ <header id=""topbar"" style=""display:none"">
+     <h2 id=""graph_heading"">
+         <svg stroke=""none"" fill=""#afbfdf""><use xlink:href=""#vizor-logo-flat""></use></svg>
+-		<span class=""title"">{{graph.name}}</span>
+-		<span class=""author"">by <a href=""#"" data-href=""/{{graph.owner}}"">{{graph.owner}}</a></span><span class=""loadingonly"">...</span>
++		<span class=""title"">{{graphName}}</span>
++		<span class=""author"">by <a href=""#"" data-href=""/{{graph.owner}}"">{{graphOwner}}</a></span><span class=""loadingonly"">...</span>
+ 	</h2>
+     <progress id=""progressbar"" max=""100""></progress>
+ 	<div class=""controls"">
+@@ -416,4 +416,4 @@ new function() {
+         $err.html(E2.views.partials.noWebGL({embed: siteUI.isEmbedded}))
+     });
+ }();
+-</script>
+\ No newline at end of file
++</script>"

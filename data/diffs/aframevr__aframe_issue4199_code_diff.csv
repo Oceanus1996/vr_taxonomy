@@ -1,0 +1,32 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe,4199,9f8e41aa3ded8bcce68698a0618c8c48f0c807cd,src/core/scene/a-scene.js,modified,9,1,10,"@@ -1,4 +1,4 @@
+-/* global Promise, screen */
++/* global Promise, screen, CustomEvent */
+ var initMetaTags = require('./metaTags').inject;
+ var initWakelock = require('./wakelock');
+ var loadingScreen = require('./loadingScreen');
+@@ -309,6 +309,14 @@ module.exports.AScene = registerElement('a-scene', {
+ 
+         // Callback that happens on enter VR success or enter fullscreen (any API).
+         function enterVRSuccess () {
++          // vrdisplaypresentchange fires only once when the first requestPresent is completed;
++          // the first requestPresent could be called from ondisplayactivate and there is no way
++          // to setup everything from there. Thus, we need to emulate another vrdisplaypresentchange
++          // for the actual requestPresent. Need to make sure there are no issues with firing the
++          // vrdisplaypresentchange multiple times.
++          var event = new CustomEvent('vrdisplaypresentchange', {detail: {display: utils.device.getVRDisplay()}});
++          window.dispatchEvent(event);
++
+           self.addState('vr-mode');
+           self.emit('enter-vr', {target: self});
+           // Lock to landscape orientation on mobile."
+aframevr/aframe,4199,9f8e41aa3ded8bcce68698a0618c8c48f0c807cd,src/utils/device.js,modified,3,0,3,"@@ -9,6 +9,9 @@ window.addEventListener('vrdisplayactivate', function (evt) {
+   if (navigator.xr) { return; }
+   canvasEl = document.createElement('canvas');
+   vrDisplay = evt.display;
++  // We need to make sure the canvas has a WebGL context associated with it.
++  // Otherwise, the requestPresent could be denied.
++  canvasEl.getContext('webgl', {});
+   // Request present immediately. a-scene will be allowed to enter VR without user gesture.
+   vrDisplay.requestPresent([{source: canvasEl}]).then(function () {}, function () {});
+ });"

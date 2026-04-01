@@ -1,0 +1,46 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe,591,d173204c5d85d3f99f6bc97e865dffab8596bc92,src/components/sound.js,modified,22,8,30,"@@ -1,3 +1,4 @@
++var diff = require('../utils').diff;
+ var registerComponent = require('../core/register-component').registerComponent;
+ var THREE = require('../../lib/three');
+ var utils = require('../utils');
+@@ -13,18 +14,31 @@ var proto = {
+   },
+ 
+   update: {
+-    value: function () {
++    value: function (oldData) {
+       var data = this.data;
++      var diffData = diff(oldData || {}, data);
+       var src = data.src;
+       var sound = this.getSound();
+-      if (!src) {
+-        utils.warn('Sound src not specified');
+-        return;
++
++      if ('src' in diffData) {
++        if (!src) {
++          utils.warn('Sound src not specified');
++          return;
++        }
++        sound.load(src);
++      }
++
++      if ('autoplay' in diffData) {
++        sound.autoplay = data.autoplay;
++      }
++
++      if ('loop' in diffData) {
++        sound.setLoop(data.loop);
++      }
++
++      if ('volume' in diffData) {
++        sound.setVolume(data.volume);
+       }
+-      sound.load(src);
+-      sound.autoplay = data.autoplay;
+-      sound.setLoop(data.loop);
+-      sound.setVolume(data.volume);
+     }
+   },
+ "

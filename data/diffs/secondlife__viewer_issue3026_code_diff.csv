@@ -1,0 +1,164 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+secondlife/viewer,3026,bb4edbf,.pre-commit-config.yaml,modified,1,1,2,"@@ -12,7 +12,7 @@ repos:
+       - id: indent-with-spaces
+         files: \.(cpp|c|h|inl|py|glsl|cmake)$
+   - repo: https://github.com/pre-commit/pre-commit-hooks
+-    rev: v4.4.0
++    rev: v5.0.0
+     hooks:
+       - id: check-xml
+       - id: mixed-line-ending"
+secondlife/viewer,3026,bb4edbf,indra/newview/llface.cpp,modified,1,1,2,"@@ -1557,7 +1557,7 @@ bool LLFace::getGeometryVolume(const LLVolume& volume,
+             }
+ 
+             U8 texgen = getTextureEntry()->getTexGen();
+-            if (rebuild_tcoord && texgen != LLTextureEntry::TEX_GEN_DEFAULT)
++            if (texgen != LLTextureEntry::TEX_GEN_DEFAULT)
+             { //planar texgen needs binormals
+                 mVObjp->getVolume()->genTangents(face_index);
+             }"
+secondlife/viewer,3026,bb4edbf,indra/newview/llspatialpartition.h,modified,2,3,5,"@@ -123,7 +123,7 @@ class LLDrawInfo final : public LLRefCount
+ 
+     std::vector<LLPointer<LLViewerTexture> > mTextureList;
+ 
+-    LLUUID mMaterialID; // id of LLGLTFMaterial or LLMaterial applied to this draw info
++    LLUUID mMaterialHash; // hash of LLGLTFMaterial or LLMaterial applied to this draw info
+ 
+     U32 mShaderMask = 0;
+     F32  mEnvIntensity = 0.f;
+@@ -272,8 +272,7 @@ class LLSpatialGroup : public LLOcclusionCullingGroup
+         IN_IMAGE_QUEUE          = (ALPHA_DIRTY << 1),
+         IMAGE_DIRTY             = (IN_IMAGE_QUEUE << 1),
+         MESH_DIRTY              = (IMAGE_DIRTY << 1),
+-        NEW_DRAWINFO            = (MESH_DIRTY << 1),
+-        IN_BUILD_Q1             = (NEW_DRAWINFO << 1),
++        IN_BUILD_Q1             = (MESH_DIRTY << 1),
+         IN_BUILD_Q2             = (IN_BUILD_Q1 << 1),
+         STATE_MASK              = 0x0000FFFF,
+     } eSpatialState;"
+secondlife/viewer,3026,bb4edbf,indra/newview/llviewermenu.cpp,modified,4,5,9,"@@ -9894,7 +9894,6 @@ void initialize_menus()
+     view_listener_t::addMenu(new LLAdvancedClickGLTFEdit(), ""Advanced.ClickGLTFEdit"", cb_info::UNTRUSTED_BLOCK);
+     view_listener_t::addMenu(new LLAdvancedClickResizeWindow(), ""Advanced.ClickResizeWindow"", cb_info::UNTRUSTED_BLOCK);
+     view_listener_t::addMenu(new LLAdvancedPurgeShaderCache(), ""Advanced.ClearShaderCache"", cb_info::UNTRUSTED_BLOCK);
+-    view_listener_t::addMenu(new LLAdvancedRebuildTerrain(), ""Advanced.RebuildTerrain"", cb_info::UNTRUSTED_BLOCK);
+ 
+     #ifdef TOGGLE_HACKED_GODLIKE_VIEWER
+     view_listener_t::addMenu(new LLAdvancedHandleToggleHackedGodmode(), ""Advanced.HandleToggleHackedGodmode"");
+@@ -9912,10 +9911,10 @@ void initialize_menus()
+     view_listener_t::addMenu(new LLAdvancedResetInterestLists(), ""Advanced.ResetInterestLists"");
+ 
+     // Develop > Terrain
+-    view_listener_t::addMenu(new LLAdvancedRebuildTerrain(), ""Advanced.RebuildTerrain"");
+-    view_listener_t::addMenu(new LLAdvancedTerrainCreateLocalPaintMap(), ""Advanced.TerrainCreateLocalPaintMap"");
+-    view_listener_t::addMenu(new LLAdvancedTerrainEditLocalPaintMap(), ""Advanced.TerrainEditLocalPaintMap"");
+-    view_listener_t::addMenu(new LLAdvancedTerrainDeleteLocalPaintMap(), ""Advanced.TerrainDeleteLocalPaintMap"");
++    view_listener_t::addMenu(new LLAdvancedRebuildTerrain(), ""Advanced.RebuildTerrain"", cb_info::UNTRUSTED_BLOCK);
++    view_listener_t::addMenu(new LLAdvancedTerrainCreateLocalPaintMap(), ""Advanced.TerrainCreateLocalPaintMap"", cb_info::UNTRUSTED_BLOCK);
++    view_listener_t::addMenu(new LLAdvancedTerrainEditLocalPaintMap(), ""Advanced.TerrainEditLocalPaintMap"", cb_info::UNTRUSTED_BLOCK);
++    view_listener_t::addMenu(new LLAdvancedTerrainDeleteLocalPaintMap(), ""Advanced.TerrainDeleteLocalPaintMap"", cb_info::UNTRUSTED_BLOCK);
+ 
+     // Advanced > UI
+     registrar.add(""Advanced.WebBrowserTest"", boost::bind(&handle_web_browser_test, _2));  // sigh! this one opens the MEDIA browser"
+secondlife/viewer,3026,bb4edbf,indra/newview/llvovolume.cpp,modified,32,10,42,"@@ -641,6 +641,15 @@ void LLVOVolume::animateTextures()
+                 if (!facep->mTextureMatrix)
+                 {
+                     facep->mTextureMatrix = new LLMatrix4();
++                    if (facep->getVirtualSize() > MIN_TEX_ANIM_SIZE)
++                    {
++                        // Fix the one edge case missed in
++                        // LLVOVolume::updateTextureVirtualSize when the
++                        // mTextureMatrix is not yet present
++                        gPipeline.markRebuild(mDrawable, LLDrawable::REBUILD_TCOORD);
++                        mDrawable->getSpatialGroup()->dirtyGeom();
++                        gPipeline.markRebuild(mDrawable->getSpatialGroup());
++                    }
+                 }
+ 
+                 LLMatrix4& tex_mat = *facep->mTextureMatrix;
+@@ -832,12 +841,25 @@ void LLVOVolume::updateTextureVirtualSize(bool forced)
+         // if the face has gotten small enough to turn off texture animation and texture
+         // animation is running, rebuild the render batch for this face to turn off
+         // texture animation
++        // Do the opposite when the face gets big enough.
++        // If a face is animatable, it will always have non-null mTextureMatrix
++        // pointer defined after the first call to LLVOVolume::animateTextures,
++        // although the animation is not always turned on.
+         if (face->mTextureMatrix != NULL)
+         {
+-            if ((vsize < MIN_TEX_ANIM_SIZE && old_size > MIN_TEX_ANIM_SIZE) ||
+-                (vsize > MIN_TEX_ANIM_SIZE && old_size < MIN_TEX_ANIM_SIZE))
++            if ((vsize > MIN_TEX_ANIM_SIZE) != (old_size > MIN_TEX_ANIM_SIZE))
+             {
+                 gPipeline.markRebuild(mDrawable, LLDrawable::REBUILD_TCOORD);
++                // dirtyGeom+markRebuild tells the engine to call
++                // LLVolumeGeometryManager::rebuildGeom, which rebuilds the
++                // LLDrawInfo for the spatial group containing this LLFace,
++                // safely copying the mTextureMatrix from the LLFace the the
++                // LLDrawInfo. While it's not ideal to call it here, prims with
++                // animated faces get moved to a smaller partition to reduce
++                // side-effects of their updates (see shrinkWrap in
++                // LLVOVolume::animateTextures).
++                mDrawable->getSpatialGroup()->dirtyGeom();
++                gPipeline.markRebuild(mDrawable->getSpatialGroup());
+             }
+         }
+ 
+@@ -5409,7 +5431,7 @@ void LLVolumeGeometryManager::registerFace(LLSpatialGroup* group, LLFace* facep,
+         info->mEnd - draw_vec[idx]->mStart + facep->getGeomCount() <= (U32) gGLManager.mGLMaxVertexRange &&
+         info->mCount + facep->getIndicesCount() <= (U32) gGLManager.mGLMaxIndexRange &&
+ #endif
+-        info->mMaterialID == mat_id &&
++        info->mMaterialHash == mat_id &&
+         info->mFullbright == fullbright &&
+         info->mBump == bump &&
+         (!mat || (info->mShiny == shiny)) && // need to break batches when a material is shared, but legacy settings are different
+@@ -5468,11 +5490,11 @@ void LLVolumeGeometryManager::registerFace(LLSpatialGroup* group, LLFace* facep,
+         if (gltf_mat)
+         {
+             // just remember the material ID, render pools will reference the GLTF material
+-            draw_info->mMaterialID = mat_id;
++            draw_info->mMaterialHash = mat_id;
+         }
+         else if (mat)
+         {
+-            draw_info->mMaterialID = mat_id;
++            draw_info->mMaterialHash = mat_id;
+ 
+             // We have a material.  Update our draw info accordingly.
+ 
+@@ -5504,10 +5526,10 @@ void LLVolumeGeometryManager::registerFace(LLSpatialGroup* group, LLFace* facep,
+             }
+         }
+ 
+-        // if (type == LLRenderPass::PASS_ALPHA) // always populate the draw_info ptr
+-        { //for alpha sorting
+-            facep->setDrawInfo(draw_info);
+-        }
++        // This backpointer is used by alpha sorting and avatar attachment
++        // accounting.
++        // To be safe, always populate the draw_info ptr.
++        facep->setDrawInfo(draw_info);
+ 
+         if (index < FACE_DO_NOT_BATCH_TEXTURES)
+         { //initialize texture list for texture batching
+@@ -6129,7 +6151,7 @@ void LLVolumeGeometryManager::rebuildMesh(LLSpatialGroup* group)
+                 LLVertexBuffer::flushBuffers();
+             }
+ 
+-            group->clearState(LLSpatialGroup::MESH_DIRTY | LLSpatialGroup::NEW_DRAWINFO);
++            group->clearState(LLSpatialGroup::MESH_DIRTY);
+         }
+     }
+ }"
+secondlife/viewer,3026,bb4edbf,indra/newview/pipeline.cpp,modified,0,5,5,"@@ -3520,11 +3520,6 @@ void LLPipeline::postSort(LLCamera &camera)
+             continue;
+         }
+ 
+-        if (group->hasState(LLSpatialGroup::NEW_DRAWINFO) && group->hasState(LLSpatialGroup::GEOM_DIRTY) && !gCubeSnapshot)
+-        {  // no way this group is going to be drawable without a rebuild
+-            group->rebuildGeom();
+-        }
+-
+         for (LLSpatialGroup::draw_map_t::iterator j = group->mDrawMap.begin(); j != group->mDrawMap.end(); ++j)
+         {
+             LLSpatialGroup::drawmap_elem_t &src_vec = j->second;"

@@ -1,0 +1,220 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+ashqal/MD360Player4Android,68,44e89e07c9cced2de869f606bd6b9441da9e63b9,app/src/main/AndroidManifest.xml,modified,1,1,2,"@@ -14,7 +14,7 @@
+                 <category android:name=""android.intent.category.LAUNCHER"" />
+             </intent-filter>
+         </activity>
+-        <activity android:label=""MDMultiDemoActivity"" android:name="".VideoPlayerActivity"" android:configChanges=""screenSize|orientation"" android:screenOrientation=""landscape"" android:process="":vrPlayer""/>
++        <activity android:label=""MDMultiDemoActivity"" android:name="".VideoPlayerActivity"" android:configChanges=""screenSize|orientation"" android:screenOrientation=""landscape""/>
+         <activity android:label=""MDMultiDemoActivity"" android:name="".BitmapPlayerActivity"" android:configChanges=""screenSize|orientation"" android:screenOrientation=""landscape""/>
+     </application>
+ "
+ashqal/MD360Player4Android,68,44e89e07c9cced2de869f606bd6b9441da9e63b9,app/src/main/java/com/asha/md360player4android/DemoActivity.java,modified,3,0,3,"@@ -35,6 +35,9 @@ protected void onCreate(Bundle savedInstanceState) {
+         data.put(data.size(), ""file:///mnt/sdcard/vr/halfdome.mp4"");
+         data.put(data.size(), ""file:///mnt/sdcard/vr/dome.mp4"");
+         data.put(data.size(), ""file:///mnt/sdcard/vr/stereo.mp4"");
++        data.put(data.size(), ""http://10.240.131.39/vr/570624aae1c52.mp4"");
++        data.put(data.size(), ""http://192.168.5.106/vr/570624aae1c52.mp4"");
++
+ 
+         data.put(data.size(), ""file:///mnt/sdcard/vr/AGSK6416.jpg"");
+         data.put(data.size(), ""file:///mnt/sdcard/vr/IJUN2902.jpg"");"
+ashqal/MD360Player4Android,68,44e89e07c9cced2de869f606bd6b9441da9e63b9,app/src/main/java/com/asha/md360player4android/VideoPlayerActivity.java,modified,5,0,5,"@@ -53,6 +53,11 @@ protected MDVRLibrary createVRLibrary() {
+                     public void onSurfaceReady(Surface surface) {
+                         mMediaPlayerWrapper.getPlayer().setSurface(surface);
+                     }
++
++                    @Override
++                    public void onSurfaceAbandon() {
++                        mMediaPlayerWrapper.getPlayer().setSurface(null);
++                    }
+                 })
+                 .ifNotSupport(new MDVRLibrary.INotSupportCallback() {
+                     @Override"
+ashqal/MD360Player4Android,68,44e89e07c9cced2de869f606bd6b9441da9e63b9,vrlib/src/main/java/com/asha/vrlib/MD360Renderer.java,modified,5,1,6,"@@ -3,6 +3,7 @@
+ import android.content.Context;
+ import android.opengl.GLES20;
+ import android.opengl.GLSurfaceView;
++import android.util.Log;
+ 
+ import com.asha.vrlib.common.Fps;
+ import com.asha.vrlib.objects.MDAbsObject3D;
+@@ -56,18 +57,21 @@ public void onSurfaceCreated(GL10 glUnused, EGLConfig config){
+ 		GLES20.glEnable(GLES20.GL_CULL_FACE);
+ 		
+ 		// enable depth testing
+-		GLES20.glEnable(GLES20.GL_DEPTH_TEST);
++		// GLES20.glEnable(GLES20.GL_DEPTH_TEST);
+ 
+ 		// init
+ 		initProgram();
+ 		initTexture();
+ 		initObject3D();
++
++		Log.d(TAG,""onSurfaceCreated"");
+ 	}
+ 
+ 	@Override
+ 	public void onSurfaceChanged(GL10 glUnused, int width, int height){
+ 		this.mWidth = width;
+ 		this.mHeight = height;
++		Log.d(TAG,""onSurfaceChanged"");
+ 	}
+ 
+ 	@Override"
+ashqal/MD360Player4Android,68,44e89e07c9cced2de869f606bd6b9441da9e63b9,vrlib/src/main/java/com/asha/vrlib/MDVRLibrary.java,modified,15,4,19,"@@ -59,21 +59,21 @@ public class MDVRLibrary {
+     private ProjectionModeManager mProjectionModeManager;
+ 
+     private GLSurfaceView mGLSurfaceView;
+-    private MD360Texture mSurface;
++    private MD360Texture mTexture;
+     private MDTouchHelper mTouchHelper;
+ 
+     // video or image
+     private int mContentType;
+ 
+     private MDVRLibrary(Builder builder) {
+         mContentType = builder.contentType;
+-        mSurface = builder.texture;
++        mTexture = builder.texture;
+ 
+         // init mode manager
+         initModeManager(builder);
+ 
+         // init glSurfaceViews
+-        initOpenGL(builder.activity, builder.glSurfaceView, mSurface);
++        initOpenGL(builder.activity, builder.glSurfaceView, mTexture);
+ 
+         mTouchHelper = new MDTouchHelper(builder.activity);
+         mTouchHelper.setPinchEnabled(builder.pinchEnabled);
+@@ -202,13 +202,23 @@ public void onResume(Context context){
+ 
+     public void onPause(Context context){
+         mInteractiveModeManager.onPause(context);
++
+         if (mGLSurfaceView != null){
+             mGLSurfaceView.onPause();
+         }
++
++        if (mTexture != null){
++            mTexture.destroy();
++        }
++
+     }
+ 
+     public void onDestroy(){
+-        if (mSurface != null) mSurface.release();
++        if (mTexture != null){
++            mTexture.destroy();
++            mTexture.release();
++            mTexture = null;
++        }
+     }
+ 
+     /**
+@@ -235,6 +245,7 @@ public int getProjectionMode(){
+ 
+     public interface IOnSurfaceReadyCallback {
+         void onSurfaceReady(Surface surface);
++        void onSurfaceAbandon();
+     }
+ 
+     public interface IBitmapProvider {"
+ashqal/MD360Player4Android,68,44e89e07c9cced2de869f606bd6b9441da9e63b9,vrlib/src/main/java/com/asha/vrlib/texture/MD360BitmapTexture.java,modified,6,3,9,"@@ -32,6 +32,7 @@ public MD360BitmapTexture(MDVRLibrary.IBitmapProvider bitmapProvider) {
+ 
+     @Override
+     protected int createTextureId() {
++
+         final int[] textureHandle = new int[1];
+         GLES20.glGenTextures(1, textureHandle, 0);
+ 
+@@ -67,15 +68,17 @@ public boolean updateTexture() {
+     }
+ 
+     @Override
+-    public void release() {
+-        super.release();
++    public void destroy() {
+         Collection<AsyncCallback> callbacks = mCallbackList.values();
+         for (AsyncCallback callback:callbacks){
+             callback.releaseBitmap();
+         }
+         mCallbackList.clear();
++    }
+ 
+-        mMainHandler = null;
++    @Override
++    public void release() {
++        this.mMainHandler = null;
+     }
+ 
+     private void textureInThread(int textureId, Bitmap bitmap) {"
+ashqal/MD360Player4Android,68,44e89e07c9cced2de869f606bd6b9441da9e63b9,vrlib/src/main/java/com/asha/vrlib/texture/MD360Texture.java,modified,5,6,11,"@@ -11,8 +11,7 @@
+ public abstract class MD360Texture {
+     private static final int TEXTURE_EMPTY = 0;
+     private static final String TAG = ""MD360Texture"";
+-    private ThreadLocal<Integer> mLocalGLTexture = new ThreadLocal<>();
+-
++    private int mTextureId = TEXTURE_EMPTY;
+     public MD360Texture() {
+     }
+ 
+@@ -21,16 +20,16 @@ public void create() {
+         int glTexture = createTextureId();
+ 
+         if (glTexture != TEXTURE_EMPTY){
+-            mLocalGLTexture.set(glTexture);
++            mTextureId = glTexture;
+         }
+     }
+ 
++    abstract public void destroy();
+ 
+-    public void release() {}
++    abstract public void release();
+ 
+     protected int getCurrentTextureId(){
+-        Integer value = mLocalGLTexture.get();
+-        return value != null ? value : TEXTURE_EMPTY;
++        return mTextureId;
+     }
+ 
+     final protected boolean isEmpty(int textureId){"
+ashqal/MD360Player4Android,68,44e89e07c9cced2de869f606bd6b9441da9e63b9,vrlib/src/main/java/com/asha/vrlib/texture/MD360VideoTexture.java,modified,13,11,24,"@@ -27,8 +27,20 @@ public MD360VideoTexture(MDVRLibrary.IOnSurfaceReadyCallback onSurfaceReadyListe
+ 
+     @Override
+     public void release() {
+-        super.release();
++        mOnSurfaceReadyListener = null;
++    }
+ 
++    @Override
++    public void create() {
++        super.create();
++        int glSurfaceTexture = getCurrentTextureId();
++        if (isEmpty(glSurfaceTexture)) return;
++
++        onCreateSurface(glSurfaceTexture);
++    }
++
++    @Override
++    public void destroy() {
+         if (mSurfaceTexture != null) {
+             mSurfaceTexture.release();
+         }
+@@ -38,16 +50,6 @@ public void release() {
+             mSurface.release();
+         }
+         mSurface = null;
+-
+-    }
+-
+-    @Override
+-    public void create() {
+-        super.create();
+-        int glSurfaceTexture = getCurrentTextureId();
+-        if (isEmpty(glSurfaceTexture)) return;
+-
+-        onCreateSurface(glSurfaceTexture);
+     }
+ 
+     private void onCreateSurface(int glSurfaceTextureId) {"

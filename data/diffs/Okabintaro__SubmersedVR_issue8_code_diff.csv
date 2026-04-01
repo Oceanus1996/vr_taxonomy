@@ -1,0 +1,40 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+Okabintaro/SubmersedVR,8,d2910ecebf55b9dc60fb098a73c544843b013491,SubmersedVR/Input/SteamVrGameInput.cs,modified,3,2,5,"@@ -15,10 +15,11 @@ namespace SubmersedVR
+     static class SteamVrGameInput
+     {
+         public static bool InputLocked = false;
++        public static bool IsSteamVrReady = false;
+ 
+         public static bool ShouldIgnore(GameInput.Button button)
+         {
+-            return InputLocked
++            return !IsSteamVrReady || InputLocked
+                 || button == GameInput.Button.Slot1
+                 || button == GameInput.Button.Slot2
+                 || button == GameInput.Button.Slot3
+@@ -114,7 +115,7 @@ public static class SteamVrGetAnalogValue
+     {
+         public static bool Prefix(GameInput.Button button, ref float __result)
+         {
+-            if (SteamVrGameInput.InputLocked)
++            if (SteamVrGameInput.InputLocked || !SteamVrGameInput.IsSteamVrReady)
+             {
+                 __result = 0.0f;
+                 return false;"
+Okabintaro/SubmersedVR,8,d2910ecebf55b9dc60fb098a73c544843b013491,SubmersedVR/VR/VRCameraRig.cs,modified,2,1,3,"@@ -224,6 +224,7 @@ public void Awake()
+         {
+             SteamVR.Initialize();
+             SteamVR.settings.trackingSpace = ETrackingUniverseOrigin.TrackingUniverseSeated;
++            SteamVrGameInput.IsSteamVrReady = SteamVR.initializedState == SteamVR.InitializedStates.InitializeSuccess;
+         }
+ 
+         public void Start()
+@@ -583,7 +584,7 @@ static class OnMainLevelChanged
+     {
+         public static void Postfix(uGUI __instance)
+         {
+-            VRCameraRig.instance.UpdateShowControllers();
++            VRCameraRig.instance?.UpdateShowControllers();
+         }
+     }
+ "

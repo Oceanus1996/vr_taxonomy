@@ -1,0 +1,103 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+BasisVR/Basis,27,e25b6377ee5cf28542a71ea6ba2fe893bfdaf701,Assets/Prefabs/UI/HamBurgerMenu.prefab,modified,14,0,14,"@@ -999,6 +999,7 @@ GameObject:
+   - component: {fileID: 1036067617934251197}
+   - component: {fileID: 2645338253211475504}
+   - component: {fileID: 3566278912178505188}
++  - component: {fileID: 7199841575825319390}
+   m_Layer: 5
+   m_Name: HamBurgerMenu
+   m_TagString: Untagged
+@@ -1134,6 +1135,19 @@ MonoBehaviour:
+   hasLocalCreationEvent: 0
+   Position: {x: 0, y: 0, z: 0}
+   Rotation: {x: 0, y: 0, z: 0, w: 0}
++--- !u!114 &7199841575825319390
++MonoBehaviour:
++  m_ObjectHideFlags: 0
++  m_CorrespondingSourceObject: {fileID: 0}
++  m_PrefabInstance: {fileID: 0}
++  m_PrefabAsset: {fileID: 0}
++  m_GameObject: {fileID: 7434544960807650688}
++  m_Enabled: 1
++  m_EditorHideFlags: 0
++  m_Script: {fileID: 11500000, guid: 3d70abc58c9ac244ca780e8e3291b761, type: 3}
++  m_Name: 
++  m_EditorClassIdentifier: 
++  maxDistance: 4
+ --- !u!1 &8509309538099924209
+ GameObject:
+   m_ObjectHideFlags: 0"
+BasisVR/Basis,27,e25b6377ee5cf28542a71ea6ba2fe893bfdaf701,Assets/Prefabs/UI/Settings UI.prefab,modified,14,0,14,"@@ -20711,6 +20711,7 @@ GameObject:
+   - component: {fileID: 7522235755497681572}
+   - component: {fileID: -8689619352384809884}
+   - component: {fileID: 163077535810724808}
++  - component: {fileID: 120592055573627991}
+   m_Layer: 5
+   m_Name: Settings UI
+   m_TagString: Untagged
+@@ -20962,6 +20963,19 @@ MonoBehaviour:
+   m_EditorClassIdentifier: 
+   fpsText: {fileID: 1683230402514716218}
+   FinalText: 
++--- !u!114 &120592055573627991
++MonoBehaviour:
++  m_ObjectHideFlags: 0
++  m_CorrespondingSourceObject: {fileID: 0}
++  m_PrefabInstance: {fileID: 0}
++  m_PrefabAsset: {fileID: 0}
++  m_GameObject: {fileID: 5776740318662466287}
++  m_Enabled: 1
++  m_EditorHideFlags: 0
++  m_Script: {fileID: 11500000, guid: 3d70abc58c9ac244ca780e8e3291b761, type: 3}
++  m_Name: 
++  m_EditorClassIdentifier: 
++  maxDistance: 4
+ --- !u!1 &5797980771536184077
+ GameObject:
+   m_ObjectHideFlags: 0"
+BasisVR/Basis,27,e25b6377ee5cf28542a71ea6ba2fe893bfdaf701,Packages/Basis Framework/UI/BasisUIReparenter.cs,added,40,0,40,"@@ -0,0 +1,40 @@
++using UnityEngine;
++using Basis.Scripts.BasisSdk.Players;
++
++namespace Basis.Scripts.UI
++{
++	/// <summary>
++	/// Parents the parent UI to the LocalPlayer in case the distance between player and panel goes beyond a given threshold in metres. 
++	/// This allows using the UI even if perpetually falling or just generally while moving.
++	/// Only setup required is attaching the script to the root of the UIs GameObject.
++	/// </summary>
++	public class BasisUIReparenter : MonoBehaviour
++	{
++		public float maxDistance = 4;
++		private Vector3 initialUIPos;
++		private Vector3 initialOffset;
++		private float currentDistance;
++		private bool reparented;
++
++		private void Start()
++		{
++			Vector3 _initialPlayerPos = BasisLocalPlayer.Instance.transform.position;
++			initialUIPos = gameObject.transform.position;
++			initialOffset = initialUIPos - _initialPlayerPos;
++		}
++		private void LateUpdate()
++		{
++			if(reparented)
++				return;
++			currentDistance = (initialUIPos - BasisLocalPlayer.Instance.transform.position).magnitude;
++			if(currentDistance > maxDistance)
++				Reparent();
++		}
++		private void Reparent()
++		{
++			reparented = true;
++			gameObject.transform.SetParent(BasisLocalPlayer.Instance.transform,false);
++			gameObject.transform.position = BasisLocalPlayer.Instance.transform.position + initialOffset;
++		}
++	}
++}
+\ No newline at end of file"
+BasisVR/Basis,27,e25b6377ee5cf28542a71ea6ba2fe893bfdaf701,Packages/Basis Framework/UI/BasisUIReparenter.cs.meta,added,2,0,2,"@@ -0,0 +1,2 @@
++fileFormatVersion: 2
++guid: 3d70abc58c9ac244ca780e8e3291b761
+\ No newline at end of file"

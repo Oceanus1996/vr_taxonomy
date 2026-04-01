@@ -1,0 +1,106 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+ngokevin/aframe-core,150,242a0898c6dd5a86d55d7f63b3c5afa5c4af8bc1,lib/VRLoader.js,modified,2,1,3,"@@ -23,7 +23,6 @@
+       self.postFullscreenStatus.bind(self);
+     });
+ 
+-    // Use postMessage to know to know when to start.
+     window.addEventListener('message', function (e) {
+       var msg = e.data;
+       if (!msg.type) {
+@@ -33,6 +32,8 @@
+       switch (msg.type) {
+         case 'ready':
+           console.log('[VRLoader] got ready');
++          // Use postMessage to know to know when to start.
++          self.iframe.contentWindow.postMessage({type: 'loaderReady'}, '*');
+           break;
+         case 'navigate':
+           console.log('[VRLoader] navigating', msg.data.url);"
+ngokevin/aframe-core,150,242a0898c6dd5a86d55d7f63b3c5afa5c4af8bc1,src/core/vr-scene.js,modified,33,12,45,"@@ -14,6 +14,9 @@ var VRScene = module.exports = document.registerElement(
+       VRNode.prototype, {
+         createdCallback: {
+           value: function () {
++            this.insideIframe = window.top !== window.self;
++            this.insideLoader = false;
++            this.vrButton = null;
+             this.attachEventListeners();
+             this.attachFullscreenListeners();
+             this.setupScene();
+@@ -86,15 +89,22 @@ var VRScene = module.exports = document.registerElement(
+           value: function () {
+             var self = this;
+             window.addEventListener('message', function (e) {
+-              if (e.data && e.data.type === 'fullscreen') {
+-                switch (e.data.data) {
+-                  // set renderer with fullscreen VR enter and exit.
+-                  case 'enter':
+-                    self.setStereoRenderer();
+-                    break;
+-                  case 'exit':
+-                    self.setMonoRenderer();
++              if (e.data) {
++                switch (e.data.type) {
++                  case 'loaderReady':
++                    self.insideLoader = true;
++                    self.removeEnterVrButton();
+                     break;
++                  case 'fullscreen':
++                    switch (e.data.data) {
++                      // Set renderer with fullscreen VR enter and exit.
++                      case 'enter':
++                        self.setStereoRenderer();
++                        break;
++                      case 'exit':
++                        self.setMonoRenderer();
++                        break;
++                    }
+                 }
+               }
+             });
+@@ -137,14 +147,22 @@ var VRScene = module.exports = document.registerElement(
+ 
+         createEnterVrButton: {
+           value: function () {
+-            var vrButton = document.createElement('button');
++            var vrButton = this.vrButton = document.createElement('button');
+             vrButton.textContent = 'Enter VR';
+             vrButton.className = 'vr-button';
+             document.body.appendChild(vrButton);
+             vrButton.addEventListener('click', this.enterVR.bind(this));
+           }
+         },
+ 
++        removeEnterVrButton: {
++          value: function () {
++            if (this.vrButton) {
++              this.vrButton.parentNode.removeChild(this.vrButton);
++            }
++          }
++        },
++
+         // returns a promise that resolves to true if loader is in VR mode.
+         vrLoaderMode: {
+           value: function () {
+@@ -161,8 +179,9 @@ var VRScene = module.exports = document.registerElement(
+         setupLoader: {
+           value: function () {
+             var self = this;
+-            // inside loader, check for vr mode before kicking off render loop.
+-            if (window.top !== window.self) {
++
++            // Inside loader, check for VR mode before kicking off render loop.
++            if (self.insideIframe) {
+               self.attachMessageListeners();
+               self.vrLoaderMode().then(function (isVr) {
+                 if (isVr) {
+@@ -172,7 +191,9 @@ var VRScene = module.exports = document.registerElement(
+                 }
+                 window.top.postMessage({type: 'ready'}, '*');
+               });
+-            } else {
++            }
++
++            if (!self.insideLoader) {
+               self.createEnterVrButton();
+             }
+           }"

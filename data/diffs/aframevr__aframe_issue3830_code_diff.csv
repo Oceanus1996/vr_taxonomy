@@ -1,0 +1,87 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe,3830,3b64726aab1972f1b5606df1f4b137549bced624,docs/components/wasd-controls.md,modified,0,1,1,"@@ -25,7 +25,6 @@ component][components-camera].
+ | acceleration | How fast the entity accelerates when holding the keys.                   | 65            |
+ | adAxis       | Axis that the `A` and `D` keys act upon.                                 | x             |
+ | adInverted   | Whether the axis that the `A` and `D` keys act upon are inverted.        | false         |
+-| easing       | How fast the entity decelerates after releasing the keys. Like friction. | 20            |
+ | enabled      | Whether the WASD controls are enabled.                                   | true          |
+ | fly          | Whether or not movement is restricted to the entity's initial plane.     | false         |
+ | wsAxis       | Axis that the `W` and `S` keys act upon.                                 | z             |"
+aframevr/aframe,3830,3b64726aab1972f1b5606df1f4b137549bced624,src/components/wasd-controls.js,modified,7,4,11,"@@ -22,7 +22,6 @@ module.exports.Component = registerComponent('wasd-controls', {
+     adAxis: {default: 'x', oneOf: ['x', 'y', 'z']},
+     adEnabled: {default: true},
+     adInverted: {default: false},
+-    easing: {default: 20},
+     enabled: {default: true},
+     fly: {default: false},
+     wsAxis: {default: 'z', oneOf: ['x', 'y', 'z']},
+@@ -33,6 +32,8 @@ module.exports.Component = registerComponent('wasd-controls', {
+   init: function () {
+     // To keep track of the pressed keys.
+     this.keys = {};
++    this.easing = 1.1;
++
+     this.velocity = new THREE.Vector3();
+ 
+     // Bind methods and add event listeners.
+@@ -96,12 +97,14 @@ module.exports.Component = registerComponent('wasd-controls', {
+       return;
+     }
+ 
+-    // Decay velocity.
++    // https://gamedev.stackexchange.com/questions/151383/frame-rate-independant-movement-with-acceleration
++    var scaledEasing = Math.pow(1 / this.easing, delta * 60);
++    // Velocity Easing.
+     if (velocity[adAxis] !== 0) {
+-      velocity[adAxis] -= velocity[adAxis] * data.easing * delta;
++      velocity[adAxis] -= velocity[adAxis] * scaledEasing;
+     }
+     if (velocity[wsAxis] !== 0) {
+-      velocity[wsAxis] -= velocity[wsAxis] * data.easing * delta;
++      velocity[wsAxis] -= velocity[wsAxis] * scaledEasing;
+     }
+ 
+     // Clamp velocity easing."
+aframevr/aframe,3830,4b25cecfddb37d7b4c01ee815b635e2d1d1ee736,docs/components/wasd-controls.md,modified,0,1,1,"@@ -25,7 +25,6 @@ component][components-camera].
+ | acceleration | How fast the entity accelerates when holding the keys.                   | 65            |
+ | adAxis       | Axis that the `A` and `D` keys act upon.                                 | x             |
+ | adInverted   | Whether the axis that the `A` and `D` keys act upon are inverted.        | false         |
+-| easing       | How fast the entity decelerates after releasing the keys. Like friction. | 20            |
+ | enabled      | Whether the WASD controls are enabled.                                   | true          |
+ | fly          | Whether or not movement is restricted to the entity's initial plane.     | false         |
+ | wsAxis       | Axis that the `W` and `S` keys act upon.                                 | z             |"
+aframevr/aframe,3830,4b25cecfddb37d7b4c01ee815b635e2d1d1ee736,src/components/wasd-controls.js,modified,7,4,11,"@@ -22,7 +22,6 @@ module.exports.Component = registerComponent('wasd-controls', {
+     adAxis: {default: 'x', oneOf: ['x', 'y', 'z']},
+     adEnabled: {default: true},
+     adInverted: {default: false},
+-    easing: {default: 20},
+     enabled: {default: true},
+     fly: {default: false},
+     wsAxis: {default: 'z', oneOf: ['x', 'y', 'z']},
+@@ -33,6 +32,8 @@ module.exports.Component = registerComponent('wasd-controls', {
+   init: function () {
+     // To keep track of the pressed keys.
+     this.keys = {};
++    this.easing = 1.1;
++
+     this.velocity = new THREE.Vector3();
+ 
+     // Bind methods and add event listeners.
+@@ -96,12 +97,14 @@ module.exports.Component = registerComponent('wasd-controls', {
+       return;
+     }
+ 
+-    // Decay velocity.
++    // https://gamedev.stackexchange.com/questions/151383/frame-rate-independant-movement-with-acceleration
++    var scaledEasing = Math.pow(1 / this.easing, delta * 60);
++    // Velocity Easing.
+     if (velocity[adAxis] !== 0) {
+-      velocity[adAxis] -= velocity[adAxis] * data.easing * delta;
++      velocity[adAxis] -= velocity[adAxis] * scaledEasing;
+     }
+     if (velocity[wsAxis] !== 0) {
+-      velocity[wsAxis] -= velocity[wsAxis] * data.easing * delta;
++      velocity[wsAxis] -= velocity[wsAxis] * scaledEasing;
+     }
+ 
+     // Clamp velocity easing."

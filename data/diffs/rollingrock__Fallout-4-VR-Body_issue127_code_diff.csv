@@ -1,0 +1,648 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+rollingrock/Fallout-4-VR-Body,127,b89c521bc6a839e078b6b0817bf0f6a09e579dd7,CMakeLists.txt,modified,1,1,2,"@@ -4,7 +4,7 @@ cmake_minimum_required(VERSION 3.23)
+ # >>> Project
+ set(NAME ""FRIK"")
+ set(FRIENDLY_NAME ""FRIK"")
+-set(VERSION 0.76.5)
++set(VERSION 0.76.7)
+ 
+ 
+ # >>> Folders"
+rollingrock/Fallout-4-VR-Body,127,b89c521bc6a839e078b6b0817bf0f6a09e579dd7,data/config/FRIK.ini,modified,16,11,27,"@@ -30,15 +30,20 @@
+ # https://github.com/rollingrock/Fallout-4-VR-Body/wiki/FAQ#is-hiding-the-head-prevents-getting-hit-in-the-head
+ 
+ # Hide the head geometry by name (values in FRIK_Mesh_Hide\face.ini)
+-HideHead = true
++# Warning: this will affect the shadow of the player, making it headless. check fHeadBackPositionOffset for alternative.
++bHidePlayerHead = false
+ 
+ # Hide Equipment geometry by name (values in FRIK_Mesh_Hide\slots.ini)
+-HideEquipment = true
++bHidePlayerHeadEquipment = true
+ 
+ # Hide skin/clothes geometry by name (values in FRIK_Mesh_Hide\skins.ini)
+-HideSkin = false
++bHidePlayerSkin = false
+ 
+-# If to ignore hide HideHead, HideSkin, and HideEquipment when in selfie mode
++# How much to offset the head back to prevent it from clipping the player view (default: 4)
++# Better than hiding the whole head as it removes the shadow
++fHeadBackPositionOffset = 5
++
++# If to ignore hide bHidePlayerHead, bHidePlayerHeadEquipment, bHidePlayerSkin, and fHeadBackPositionOffset when in selfie mode
+ bSelfieIgnoreHideFlags = true
+ 
+ 
+@@ -64,12 +69,12 @@ armLength = 36.000000
+ bIsPlayingSeated = false
+ 
+ # HMD and Body offsets
+-fPlayerHMDOffsetUpStanding = 8
+-fPlayerBodyOffsetUpStanding = -3
++fPlayerHMDOffsetUpStanding = 8.6
++fPlayerBodyOffsetUpStanding = -4.2
+ fPlayerBodyOffsetForwardStanding = -3
+-fPlayerHMDOffsetUpSitting = 31
++fPlayerHMDOffsetUpSitting = 36
+ fPlayerBodyOffsetUpSitting = -4
+-fPlayerBodyOffsetForwardSitting = 2
++fPlayerBodyOffsetForwardSitting = -3
+ 
+ # HMD and Body offsets in PowerArmor
+ fPlayerHMDOffsetUpStandingInPA = 23
+@@ -81,8 +86,8 @@ fPlayerBodyOffsetForwardSittingInPA = -9
+ 
+ # Hack to handle comfort sneak affecting the height of the player without real-world body change. By setting static
+ # body pitch the body position doesn't change, making it easier to handle skeleton related things like Virtual Holsters.
+-# Default: 30, set to 0 to disable and use regular body pitch calculation
+-fComfortSneakHackStaticBodyPitchAngle = 30
++# Default: 10, set to 0 to disable and use regular body pitch calculation
++fComfortSneakHackStaticBodyPitchAngle = 10
+ 
+ 
+ ### Pipboy Settings
+@@ -277,4 +282,4 @@ sDebugFlowText2 =
+ sDebugDumpDataOnceNames =
+ 
+ # Internal use for versioning
+-iVersion = 12
++iVersion = 13"
+rollingrock/Fallout-4-VR-Body,127,b89c521bc6a839e078b6b0817bf0f6a09e579dd7,data/mod/Textures/FRIK/ui_main_conf_buttons.DDS,modified,0,0,0,
+rollingrock/Fallout-4-VR-Body,127,b89c521bc6a839e078b6b0817bf0f6a09e579dd7,data/visual/ui_dev_library.DDS,modified,0,0,0,
+rollingrock/Fallout-4-VR-Body,127,b89c521bc6a839e078b6b0817bf0f6a09e579dd7,src/Config.cpp,modified,10,10,20,"@@ -92,12 +92,10 @@ namespace frik
+         saveIniConfigValue(INI_SECTION_MAIN, ""bIsPlayingSeated"", iIsPlayingSeated);
+     }
+ 
+-    void Config::saveHideHeadAndEquipment(const bool hide)
++    void Config::saveHideHeadEquipment(const bool hide)
+     {
+-        hideHead = hide;
+-        hideEquipment = hide;
+-        saveIniConfigValue(INI_SECTION_MAIN, ""HideHead"", hide);
+-        saveIniConfigValue(INI_SECTION_MAIN, ""HideEquipment"", hide);
++        hideHeadEquipment = hide;
++        saveIniConfigValue(INI_SECTION_MAIN, ""bHidePlayerHeadEquipment"", hide);
+     }
+ 
+     void Config::saveDampenHands(const bool iDampenHands)
+@@ -258,9 +256,9 @@ namespace frik
+         armLength = static_cast<float>(ini.GetDoubleValue(INI_SECTION_MAIN, ""armLength"", 36.74f));
+ 
+         // Head Geometry Hide
+-        hideHead = ini.GetBoolValue(INI_SECTION_MAIN, ""HideHead"");
+-        hideEquipment = ini.GetBoolValue(INI_SECTION_MAIN, ""HideEquipment"");
+-        hideSkin = ini.GetBoolValue(INI_SECTION_MAIN, ""HideSkin"");
++        hideHead = ini.GetBoolValue(INI_SECTION_MAIN, ""bHidePlayerHead"");
++        hideHeadEquipment = ini.GetBoolValue(INI_SECTION_MAIN, ""bHidePlayerHeadEquipment"");
++        hideSkin = ini.GetBoolValue(INI_SECTION_MAIN, ""bHidePlayerSkin"");
+ 
+         // is the player playing standing or sitting
+         isPlayingSeated = ini.GetBoolValue(INI_SECTION_MAIN, ""bIsPlayingSeated"", false);
+@@ -280,6 +278,8 @@ namespace frik
+         playerBodyOffsetUpSittingInPA = static_cast<float>(ini.GetDoubleValue(INI_SECTION_MAIN, ""fPlayerBodyOffsetUpSittingInPA"", -7.0f));
+         playerBodyOffsetForwardSittingInPA = static_cast<float>(ini.GetDoubleValue(INI_SECTION_MAIN, ""fPlayerBodyOffsetForwardSittingInPA"", -9.0f));
+ 
++        headBackPositionOffset = static_cast<float>(ini.GetDoubleValue(INI_SECTION_MAIN, ""fHeadBackPositionOffset"", 4));
++
+         comfortSneakHackStaticBodyPitchAngle = static_cast<float>(ini.GetDoubleValue(INI_SECTION_MAIN, ""fComfortSneakHackStaticBodyPitchAngle"", 30.0f));
+ 
+         // Pipboy
+@@ -354,8 +354,8 @@ namespace frik
+     {
+         ini.SetBoolValue(INI_SECTION_MAIN, ""bIsPlayingSeated"", isPlayingSeated);
+         ini.SetDoubleValue(INI_SECTION_MAIN, ""fVrScale"", fVrScale);
+-        ini.SetBoolValue(INI_SECTION_MAIN, ""HideHead"", hideHead);
+-        ini.SetBoolValue(INI_SECTION_MAIN, ""HideEquipment"", hideEquipment);
++        ini.SetBoolValue(INI_SECTION_MAIN, ""bHidePlayerHead"", hideHead);
++        ini.SetBoolValue(INI_SECTION_MAIN, ""bHidePlayerHeadEquipment"", hideHeadEquipment);
+ 
+         ini.SetDoubleValue(INI_SECTION_MAIN, ""fPlayerBodyOffsetUpStanding"", playerBodyOffsetUpStanding);
+         ini.SetDoubleValue(INI_SECTION_MAIN, ""fPlayerBodyOffsetForwardStanding"", playerBodyOffsetForwardStanding);"
+rollingrock/Fallout-4-VR-Body,127,b89c521bc6a839e078b6b0817bf0f6a09e579dd7,src/Config.h,modified,4,2,6,"@@ -77,7 +77,7 @@ namespace frik
+         void togglePipBoyOpenWhenLookAt();
+         void savePipboyScale(float scale);
+         void saveIsPlayingSeated(bool iIsPlayingSeated);
+-        void saveHideHeadAndEquipment(bool hide);
++        void saveHideHeadEquipment(bool hide);
+         void saveDampenHands(bool iDampenHands);
+ 
+         float getPlayerBodyOffsetUp() const;
+@@ -104,7 +104,7 @@ namespace frik
+ 
+         // Head Geometry Hide
+         bool hideHead = false;
+-        bool hideEquipment = false;
++        bool hideHeadEquipment = false;
+         bool hideSkin = false;
+         const std::vector<std::string>& faceGeometry() const { return _faceGeometry; }
+         const std::vector<std::string>& skinGeometry() const { return _skinGeometry; }
+@@ -129,6 +129,8 @@ namespace frik
+         float playerBodyOffsetUpSittingInPA = 0;
+         float playerBodyOffsetForwardSittingInPA = 0;
+ 
++        float headBackPositionOffset = 0;
++
+         // Pipboy
+         float pipBoyScale = 0;
+         bool hidePipboy = false;"
+rollingrock/Fallout-4-VR-Body,127,b89c521bc6a839e078b6b0817bf0f6a09e579dd7,src/config-mode/BodyAdjustmentSubConfigMode.cpp,modified,6,15,21,"@@ -49,8 +49,8 @@ namespace frik
+         playSeattedBtn->setOnToggleHandler([this](UIWidget*, const bool enabled) { togglePlayingSeated(enabled); });
+ 
+         const auto hideHeadBtn = std::make_shared<UIToggleButton>(""FRIK\\UI_Main_Config\\btn_hide_head.nif"");
+-        hideHeadBtn->setToggleState(g_config.hideHead);
+-        hideHeadBtn->setOnToggleHandler([this](UIWidget*, const bool enabled) { toggleHideHead(enabled); });
++        hideHeadBtn->setToggleState(g_config.hideHeadEquipment);
++        hideHeadBtn->setOnToggleHandler([this](UIWidget*, const bool enabled) { toggleHideHeadEquipment(enabled); });
+ 
+         const auto row1Container = std::make_shared<UIContainer>(""Row1"", UIContainerLayout::HorizontalCenter, 0.5f);
+         row1Container->addElement(playSeattedBtn);
+@@ -128,15 +128,15 @@ namespace frik
+      * Toggle head hiding on\off.
+      * Show notification regarding not hiding in selfie mode for player not to be confused.
+      */
+-    void BodyAdjustmentSubConfigMode::toggleHideHead(const bool hide)
++    void BodyAdjustmentSubConfigMode::toggleHideHeadEquipment(const bool hide)
+     {
+-        saveHideHeadAndEquipment(hide);
++        g_config.saveHideHeadEquipment(hide);
+         _row2Container->clearToggleState();
+         _configTarget = BodyAdjustmentConfigTarget::None;
+         if (hide) {
+-            std::string msg = ""Player head and head equipment are hidden"";
++            std::string msg = ""Player head equipment is now hidden"";
+             if (g_config.selfieIgnoreHideFlags) {
+-                msg = msg + ""\nNote: The head is NOT hidden in selfie mode!"";
++                msg = msg + ""\nNote: The head equipment is NOT hidden in selfie mode!"";
+             }
+             f4vr::showNotification(msg);
+         }
+@@ -161,15 +161,6 @@ namespace frik
+         _onClose();
+     }
+ 
+-    /**
+-     * Set if to hide the player head and equipment (helmet, glasses, etc.)
+-     * Set together to simplify for the player, if they want specific they can edit the ini.
+-     */
+-    void BodyAdjustmentSubConfigMode::saveHideHeadAndEquipment(const bool enabled)
+-    {
+-        g_config.saveHideHeadAndEquipment(enabled);
+-    }
+-
+     /**
+      * Delegate adjustment to the right target.
+      * Read the thumbstick value and change the taget values accordingly."
+rollingrock/Fallout-4-VR-Body,127,b89c521bc6a839e078b6b0817bf0f6a09e579dd7,src/config-mode/BodyAdjustmentSubConfigMode.h,modified,1,2,3,"@@ -27,9 +27,8 @@ namespace frik
+     private:
+         void createConfigUI();
+         void togglePlayingSeated(bool seated);
+-        void toggleHideHead(bool hide);
++        void toggleHideHeadEquipment(bool hide);
+         void closeConfig();
+-        static void saveHideHeadAndEquipment(bool enabled);
+         void handleAdjustment() const;
+         static void handleHeightAdjustment();
+         static void handleForwardAdjustment();"
+rollingrock/Fallout-4-VR-Body,127,b89c521bc6a839e078b6b0817bf0f6a09e579dd7,src/pipboy/Pipboy.cpp,modified,72,46,118,"@@ -27,7 +27,7 @@ namespace
+      * Get the correct Pipboy root nif to use as a replacement for the on-wrist Pipboy.
+      * Special handling for Fallout London VR mod.
+      */
+-    const char* getPipboyReplacmentNifPath()
++    const char* getPipboyReplacementNifPath()
+     {
+         if (frik::g_config.isFalloutLondonVR) {
+             return ""FRIK/AttaboyVR.nif"";
+@@ -83,6 +83,12 @@ namespace frik
+             return;
+         }
+ 
++        if (open && g_config.isFalloutLondonVR && !_attaboyOnBeltNode) {
++            // beginning of the game, player doesn't have the attaboy yet (but allow closing if something happens)
++            logger::info(""Attaboy open canceled, no attaboy on belt found"");
++            return;
++        }
++
+         logger::info(""Turning Pipboy {}"", open ? ""ON"" : ""OFF"");
+         _isOpen = open;
+ 
+@@ -91,10 +97,6 @@ namespace frik
+         pn->PipboyRoot_nif_only_node->local.scale = open ? 1.0f : 0.0f;
+         turnPipBoyOnOff(open);
+ 
+-        if (g_config.isFalloutLondonVR) {
+-            setAttaboyHandPose(open);
+-        }
+-
+         if (open) {
+             // prevent immediate closing of Pipboy
+             _lastLookingAtPip = nowMillis();
+@@ -105,9 +107,12 @@ namespace frik
+             g_frik.closePipboyConfigurationModeActive();
+         }
+ 
+-        if (_attaboyOnBeltNode) {
+-            // show/hide the Attaboy on belt model depending if it's on as it's grabbed by the player
+-            f4vr::setNodeVisibilityDeep(_attaboyOnBeltNode->parent->parent, !open);
++        if (g_config.isFalloutLondonVR) {
++            setAttaboyHandPose(open);
++            if (_attaboyOnBeltNode && _attaboyOnBeltNode->parent && _attaboyOnBeltNode->parent->parent) {
++                // show/hide the Attaboy on belt model depending if it's on as it's grabbed by the player
++                f4vr::setNodeVisibilityDeep(_attaboyOnBeltNode->parent->parent, !open);
++            }
+         }
+     }
+ 
+@@ -217,7 +222,7 @@ namespace frik
+             return;
+         }
+ 
+-        if (g_config.hidePipboy) {
++        if (g_config.hidePipboy || g_config.isFalloutLondonVR) {
+             if (pipboy->local.scale != 0.0) {
+                 pipboy->local.scale = 0.0;
+                 f4vr::setNodeVisibilityDeep(pipboy, false);
+@@ -275,12 +280,36 @@ namespace frik
+             // load Pipboy screen adjusted position config
+             f4vr::getPlayerNodes()->ScreenNode->local = g_config.getPipboyOffset();
+         }
++
++        updateSetupAttaboyNodes();
++    }
++
++    /**
++     * Attaboy is not on the player at the beginning of the game but picked up later
++     */
++    void Pipboy::updateSetupAttaboyNodes()
++    {
++        if (!g_config.isFalloutLondonVR) {
++            return;
++        }
++        if (_attaboyOnBeltNode) {
++            if (!_attaboyOnBeltNode->parent || !_attaboyOnBeltNode->parent->parent) {
++                logger::warn(""Attaboy on belt node detached!"");
++                _attaboyOnBeltNode = nullptr;
++            }
++        } else {
++            const auto node = f4vr::findNode(f4vr::getCommonNode(), ""PipboyBody"", 5);
++            _attaboyOnBeltNode = node ? node->IsNode() : nullptr;
++            if (_attaboyOnBeltNode) {
++                logger::info(""Attaboy on belt node found"");
++            }
++        }
+     }
+ 
+     /**
+      * Setup FRIK special root nif node to control the screen location and hide Pipboy frame
+      */
+-    void Pipboy::setupPipboyRootNif()
++    void Pipboy::setupPipboyRootNif() const
+     {
+         const auto pn = f4vr::getPlayerNodes();
+         if (!pn->PipboyParentNode || !pn->PipboyRoot_nif_only_node) {
+@@ -295,7 +324,9 @@ namespace frik
+             _originalPipboyRootNifOnlyNode->local.scale = 0;
+         }
+ 
+-        const auto newPipboyRootNifOnlyNode = f4vr::loadNifFromFile(getPipboyReplacmentNifPath());
++        const auto pipboyReplacementNifPath = getPipboyReplacementNifPath();
++        logger::info(""Loading pipboy replacement nif '{}'"", pipboyReplacementNifPath);
++        const auto newPipboyRootNifOnlyNode = f4vr::loadNifFromFile(pipboyReplacementNifPath);
+         const auto newScreen = f4vr::findNode(newPipboyRootNifOnlyNode, ""Screen"");
+         if (!newScreen) {
+             logger::error(""Failed to find Pipboy screen node in the loaded nif!"");
+@@ -308,15 +339,11 @@ namespace frik
+         pn->ScreenNode = newScreen;
+ 
+         // attach where the 3rd-person Pipboy is on the arm
+-        getPipboyModelOnArmNode()->AttachChild(newPipboyRootNifOnlyNode, false);
++        const auto pipboyAttachNode = g_config.isFalloutLondonVR ? _skelly->getLeftArm().hand->IsNode() : getPipboyModelOnArmNode();
++        pipboyAttachNode->AttachChild(newPipboyRootNifOnlyNode, false);
+ 
+         _newPipboyRootNifOnlyNode = newPipboyRootNifOnlyNode;
+ 
+-        if (g_config.isFalloutLondonVR) {
+-            const auto node = f4vr::findNode(f4vr::getCommonNode(), ""PipboyBody"", 5);
+-            _attaboyOnBeltNode = node ? node->IsNode() : nullptr;
+-        }
+-
+         logger::info(""Pipboy root nif replaced!"");
+     }
+ 
+@@ -325,6 +352,9 @@ namespace frik
+      */
+     void Pipboy::showHideCorrectPipboyMesh(const std::string& itemHide, const std::string& itemShow) const
+     {
++        if (g_config.isFalloutLondonVR) {
++            return;
++        }
+         if (const auto pipboy3Rd = getPipboyModelOnArmNode()) {
+             pipboy3Rd->local.scale = g_config.pipBoyScale;
+ 
+@@ -362,12 +392,9 @@ namespace frik
+             return;
+         }
+ 
+-        bool open;
+-        if (_attaboyOnBeltNode && g_config.attaboyGrabActivationDistance > 0) {
+-            open = checkAttaboyActivation();
+-        } else {
+-            open = f4vr::VRControllers.isReleasedShort(f4vr::Hand::Offhand, g_config.pipBoyButtonID);
+-        }
++        const bool open = _attaboyOnBeltNode && g_config.attaboyGrabActivationDistance > 0
++            ? checkAttaboyActivation()
++            : f4vr::VRControllers.isReleasedShort(f4vr::Hand::Offhand, g_config.pipBoyButtonID);
+         if (open) {
+             logger::info(""Open Pipboy with button"");
+             openClose(open);
+@@ -383,12 +410,9 @@ namespace frik
+             return;
+         }
+ 
+-        bool close;
+-        if (_attaboyOnBeltNode && g_config.attaboyGrabActivationDistance > 0) {
+-            close = checkAttaboyActivation();
+-        } else {
+-            close = f4vr::VRControllers.isReleasedShort(f4vr::Hand::Offhand, g_config.pipBoyButtonOffID);
+-        }
++        const bool close = _attaboyOnBeltNode && g_config.attaboyGrabActivationDistance > 0
++            ? checkAttaboyActivation()
++            : f4vr::VRControllers.isReleasedShort(f4vr::Hand::Offhand, g_config.pipBoyButtonOffID);
+         if (close) {
+             logger::info(""Close Pipboy with button"");
+             openClose(false);
+@@ -403,15 +427,17 @@ namespace frik
+     {
+         const float dist = vec3Len(_skelly->getLeftArm().hand->world.translate - _attaboyOnBeltNode->world.translate);
+         if (dist < g_config.attaboyGrabActivationDistance) {
+-            if (isNowTimePassed(_lastAttaboyGrabTime, 1000)) {
+-                triggerShortHaptic(f4vr::Hand::Left);
++            if (!_attaboyGrabHapticActivated) {
++                _attaboyGrabHapticActivated = true;
++                triggerStrongHaptic(f4vr::Hand::Left);
++                logger::debug(""Attaboy activation area triggered"");
+             }
+             if (f4vr::VRControllers.isReleasedShort(f4vr::Hand::Left, g_config.attaboyGrabButtonId)) {
+-                _lastAttaboyGrabTime = nowMillis();
++                triggerShortHaptic(f4vr::Hand::Left);
+                 return true;
+             }
+         } else {
+-            _lastAttaboyGrabTime = 0;
++            _attaboyGrabHapticActivated = false; // move hand away for activation area
+         }
+         return false;
+     }
+@@ -421,7 +447,7 @@ namespace frik
+      */
+     void Pipboy::checkTurningOnByLookingAt()
+     {
+-        if (_isOpen || !g_config.pipboyOpenWhenLookAt || !isPlayerLookingAtPipboy()) {
++        if (_isOpen || !g_config.pipboyOpenWhenLookAt || !isPlayerLookingAtPipboy() || g_config.isFalloutLondonVR) {
+             _startedLookingAtPip = 0;
+             return;
+         }
+@@ -440,7 +466,7 @@ namespace frik
+      */
+     void Pipboy::checkTurningOffByLookingAway()
+     {
+-        if (!_isOpen) {
++        if (!_isOpen || g_config.isFalloutLondonVR) {
+             return;
+         }
+ 
+@@ -480,15 +506,18 @@ namespace frik
+         const auto isLeftHandCloseToHMD = vec3Len(_skelly->getLeftArm().hand->world.translate - hmdPos) < 12;
+         const auto isRightHandCloseToHMD = vec3Len(_skelly->getRightArm().hand->world.translate - hmdPos) < 12;
+ 
+-        const auto now = nowMillis();
+         if (isLeftHandCloseToHMD && (g_config.flashlightLocation == FlashlightLocation::Head || g_config.flashlightLocation == FlashlightLocation::LeftArm)) {
+-            if (_flashlightHapticCooldown < now)
+-                triggerShortHaptic(f4vr::Hand::Left);
++            if (!_flashlightHapticActivated) {
++                _flashlightHapticActivated = true;
++                triggerStrongHaptic(f4vr::Hand::Left);
++            }
+         } else if (isRightHandCloseToHMD && (g_config.flashlightLocation == FlashlightLocation::Head || g_config.flashlightLocation == FlashlightLocation::RightArm)) {
+-            if (_flashlightHapticCooldown < now)
+-                triggerShortHaptic(f4vr::Hand::Right);
++            if (!_flashlightHapticActivated) {
++                _flashlightHapticActivated = true;
++                triggerStrongHaptic(f4vr::Hand::Right);
++            }
+         } else {
+-            _flashlightHapticCooldown = 0;
++            _flashlightHapticActivated = false;
+             return;
+         }
+ 
+@@ -499,11 +528,11 @@ namespace frik
+         }
+ 
+         if (g_config.flashlightLocation == FlashlightLocation::Head) {
+-            _flashlightHapticCooldown = now + 5000;
++            triggerStrongHaptic(isLeftHandGrab ? f4vr::Hand::Left : f4vr::Hand::Right);
+             g_config.setFlashlightLocation(isLeftHandGrab ? FlashlightLocation::LeftArm : FlashlightLocation::RightArm);
+         } else if ((g_config.flashlightLocation == FlashlightLocation::LeftArm && isLeftHandGrab) ||
+             (g_config.flashlightLocation == FlashlightLocation::RightArm && isRightHandGrab)) {
+-            _flashlightHapticCooldown = now + 5000;
++            triggerStrongHaptic(isLeftHandGrab ? f4vr::Hand::Left : f4vr::Hand::Right);
+             g_config.setFlashlightLocation(FlashlightLocation::Head);
+         }
+     }
+@@ -672,9 +701,6 @@ namespace frik
+             return nullptr;
+         }
+         const auto arm = g_config.leftHandedPipBoy ? _skelly->getRightArm() : _skelly->getLeftArm();
+-        if (g_config.isFalloutLondonVR) {
+-            return arm.hand->IsNode();
+-        }
+         const auto boneNode = arm.forearm3 ? f4vr::findAVObject(arm.forearm3, ""PipboyBone"") : nullptr;
+         return boneNode ? boneNode->IsNode() : arm.forearm3->IsNode();
+     }"
+rollingrock/Fallout-4-VR-Body,127,b89c521bc6a839e078b6b0817bf0f6a09e579dd7,src/pipboy/Pipboy.h,modified,5,4,9,"@@ -32,8 +32,9 @@ namespace frik
+         void hideShowPipboyOnArm() const;
+         static void restoreDefaultPipboyModelIfNeeded();
+         void updateSetupPipboyNodes();
++        void updateSetupAttaboyNodes();
+         void showHideCorrectPipboyMesh(const std::string& itemHide, const std::string& itemShow) const;
+-        void setupPipboyRootNif();
++        void setupPipboyRootNif() const;
+         static void detachReplacedPipboyRootNif();
+ 
+         void checkTurningOnByButton();
+@@ -57,7 +58,7 @@ namespace frik
+         PipboyPhysicalHandler _physicalHandler;
+ 
+         bool _isOpen = false;
+-        uint64_t _lastAttaboyGrabTime = 0;
++        bool _attaboyGrabHapticActivated = 0;
+ 
+         // see exitPowerArmorBugFixHack method
+         bool _exitPowerArmorFixFirstFrame = true;
+@@ -66,8 +67,8 @@ namespace frik
+         uint64_t _startedLookingAtPip = 0;
+         uint64_t _lastLookingAtPip = 0;
+ 
+-        // cooldown to stop flashlight haptic feedback after switch
+-        uint64_t _flashlightHapticCooldown = 0;
++        // to stop continuous flashlight haptic feedback
++        bool _flashlightHapticActivated = false;
+ 
+         // handle dampening of pipboy screen to reduce movement
+         std::deque<RE::NiPoint3> _pipboyScreenPrevFrame;"
+rollingrock/Fallout-4-VR-Body,127,b89c521bc6a839e078b6b0817bf0f6a09e579dd7,src/pipboy/PipboyPhysicalHandler.cpp,modified,5,0,5,"@@ -15,6 +15,11 @@ namespace frik
+      */
+     void PipboyPhysicalHandler::operate(const PipboyPage lastPipboyPage)
+     {
++        if (g_config.isFalloutLondonVR) {
++            // FOLVR is not currently supported
++            return;
++        }
++
+         if (g_config.pipboyHolsterWeaponForOperation) {
+             if (!Pipboy::isPlayerLookingAtPipboy(false)) {
+                 // no physical Pipboy operation if the player is not looking at it when weapon holstering is enabled"
+rollingrock/Fallout-4-VR-Body,127,b89c521bc6a839e078b6b0817bf0f6a09e579dd7,src/skeleton/CullGeometryHandler.cpp,modified,1,1,2,"@@ -100,7 +100,7 @@ namespace frik
+             restoreGeometry();
+         }
+ 
+-        if (g_config.hideEquipment) {
++        if (g_config.hideHeadEquipment) {
+             _isEquipmentCulled = true;
+             for (const auto slot : g_config.hideEquipSlotIndexes()) {
+                 setEquipmentSlotByIndexVisibility(slot, true);"
+rollingrock/Fallout-4-VR-Body,127,b89c521bc6a839e078b6b0817bf0f6a09e579dd7,src/skeleton/Skeleton.cpp,modified,13,15,28,"@@ -57,7 +57,7 @@ namespace frik
+      * the player avatar does. So the camera offset has to be reduced by the same amount as the game changes the height
+      * which is 70% of the normal height.
+      */
+-    float Skeleton::getAdjustedplayerHMDOffset()
++    float Skeleton::getAdjustedPlayerHMDOffset()
+     {
+         auto offset = g_config.getPlayerHMDOffsetUp() + g_frik.getDynamicCameraHeight();
+         if (isComfortSneakMode() && isPlayerSneaking()) {
+@@ -273,14 +273,14 @@ namespace frik
+ 
+     /**
+      * Moves head up and back out of the player view and handle head movement.
+-     * It's still not good enough to prevent seeing hats and stuff but it's a step farward in case
+-     * someone wants to tockle it further.
++     * It's still not good enough to prevent seeing hats and stuff, but it's a step forward in case
++     * someone wants to tackle it further.
+      */
+     void Skeleton::setupHead(const float neckYaw, const float neckPitch) const
+     {
+-        const float headBackAdj = neckPitch > 0 ? 2 * neckPitch : 0;
+-        _head->local.translate -= RE::NiPoint3(2 + headBackAdj, 3 + headBackAdj, 0);
+-        _head->local.rotate = _head->local.rotate * getMatrixFromEulerAngles(neckYaw, 0, degreesToRads(g_config.isPlayingSeated ? 25.0f : 10.0f) + neckPitch);
++        const float headBackAdj = g_frik.getSelfieMode() && g_config.selfieIgnoreHideFlags ? 0 : g_config.headBackPositionOffset + (neckPitch > 0 ? 2 * neckPitch : 0);
++        _head->local.translate -= RE::NiPoint3(headBackAdj, 2 * headBackAdj, 0);
++        _head->local.rotate = _head->local.rotate * getMatrixFromEulerAngles(neckYaw, 0, neckPitch);
+         RE::NiUpdateData* ud = nullptr;
+         _head->UpdateWorldData(ud);
+     }
+@@ -355,10 +355,8 @@ namespace frik
+         constexpr float weight = 0.1f;
+ 
+         const float curHeight = g_config.playerHeight;
+-        const float heightCalc = std::abs((curHeight - _playerNodes->UprightHmdNode->local.translate.z) / curHeight);
+-
++        const float heightCalc = std::abs((curHeight - (_playerNodes->UprightHmdNode->local.translate.z + getAdjustedPlayerHMDOffset())) / curHeight);
+         const float angle = heightCalc * (basePitch + weight * radsToDegrees(neckPitch));
+-
+         return degreesToRads(angle);
+     }
+ 
+@@ -368,7 +366,7 @@ namespace frik
+     void Skeleton::setBodyUnderHMD(const float neckYaw, const float neckPitch)
+     {
+         if (g_config.disableSmoothMovement) {
+-            _playerNodes->playerworldnode->local.translate.z = getAdjustedplayerHMDOffset();
++            _playerNodes->playerworldnode->local.translate.z = getAdjustedPlayerHMDOffset();
+             updateDown(_playerNodes->playerworldnode, true);
+         }
+ 
+@@ -420,15 +418,15 @@ namespace frik
+         const float comfortSneakAdjustZ = isComfortSneakMode() && isPlayerSneaking() ? COMFORT_SNEAK_BODY_OFFSET_ADJUSTMENT : 1.0f;
+ 
+         // small offset to (1) not change player height when looking up/down and (2) move the body back, especially when looking down
+-        const float xOffsetByNeckPitch = isComfortSneakHackEnabled() ? -5.0f : 6.0f * neckPitch * neckPitch * _root->local.scale;
++        const float xOffsetByNeckPitch = fmaxf(0, (isComfortSneakHackEnabled() ? 2.0f : 5.0f) * fabs(neckPitch) * _root->local.scale);
+         const float zOffsetByNeckPitch = 6.0f * neckPitch * _root->local.scale;
+ 
+         const float playerAdjustZ = (4 * g_config.getPlayerBodyOffsetUp() - g_config.getPlayerHMDOffsetUp()) * comfortSneakAdjustZ + zOffsetByNeckPitch;
+         // if people complain about body posture we can add manual adjustment here later
+ 
+         const auto neckPos = getCameraPosition() + RE::NiPoint3(
+-            -_forwardDir.x * (g_config.getPlayerBodyOffsetForward() / 2 + xOffsetByNeckPitch),
+-            -_forwardDir.y * (g_config.getPlayerBodyOffsetForward() / 2 + xOffsetByNeckPitch),
++            -_forwardDir.x * (g_config.getPlayerBodyOffsetForward() / 2 - xOffsetByNeckPitch),
++            -_forwardDir.y * (g_config.getPlayerBodyOffsetForward() / 2 - xOffsetByNeckPitch),
+             -playerAdjustZ);
+ 
+         _torsoLen = vec3Len(neck->world.translate - com->world.translate);
+@@ -444,11 +442,11 @@ namespace frik
+         const RE::NiPoint3 newHipPos = neckPos + hmdToNewHip * (_torsoLen / vec3Len(hmdToNewHip));
+ 
+         const RE::NiPoint3 newPos = com->local.translate + _root->world.rotate * (newHipPos - com->world.translate);
+-        com->local.translate.y += newPos.y + g_config.getPlayerBodyOffsetForward() - xOffsetByNeckPitch;
++        com->local.translate.y += newPos.y + g_config.getPlayerBodyOffsetForward() - 2 * xOffsetByNeckPitch;
+         com->local.translate.z = _inPowerArmor ? newPos.z / 1.7f : newPos.z / 1.5f;
+ 
+         // ???
+-        _root->parent->world.translate.z -= g_config.getPlayerBodyOffsetUp() + getAdjustedplayerHMDOffset();
++        _root->parent->world.translate.z -= g_config.getPlayerBodyOffsetUp() + getAdjustedPlayerHMDOffset();
+ 
+         const RE::NiMatrix3 mat = getMatrixFromRotateVectorVec(neckPos - tmpHipPos, hmdToHip) * spine->parent->world.rotate.Transpose();
+         spine->local.rotate = spine->world.rotate * mat;"
+rollingrock/Fallout-4-VR-Body,127,b89c521bc6a839e078b6b0817bf0f6a09e579dd7,src/skeleton/Skeleton.h,modified,1,1,2,"@@ -45,7 +45,7 @@ namespace frik
+ 
+         RE::NiPoint3 getIndexFingerTipWorldPosition(bool primaryHand);
+ 
+-        static float getAdjustedplayerHMDOffset();
++        static float getAdjustedPlayerHMDOffset();
+ 
+         void onFrameUpdate();
+ "
+rollingrock/Fallout-4-VR-Body,127,b89c521bc6a839e078b6b0817bf0f6a09e579dd7,src/smooth-movement/SmoothMovementVR.cpp,modified,1,1,2,"@@ -63,7 +63,7 @@ namespace frik
+         // logger::sample(""[SmoothMovement] curPos:({:.2f}, {:.2f}, {:.2f}), newPos:({:.2f}, {:.2f}, {:.2f}), appliedPos:({:.2f}, {:.2f}, {:.2f})"",
+         // 	curPos.x, curPos.y, curPos.z, newPos.x, newPos.y, newPos.z, playerLocalTransformPos.x, playerLocalTransformPos.y, playerLocalTransformPos.z);
+ 
+-        playerLocalTransformPos.z += Skeleton::getAdjustedplayerHMDOffset();
++        playerLocalTransformPos.z += Skeleton::getAdjustedPlayerHMDOffset();
+     }
+ 
+     /**"
+rollingrock/Fallout-4-VR-Body,127,b89c521bc6a839e078b6b0817bf0f6a09e579dd7,src/utils.cpp,modified,5,0,5,"@@ -15,6 +15,11 @@ namespace frik
+         F4SEVR::execPapyrusGlobalFunction(""Game"", ""TurnPlayerRadioOn"", isActive);
+     }
+ 
++    void triggerStrongHaptic(const f4vr::Hand hand)
++    {
++        f4vr::VRControllers.triggerHaptic(hand, 0.05f, 0.5f);
++    }
++
+     void triggerShortHaptic(const f4vr::Hand hand)
+     {
+         f4vr::VRControllers.triggerHaptic(hand, 0.001f);"
+rollingrock/Fallout-4-VR-Body,127,b89c521bc6a839e078b6b0817bf0f6a09e579dd7,src/utils.h,modified,1,0,1,"@@ -7,6 +7,7 @@ namespace frik
+ {
+     void turnPlayerRadioOn(bool isActive);
+ 
++    void triggerStrongHaptic(f4vr::Hand hand = f4vr::Hand::Primary);
+     void triggerShortHaptic(f4vr::Hand hand = f4vr::Hand::Primary);
+ 
+     bool isAnyPipboyOpen();"
+rollingrock/Fallout-4-VR-Body,127,b89c521bc6a839e078b6b0817bf0f6a09e579dd7,src/version.h,removed,0,13,13,"@@ -1,13 +0,0 @@
+-#ifndef	FRIK_VERSION_INCLUDED
+-#define FRIK_VERSION_INCLUDED
+-
+-#define MAKE_STR_HELPER(a_str) #a_str
+-#define MAKE_STR(a_str) MAKE_STR_HELPER(a_str)
+-
+-#define FRIK_VERSION_MAJOR	0
+-#define FRIK_VERSION_MINOR	74
+-#define FRIK_VERSION_PATCH	0
+-#define FRIK_VERSION_BETA	3
+-#define FRIK_VERSION_VERSTRING	MAKE_STR(FRIK_VERSION_MAJOR) ""."" MAKE_STR(FRIK_VERSION_MINOR) ""."" MAKE_STR(FRIK_VERSION_PATCH) ""."" MAKE_STR(FRIK_VERSION_BETA)
+-
+-#endif"

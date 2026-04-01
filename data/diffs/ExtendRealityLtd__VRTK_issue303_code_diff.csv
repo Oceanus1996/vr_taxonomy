@@ -1,0 +1,1233 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+ExtendRealityLtd/VRTK,303,061d7ab,Assets/SteamVR_Unity_Toolkit/Scripts/VRTK_InteractTouch.cs,modified,11,11,22,"@@ -8,7 +8,6 @@
+ namespace VRTK
+ {
+     using UnityEngine;
+-    using System.Collections;
+ 
+     public struct ObjectInteractEventArgs
+     {
+@@ -109,8 +108,8 @@ private void Start()
+                 return;
+             }
+ 
+-            Utilities.SetPlayerObject(this.gameObject, VRTK_PlayerObject.ObjectTypes.Controller);
+-            CreateTouchCollider(this.gameObject);
++            Utilities.SetPlayerObject(gameObject, VRTK_PlayerObject.ObjectTypes.Controller);
++            CreateTouchCollider(gameObject);
+             CreateControllerRigidBody();
+             triggerRumble = false;
+         }
+@@ -153,15 +152,15 @@ private void OnTriggerStay(Collider collider)
+ 
+                 var touchedObjectScript = touchedObject.GetComponent<VRTK_InteractableObject>();
+ 
+-                if (!touchedObjectScript.IsValidInteractableController(this.gameObject, touchedObjectScript.allowedTouchControllers))
++                if (!touchedObjectScript.IsValidInteractableController(gameObject, touchedObjectScript.allowedTouchControllers))
+                 {
+                     touchedObject = null;
+                     return;
+                 }
+ 
+                 OnControllerTouchInteractableObject(SetControllerInteractEvent(touchedObject));
+                 touchedObjectScript.ToggleHighlight(true, globalTouchHighlightColor);
+-                touchedObjectScript.StartTouching(this.gameObject);
++                touchedObjectScript.StartTouching(gameObject);
+ 
+                 if (controllerActions.IsControllerVisible() && hideControllerOnTouch)
+                 {
+@@ -216,7 +215,7 @@ private void StopTouching(GameObject obj)
+ 
+                 OnControllerUntouchInteractableObject(SetControllerInteractEvent(untouched.gameObject));
+                 untouched.GetComponent<VRTK_InteractableObject>().ToggleHighlight(false);
+-                untouched.GetComponent<VRTK_InteractableObject>().StopTouching(this.gameObject);
++                untouched.GetComponent<VRTK_InteractableObject>().StopTouching(gameObject);
+             }
+ 
+             if (hideControllerOnTouch)
+@@ -228,8 +227,8 @@ private void StopTouching(GameObject obj)
+ 
+         private void CreateTouchCollider(GameObject obj)
+         {
+-            var collider = this.GetComponent<Collider>();
+-            if(collider == null)
++            var collider = GetComponent<Collider>();
++            if (collider == null)
+             {
+                 var genCollider = obj.AddComponent<SphereCollider>();
+                 genCollider.radius = 0.06f;
+@@ -259,7 +258,8 @@ private void CreateControllerRigidBody()
+             if (customRigidbodyObject != null)
+             {
+                 controllerRigidBodyObject = customRigidbodyObject;
+-            } else
++            }
++            else
+             {
+                 controllerRigidBodyObject = new GameObject();
+                 CreateBoxCollider(controllerRigidBodyObject, new Vector3(0f, -0.01f, -0.098f), new Vector3(0.04f, 0.025f, 0.15f));
+@@ -276,8 +276,8 @@ private void CreateControllerRigidBody()
+ 
+             var controllerRB = controllerRigidBodyObject.GetComponent<Rigidbody>();
+ 
+-            controllerRigidBodyObject.name = string.Format(""[{0}]_RigidBody_Holder"", this.gameObject.name);
+-            controllerRigidBodyObject.transform.parent = this.transform;
++            controllerRigidBodyObject.name = string.Format(""[{0}]_RigidBody_Holder"", gameObject.name);
++            controllerRigidBodyObject.transform.parent = transform;
+             controllerRigidBodyObject.transform.localPosition = Vector3.zero;
+ 
+             controllerRB.useGravity = false;"
+ExtendRealityLtd/VRTK,303,061d7ab,Assets/SteamVR_Unity_Toolkit/Scripts/VRTK_InteractableObject.cs,modified,26,27,53,"@@ -11,10 +11,8 @@
+ namespace VRTK
+ {
+     using UnityEngine;
+-    using System.Collections;
+     using System.Collections.Generic;
+ 
+-
+     public struct InteractableObjectEventArgs
+     {
+         public GameObject interactingObject;
+@@ -241,11 +239,11 @@ public void PauseCollisions()
+         {
+             if (onGrabCollisionDelay > 0f)
+             {
+-                if (this.GetComponent<Rigidbody>())
++                if (GetComponent<Rigidbody>())
+                 {
+-                    this.GetComponent<Rigidbody>().detectCollisions = false;
++                    GetComponent<Rigidbody>().detectCollisions = false;
+                 }
+-                foreach (Rigidbody rb in this.GetComponentsInChildren<Rigidbody>())
++                foreach (Rigidbody rb in GetComponentsInChildren<Rigidbody>())
+                 {
+                     rb.detectCollisions = false;
+                 }
+@@ -260,18 +258,18 @@ public bool AttachIsTrackObject()
+ 
+         public void ZeroVelocity()
+         {
+-            if (this.GetComponent<Rigidbody>())
++            if (GetComponent<Rigidbody>())
+             {
+-                this.GetComponent<Rigidbody>().velocity = Vector3.zero;
+-                this.GetComponent<Rigidbody>().angularVelocity = Vector3.zero;
++                GetComponent<Rigidbody>().velocity = Vector3.zero;
++                GetComponent<Rigidbody>().angularVelocity = Vector3.zero;
+             }
+         }
+ 
+         public void SaveCurrentState()
+         {
+             if (grabbingObject == null)
+             {
+-                previousParent = this.transform.parent;
++                previousParent = transform.parent;
+                 previousKinematicState = rb.isKinematic;
+             }
+         }
+@@ -324,15 +322,15 @@ public void SetGrabbedSnapHandle(Transform handle)
+ 
+         public void RegisterTeleporters()
+         {
+-            foreach (var teleporter in GameObject.FindObjectsOfType<VRTK_BasicTeleport>())
++            foreach (var teleporter in FindObjectsOfType<VRTK_BasicTeleport>())
+             {
+                 teleporter.Teleported += new TeleportEventHandler(OnTeleported);
+             }
+         }
+ 
+         protected virtual void Awake()
+         {
+-            rb = this.GetComponent<Rigidbody>();
++            rb = GetComponent<Rigidbody>();
+ 
+             // If there is no rigid body, add one and set it to 'kinematic'.
+             if (!rb)
+@@ -351,7 +349,7 @@ protected virtual void Start()
+ 
+         protected virtual void Update()
+         {
+-            if (!this.gameObject.activeInHierarchy)
++            if (!gameObject.activeInHierarchy)
+             {
+                 ForceStopInteracting();
+             }
+@@ -390,9 +388,9 @@ protected virtual void OnJointBreak(float force)
+ 
+         protected virtual void LoadPreviousState()
+         {
+-            if (this.gameObject.activeInHierarchy)
++            if (gameObject.activeInHierarchy)
+             {
+-                this.transform.parent = previousParent;
++                transform.parent = previousParent;
+             }
+             rb.isKinematic = previousKinematicState;
+             if (!isSwappable)
+@@ -411,11 +409,11 @@ private void ForceReleaseGrab()
+ 
+         private void UnpauseCollisions()
+         {
+-            if (this.GetComponent<Rigidbody>())
++            if (GetComponent<Rigidbody>())
+             {
+-                this.GetComponent<Rigidbody>().detectCollisions = true;
++                GetComponent<Rigidbody>().detectCollisions = true;
+             }
+-            foreach (Rigidbody rb in this.GetComponentsInChildren<Rigidbody>())
++            foreach (Rigidbody rb in GetComponentsInChildren<Rigidbody>())
+             {
+                 rb.detectCollisions = true;
+             }
+@@ -467,7 +465,7 @@ private void CheckBreakDistance()
+         {
+             if (trackPoint)
+             {
+-                float distance = Vector3.Distance(trackPoint.position, this.transform.position);
++                float distance = Vector3.Distance(trackPoint.position, transform.position);
+                 if (distance > (detachThreshold / 1000))
+                 {
+                     ForceReleaseGrab();
+@@ -487,14 +485,15 @@ private void SetTrackPoint(GameObject point)
+ 
+             if (AttachIsTrackObject() && precisionSnap)
+             {
+-                trackPoint = new GameObject(string.Format(""[{0}]TrackObject_PrecisionSnap_AttachPoint"", this.gameObject.name)).transform;
++                trackPoint = new GameObject(string.Format(""[{0}]TrackObject_PrecisionSnap_AttachPoint"", gameObject.name)).transform;
+                 trackPoint.parent = point.transform;
+                 customTrackPoint = true;
+-                if(grabAttachMechanic == GrabAttachType.Track_Object)
++                if (grabAttachMechanic == GrabAttachType.Track_Object)
+                 {
+-                    trackPoint.position = this.transform.position;
+-                    trackPoint.rotation = this.transform.rotation;
+-                } else
++                    trackPoint.position = transform.position;
++                    trackPoint.rotation = transform.rotation;
++                }
++                else
+                 {
+                     trackPoint.position = controllerPoint.position;
+                     trackPoint.rotation = controllerPoint.rotation;
+@@ -507,7 +506,7 @@ private void SetTrackPoint(GameObject point)
+             }
+ 
+             originalControllerAttachPoint = new GameObject(string.Format(""[{0}]Original_Controller_AttachPoint"", grabbingObject.name)).transform;
+-            originalControllerAttachPoint.parent = this.transform;
++            originalControllerAttachPoint.parent = transform;
+             originalControllerAttachPoint.position = trackPoint.position;
+             originalControllerAttachPoint.rotation = trackPoint.rotation;
+         }
+@@ -551,8 +550,8 @@ private void FixedUpdateTrackObject()
+             }
+             else
+             {
+-                rotationDelta = trackPoint.rotation * Quaternion.Inverse(this.transform.rotation);
+-                positionDelta = trackPoint.position - this.transform.position;
++                rotationDelta = trackPoint.rotation * Quaternion.Inverse(transform.rotation);
++                positionDelta = trackPoint.position - transform.position;
+             }
+ 
+             rotationDelta.ToAngleAxis(out angle, out axis);
+@@ -573,7 +572,7 @@ private void OnTeleported(object sender, DestinationMarkerEventArgs e)
+         {
+             if (AttachIsTrackObject() && trackPoint)
+             {
+-                this.transform.position = grabbingObject.transform.position;
++                transform.position = grabbingObject.transform.position;
+             }
+         }
+     }"
+ExtendRealityLtd/VRTK,303,3715d98,Assets/SteamVR_Unity_Toolkit/Examples/025_Controls_Overview.unity,modified,147,154,301,"@@ -722,134 +722,6 @@ MeshFilter:
+   m_PrefabInternal: {fileID: 0}
+   m_GameObject: {fileID: 53679394}
+   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+---- !u!43 &57424189
+-Mesh:
+-  m_ObjectHideFlags: 0
+-  m_PrefabParentObject: {fileID: 0}
+-  m_PrefabInternal: {fileID: 0}
+-  m_Name: 
+-  serializedVersion: 8
+-  m_SubMeshes:
+-  - serializedVersion: 2
+-    firstByte: 0
+-    indexCount: 24
+-    topology: 0
+-    firstVertex: 0
+-    vertexCount: 8
+-    localAABB:
+-      m_Center: {x: 0, y: 0.01, z: 0}
+-      m_Extent: {x: 1.65, y: 0, z: 0.9000001}
+-  m_Shapes:
+-    vertices: []
+-    shapes: []
+-    channels: []
+-    fullWeights: []
+-  m_BindPose: []
+-  m_BoneNameHashes: 
+-  m_RootBoneNameHash: 0
+-  m_MeshCompression: 0
+-  m_IsReadable: 1
+-  m_KeepVertices: 1
+-  m_KeepIndices: 1
+-  m_IndexBuffer: 000001000400010005000400010002000500020006000500020003000600030007000600030000000700000004000700
+-  m_Skin: []
+-  m_VertexData:
+-    m_CurrentChannels: 13
+-    m_VertexCount: 8
+-    m_Channels:
+-    - stream: 0
+-      offset: 0
+-      format: 0
+-      dimension: 3
+-    - stream: 0
+-      offset: 0
+-      format: 0
+-      dimension: 0
+-    - stream: 0
+-      offset: 12
+-      format: 0
+-      dimension: 4
+-    - stream: 0
+-      offset: 28
+-      format: 0
+-      dimension: 2
+-    - stream: 0
+-      offset: 0
+-      format: 0
+-      dimension: 0
+-    - stream: 0
+-      offset: 0
+-      format: 0
+-      dimension: 0
+-    - stream: 0
+-      offset: 0
+-      format: 0
+-      dimension: 0
+-    - stream: 0
+-      offset: 0
+-      format: 0
+-      dimension: 0
+-    m_DataSize: 288
+-    _typelessdata: 0000c03f0ad7233c010040bf000000000000803f0000803f0000803f00000000000000000000c0bf0ad7233c010040bf000000000000803f0000803f0000803f0000803f000000000000c0bf0ad7233c0100403f000000000000803f0000803f0000803f00000000000000000000c03f0ad7233c0100403f000000000000803f0000803f0000803f0000803f000000003333d33f0ad7233c686666bf000000000000803f0000803f00000000000000000000803f3333d3bf0ad7233c686666bf000000000000803f0000803f000000000000803f0000803f3333d3bf0ad7233c6866663f000000000000803f0000803f00000000000000000000803f3333d33f0ad7233c6866663f000000000000803f0000803f000000000000803f0000803f
+-  m_CompressedMesh:
+-    m_Vertices:
+-      m_NumItems: 0
+-      m_Range: 0
+-      m_Start: 0
+-      m_Data: 
+-      m_BitSize: 0
+-    m_UV:
+-      m_NumItems: 0
+-      m_Range: 0
+-      m_Start: 0
+-      m_Data: 
+-      m_BitSize: 0
+-    m_Normals:
+-      m_NumItems: 0
+-      m_Range: 0
+-      m_Start: 0
+-      m_Data: 
+-      m_BitSize: 0
+-    m_Tangents:
+-      m_NumItems: 0
+-      m_Range: 0
+-      m_Start: 0
+-      m_Data: 
+-      m_BitSize: 0
+-    m_Weights:
+-      m_NumItems: 0
+-      m_Data: 
+-      m_BitSize: 0
+-    m_NormalSigns:
+-      m_NumItems: 0
+-      m_Data: 
+-      m_BitSize: 0
+-    m_TangentSigns:
+-      m_NumItems: 0
+-      m_Data: 
+-      m_BitSize: 0
+-    m_FloatColors:
+-      m_NumItems: 0
+-      m_Range: 0
+-      m_Start: 0
+-      m_Data: 
+-      m_BitSize: 0
+-    m_BoneIndices:
+-      m_NumItems: 0
+-      m_Data: 
+-      m_BitSize: 0
+-    m_Triangles:
+-      m_NumItems: 0
+-      m_Data: 
+-      m_BitSize: 0
+-    m_UVInfo: 0
+-  m_LocalAABB:
+-    m_Center: {x: 0, y: 0.01, z: 0}
+-    m_Extent: {x: 1.65, y: 0, z: 0.9000001}
+-  m_MeshUsageFlags: 0
+-  m_BakedConvexCollisionMesh: 
+-  m_BakedTriangleCollisionMesh: 
+-  m_MeshOptimized: 0
+ --- !u!1 &62692870
+ GameObject:
+   m_ObjectHideFlags: 0
+@@ -6219,6 +6091,134 @@ MeshFilter:
+   m_PrefabInternal: {fileID: 0}
+   m_GameObject: {fileID: 583920396}
+   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
++--- !u!43 &586866541
++Mesh:
++  m_ObjectHideFlags: 0
++  m_PrefabParentObject: {fileID: 0}
++  m_PrefabInternal: {fileID: 0}
++  m_Name: 
++  serializedVersion: 8
++  m_SubMeshes:
++  - serializedVersion: 2
++    firstByte: 0
++    indexCount: 24
++    topology: 0
++    firstVertex: 0
++    vertexCount: 8
++    localAABB:
++      m_Center: {x: 0, y: 0.01, z: 0}
++      m_Extent: {x: 1.65, y: 0, z: 0.9000001}
++  m_Shapes:
++    vertices: []
++    shapes: []
++    channels: []
++    fullWeights: []
++  m_BindPose: []
++  m_BoneNameHashes: 
++  m_RootBoneNameHash: 0
++  m_MeshCompression: 0
++  m_IsReadable: 1
++  m_KeepVertices: 1
++  m_KeepIndices: 1
++  m_IndexBuffer: 000001000400010005000400010002000500020006000500020003000600030007000600030000000700000004000700
++  m_Skin: []
++  m_VertexData:
++    m_CurrentChannels: 13
++    m_VertexCount: 8
++    m_Channels:
++    - stream: 0
++      offset: 0
++      format: 0
++      dimension: 3
++    - stream: 0
++      offset: 0
++      format: 0
++      dimension: 0
++    - stream: 0
++      offset: 12
++      format: 0
++      dimension: 4
++    - stream: 0
++      offset: 28
++      format: 0
++      dimension: 2
++    - stream: 0
++      offset: 0
++      format: 0
++      dimension: 0
++    - stream: 0
++      offset: 0
++      format: 0
++      dimension: 0
++    - stream: 0
++      offset: 0
++      format: 0
++      dimension: 0
++    - stream: 0
++      offset: 0
++      format: 0
++      dimension: 0
++    m_DataSize: 288
++    _typelessdata: 0000c03f0ad7233c010040bf000000000000803f0000803f0000803f00000000000000000000c0bf0ad7233c010040bf000000000000803f0000803f0000803f0000803f000000000000c0bf0ad7233c0100403f000000000000803f0000803f0000803f00000000000000000000c03f0ad7233c0100403f000000000000803f0000803f0000803f0000803f000000003333d33f0ad7233c686666bf000000000000803f0000803f00000000000000000000803f3333d3bf0ad7233c686666bf000000000000803f0000803f000000000000803f0000803f3333d3bf0ad7233c6866663f000000000000803f0000803f00000000000000000000803f3333d33f0ad7233c6866663f000000000000803f0000803f000000000000803f0000803f
++  m_CompressedMesh:
++    m_Vertices:
++      m_NumItems: 0
++      m_Range: 0
++      m_Start: 0
++      m_Data: 
++      m_BitSize: 0
++    m_UV:
++      m_NumItems: 0
++      m_Range: 0
++      m_Start: 0
++      m_Data: 
++      m_BitSize: 0
++    m_Normals:
++      m_NumItems: 0
++      m_Range: 0
++      m_Start: 0
++      m_Data: 
++      m_BitSize: 0
++    m_Tangents:
++      m_NumItems: 0
++      m_Range: 0
++      m_Start: 0
++      m_Data: 
++      m_BitSize: 0
++    m_Weights:
++      m_NumItems: 0
++      m_Data: 
++      m_BitSize: 0
++    m_NormalSigns:
++      m_NumItems: 0
++      m_Data: 
++      m_BitSize: 0
++    m_TangentSigns:
++      m_NumItems: 0
++      m_Data: 
++      m_BitSize: 0
++    m_FloatColors:
++      m_NumItems: 0
++      m_Range: 0
++      m_Start: 0
++      m_Data: 
++      m_BitSize: 0
++    m_BoneIndices:
++      m_NumItems: 0
++      m_Data: 
++      m_BitSize: 0
++    m_Triangles:
++      m_NumItems: 0
++      m_Data: 
++      m_BitSize: 0
++    m_UVInfo: 0
++  m_LocalAABB:
++    m_Center: {x: 0, y: 0.01, z: 0}
++    m_Extent: {x: 1.65, y: 0, z: 0.9000001}
++  m_MeshUsageFlags: 0
++  m_BakedConvexCollisionMesh: 
++  m_BakedTriangleCollisionMesh: 
++  m_MeshOptimized: 0
+ --- !u!1 &587904031
+ GameObject:
+   m_ObjectHideFlags: 0
+@@ -7101,7 +7101,7 @@ Transform:
+   - {fileID: 958773292}
+   - {fileID: 2010280298}
+   m_Father: {fileID: 0}
+-  m_RootOrder: 8
++  m_RootOrder: 7
+ --- !u!1 &692367762
+ GameObject:
+   m_ObjectHideFlags: 0
+@@ -8349,7 +8349,7 @@ Transform:
+   - {fileID: 496930647}
+   - {fileID: 340763020}
+   m_Father: {fileID: 0}
+-  m_RootOrder: 5
++  m_RootOrder: 4
+ --- !u!23 &790567673
+ MeshRenderer:
+   m_ObjectHideFlags: 0
+@@ -9503,7 +9503,7 @@ Transform:
+   - {fileID: 2085581304}
+   - {fileID: 742620897}
+   m_Father: {fileID: 0}
+-  m_RootOrder: 3
++  m_RootOrder: 2
+ --- !u!23 &910524193
+ MeshRenderer:
+   m_ObjectHideFlags: 0
+@@ -11302,7 +11302,7 @@ Transform:
+   - {fileID: 1312091870}
+   - {fileID: 1635313614}
+   m_Father: {fileID: 0}
+-  m_RootOrder: 4
++  m_RootOrder: 3
+ --- !u!23 &1078933208
+ MeshRenderer:
+   m_ObjectHideFlags: 0
+@@ -11763,7 +11763,7 @@ Transform:
+   m_LocalEulerAnglesHint: {x: 90, y: -8.248899, z: 0}
+   m_Children: []
+   m_Father: {fileID: 0}
+-  m_RootOrder: 10
++  m_RootOrder: 9
+ --- !u!1 &1116909568
+ GameObject:
+   m_ObjectHideFlags: 0
+@@ -11981,7 +11981,7 @@ Transform:
+   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+   m_Children: []
+   m_Father: {fileID: 0}
+-  m_RootOrder: 2
++  m_RootOrder: 1
+ --- !u!1 &1137648862
+ GameObject:
+   m_ObjectHideFlags: 0
+@@ -15451,7 +15451,6 @@ GameObject:
+   serializedVersion: 4
+   m_Component:
+   - 4: {fileID: 1432281522}
+-  - 65: {fileID: 1432281525}
+   - 114: {fileID: 1432281524}
+   - 114: {fileID: 1432281523}
+   m_Layer: 0
+@@ -15503,18 +15502,6 @@ MonoBehaviour:
+   body: {fileID: 1358027778}
+   handle: {fileID: 1783395876}
+   content: {fileID: 814376658}
+---- !u!65 &1432281525
+-BoxCollider:
+-  m_ObjectHideFlags: 0
+-  m_PrefabParentObject: {fileID: 0}
+-  m_PrefabInternal: {fileID: 0}
+-  m_GameObject: {fileID: 1432281521}
+-  m_Material: {fileID: 0}
+-  m_IsTrigger: 0
+-  m_Enabled: 1
+-  serializedVersion: 2
+-  m_Size: {x: 0.43, y: 0.1, z: 0.01}
+-  m_Center: {x: 0, y: 0.05, z: 0.256}
+ --- !u!1 &1443960171
+ GameObject:
+   m_ObjectHideFlags: 0
+@@ -16995,7 +16982,7 @@ Transform:
+   - {fileID: 582109181}
+   - {fileID: 2121046203}
+   m_Father: {fileID: 0}
+-  m_RootOrder: 9
++  m_RootOrder: 8
+ --- !u!114 &1574929629
+ MonoBehaviour:
+   m_ObjectHideFlags: 0
+@@ -17147,7 +17134,7 @@ Transform:
+   - {fileID: 1708795207}
+   - {fileID: 1853485434}
+   m_Father: {fileID: 0}
+-  m_RootOrder: 11
++  m_RootOrder: 10
+ --- !u!1 &1582305995
+ GameObject:
+   m_ObjectHideFlags: 0
+@@ -17445,7 +17432,7 @@ Transform:
+   - {fileID: 1550059860}
+   - {fileID: 1981799401}
+   m_Father: {fileID: 0}
+-  m_RootOrder: 6
++  m_RootOrder: 5
+ --- !u!1 &1610546886
+ GameObject:
+   m_ObjectHideFlags: 0
+@@ -19030,7 +19017,7 @@ Transform:
+   m_PrefabParentObject: {fileID: 0}
+   m_PrefabInternal: {fileID: 0}
+   m_GameObject: {fileID: 1783395876}
+-  m_LocalRotation: {x: 0, y: -0.70710665, z: 0, w: 0.7071069}
++  m_LocalRotation: {x: 0, y: -0.7071066, z: 0, w: 0.70710695}
+   m_LocalPosition: {x: 0.231, y: 0.05000007, z: 0.024}
+   m_LocalScale: {x: 0.08, y: 0.02, z: 0.07770768}
+   m_LocalEulerAnglesHint: {x: 0, y: -90, z: 0}
+@@ -21355,7 +21342,7 @@ Transform:
+   - {fileID: 1684800802}
+   - {fileID: 946840144}
+   m_Father: {fileID: 0}
+-  m_RootOrder: 7
++  m_RootOrder: 6
+ --- !u!1001 &2032240552
+ Prefab:
+   m_ObjectHideFlags: 0
+@@ -21398,7 +21385,7 @@ Prefab:
+     - target: {fileID: 3380982, guid: 4d293c8e162f3874b982baadd71153d2, type: 2}
+       propertyPath: m_Mesh
+       value: 
+-      objectReference: {fileID: 57424189}
++      objectReference: {fileID: 586866541}
+     - target: {fileID: 11489174, guid: 4d293c8e162f3874b982baadd71153d2, type: 2}
+       propertyPath: drawInGame
+       value: 1
+@@ -21537,8 +21524,10 @@ MonoBehaviour:
+   m_Name: 
+   m_EditorClassIdentifier: 
+   pointerToggleButton: 3
++  pointerSetButton: 3
+   grabToggleButton: 1
+   useToggleButton: 0
++  uiClickButton: 0
+   menuToggleButton: 4
+   axisFidelity: 1
+   triggerPressed: 0
+@@ -21551,6 +21540,7 @@ MonoBehaviour:
+   pointerPressed: 0
+   grabPressed: 0
+   usePressed: 0
++  uiClickPressed: 0
+   menuPressed: 0
+ --- !u!114 &2032240559
+ MonoBehaviour:
+@@ -21607,8 +21597,10 @@ MonoBehaviour:
+   m_Name: 
+   m_EditorClassIdentifier: 
+   pointerToggleButton: 3
++  pointerSetButton: 3
+   grabToggleButton: 1
+   useToggleButton: 0
++  uiClickButton: 0
+   menuToggleButton: 4
+   axisFidelity: 1
+   triggerPressed: 0
+@@ -21621,6 +21613,7 @@ MonoBehaviour:
+   pointerPressed: 0
+   grabPressed: 0
+   usePressed: 0
++  uiClickPressed: 0
+   menuPressed: 0
+ --- !u!1 &2033147761
+ GameObject:
+@@ -22440,7 +22433,7 @@ Transform:
+   m_LocalEulerAnglesHint: {x: 50, y: -30, z: 0}
+   m_Children: []
+   m_Father: {fileID: 0}
+-  m_RootOrder: 1
++  m_RootOrder: 0
+ --- !u!1 &2126050046
+ GameObject:
+   m_ObjectHideFlags: 0"
+ExtendRealityLtd/VRTK,303,3715d98,Assets/SteamVR_Unity_Toolkit/Scripts/VRTK_InteractTouch.cs,modified,20,3,23,"@@ -76,7 +76,23 @@ public GameObject GetTouchedObject()
+ 
+         public bool IsObjectInteractable(GameObject obj)
+         {
+-            return (obj && (obj.GetComponent<VRTK_InteractableObject>() || obj.GetComponentInParent<VRTK_InteractableObject>()));
++            if (obj)
++            {
++                VRTK_InteractableObject io = obj.GetComponent<VRTK_InteractableObject>();
++                if (io)
++                {
++                    return io.enabled;
++                }
++                else
++                {
++                    io = obj.GetComponentInParent<VRTK_InteractableObject>();
++                    if (io)
++                    {
++                        return io.enabled;
++                    }
++                }
++            }
++            return false;
+         }
+ 
+         public void ToggleControllerRigidBody(bool state)
+@@ -229,7 +245,7 @@ private void StopTouching(GameObject obj)
+         private void CreateTouchCollider(GameObject obj)
+         {
+             var collider = this.GetComponent<Collider>();
+-            if(collider == null)
++            if (collider == null)
+             {
+                 var genCollider = obj.AddComponent<SphereCollider>();
+                 genCollider.radius = 0.06f;
+@@ -259,7 +275,8 @@ private void CreateControllerRigidBody()
+             if (customRigidbodyObject != null)
+             {
+                 controllerRigidBodyObject = customRigidbodyObject;
+-            } else
++            }
++            else
+             {
+                 controllerRigidBodyObject = new GameObject();
+                 CreateBoxCollider(controllerRigidBodyObject, new Vector3(0f, -0.01f, -0.098f), new Vector3(0.04f, 0.025f, 0.15f));"
+ExtendRealityLtd/VRTK,303,7341dc7,Assets/SteamVR_Unity_Toolkit/Examples/025_Controls_Overview.unity,modified,147,154,301,"@@ -722,134 +722,6 @@ MeshFilter:
+   m_PrefabInternal: {fileID: 0}
+   m_GameObject: {fileID: 53679394}
+   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+---- !u!43 &57424189
+-Mesh:
+-  m_ObjectHideFlags: 0
+-  m_PrefabParentObject: {fileID: 0}
+-  m_PrefabInternal: {fileID: 0}
+-  m_Name: 
+-  serializedVersion: 8
+-  m_SubMeshes:
+-  - serializedVersion: 2
+-    firstByte: 0
+-    indexCount: 24
+-    topology: 0
+-    firstVertex: 0
+-    vertexCount: 8
+-    localAABB:
+-      m_Center: {x: 0, y: 0.01, z: 0}
+-      m_Extent: {x: 1.65, y: 0, z: 0.9000001}
+-  m_Shapes:
+-    vertices: []
+-    shapes: []
+-    channels: []
+-    fullWeights: []
+-  m_BindPose: []
+-  m_BoneNameHashes: 
+-  m_RootBoneNameHash: 0
+-  m_MeshCompression: 0
+-  m_IsReadable: 1
+-  m_KeepVertices: 1
+-  m_KeepIndices: 1
+-  m_IndexBuffer: 000001000400010005000400010002000500020006000500020003000600030007000600030000000700000004000700
+-  m_Skin: []
+-  m_VertexData:
+-    m_CurrentChannels: 13
+-    m_VertexCount: 8
+-    m_Channels:
+-    - stream: 0
+-      offset: 0
+-      format: 0
+-      dimension: 3
+-    - stream: 0
+-      offset: 0
+-      format: 0
+-      dimension: 0
+-    - stream: 0
+-      offset: 12
+-      format: 0
+-      dimension: 4
+-    - stream: 0
+-      offset: 28
+-      format: 0
+-      dimension: 2
+-    - stream: 0
+-      offset: 0
+-      format: 0
+-      dimension: 0
+-    - stream: 0
+-      offset: 0
+-      format: 0
+-      dimension: 0
+-    - stream: 0
+-      offset: 0
+-      format: 0
+-      dimension: 0
+-    - stream: 0
+-      offset: 0
+-      format: 0
+-      dimension: 0
+-    m_DataSize: 288
+-    _typelessdata: 0000c03f0ad7233c010040bf000000000000803f0000803f0000803f00000000000000000000c0bf0ad7233c010040bf000000000000803f0000803f0000803f0000803f000000000000c0bf0ad7233c0100403f000000000000803f0000803f0000803f00000000000000000000c03f0ad7233c0100403f000000000000803f0000803f0000803f0000803f000000003333d33f0ad7233c686666bf000000000000803f0000803f00000000000000000000803f3333d3bf0ad7233c686666bf000000000000803f0000803f000000000000803f0000803f3333d3bf0ad7233c6866663f000000000000803f0000803f00000000000000000000803f3333d33f0ad7233c6866663f000000000000803f0000803f000000000000803f0000803f
+-  m_CompressedMesh:
+-    m_Vertices:
+-      m_NumItems: 0
+-      m_Range: 0
+-      m_Start: 0
+-      m_Data: 
+-      m_BitSize: 0
+-    m_UV:
+-      m_NumItems: 0
+-      m_Range: 0
+-      m_Start: 0
+-      m_Data: 
+-      m_BitSize: 0
+-    m_Normals:
+-      m_NumItems: 0
+-      m_Range: 0
+-      m_Start: 0
+-      m_Data: 
+-      m_BitSize: 0
+-    m_Tangents:
+-      m_NumItems: 0
+-      m_Range: 0
+-      m_Start: 0
+-      m_Data: 
+-      m_BitSize: 0
+-    m_Weights:
+-      m_NumItems: 0
+-      m_Data: 
+-      m_BitSize: 0
+-    m_NormalSigns:
+-      m_NumItems: 0
+-      m_Data: 
+-      m_BitSize: 0
+-    m_TangentSigns:
+-      m_NumItems: 0
+-      m_Data: 
+-      m_BitSize: 0
+-    m_FloatColors:
+-      m_NumItems: 0
+-      m_Range: 0
+-      m_Start: 0
+-      m_Data: 
+-      m_BitSize: 0
+-    m_BoneIndices:
+-      m_NumItems: 0
+-      m_Data: 
+-      m_BitSize: 0
+-    m_Triangles:
+-      m_NumItems: 0
+-      m_Data: 
+-      m_BitSize: 0
+-    m_UVInfo: 0
+-  m_LocalAABB:
+-    m_Center: {x: 0, y: 0.01, z: 0}
+-    m_Extent: {x: 1.65, y: 0, z: 0.9000001}
+-  m_MeshUsageFlags: 0
+-  m_BakedConvexCollisionMesh: 
+-  m_BakedTriangleCollisionMesh: 
+-  m_MeshOptimized: 0
+ --- !u!1 &62692870
+ GameObject:
+   m_ObjectHideFlags: 0
+@@ -6219,6 +6091,134 @@ MeshFilter:
+   m_PrefabInternal: {fileID: 0}
+   m_GameObject: {fileID: 583920396}
+   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
++--- !u!43 &586866541
++Mesh:
++  m_ObjectHideFlags: 0
++  m_PrefabParentObject: {fileID: 0}
++  m_PrefabInternal: {fileID: 0}
++  m_Name: 
++  serializedVersion: 8
++  m_SubMeshes:
++  - serializedVersion: 2
++    firstByte: 0
++    indexCount: 24
++    topology: 0
++    firstVertex: 0
++    vertexCount: 8
++    localAABB:
++      m_Center: {x: 0, y: 0.01, z: 0}
++      m_Extent: {x: 1.65, y: 0, z: 0.9000001}
++  m_Shapes:
++    vertices: []
++    shapes: []
++    channels: []
++    fullWeights: []
++  m_BindPose: []
++  m_BoneNameHashes: 
++  m_RootBoneNameHash: 0
++  m_MeshCompression: 0
++  m_IsReadable: 1
++  m_KeepVertices: 1
++  m_KeepIndices: 1
++  m_IndexBuffer: 000001000400010005000400010002000500020006000500020003000600030007000600030000000700000004000700
++  m_Skin: []
++  m_VertexData:
++    m_CurrentChannels: 13
++    m_VertexCount: 8
++    m_Channels:
++    - stream: 0
++      offset: 0
++      format: 0
++      dimension: 3
++    - stream: 0
++      offset: 0
++      format: 0
++      dimension: 0
++    - stream: 0
++      offset: 12
++      format: 0
++      dimension: 4
++    - stream: 0
++      offset: 28
++      format: 0
++      dimension: 2
++    - stream: 0
++      offset: 0
++      format: 0
++      dimension: 0
++    - stream: 0
++      offset: 0
++      format: 0
++      dimension: 0
++    - stream: 0
++      offset: 0
++      format: 0
++      dimension: 0
++    - stream: 0
++      offset: 0
++      format: 0
++      dimension: 0
++    m_DataSize: 288
++    _typelessdata: 0000c03f0ad7233c010040bf000000000000803f0000803f0000803f00000000000000000000c0bf0ad7233c010040bf000000000000803f0000803f0000803f0000803f000000000000c0bf0ad7233c0100403f000000000000803f0000803f0000803f00000000000000000000c03f0ad7233c0100403f000000000000803f0000803f0000803f0000803f000000003333d33f0ad7233c686666bf000000000000803f0000803f00000000000000000000803f3333d3bf0ad7233c686666bf000000000000803f0000803f000000000000803f0000803f3333d3bf0ad7233c6866663f000000000000803f0000803f00000000000000000000803f3333d33f0ad7233c6866663f000000000000803f0000803f000000000000803f0000803f
++  m_CompressedMesh:
++    m_Vertices:
++      m_NumItems: 0
++      m_Range: 0
++      m_Start: 0
++      m_Data: 
++      m_BitSize: 0
++    m_UV:
++      m_NumItems: 0
++      m_Range: 0
++      m_Start: 0
++      m_Data: 
++      m_BitSize: 0
++    m_Normals:
++      m_NumItems: 0
++      m_Range: 0
++      m_Start: 0
++      m_Data: 
++      m_BitSize: 0
++    m_Tangents:
++      m_NumItems: 0
++      m_Range: 0
++      m_Start: 0
++      m_Data: 
++      m_BitSize: 0
++    m_Weights:
++      m_NumItems: 0
++      m_Data: 
++      m_BitSize: 0
++    m_NormalSigns:
++      m_NumItems: 0
++      m_Data: 
++      m_BitSize: 0
++    m_TangentSigns:
++      m_NumItems: 0
++      m_Data: 
++      m_BitSize: 0
++    m_FloatColors:
++      m_NumItems: 0
++      m_Range: 0
++      m_Start: 0
++      m_Data: 
++      m_BitSize: 0
++    m_BoneIndices:
++      m_NumItems: 0
++      m_Data: 
++      m_BitSize: 0
++    m_Triangles:
++      m_NumItems: 0
++      m_Data: 
++      m_BitSize: 0
++    m_UVInfo: 0
++  m_LocalAABB:
++    m_Center: {x: 0, y: 0.01, z: 0}
++    m_Extent: {x: 1.65, y: 0, z: 0.9000001}
++  m_MeshUsageFlags: 0
++  m_BakedConvexCollisionMesh: 
++  m_BakedTriangleCollisionMesh: 
++  m_MeshOptimized: 0
+ --- !u!1 &587904031
+ GameObject:
+   m_ObjectHideFlags: 0
+@@ -7101,7 +7101,7 @@ Transform:
+   - {fileID: 958773292}
+   - {fileID: 2010280298}
+   m_Father: {fileID: 0}
+-  m_RootOrder: 8
++  m_RootOrder: 7
+ --- !u!1 &692367762
+ GameObject:
+   m_ObjectHideFlags: 0
+@@ -8349,7 +8349,7 @@ Transform:
+   - {fileID: 496930647}
+   - {fileID: 340763020}
+   m_Father: {fileID: 0}
+-  m_RootOrder: 5
++  m_RootOrder: 4
+ --- !u!23 &790567673
+ MeshRenderer:
+   m_ObjectHideFlags: 0
+@@ -9503,7 +9503,7 @@ Transform:
+   - {fileID: 2085581304}
+   - {fileID: 742620897}
+   m_Father: {fileID: 0}
+-  m_RootOrder: 3
++  m_RootOrder: 2
+ --- !u!23 &910524193
+ MeshRenderer:
+   m_ObjectHideFlags: 0
+@@ -11302,7 +11302,7 @@ Transform:
+   - {fileID: 1312091870}
+   - {fileID: 1635313614}
+   m_Father: {fileID: 0}
+-  m_RootOrder: 4
++  m_RootOrder: 3
+ --- !u!23 &1078933208
+ MeshRenderer:
+   m_ObjectHideFlags: 0
+@@ -11763,7 +11763,7 @@ Transform:
+   m_LocalEulerAnglesHint: {x: 90, y: -8.248899, z: 0}
+   m_Children: []
+   m_Father: {fileID: 0}
+-  m_RootOrder: 10
++  m_RootOrder: 9
+ --- !u!1 &1116909568
+ GameObject:
+   m_ObjectHideFlags: 0
+@@ -11981,7 +11981,7 @@ Transform:
+   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+   m_Children: []
+   m_Father: {fileID: 0}
+-  m_RootOrder: 2
++  m_RootOrder: 1
+ --- !u!1 &1137648862
+ GameObject:
+   m_ObjectHideFlags: 0
+@@ -15451,7 +15451,6 @@ GameObject:
+   serializedVersion: 4
+   m_Component:
+   - 4: {fileID: 1432281522}
+-  - 65: {fileID: 1432281525}
+   - 114: {fileID: 1432281524}
+   - 114: {fileID: 1432281523}
+   m_Layer: 0
+@@ -15503,18 +15502,6 @@ MonoBehaviour:
+   body: {fileID: 1358027778}
+   handle: {fileID: 1783395876}
+   content: {fileID: 814376658}
+---- !u!65 &1432281525
+-BoxCollider:
+-  m_ObjectHideFlags: 0
+-  m_PrefabParentObject: {fileID: 0}
+-  m_PrefabInternal: {fileID: 0}
+-  m_GameObject: {fileID: 1432281521}
+-  m_Material: {fileID: 0}
+-  m_IsTrigger: 0
+-  m_Enabled: 1
+-  serializedVersion: 2
+-  m_Size: {x: 0.43, y: 0.1, z: 0.01}
+-  m_Center: {x: 0, y: 0.05, z: 0.256}
+ --- !u!1 &1443960171
+ GameObject:
+   m_ObjectHideFlags: 0
+@@ -16995,7 +16982,7 @@ Transform:
+   - {fileID: 582109181}
+   - {fileID: 2121046203}
+   m_Father: {fileID: 0}
+-  m_RootOrder: 9
++  m_RootOrder: 8
+ --- !u!114 &1574929629
+ MonoBehaviour:
+   m_ObjectHideFlags: 0
+@@ -17147,7 +17134,7 @@ Transform:
+   - {fileID: 1708795207}
+   - {fileID: 1853485434}
+   m_Father: {fileID: 0}
+-  m_RootOrder: 11
++  m_RootOrder: 10
+ --- !u!1 &1582305995
+ GameObject:
+   m_ObjectHideFlags: 0
+@@ -17445,7 +17432,7 @@ Transform:
+   - {fileID: 1550059860}
+   - {fileID: 1981799401}
+   m_Father: {fileID: 0}
+-  m_RootOrder: 6
++  m_RootOrder: 5
+ --- !u!1 &1610546886
+ GameObject:
+   m_ObjectHideFlags: 0
+@@ -19030,7 +19017,7 @@ Transform:
+   m_PrefabParentObject: {fileID: 0}
+   m_PrefabInternal: {fileID: 0}
+   m_GameObject: {fileID: 1783395876}
+-  m_LocalRotation: {x: 0, y: -0.70710665, z: 0, w: 0.7071069}
++  m_LocalRotation: {x: 0, y: -0.7071066, z: 0, w: 0.70710695}
+   m_LocalPosition: {x: 0.231, y: 0.05000007, z: 0.024}
+   m_LocalScale: {x: 0.08, y: 0.02, z: 0.07770768}
+   m_LocalEulerAnglesHint: {x: 0, y: -90, z: 0}
+@@ -21355,7 +21342,7 @@ Transform:
+   - {fileID: 1684800802}
+   - {fileID: 946840144}
+   m_Father: {fileID: 0}
+-  m_RootOrder: 7
++  m_RootOrder: 6
+ --- !u!1001 &2032240552
+ Prefab:
+   m_ObjectHideFlags: 0
+@@ -21398,7 +21385,7 @@ Prefab:
+     - target: {fileID: 3380982, guid: 4d293c8e162f3874b982baadd71153d2, type: 2}
+       propertyPath: m_Mesh
+       value: 
+-      objectReference: {fileID: 57424189}
++      objectReference: {fileID: 586866541}
+     - target: {fileID: 11489174, guid: 4d293c8e162f3874b982baadd71153d2, type: 2}
+       propertyPath: drawInGame
+       value: 1
+@@ -21537,8 +21524,10 @@ MonoBehaviour:
+   m_Name: 
+   m_EditorClassIdentifier: 
+   pointerToggleButton: 3
++  pointerSetButton: 3
+   grabToggleButton: 1
+   useToggleButton: 0
++  uiClickButton: 0
+   menuToggleButton: 4
+   axisFidelity: 1
+   triggerPressed: 0
+@@ -21551,6 +21540,7 @@ MonoBehaviour:
+   pointerPressed: 0
+   grabPressed: 0
+   usePressed: 0
++  uiClickPressed: 0
+   menuPressed: 0
+ --- !u!114 &2032240559
+ MonoBehaviour:
+@@ -21607,8 +21597,10 @@ MonoBehaviour:
+   m_Name: 
+   m_EditorClassIdentifier: 
+   pointerToggleButton: 3
++  pointerSetButton: 3
+   grabToggleButton: 1
+   useToggleButton: 0
++  uiClickButton: 0
+   menuToggleButton: 4
+   axisFidelity: 1
+   triggerPressed: 0
+@@ -21621,6 +21613,7 @@ MonoBehaviour:
+   pointerPressed: 0
+   grabPressed: 0
+   usePressed: 0
++  uiClickPressed: 0
+   menuPressed: 0
+ --- !u!1 &2033147761
+ GameObject:
+@@ -22440,7 +22433,7 @@ Transform:
+   m_LocalEulerAnglesHint: {x: 50, y: -30, z: 0}
+   m_Children: []
+   m_Father: {fileID: 0}
+-  m_RootOrder: 1
++  m_RootOrder: 0
+ --- !u!1 &2126050046
+ GameObject:
+   m_ObjectHideFlags: 0"
+ExtendRealityLtd/VRTK,303,7341dc7,Assets/SteamVR_Unity_Toolkit/Scripts/VRTK_InteractTouch.cs,modified,20,3,23,"@@ -76,7 +76,23 @@ public GameObject GetTouchedObject()
+ 
+         public bool IsObjectInteractable(GameObject obj)
+         {
+-            return (obj && (obj.GetComponent<VRTK_InteractableObject>() || obj.GetComponentInParent<VRTK_InteractableObject>()));
++            if (obj)
++            {
++                VRTK_InteractableObject io = obj.GetComponent<VRTK_InteractableObject>();
++                if (io)
++                {
++                    return io.enabled;
++                }
++                else
++                {
++                    io = obj.GetComponentInParent<VRTK_InteractableObject>();
++                    if (io)
++                    {
++                        return io.enabled;
++                    }
++                }
++            }
++            return false;
+         }
+ 
+         public void ToggleControllerRigidBody(bool state)
+@@ -229,7 +245,7 @@ private void StopTouching(GameObject obj)
+         private void CreateTouchCollider(GameObject obj)
+         {
+             var collider = this.GetComponent<Collider>();
+-            if(collider == null)
++            if (collider == null)
+             {
+                 var genCollider = obj.AddComponent<SphereCollider>();
+                 genCollider.radius = 0.06f;
+@@ -259,7 +275,8 @@ private void CreateControllerRigidBody()
+             if (customRigidbodyObject != null)
+             {
+                 controllerRigidBodyObject = customRigidbodyObject;
+-            } else
++            }
++            else
+             {
+                 controllerRigidBodyObject = new GameObject();
+                 CreateBoxCollider(controllerRigidBodyObject, new Vector3(0f, -0.01f, -0.098f), new Vector3(0.04f, 0.025f, 0.15f));"

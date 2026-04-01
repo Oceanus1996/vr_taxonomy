@@ -1,0 +1,129 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe,1680,95d1e7518e2fcbc3504e3dda5a832fbf76e654e8,src/components/look-controls.js,modified,12,0,12,"@@ -16,10 +16,20 @@ module.exports.Component = registerComponent('look-controls', {
+   },
+ 
+   init: function () {
++    var sceneEl = this.el.sceneEl;
++
+     this.previousHMDPosition = new THREE.Vector3();
+     this.setupMouseControls();
+     this.setupHMDControls();
+     this.bindMethods();
++
++    // Enable grab cursor class on canvas.
++    function enableGrabCursor () { sceneEl.canvas.classList.add('a-grab-cursor'); }
++    if (!sceneEl.canvas) {
++      sceneEl.addEventListener('render-target-loaded', enableGrabCursor);
++    } else {
++      enableGrabCursor();
++    }
+   },
+ 
+   update: function (oldData) {
+@@ -236,11 +246,13 @@ module.exports.Component = registerComponent('look-controls', {
+   onMouseDown: function (event) {
+     this.mouseDown = true;
+     this.previousMouseEvent = event;
++    document.body.classList.add('a-grabbing');
+     event.preventDefault();
+   },
+ 
+   releaseMouse: function () {
+     this.mouseDown = false;
++    document.body.classList.remove('a-grabbing');
+   },
+ 
+   onTouchStart: function (e) {"
+aframevr/aframe,1680,95d1e7518e2fcbc3504e3dda5a832fbf76e654e8,src/style/aframe.css,modified,13,0,13,"@@ -33,6 +33,19 @@
+   width: 100%;
+ }
+ 
++.a-canvas.a-grab-cursor:hover {
++  cursor: grab;
++  cursor: -moz-grabbing;
++  cursor: -webkit-grab;
++}
++
++.a-grabbing,
++.a-canvas.a-grab-cursor:active {
++  cursor: grabbing;
++  cursor: -moz-grabbing;
++  cursor: -webkit-grabbing;
++}
++
+ .a-canvas.fullscreen {
+   width: 100% !important;
+   height: 100% !important;"
+aframevr/aframe,1680,95d1e7518e2fcbc3504e3dda5a832fbf76e654e8,tests/components/look-controls.test.js,added,39,0,39,"@@ -0,0 +1,39 @@
++ /* global Event, assert, process, setup, suite, test */
++
++var CANVAS_GRAB_CLASS = 'a-grab-cursor';
++var GRABBING_CLASS = 'a-grabbing';
++
++suite('look-controls', function () {
++  setup(function (done) {
++    var el = this.sceneEl = document.createElement('a-scene');
++    document.body.appendChild(el);
++    el.addEventListener('loaded', function () {
++      done();
++    });
++  });
++
++  suite('grabbing', function () {
++    test('enables grab cursor on canvas', function () {
++      this.sceneEl.canvas.classList.contains(CANVAS_GRAB_CLASS);
++    });
++
++    test('adds grabbing class to document body on mousedown', function (done) {
++      var el = this.sceneEl;
++      el.canvas.dispatchEvent(new Event('mousedown'));
++      process.nextTick(function () {
++        assert.ok(document.body.classList.contains(GRABBING_CLASS));
++        document.body.classList.remove('a-grabbing');
++        done();
++      });
++    });
++
++    test('removes grabbing class from document body on document body mouseup', function (done) {
++      document.body.classList.add(GRABBING_CLASS);
++      window.dispatchEvent(new Event('mouseup'));
++      process.nextTick(function () {
++        assert.notOk(document.body.classList.contains(GRABBING_CLASS));
++        done();
++      });
++    });
++  });
++});"
+aframevr/aframe,1680,95d1e7518e2fcbc3504e3dda5a832fbf76e654e8,tests/components/scene/canvas.test.js,modified,18,2,20,"@@ -1,14 +1,30 @@
+  /* global assert, process, suite, test */
+-'use strict';
++
++var FULLSCREEN_CLASS = 'fullscreen';
+ 
+ suite('canvas', function () {
+   test('adds canvas to a-scene element', function (done) {
+-    var el = document.createElement('a-scene');
++    var el = this.sceneEl = document.createElement('a-scene');
+     document.body.appendChild(el);
+     el.addEventListener('loaded', function () {
+       el.setAttribute('canvas', '');
+       assert.ok(el.querySelector('canvas'));
+       done();
+     });
+   });
++
++  suite('fullscreen', function () {
++    test('adds fullscreen class on enter VR', function () {
++      var el = this.sceneEl;
++      el.emit('enter-vr');
++      assert.ok(el.canvas.classList.contains(FULLSCREEN_CLASS));
++    });
++
++    test('removes fullscreen class on exit VR', function () {
++      var el = this.sceneEl;
++      el.canvas.classList.add(FULLSCREEN_CLASS);
++      el.emit('exit-vr');
++      assert.notOk(el.canvas.classList.contains(FULLSCREEN_CLASS));
++    });
++  });
+ });"

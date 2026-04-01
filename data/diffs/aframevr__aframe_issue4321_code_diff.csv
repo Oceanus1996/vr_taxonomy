@@ -1,0 +1,30 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe,4321,362647d61789d30fb649c0156f6ffa7d45d67cf7,src/core/scene/a-scene.js,modified,1,0,1,"@@ -384,6 +384,7 @@ module.exports.AScene = registerElement('a-scene', {
+           if (this.hasWebXR) {
+             this.xrSession.removeEventListener('end', this.exitVRBound);
+             this.xrSession.end();
++            this.xrSession = undefined;
+             vrManager.setSession(null);
+           } else {
+             if (vrDisplay.isPresenting) {"
+aframevr/aframe,4321,362647d61789d30fb649c0156f6ffa7d45d67cf7,tests/core/scene/a-scene.test.js,modified,14,0,14,"@@ -319,6 +319,20 @@ suite('a-scene (without renderer)', function () {
+       sceneEl.addEventListener('exit-vr', function () { done(); });
+       sceneEl.exitVR();
+     });
++
++    test('reset xrSession to undefined', function () {
++      var sceneEl = this.el;
++      sceneEl.xrSession = {
++        removeEventListener: function () {},
++        end: function () {}
++      };
++      sceneEl.renderer.vr = {setSession: function () {}};
++      sceneEl.hasWebXR = true;
++      sceneEl.checkHeadsetConnected = function () { return true; };
++      assert.ok(sceneEl.xrSession);
++      sceneEl.exitVR();
++      assert.notOk(sceneEl.xrSession);
++    });
+   });
+ 
+   suite('tick', function () {"

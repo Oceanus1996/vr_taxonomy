@@ -1,0 +1,28 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+VRCFury/VRCFury,176,22decd3184a6850b4655377cfc8aea6b305f1319,com.vrcfury.vrcfury/Editor/VF/Feature/ToggleBuilder.cs,modified,1,0,1,"@@ -185,6 +185,7 @@ float outTime
+                 clip.UseLinearTangents();
+             }
+             onState.WithAnimation(clip).MotionTime(weight);
++            onState.TransitionsToExit().When(onCase.Not());
+             restingClip = clip.Evaluate(model.defaultSliderValue * clip.length);
+         } else if (model.hasTransition) {
+             var inClip = actionClipService.LoadState(onName + "" In"", inAction);"
+VRCFury/VRCFury,176,22decd3184a6850b4655377cfc8aea6b305f1319,com.vrcfury.vrcfury/Editor/VF/Service/ClipBuilderService.cs,modified,4,0,4,"@@ -22,6 +22,10 @@ public AnimationClip MergeSingleFrameClips(params (float, AnimationClip)[] sourc
+             var output = new AnimationClip();
+             foreach (var binding in sources.SelectMany(tuple => tuple.Item2.GetFloatBindings()).Distinct()) {
+                 var exists = binding.GetFloatFromGameObject(baseObject, out var defaultValue);
++                if (!exists && binding.path == """" && binding.type == typeof(Animator)) {
++                    exists = true;
++                    defaultValue = 0;
++                }
+                 if (!exists) continue;
+                 var outputCurve = new AnimationCurve();
+                 foreach (var (time,sourceClip) in sources) {"
+VRCFury/VRCFury,176,22decd3184a6850b4655377cfc8aea6b305f1319,com.vrcfury.vrcfury/Editor/VF/Utils/AnimationClipExtensions.cs,modified,1,0,1,"@@ -164,6 +164,7 @@ public static AnimationClip EvaluateBlend(this AnimationClip clip, VFGameObject
+             var output = MutableManager.CopyRecursive(clip);
+             output.name = $""{clip.name} ({amount} blend)"";
+             output.Rewrite(AnimationRewriter.RewriteCurve((binding, curve) => {
++                // TODO: Animator parameters aren't handled here
+                 if (curve.IsFloat) {
+                     if (!binding.GetFloatFromGameObject(root, out float from)) {
+                         return (binding, null, true);"

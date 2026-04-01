@@ -1,0 +1,337 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+secondlife/viewer,4474,a55d517,indra/llui/lltextbase.cpp,modified,1,0,1,"@@ -2227,6 +2227,7 @@ void LLTextBase::createUrlContextMenu(S32 x, S32 y, const std::string &in_url)
+     registrar.add(""Url.RemoveFriend"", boost::bind(&LLUrlAction::removeFriend, url));
+     registrar.add(""Url.ReportAbuse"", boost::bind(&LLUrlAction::reportAbuse, url));
+     registrar.add(""Url.SendIM"", boost::bind(&LLUrlAction::sendIM, url));
++    registrar.add(""Url.ZoomInObject"", boost::bind(&LLUrlAction::zoomInObject, url));
+     registrar.add(""Url.ShowOnMap"", boost::bind(&LLUrlAction::showLocationOnMap, url));
+     registrar.add(""Url.ShowParcelOnMap"", boost::bind(&LLUrlAction::showParcelOnMap, url));
+     registrar.add(""Url.CopyLabel"", boost::bind(&LLUrlAction::copyLabelToClipboard, url));"
+secondlife/viewer,4474,a55d517,indra/llui/llurlaction.cpp,modified,10,0,10,"@@ -117,6 +117,16 @@ void LLUrlAction::teleportToLocation(std::string url)
+     }
+ }
+ 
++void LLUrlAction::zoomInObject(std::string url)
++{
++    LLUrlMatch match;
++    std::string object_id = getObjectId(url);
++    if (LLUUID::validate(object_id) && LLUrlRegistry::instance().findUrl(url, match))
++    {
++        executeSLURL(""secondlife:///app/object/"" + object_id + ""/zoomin/"" + match.getLocation());
++    }
++}
++
+ void LLUrlAction::showLocationOnMap(std::string url)
+ {
+     LLUrlMatch match;"
+secondlife/viewer,4474,a55d517,indra/llui/llurlaction.h,modified,4,0,4,"@@ -60,6 +60,10 @@ class LLUrlAction
+     /// if the Url specifies an SL location, teleport there
+     static void teleportToLocation(std::string url);
+ 
++    /// If the Url specifies an object id, attempt to zoom in.
++    /// If not possible to zoom in, show on map
++    static void zoomInObject(std::string url);
++
+     /// if the Url specifies an SL location, show it on a map
+     static void showLocationOnMap(std::string url);
+ "
+secondlife/viewer,4474,a55d517,indra/newview/llchathistory.cpp,modified,17,1,18,"@@ -189,7 +189,14 @@ class LLChatHistoryHeader: public LLPanel
+             std::string url = ""secondlife://"" + mObjectData[""slurl""].asString();
+             LLUrlAction::teleportToLocation(url);
+         }
+-
++        else if (level == ""obj_zoom_in"")
++        {
++            LLUUID obj_id = mObjectData[""object_id""];
++            if (obj_id.notNull())
++            {
++                handle_zoom_to_object(obj_id);
++            }
++        }
+     }
+ 
+     bool onObjectIconContextMenuItemVisible(const LLSD& userdata)
+@@ -203,6 +210,15 @@ class LLChatHistoryHeader: public LLPanel
+         {
+             return !LLMuteList::getInstance()->isMuted(getAvatarId(), mFrom, LLMute::flagTextChat);
+         }
++        else if (level == ""obj_zoom_in"")
++        {
++            LLUUID obj_id = mObjectData[""object_id""];
++            if (obj_id.notNull())
++            {
++                return nullptr != gObjectList.findObject(mAvatarID);
++            }
++            return false;
++        }
+         return false;
+     }
+ "
+secondlife/viewer,4474,a55d517,indra/newview/llchatitemscontainerctrl.cpp,modified,19,0,19,"@@ -37,6 +37,8 @@
+ #include ""lllocalcliprect.h""
+ #include ""lltrans.h""
+ #include ""llfloaterimnearbychat.h""
++#include ""llfloaterworldmap.h""
++#include ""llviewermenu.h""
+ 
+ #include ""llviewercontrol.h""
+ #include ""llagentdata.h""
+@@ -75,6 +77,23 @@ class LLObjectHandler : public LLCommandHandler
+             return true;
+         }
+ 
++        if (verb == ""zoomin"")
++        {
++            if (!handle_zoom_to_object(object_id) && params.size() > 2)
++            {
++                // zoom faled, show location
++                // secondlife:///app/object/object_id/zoomin/{LOCATION}/{COORDS} SLapp
++                const std::string region_name = LLURI::unescape(params[0].asString());
++                S32 x = (params.size() > 1) ? params[1].asInteger() : 128;
++                S32 y = (params.size() > 2) ? params[2].asInteger() : 128;
++                S32 z = (params.size() > 3) ? params[3].asInteger() : 0;
++
++                LLFloaterWorldMap::getInstance()->trackURL(region_name, x, y, z);
++                LLFloaterReg::showInstance(""world_map"", ""center"");
++            }
++            return true;
++        }
++
+         return false;
+     }
+ };"
+secondlife/viewer,4474,a55d517,indra/newview/llviewermenu.cpp,modified,5,3,8,"@@ -6485,7 +6485,7 @@ void handle_look_at_selection(const LLSD& param)
+     }
+ }
+ 
+-void handle_zoom_to_object(const LLUUID& object_id)
++bool handle_zoom_to_object(const LLUUID& object_id)
+ {
+     const F32 PADDING_FACTOR = 2.f;
+ 
+@@ -6503,12 +6503,14 @@ void handle_zoom_to_object(const LLUUID& object_id)
+         obj_to_cam.normVec();
+ 
+ 
+-            LLVector3d object_center_global = gAgent.getPosGlobalFromAgent(bbox.getCenterAgent());
++        LLVector3d object_center_global = gAgent.getPosGlobalFromAgent(bbox.getCenterAgent());
+ 
+-            gAgentCamera.setCameraPosAndFocusGlobal(object_center_global + LLVector3d(obj_to_cam * distance),
++        gAgentCamera.setCameraPosAndFocusGlobal(object_center_global + LLVector3d(obj_to_cam * distance),
+                                             object_center_global,
+                                             object_id );
++        return true;
+     }
++    return false;
+ }
+ 
+ class LLAvatarInviteToGroup : public view_listener_t"
+secondlife/viewer,4474,a55d517,indra/newview/llviewermenu.h,modified,1,1,2,"@@ -73,7 +73,7 @@ void handle_buy();
+ void handle_take(bool take_separate = false);
+ void handle_take_copy();
+ void handle_look_at_selection(const LLSD& param);
+-void handle_zoom_to_object(const LLUUID& object_id);
++bool handle_zoom_to_object(const LLUUID& object_id);
+ void handle_object_return();
+ void handle_object_delete();
+ void handle_object_edit();"
+secondlife/viewer,4474,a55d517,indra/newview/skins/default/xui/en/menu_object_icon.xml,modified,11,0,11,"@@ -40,6 +40,17 @@
+     </menu_item_call>
+     <menu_item_separator
+      layout=""topleft"" />
++    <menu_item_call
++     label=""Zoom in""
++     layout=""topleft""
++     name=""zoom_in"">
++        <menu_item_call.on_click
++         function=""ObjectIcon.Action""
++         parameter=""obj_zoom_in"" />
++        <menu_item_call.on_enable
++         function=""ObjectIcon.Visible""
++         parameter=""obj_zoom_in"" />
++    </menu_item_call>
+     <menu_item_call
+      label=""Show on Map""
+      layout=""topleft"""
+secondlife/viewer,4474,a55d517,indra/newview/skins/default/xui/en/menu_url_objectim.xml,modified,7,0,7,"@@ -25,6 +25,13 @@
+     </menu_item_call>
+     <menu_item_separator
+      layout=""topleft"" />
++    <menu_item_call
++     label=""Zoom in""
++     layout=""topleft""
++     name=""zoom_in"">
++        <menu_item_call.on_click
++         function=""Url.ZoomInObject"" />
++    </menu_item_call>
+     <menu_item_call
+      label=""Show on Map""
+      layout=""topleft"""
+secondlife/viewer,4474,7f276f8,indra/llui/lltextbase.cpp,modified,1,0,1,"@@ -2227,6 +2227,7 @@ void LLTextBase::createUrlContextMenu(S32 x, S32 y, const std::string &in_url)
+     registrar.add(""Url.RemoveFriend"", boost::bind(&LLUrlAction::removeFriend, url));
+     registrar.add(""Url.ReportAbuse"", boost::bind(&LLUrlAction::reportAbuse, url));
+     registrar.add(""Url.SendIM"", boost::bind(&LLUrlAction::sendIM, url));
++    registrar.add(""Url.ZoomInObject"", boost::bind(&LLUrlAction::zoomInObject, url));
+     registrar.add(""Url.ShowOnMap"", boost::bind(&LLUrlAction::showLocationOnMap, url));
+     registrar.add(""Url.ShowParcelOnMap"", boost::bind(&LLUrlAction::showParcelOnMap, url));
+     registrar.add(""Url.CopyLabel"", boost::bind(&LLUrlAction::copyLabelToClipboard, url));"
+secondlife/viewer,4474,7f276f8,indra/llui/llurlaction.cpp,modified,10,0,10,"@@ -117,6 +117,16 @@ void LLUrlAction::teleportToLocation(std::string url)
+     }
+ }
+ 
++void LLUrlAction::zoomInObject(std::string url)
++{
++    LLUrlMatch match;
++    std::string object_id = getObjectId(url);
++    if (LLUUID::validate(object_id) && LLUrlRegistry::instance().findUrl(url, match))
++    {
++        executeSLURL(""secondlife:///app/object/"" + object_id + ""/zoomin/"" + match.getLocation());
++    }
++}
++
+ void LLUrlAction::showLocationOnMap(std::string url)
+ {
+     LLUrlMatch match;"
+secondlife/viewer,4474,7f276f8,indra/llui/llurlaction.h,modified,4,0,4,"@@ -60,6 +60,10 @@ class LLUrlAction
+     /// if the Url specifies an SL location, teleport there
+     static void teleportToLocation(std::string url);
+ 
++    /// If the Url specifies an object id, attempt to zoom in.
++    /// If not possible to zoom in, show on map
++    static void zoomInObject(std::string url);
++
+     /// if the Url specifies an SL location, show it on a map
+     static void showLocationOnMap(std::string url);
+ "
+secondlife/viewer,4474,7f276f8,indra/newview/llchathistory.cpp,modified,17,1,18,"@@ -189,7 +189,14 @@ class LLChatHistoryHeader: public LLPanel
+             std::string url = ""secondlife://"" + mObjectData[""slurl""].asString();
+             LLUrlAction::teleportToLocation(url);
+         }
+-
++        else if (level == ""obj_zoom_in"")
++        {
++            LLUUID obj_id = mObjectData[""object_id""];
++            if (obj_id.notNull())
++            {
++                handle_zoom_to_object(obj_id);
++            }
++        }
+     }
+ 
+     bool onObjectIconContextMenuItemVisible(const LLSD& userdata)
+@@ -203,6 +210,15 @@ class LLChatHistoryHeader: public LLPanel
+         {
+             return !LLMuteList::getInstance()->isMuted(getAvatarId(), mFrom, LLMute::flagTextChat);
+         }
++        else if (level == ""obj_zoom_in"")
++        {
++            LLUUID obj_id = mObjectData[""object_id""];
++            if (obj_id.notNull())
++            {
++                return nullptr != gObjectList.findObject(mAvatarID);
++            }
++            return false;
++        }
+         return false;
+     }
+ "
+secondlife/viewer,4474,7f276f8,indra/newview/llchatitemscontainerctrl.cpp,modified,19,0,19,"@@ -37,6 +37,8 @@
+ #include ""lllocalcliprect.h""
+ #include ""lltrans.h""
+ #include ""llfloaterimnearbychat.h""
++#include ""llfloaterworldmap.h""
++#include ""llviewermenu.h""
+ 
+ #include ""llviewercontrol.h""
+ #include ""llagentdata.h""
+@@ -75,6 +77,23 @@ class LLObjectHandler : public LLCommandHandler
+             return true;
+         }
+ 
++        if (verb == ""zoomin"")
++        {
++            if (!handle_zoom_to_object(object_id) && params.size() > 2)
++            {
++                // zoom faled, show location
++                // secondlife:///app/object/object_id/zoomin/{LOCATION}/{COORDS} SLapp
++                const std::string region_name = LLURI::unescape(params[0].asString());
++                S32 x = (params.size() > 1) ? params[1].asInteger() : 128;
++                S32 y = (params.size() > 2) ? params[2].asInteger() : 128;
++                S32 z = (params.size() > 3) ? params[3].asInteger() : 0;
++
++                LLFloaterWorldMap::getInstance()->trackURL(region_name, x, y, z);
++                LLFloaterReg::showInstance(""world_map"", ""center"");
++            }
++            return true;
++        }
++
+         return false;
+     }
+ };"
+secondlife/viewer,4474,7f276f8,indra/newview/llviewermenu.cpp,modified,5,3,8,"@@ -6485,7 +6485,7 @@ void handle_look_at_selection(const LLSD& param)
+     }
+ }
+ 
+-void handle_zoom_to_object(const LLUUID& object_id)
++bool handle_zoom_to_object(const LLUUID& object_id)
+ {
+     const F32 PADDING_FACTOR = 2.f;
+ 
+@@ -6503,12 +6503,14 @@ void handle_zoom_to_object(const LLUUID& object_id)
+         obj_to_cam.normVec();
+ 
+ 
+-            LLVector3d object_center_global = gAgent.getPosGlobalFromAgent(bbox.getCenterAgent());
++        LLVector3d object_center_global = gAgent.getPosGlobalFromAgent(bbox.getCenterAgent());
+ 
+-            gAgentCamera.setCameraPosAndFocusGlobal(object_center_global + LLVector3d(obj_to_cam * distance),
++        gAgentCamera.setCameraPosAndFocusGlobal(object_center_global + LLVector3d(obj_to_cam * distance),
+                                             object_center_global,
+                                             object_id );
++        return true;
+     }
++    return false;
+ }
+ 
+ class LLAvatarInviteToGroup : public view_listener_t"
+secondlife/viewer,4474,7f276f8,indra/newview/llviewermenu.h,modified,1,1,2,"@@ -73,7 +73,7 @@ void handle_buy();
+ void handle_take(bool take_separate = false);
+ void handle_take_copy();
+ void handle_look_at_selection(const LLSD& param);
+-void handle_zoom_to_object(const LLUUID& object_id);
++bool handle_zoom_to_object(const LLUUID& object_id);
+ void handle_object_return();
+ void handle_object_delete();
+ void handle_object_edit();"
+secondlife/viewer,4474,7f276f8,indra/newview/skins/default/xui/en/menu_object_icon.xml,modified,11,0,11,"@@ -40,6 +40,17 @@
+     </menu_item_call>
+     <menu_item_separator
+      layout=""topleft"" />
++    <menu_item_call
++     label=""Zoom in""
++     layout=""topleft""
++     name=""zoom_in"">
++        <menu_item_call.on_click
++         function=""ObjectIcon.Action""
++         parameter=""obj_zoom_in"" />
++        <menu_item_call.on_enable
++         function=""ObjectIcon.Visible""
++         parameter=""obj_zoom_in"" />
++    </menu_item_call>
+     <menu_item_call
+      label=""Show on Map""
+      layout=""topleft"""
+secondlife/viewer,4474,7f276f8,indra/newview/skins/default/xui/en/menu_url_objectim.xml,modified,7,0,7,"@@ -25,6 +25,13 @@
+     </menu_item_call>
+     <menu_item_separator
+      layout=""topleft"" />
++    <menu_item_call
++     label=""Zoom in""
++     layout=""topleft""
++     name=""zoom_in"">
++        <menu_item_call.on_click
++         function=""Url.ZoomInObject"" />
++    </menu_item_call>
+     <menu_item_call
+      label=""Show on Map""
+      layout=""topleft"""

@@ -1,0 +1,53 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+VRMADA/ultimatexr-unity,11,c3acb49,Runtime/Scripts/Locomotion/UxrTeleportLocomotionBase.cs,modified,11,4,15,"@@ -24,8 +24,8 @@ public abstract class UxrTeleportLocomotionBase : UxrLocomotion, IUxrPrecacheabl
+ 
+         // General parameters
+ 
+-        [SerializeField] private UxrHandSide          _controllerHand       = UxrHandSide.Left;
+-        [SerializeField] private bool                 _useControllerForward = true;
++        [SerializeField] protected UxrHandSide        _controllerHand           = UxrHandSide.Left;
++        [SerializeField] protected bool               _useControllerForward     = true;
+         [SerializeField] private bool                 _parentToDestination;
+         [SerializeField] private float                _shakeFilter              = 0.4f;
+         [SerializeField] private UxrTranslationType   _translationType          = UxrTranslationType.Fade;
+@@ -269,6 +269,8 @@ public LayerMask BlockingTargetLayers
+             get => _blockingTargetLayers;
+             set => _blockingTargetLayers = value;
+         }
++        
++        public float AvatarHeightOffset { get; set; }
+ 
+         #endregion
+ 
+@@ -427,7 +429,8 @@ protected override void UpdateLocomotion()
+ 
+             if (backStepInput && _isBackStepAvailable && IsAllowedToTeleport)
+             {
+-                Vector3 newPosition = Avatar.CameraFloorPosition - Avatar.ProjectedCameraForward * _backStepDistance;
++                Vector3 newPosition = Avatar.CameraFloorPosition  - Avatar.ProjectedCameraForward * _backStepDistance;
++                newPosition.y -= AvatarHeightOffset;
+ 
+                 if (HasBlockingRaycastHit(Avatar,
+                                           newPosition + UpVector * RaycastAboveGround,
+@@ -507,6 +510,7 @@ protected bool IsValidTeleport(bool checkBlockingInBetween, ref Vector3 newPosit
+             }
+ 
+             Vector3 localNewPosition = Avatar.transform.InverseTransformPoint(newPosition);
++            localNewPosition.y += AvatarHeightOffset;
+ 
+             if (Mathf.Abs(localNewPosition.y) > MaxAllowedHeightDifference)
+             {
+@@ -739,9 +743,12 @@ protected void TryTeleportUsingCurrentTarget()
+ 
+                 UxrTeleportSpawnCollider spawnCollider = _lastSpawnCollider;
+ 
++                Vector3 newPos = TransformExt.GetWorldPosition(TeleportReference, TeleportLocalPosition);
++                newPos.y += AvatarHeightOffset;
++
+                 UxrManager.Instance.TeleportLocalAvatarRelative(TeleportReference,
+                                                                 parentToDestination,
+-                                                                TransformExt.GetWorldPosition(TeleportReference, TeleportLocalPosition),
++                                                                newPos,
+                                                                 Quaternion.LookRotation(TransformExt.GetWorldDirection(TeleportReference, TeleportLocalDirection), UpVector),
+                                                                 _translationType,
+                                                                 TranslationSeconds,"

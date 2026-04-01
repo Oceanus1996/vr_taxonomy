@@ -1,0 +1,220 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch,gpt_bug_detection
+De-Panther/unity-webxr-export,53,c0423ce,Assets/WebGLTemplates/WebXR/TemplateData/style.css,modified,2,1,3,"@@ -12,8 +12,9 @@
+ .webgl-content .progress.Dark .full {background-image: url('progressFull.Dark.png');}
+ 
+ .webgl-content .footer {background-color: #ffffff; margin-top: 5px; height: 38px; line-height: 38px; font-family: Helvetica, Verdana, Arial, sans-serif; font-size: 18px;}
+-.webgl-content .footer .webgl-logo, .title, .enterar, .entervr {height: 100%; display: inline-block; background: transparent center no-repeat;}
++.webgl-content .footer .webgl-logo, .webxr-link, .title, .enterar, .entervr {height: 100%; display: inline-block; background: transparent center no-repeat;}
+ .webgl-content .footer .webgl-logo {background-image: url('webgl-logo.png'); width: 204px; float: left;}
++.webgl-content .footer .webxr-link {float: left;}
+ .webgl-content .footer .title {margin-right: 10px; float: right;}
+ .webgl-content .footer .enterar:enabled {background-color: #1eaed3; width: 38px; float: right;}
+ .webgl-content .footer .enterar:disabled {background-color: #dddddd; width: 38px; float: right;}","{""has_bug"": false, ""bugs"": []}"
+De-Panther/unity-webxr-export,53,c0423ce,Assets/WebGLTemplates/WebXR/index.html,modified,1,0,1,"@@ -34,6 +34,7 @@
+         <div class=""webgl-logo""></div>
+         <button class=""entervr"" id=""entervr"" value=""Enter VR"" disabled>VR</button>
+         <button class=""enterar"" id=""enterar"" value=""Enter AR"" disabled>AR</button>
++        <div class=""webxr-link"">Using <a href=""https://github.com/De-Panther/unity-webxr-export"" target=""_blank"" title=""WebXR Export"">WebXR Export</a></div>
+         <div class=""title"">%UNITY_WEB_NAME%</div>
+       </div>
+     </div>","{""has_bug"": true, ""bugs"": [{""line_start"": 17, ""line_end"": 17, ""description"": ""Incorrect condition for browser support check. The condition does not account for the case where the browser is not in the specified list but is on iOS."", ""buggy_code"": ""else if (['Edge', 'Firefox', 'Chrome', 'Safari'].indexOf(UnityLoader.SystemInfo.browser) == -1 && UnityLoader.SystemInfo.os != 'iOS')""}, {""line_start"": 46, ""line_end"": 46, ""description"": ""Potential null reference issue. If 'event.detail' is undefined, accessing 'event.detail.supported' will throw an error."", ""buggy_code"": ""enterARButton.disabled = !event.detail.supported;""}, {""line_start"": 49, ""line_end"": 49, ""description"": ""Potential null reference issue. If 'event.detail' is undefined, accessing 'event.detail.supported' will throw an error."", ""buggy_code"": ""enterVRButton.disabled = !event.detail.supported;""}]}"
+De-Panther/unity-webxr-export,53,c0423ce,Assets/WebGLTemplates/WebXR/webxr.js,modified,22,2,24,"@@ -50,6 +50,7 @@
+     this.isVRSupported = false;
+     this.rAFCB = null;
+     this.onInputEvent = null;
++    this.waitingHandheldARHack = false;
+     this.init();
+   }
+ 
+@@ -94,16 +95,33 @@
+ 
+   XRManager.prototype.onRequestARSession = function () {
+     if (!this.isARSupported) return;
++    // The window on Chrome for Android lose focus when asking permissions.
++    // A popup is opened and the Canvas is painted with the last frame.
++    // We want to make sure that the Canvas is transparent when entering Handheld AR Session.
++    this.waitingHandheldARHack = true;
++    var thisXRMananger = this;
++    var tempRender = function () {
++      thisXRMananger.ctx.clearColor(0, 0, 0, 0);
++      thisXRMananger.ctx.clear(thisXRMananger.ctx.COLOR_BUFFER_BIT | thisXRMananger.ctx.DEPTH_BUFFER_BIT);
++      if (thisXRMananger.waitingHandheldARHack)
++      {
++        window.requestAnimationFrame( tempRender );
++      }
++    }
++    window.requestAnimationFrame( tempRender );
+     navigator.xr.requestSession('immersive-ar', {
+       requiredFeatures: ['local-floor'], // TODO: Get this value from Unity
+       optionalFeatures: ['dom-overlay'],
+-      domOverlay: {root: this.canvas}
++      domOverlay: {root: this.canvas.parentElement}
+     }).then(async (session) => {
++      this.waitingHandheldARHack = false;
+       session.isImmersive = true;
+       session.isInSession = true;
+       session.isAR = true;
+       this.arSession = session;
+       this.onSessionStarted(session);
++    }).catch((error) => {
++      thisXRMananger.waitingHandheldARHack = false;
+     });
+   }
+ 
+@@ -255,7 +273,9 @@
+             func(time);
+           });
+         } else {
+-          window.requestAnimationFrame(func);
++          if (!thisXRMananger.waitingHandheldARHack) {
++            window.requestAnimationFrame(func);
++          }
+         }
+       };
+ ","{""has_bug"": true, ""bugs"": [{""line_start"": 213, ""line_end"": 216, ""description"": ""Potential logic error: The condition checks for hand values but does not properly handle the assignment of controllerA and controllerB, which could lead to incorrect controller assignments."", ""buggy_code"": ""if (hand == 0 || hand == 2) {\n    xrData.controllerA = controller;\n} else {\n    xrData.contr""}, {""line_start"": 171, ""line_end"": 171, ""description"": ""Possible resource leak: The canvas dimensions are set based on the parent element's dimensions, but if the parent element changes size after the session ends, the canvas may not be updated accordingly."", ""buggy_code"": ""this.canvas.width = this.canvas.parentElement.clientWidth * window.devicePixelRatio;""}, {""line_start"": 172, ""line_end"": 172, ""description"": ""Possible resource leak: Similar to the previous issue, the height of the canvas is set based on the parent element's dimensions, which may not reflect changes after the session ends."", ""buggy_code"": ""this.canvas.height = this.canvas.parentElement.clientHeight * window.devicePixelRatio;""}]}"
+De-Panther/unity-webxr-export,53,c0423ce,Assets/WebGLTemplates/WebXRFullView/TemplateData/style.css,modified,2,1,3,"@@ -12,8 +12,9 @@
+ .webgl-content .progress.Dark .full {background-image: url('progressFull.Dark.png');}
+ 
+ .webgl-content .footer {position: fixed; width: 100%; bottom: 0; margin-top: 5px; height: 38px; line-height: 38px; font-family: Helvetica, Verdana, Arial, sans-serif; font-size: 18px;}
+-.webgl-content .footer .webgl-logo, .title, .enterar, .entervr {height: 100%; display: inline-block; background: transparent center no-repeat;}
++.webgl-content .footer .webgl-logo, .webxr-link, .title, .enterar, .entervr {height: 100%; display: inline-block; background: transparent center no-repeat;}
+ .webgl-content .footer .webgl-logo {background-image: url('webgl-logo.png'); width: 204px; float: left;}
++.webgl-content .footer .webxr-link {float: left;}
+ .webgl-content .footer .title {margin-right: 10px; float: right;}
+ .webgl-content .footer .enterar:enabled {background-color: #1eaed3; width: 38px; float: right;}
+ .webgl-content .footer .enterar:disabled {background-color: #dddddd; width: 38px; float: right;}","{""has_bug"": false, ""bugs"": []}"
+De-Panther/unity-webxr-export,53,c0423ce,Assets/WebGLTemplates/WebXRFullView/index.html,modified,1,0,1,"@@ -35,6 +35,7 @@
+         <div class=""webgl-logo""></div>
+         <button class=""entervr"" id=""entervr"" value=""Enter VR"" disabled>VR</button>
+         <button class=""enterar"" id=""enterar"" value=""Enter AR"" disabled>AR</button>
++        <div class=""webxr-link"">Using <a href=""https://github.com/De-Panther/unity-webxr-export"" target=""_blank"" title=""WebXR Export"">WebXR Export</a></div>
+         <div class=""title"">%UNITY_WEB_NAME%</div>
+       </div>
+     </div>","{""has_bug"": true, ""bugs"": [{""line_start"": 18, ""line_end"": 18, ""description"": ""Incorrect condition for browser support check. The condition does not account for newer browsers that may support WebGL but are not listed."", ""buggy_code"": ""else if (['Edge', 'Firefox', 'Chrome', 'Safari'].indexOf(UnityLoader.SystemInfo.browser) == -1 && UnityLoader.SystemInfo.os != 'iOS')""}, {""line_start"": 46, ""line_end"": 46, ""description"": ""Potential null reference issue. If the 'onARSupportedCheck' event is dispatched before the script runs, 'enterARButton' may be null."", ""buggy_code"": ""document.addEventListener('onARSupportedCheck', function (event) {""}, {""line_start"": 49, ""line_end"": 49, ""description"": ""Potential null reference issue. If the 'onVRSupportedCheck' event is dispatched before the script runs, 'enterVRButton' may be null."", ""buggy_code"": ""document.addEventListener('onVRSupportedCheck', function (event) {""}]}"
+De-Panther/unity-webxr-export,53,c0423ce,Assets/WebGLTemplates/WebXRFullView/webxr.js,modified,22,2,24,"@@ -50,6 +50,7 @@
+     this.isVRSupported = false;
+     this.rAFCB = null;
+     this.onInputEvent = null;
++    this.waitingHandheldARHack = false;
+     this.init();
+   }
+ 
+@@ -94,16 +95,33 @@
+ 
+   XRManager.prototype.onRequestARSession = function () {
+     if (!this.isARSupported) return;
++    // The window on Chrome for Android lose focus when asking permissions.
++    // A popup is opened and the Canvas is painted with the last frame.
++    // We want to make sure that the Canvas is transparent when entering Handheld AR Session.
++    this.waitingHandheldARHack = true;
++    var thisXRMananger = this;
++    var tempRender = function () {
++      thisXRMananger.ctx.clearColor(0, 0, 0, 0);
++      thisXRMananger.ctx.clear(thisXRMananger.ctx.COLOR_BUFFER_BIT | thisXRMananger.ctx.DEPTH_BUFFER_BIT);
++      if (thisXRMananger.waitingHandheldARHack)
++      {
++        window.requestAnimationFrame( tempRender );
++      }
++    }
++    window.requestAnimationFrame( tempRender );
+     navigator.xr.requestSession('immersive-ar', {
+       requiredFeatures: ['local-floor'], // TODO: Get this value from Unity
+       optionalFeatures: ['dom-overlay'],
+-      domOverlay: {root: this.canvas}
++      domOverlay: {root: this.canvas.parentElement}
+     }).then(async (session) => {
++      this.waitingHandheldARHack = false;
+       session.isImmersive = true;
+       session.isInSession = true;
+       session.isAR = true;
+       this.arSession = session;
+       this.onSessionStarted(session);
++    }).catch((error) => {
++      thisXRMananger.waitingHandheldARHack = false;
+     });
+   }
+ 
+@@ -255,7 +273,9 @@
+             func(time);
+           });
+         } else {
+-          window.requestAnimationFrame(func);
++          if (!thisXRMananger.waitingHandheldARHack) {
++            window.requestAnimationFrame(func);
++          }
+         }
+       };
+ ","{""has_bug"": true, ""bugs"": [{""line_start"": 214, ""line_end"": 216, ""description"": ""Incomplete code leading to a potential reference error. The variable 'controller' is assigned to 'xrData.controllerA' but the assignment for 'xrData.controllerB' is incomplete."", ""buggy_code"": ""xrData.contr""}, {""line_start"": 141, ""line_end"": 141, ""description"": ""Potential resource leak if 'arSession.end()' is called without checking if the session is already ended or null."", ""buggy_code"": ""this.arSession.end();""}, {""line_start"": 150, ""line_end"": 150, ""description"": ""Potential resource leak if 'vrSession.end()' is called without checking if the session is already ended or null."", ""buggy_code"": ""this.vrSession.end();""}]}"
+De-Panther/unity-webxr-export,53,c0423ce,Build/TemplateData/style.css,modified,2,1,3,"@@ -12,8 +12,9 @@
+ .webgl-content .progress.Dark .full {background-image: url('progressFull.Dark.png');}
+ 
+ .webgl-content .footer {background-color: #ffffff; margin-top: 5px; height: 38px; line-height: 38px; font-family: Helvetica, Verdana, Arial, sans-serif; font-size: 18px;}
+-.webgl-content .footer .webgl-logo, .title, .enterar, .entervr {height: 100%; display: inline-block; background: transparent center no-repeat;}
++.webgl-content .footer .webgl-logo, .webxr-link, .title, .enterar, .entervr {height: 100%; display: inline-block; background: transparent center no-repeat;}
+ .webgl-content .footer .webgl-logo {background-image: url('webgl-logo.png'); width: 204px; float: left;}
++.webgl-content .footer .webxr-link {float: left;}
+ .webgl-content .footer .title {margin-right: 10px; float: right;}
+ .webgl-content .footer .enterar:enabled {background-color: #1eaed3; width: 38px; float: right;}
+ .webgl-content .footer .enterar:disabled {background-color: #dddddd; width: 38px; float: right;}","{""has_bug"": false, ""bugs"": []}"
+De-Panther/unity-webxr-export,53,c0423ce,Build/index.html,modified,1,0,1,"@@ -34,6 +34,7 @@
+         <div class=""webgl-logo""></div>
+         <button class=""entervr"" id=""entervr"" value=""Enter VR"" disabled>VR</button>
+         <button class=""enterar"" id=""enterar"" value=""Enter AR"" disabled>AR</button>
++        <div class=""webxr-link"">Using <a href=""https://github.com/De-Panther/unity-webxr-export"" target=""_blank"" title=""WebXR Export"">WebXR Export</a></div>
+         <div class=""title"">Unity-WebXR-Export</div>
+       </div>
+     </div>","{""has_bug"": true, ""bugs"": [{""line_start"": 17, ""line_end"": 17, ""description"": ""Incorrect condition for browser support check. The condition does not account for newer browsers that may not be listed."", ""buggy_code"": ""else if (['Edge', 'Firefox', 'Chrome', 'Safari'].indexOf(UnityLoader.SystemInfo.browser) == -1 && UnityLoader.SystemInfo.os != 'iOS')""}, {""line_start"": 46, ""line_end"": 46, ""description"": ""Potential null reference issue if 'event.detail' is undefined when the event is dispatched."", ""buggy_code"": ""enterARButton.disabled = !event.detail.supported;""}, {""line_start"": 49, ""line_end"": 49, ""description"": ""Potential null reference issue if 'event.detail' is undefined when the event is dispatched."", ""buggy_code"": ""enterVRButton.disabled = !event.detail.supported;""}]}"
+De-Panther/unity-webxr-export,53,c0423ce,Build/webxr.js,modified,22,2,24,"@@ -50,6 +50,7 @@
+     this.isVRSupported = false;
+     this.rAFCB = null;
+     this.onInputEvent = null;
++    this.waitingHandheldARHack = false;
+     this.init();
+   }
+ 
+@@ -94,16 +95,33 @@
+ 
+   XRManager.prototype.onRequestARSession = function () {
+     if (!this.isARSupported) return;
++    // The window on Chrome for Android lose focus when asking permissions.
++    // A popup is opened and the Canvas is painted with the last frame.
++    // We want to make sure that the Canvas is transparent when entering Handheld AR Session.
++    this.waitingHandheldARHack = true;
++    var thisXRMananger = this;
++    var tempRender = function () {
++      thisXRMananger.ctx.clearColor(0, 0, 0, 0);
++      thisXRMananger.ctx.clear(thisXRMananger.ctx.COLOR_BUFFER_BIT | thisXRMananger.ctx.DEPTH_BUFFER_BIT);
++      if (thisXRMananger.waitingHandheldARHack)
++      {
++        window.requestAnimationFrame( tempRender );
++      }
++    }
++    window.requestAnimationFrame( tempRender );
+     navigator.xr.requestSession('immersive-ar', {
+       requiredFeatures: ['local-floor'], // TODO: Get this value from Unity
+       optionalFeatures: ['dom-overlay'],
+-      domOverlay: {root: this.canvas}
++      domOverlay: {root: this.canvas.parentElement}
+     }).then(async (session) => {
++      this.waitingHandheldARHack = false;
+       session.isImmersive = true;
+       session.isInSession = true;
+       session.isAR = true;
+       this.arSession = session;
+       this.onSessionStarted(session);
++    }).catch((error) => {
++      thisXRMananger.waitingHandheldARHack = false;
+     });
+   }
+ 
+@@ -255,7 +273,9 @@
+             func(time);
+           });
+         } else {
+-          window.requestAnimationFrame(func);
++          if (!thisXRMananger.waitingHandheldARHack) {
++            window.requestAnimationFrame(func);
++          }
+         }
+       };
+ ","{""has_bug"": true, ""bugs"": [{""line_start"": 214, ""line_end"": 216, ""description"": ""Incomplete code leading to a potential reference error. The variable 'controller' is assigned to 'xrData.controllerA' but the assignment for 'xrData.controllerB' is incomplete."", ""buggy_code"": ""xrData.contr""}, {""line_start"": 141, ""line_end"": 146, ""description"": ""Potential resource leak if 'this.arSession.end()' fails. The session should be properly handled to avoid leaving resources allocated."", ""buggy_code"": ""this.arSession.end();""}, {""line_start"": 150, ""line_end"": 155, ""description"": ""Potential resource leak if 'this.vrSession.end()' fails. The session should be properly handled to avoid leaving resources allocated."", ""buggy_code"": ""this.vrSession.end();""}]}"

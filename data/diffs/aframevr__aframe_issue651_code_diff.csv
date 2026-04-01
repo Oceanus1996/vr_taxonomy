@@ -1,0 +1,97 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe,651,fefc4475eded8c3836b15420a0e39acdde520537,src/components/geometry.js,modified,25,26,51,"@@ -45,35 +45,34 @@ var warn = debug('components:geometry:warn');
+  */
+ module.exports.Component = registerComponent('geometry', {
+   schema: {
+-    arc: { default: 360 },
+-    depth: { default: 2, min: 0 },
+-    height: { default: 2, min: 0 },
+-    openEnded: { default: false },
+-    p: { default: 2 },
++    arc: { default: 360, if: { primitive: ['torus'] } },
++    depth: { default: 2, min: 0, if: { primitive: ['box'] } },
++    height: { default: 2, min: 0, if: { primitive: ['box', 'plane'] } },
++    openEnded: { default: false, if: { primitive: ['cylinder'] } },
++    p: { default: 2, if: { primitive: ['torusKnot'] } },
+     translate: { default: { x: 0, y: 0, z: 0 } },
+     primitive: {
+       default: '',
+-      oneOf: ['box', 'circle', 'cylinder', 'plane',
+-              'ring', 'sphere', 'torus', 'torusKnot']
+-    },
+-    q: { default: 3 },
+-    radius: { default: DEFAULT_RADIUS, min: 0 },
+-    radiusBottom: { default: DEFAULT_RADIUS, min: 0 },
+-    radiusInner: { default: 0.8, min: 0 },
+-    radiusOuter: { default: 1.2, min: 0 },
+-    radiusTop: { default: DEFAULT_RADIUS },
+-    radiusTubular: { default: 0.2, min: 0 },
+-    scaleHeight: { default: 1, min: 0 },
+-    segments: { default: 8, min: 0 },
+-    segmentsHeight: { default: 18, min: 0 },
+-    segmentsPhi: { default: 8, min: 0 },
+-    segmentsRadial: { default: 36, min: 0 },
+-    segmentsTheta: { default: 8, min: 0 },
+-    segmentsTubular: { default: 8, min: 0 },
+-    segmentsWidth: { default: 36, min: 0 },
+-    thetaLength: { default: 360, min: 0 },
+-    thetaStart: { default: 0 },
+-    width: { default: 2, min: 0 }
++      oneOf: ['', 'box', 'circle', 'cylinder', 'plane',
++              'ring', 'sphere', 'torus', 'torusKnot'] },
++    q: { default: 3, if: { primitive: ['torusKnot'] } },
++    radius: { default: DEFAULT_RADIUS, min: 0, if: { primitive: ['circle', 'cylinder', 'sphere', 'torus', 'torusKnot'] } },
++    radiusBottom: { default: DEFAULT_RADIUS, min: 0, if: { primitive: ['cylinder'] } },
++    radiusInner: { default: 0.8, min: 0, if: { primitive: ['ring'] } },
++    radiusOuter: { default: 1.2, min: 0, if: { primitive: ['ring'] } },
++    radiusTop: { default: DEFAULT_RADIUS, if: { primitive: ['cylinder'] } },
++    radiusTubular: { default: 0.2, min: 0, if: { primitive: ['torus'] } },
++    scaleHeight: { default: 1, min: 0, if: { primitive: ['torusKnot'] } },
++    segments: { default: 8, min: 0, if: { primitive: ['circle'] } },
++    segmentsHeight: { default: 18, min: 0, if: { primitive: ['cylinder', 'sphere'] } },
++    segmentsPhi: { default: 8, min: 0, if: { primitive: ['ring'] } },
++    segmentsRadial: { default: 36, min: 0, if: { primitive: ['cylinder'] } },
++    segmentsTheta: { default: 8, min: 0, if: { primitive: ['ring'] } },
++    segmentsTubular: { default: 8, min: 0, if: { primitive: ['torus', 'torusKnot'] } },
++    segmentsWidth: { default: 36, min: 0, if: { primitive: ['sphere'] } },
++    thetaLength: { default: 360, min: 0, if: { primitive: ['circle', 'cylinder', 'ring'] } },
++    thetaStart: { default: 0, if: { primitive: ['circle', 'cylinder', 'ring'] } },
++    width: { default: 2, min: 0, if: { primitive: ['box', 'plane'] } }
+   },
+ 
+   /**"
+aframevr/aframe,651,fefc4475eded8c3836b15420a0e39acdde520537,src/components/light.js,modified,6,6,12,"@@ -26,13 +26,13 @@ var warn = debug('components:light:warn');
+  */
+ module.exports.Component = registerComponent('light', {
+   schema: {
+-    angle: { default: 60 },
++    angle: { default: 60, if: { type: ['spot'] } },
+     color: { default: '#FFF' },
+-    groundColor: { default: '#FFF' },
+-    decay: { default: 1 },
+-    distance: { default: 0.0, min: 0 },
+-    exponent: { default: 10.0 },
+-    intensity: { default: 1.0, min: 0 },
++    groundColor: { default: '#FFF', if: { type: ['hemisphere'] } },
++    decay: { default: 1, if: { type: ['point', 'spot'] } },
++    distance: { default: 0.0, min: 0, if: { type: ['point', 'spot'] } },
++    exponent: { default: 10.0, if: { type: ['spot'] } },
++    intensity: { default: 1.0, min: 0, if: { type: ['directional', 'hemisphere', 'point', 'spot'] } },
+     type: { default: 'directional',
+             oneOf: ['ambient', 'directional', 'hemisphere', 'point', 'spot']
+     }"
+aframevr/aframe,651,fefc4475eded8c3836b15420a0e39acdde520537,src/components/material.js,modified,3,3,6,"@@ -47,11 +47,11 @@ module.exports.Component = registerComponent('material', {
+     envMap: { default: '' },
+     fog: { default: true },
+     height: { default: 360 },
+-    metalness: { default: 0.0, min: 0.0, max: 1.0 },
++    metalness: { default: 0.0, min: 0.0, max: 1.0, if: { shader: ['standard'] } },
+     opacity: { default: 1.0, min: 0.0, max: 1.0 },
+-    reflectivity: { default: 1.0, min: 0.0, max: 1.0 },
++    reflectivity: { default: 1.0, min: 0.0, max: 1.0, if: { shader: ['standard'] } },
+     repeat: { default: '' },
+-    roughness: { default: 0.5, min: 0.0, max: 1.0 },
++    roughness: { default: 0.5, min: 0.0, max: 1.0, if: { shader: ['standard'] } },
+     shader: { default: 'standard', oneOf: ['flat', 'standard'] },
+     side: { default: 'front', oneOf: ['front', 'back', 'double'] },
+     src: { default: '' },"

@@ -1,0 +1,228 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+frustra/strayphotons,278,6ebcc33a7463e98f33b345403567f8a180764a98,shaders/lib/histogram_common.glsl,modified,2,2,4,"@@ -3,8 +3,8 @@
+ 
+ #include ""lighting_util.glsl""
+ 
+-#define HistogramBins 64
+-const float lumMin = -8, lumMax = 4;
++#define HistogramBins 128
++const float lumMin = -15, lumMax = 6;
+ const float powLumMin = pow(2, lumMin);
+ const float histSampleScale = 10.0;
+ const float histDownsample = 2.0;"
+frustra/strayphotons,278,6ebcc33a7463e98f33b345403567f8a180764a98,shaders/vulkan/exposure_update.comp,modified,0,1,1,"@@ -62,7 +62,6 @@ void main() {
+ 
+     luminance = min(luminance, eyeAdaptationMaxLuminance);
+     luminance = max(luminance, eyeAdaptationMinLuminance);
+-    luminance /= lastExposureState.exposure;
+ 
+     float autoKeyComp = 1.03 - 2.0 / (log(luminance * 1000.0 + 1.0) / log(10) + 2.0);
+     autoKeyComp = eyeAdaptationKeyComp * autoKeyComp + 1.0 - eyeAdaptationKeyComp;"
+frustra/strayphotons,278,6ebcc33a7463e98f33b345403567f8a180764a98,shaders/vulkan/lumi_histogram.comp,modified,5,2,7,"@@ -1,12 +1,15 @@
+ #version 450
+ 
++layout(local_size_x = 16, local_size_y = 16) in;
++
+ #include ""../lib/histogram_common.glsl""
+ #include ""../lib/util.glsl""
+ 
+ layout(binding = 0) uniform sampler2D lumiTex;
+ layout(binding = 1, r32ui) uniform uimage2D finalHistogram;
+ 
+-layout(local_size_x = 16, local_size_y = 16) in;
++INCLUDE_LAYOUT(binding = 2)
++#include ""lib/exposure_state.glsl""
+ 
+ shared uint Histogram[HistogramBins];
+ 
+@@ -25,7 +28,7 @@ void main() {
+ 
+     if (texCoord.x < 1.0 && texCoord.y < 1.0) {
+         vec3 c = texture(lumiTex, texCoord).rgb;
+-        float bin = histogramBinFromPixel(c);
++        float bin = histogramBinFromPixel(c / exposure);
+ 
+         int bin0 = int(bin);
+         int bin1 = min(bin0 + 1, HistogramBins - 1);"
+frustra/strayphotons,278,6ebcc33a7463e98f33b345403567f8a180764a98,shaders/vulkan/render_histogram.frag,modified,4,1,5,"@@ -9,6 +9,9 @@ layout(num_views = 2) in;
+ layout(binding = 0) uniform sampler2DArray luminanceTex;
+ layout(binding = 1, r32ui) uniform uimage2D histogram;
+ 
++INCLUDE_LAYOUT(binding = 2)
++#include ""lib/exposure_state.glsl""
++
+ layout(location = 0) in vec2 inTexCoord;
+ layout(location = 0) out vec4 outFragColor;
+ 
+@@ -21,7 +24,7 @@ void main() {
+     uint count = imageLoad(histogram, ivec2(bin, 0)).r;
+     float height = count * (histDownsample * histDownsample / histSampleScale) / float(size.x * size.y);
+ 
+-    float binLuminance = luminanceFromRatio(float(bin) / HistogramBins);
++    float binLuminance = exposure * luminanceFromRatio(float(bin) / HistogramBins);
+     float y = 1 - inTexCoord.y;
+     vec2 edge = step(vec2(y), vec2(height, height + 0.005));
+     vec3 bar = (edge[1] - edge[0]) * vec3(0, 0.5, 0);"
+frustra/strayphotons,278,6ebcc33a7463e98f33b345403567f8a180764a98,src/graphics/graphics/vulkan/Renderer.cc,modified,16,2,18,"@@ -44,6 +44,8 @@ namespace sp::vulkan {
+ 
+         auto lock = ecs::World.StartTransaction<ecs::AddRemove>();
+         guiObserver = lock.Watch<ecs::ComponentEvent<ecs::Gui>>();
++
++        SelectDepthStencilFormat();
+     }
+ 
+     Renderer::~Renderer() {
+@@ -197,7 +199,7 @@ namespace sp::vulkan {
+                 builder.OutputColorAttachment(1, ""GBuffer1"", desc, {LoadOp::Clear, StoreOp::Store});
+                 builder.OutputColorAttachment(2, ""GBuffer2"", desc, {LoadOp::Clear, StoreOp::Store});
+ 
+-                desc.format = vk::Format::eD24UnormS8Uint;
++                desc.format = depthStencilFormat;
+                 builder.OutputDepthAttachment(""GBufferDepthStencil"", desc, {LoadOp::Clear, StoreOp::Store});
+ 
+                 builder.CreateUniform(""ViewState"", sizeof(GPUViewState) * 2);
+@@ -286,7 +288,7 @@ namespace sp::vulkan {
+                 desc.extent = vk::Extent3D(viewExtents.x, viewExtents.y, 1);
+                 desc.arrayLayers = xrViews.size();
+                 desc.primaryViewType = vk::ImageViewType::e2DArray;
+-                desc.format = vk::Format::eD24UnormS8Uint;
++                desc.format = depthStencilFormat;
+                 rg::AttachmentInfo attachment = {LoadOp::Clear, StoreOp::Store};
+                 attachment.arrayIndex = 0;
+                 builder.OutputDepthAttachment(""GBufferDepthStencil"", desc, attachment);
+@@ -532,4 +534,16 @@ namespace sp::vulkan {
+     void Renderer::SetDebugGui(GuiManager &gui) {
+         debugGui = &gui;
+     }
++
++    void Renderer::SelectDepthStencilFormat() {
++        depthStencilFormat = vk::Format::eD24UnormS8Uint;
++        if (device.FormatProperties(depthStencilFormat).optimalTilingFeatures &
++            vk::FormatFeatureFlagBits::eDepthStencilAttachment)
++            return;
++
++        depthStencilFormat = vk::Format::eD16UnormS8Uint;
++        if (device.FormatProperties(depthStencilFormat).optimalTilingFeatures &
++            vk::FormatFeatureFlagBits::eDepthStencilAttachment)
++            return;
++    }
+ } // namespace sp::vulkan"
+frustra/strayphotons,278,6ebcc33a7463e98f33b345403567f8a180764a98,src/graphics/graphics/vulkan/Renderer.hh,modified,3,0,3,"@@ -66,7 +66,10 @@ namespace sp::vulkan {
+         void AddDeferredPasses(ecs::Lock<ecs::Read<ecs::TransformSnapshot, ecs::Screen, ecs::LaserLine>> lock);
+         void AddMenuOverlay();
+ 
++        void SelectDepthStencilFormat();
++
+         CFuncCollection funcs;
++        vk::Format depthStencilFormat;
+ 
+         GPUScene scene;
+ "
+frustra/strayphotons,278,6ebcc33a7463e98f33b345403567f8a180764a98,src/graphics/graphics/vulkan/core/DeviceContext.cc,modified,4,3,7,"@@ -228,9 +228,6 @@ namespace sp::vulkan {
+         Assert(queueFamilyIndex[QUEUE_TYPE_TRANSFER] != queueFamilyIndex[QUEUE_TYPE_GRAPHICS],
+             ""transfer queue family overlaps graphics queue"");
+ 
+-        imageTransferGranularity = queueFamilies[queueFamilyIndex[QUEUE_TYPE_TRANSFER]].minImageTransferGranularity;
+-        Assert(imageTransferGranularity.depth <= 1, ""transfer queue doesn't support 2D images"");
+-
+         std::vector<vk::DeviceQueueCreateInfo> queueInfos;
+         for (uint32 i = 0; i < queueFamilies.size(); i++) {
+             if (queuesUsedCount[i] == 0) continue;
+@@ -1452,6 +1449,10 @@ namespace sp::vulkan {
+         if (printBufferStats.exchange(false)) bufferPool->LogStats();
+     }
+ 
++    vk::FormatProperties DeviceContext::FormatProperties(vk::Format format) const {
++        return physicalDevice.getFormatProperties(format);
++    }
++
+     tracy::VkCtx *DeviceContext::GetTracyContext(CommandContextType type) {
+         return tracing.tracyContexts[(size_t)type];
+     }"
+frustra/strayphotons,278,6ebcc33a7463e98f33b345403567f8a180764a98,src/graphics/graphics/vulkan/core/DeviceContext.hh,modified,2,0,2,"@@ -170,6 +170,8 @@ namespace sp::vulkan {
+             return physicalDeviceDescriptorIndexingProperties;
+         }
+ 
++        vk::FormatProperties FormatProperties(vk::Format format) const;
++
+         tracy::VkCtx *GetTracyContext(CommandContextType type);
+ 
+         uint32 QueueFamilyIndex(CommandContextType type) {"
+frustra/strayphotons,278,6ebcc33a7463e98f33b345403567f8a180764a98,src/graphics/graphics/vulkan/render_passes/Exposure.cc,modified,6,3,9,"@@ -65,7 +65,7 @@ namespace sp::vulkan::renderer {
+     }
+ 
+     void AddExposureUpdate(RenderGraph &graph) {
+-        const int bins = 64;
++        const int bins = 128;
+         const int wgsize = 16;
+         const int downsample = 2; // read every N pixels
+ 
+@@ -92,15 +92,16 @@ namespace sp::vulkan::renderer {
+                     });
+ 
+                 builder.Read(source, Access::ComputeShaderSampleImage);
++                builder.Read(""ExposureState"", Access::ComputeShaderReadStorage);
+                 builder.Write(""LuminanceHistogram"", Access::ComputeShaderWrite);
+             })
+             .Execute([source](rg::Resources &resources, CommandContext &cmd) {
+                 auto luminance = resources.GetImageLayerView(source, 0);
+-                auto histogram = resources.GetImageView(""LuminanceHistogram"");
+ 
+                 cmd.SetComputeShader(""lumi_histogram.comp"");
+                 cmd.SetImageView(0, 0, luminance);
+-                cmd.SetImageView(0, 1, histogram);
++                cmd.SetImageView(0, 1, resources.GetImageView(""LuminanceHistogram""));
++                cmd.SetStorageBuffer(0, 2, resources.GetBuffer(""ExposureState""));
+ 
+                 auto width = luminance->Extent().width / downsample;
+                 auto height = luminance->Extent().height / downsample;
+@@ -143,6 +144,7 @@ namespace sp::vulkan::renderer {
+                 .Build([&](rg::PassBuilder &builder) {
+                     builder.Read(""LuminanceHistogram"", Access::FragmentShaderReadStorage);
+                     builder.Read(source, Access::FragmentShaderSampleImage);
++                    builder.Read(""ExposureState"", Access::ComputeShaderReadStorage);
+ 
+                     auto desc = builder.DeriveImage(source);
+                     builder.OutputColorAttachment(0, ""ViewH"", desc, {LoadOp::DontCare, StoreOp::Store});
+@@ -151,6 +153,7 @@ namespace sp::vulkan::renderer {
+                     cmd.SetShaders(""screen_cover.vert"", ""render_histogram.frag"");
+                     cmd.SetImageView(0, 0, resources.GetImageView(source));
+                     cmd.SetImageView(0, 1, resources.GetImageView(""LuminanceHistogram""));
++                    cmd.SetStorageBuffer(0, 2, resources.GetBuffer(""ExposureState""));
+                     cmd.Draw(3);
+                 });
+     }"
+frustra/strayphotons,278,6ebcc33a7463e98f33b345403567f8a180764a98,src/graphics/graphics/vulkan/render_passes/SMAA.cc,modified,1,1,2,"@@ -39,7 +39,7 @@ namespace sp::vulkan::renderer {
+                 desc.format = vk::Format::eR8G8B8A8Unorm;
+                 builder.OutputColorAttachment(0, ""edges"", desc, {LoadOp::Clear, StoreOp::Store});
+ 
+-                desc.format = vk::Format::eD24UnormS8Uint;
++                desc.format = vk::Format::eS8Uint;
+                 builder.OutputDepthAttachment(""stencil"", desc, {LoadOp::Clear, StoreOp::Store});
+ 
+                 builder.ReadUniform(""ViewState"");"
+frustra/strayphotons,278,6ebcc33a7463e98f33b345403567f8a180764a98,src/graphics/graphics/vulkan/render_passes/Voxels.cc,modified,2,1,3,"@@ -179,11 +179,12 @@ namespace sp::vulkan::renderer {
+ 
+                 for (auto &resourceId : fragmentListBuffers) {
+                     auto listBuffer = resources.GetBuffer(resourceId);
+-                    cmd.Raw().fillBuffer(*listBuffer, 0, sizeof(GPUVoxelFragmentList), 0);
++                    cmd.Raw().fillBuffer(*listBuffer, offsetof(GPUVoxelFragmentList, count), sizeof(uint32_t), 0);
+                     cmd.Raw().fillBuffer(*listBuffer,
+                         offsetof(GPUVoxelFragmentList, capacity),
+                         sizeof(uint32_t),
+                         fragmentListSize);
++                    cmd.Raw().fillBuffer(*listBuffer, offsetof(GPUVoxelFragmentList, cmd.x), sizeof(uint32_t), 0);
+                     cmd.Raw().fillBuffer(*listBuffer, offsetof(GPUVoxelFragmentList, cmd.y), sizeof(uint32_t) * 2, 1);
+                 }
+             });"
+frustra/strayphotons,278,6ebcc33a7463e98f33b345403567f8a180764a98,src/graphics/graphics/vulkan/scene/TextureSet.cc,modified,0,4,4,"@@ -80,10 +80,6 @@ namespace sp::vulkan {
+             double rf = material.pbrMetallicRoughness.roughnessFactor,
+                    mf = material.pbrMetallicRoughness.metallicFactor;
+             if (rf != 1 || mf != 1) factor = {0.0, rf, mf, 0.0};
+-            // The spec says these should be linear, but we have srgb files right now.
+-            // Linear makes sense, there's no reason to have more precision for lower values.
+-            // TODO: reencode as linear
+-            srgb = true;
+             break;
+         }
+         case TextureType::Height:"

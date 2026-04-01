@@ -1,0 +1,262 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+StereoKit/StereoKit,567,3c3a8c9,StereoKit/Math/Bounds.cs,modified,39,0,39,"@@ -1,3 +1,5 @@
++using System.Collections.Generic;
++using System;
+ using System.Diagnostics.Contracts;
+ using System.Runtime.CompilerServices;
+ using System.Runtime.InteropServices;
+@@ -59,6 +61,43 @@ public static Bounds FromCorner(Vec3 bottomLeftBack, Vec3 dimensions)
+ 		public static Bounds FromCorners(Vec3 bottomLeftBack, Vec3 topRightFront)
+ 			=> new Bounds(bottomLeftBack/2 + topRightFront/2, topRightFront-bottomLeftBack);
+ 
++		/// <summary>Grow the Bounds to encapsulate the provided point. Returns
++		/// the result, and does NOT modify the current bounds.</summary>
++		/// <param name=""pt"">The point to encapsulate! This should be in the
++		/// same space as the bounds.</param>
++		/// <returns>The bounds that also encapsulate the provided point.
++		/// </returns>
++		Bounds Grown (Vec3 pt)
++			=> NativeAPI.bounds_grow_to_fit_pt(this, pt);
++		/// <summary>Grow the Bounds to encapsulate the provided box after it
++		/// has been transformed by the provided matrix transform. This will
++		/// transform each corner of the box, and expand the bounds to
++		/// encapsulate each point!</summary>
++		/// <param name=""box"">The box to encapsulate! The corners of this box
++		/// are transformed, and then used to grow the Bounds.</param>
++		/// <param name=""boxTransform"">The Matrix transform for the box. If
++		/// this is just an Identity matrix, you can skip providing a Matrix.
++		/// </param>
++		/// <returns>The bounds that also encapsulate the provided transformed
++		/// box.</returns>
++		Bounds Grown (Bounds box, Matrix boxTransform)
++			=> NativeAPI.bounds_grow_to_fit_box(this, box, boxTransform);
++		/// <summary>Grow the Bounds to encapsulate the provided box.</summary>
++		/// <param name=""box"">The box to encapsulate!</param>
++		/// <returns>The bounds that also encapsulate the provided box.
++		/// </returns>
++		Bounds Grown (Bounds box)
++			=> NativeAPI.bounds_grow_to_fit_box(this, box, IntPtr.Zero);
++		/// <summary>This returns a Bounds that encapsulates the transformed
++		/// points of the current Bounds's corners. Note that this will likely
++		/// introduce a lot of extra empty volume in many cases, as the result
++		/// is still always axis aligned.</summary>
++		/// <param name=""transform"">A transform Matrix for the current Bounds's
++		/// corners.</param>
++		/// <returns>A Bounds that encapsulates the transformed points of the
++		/// current Bounds's corners</returns>
++		Bounds Transformed(Matrix transform)
++			=> NativeAPI.bounds_transform(this, transform);
+ 
+ 		/// <summary>Calculate the intersection between a Ray, and these
+ 		/// bounds. Returns false if no intersection occurred, and 'at' will"
+StereoKit/StereoKit,567,3c3a8c9,StereoKit/Native/NativeAPI.cs,modified,15,11,26,"@@ -51,17 +51,21 @@ internal static class NativeAPI
+ 		
+ 		///////////////////////////////////////////
+ 
+-		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern int  plane_ray_intersect    (Plane plane, Ray ray, out Vec3 out_pt);
+-		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern int  plane_line_intersect   (Plane plane, Vec3 p1, Vec3 p2, out Vec3 out_pt);
+-		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern Vec3 plane_point_closest    (Plane plane, Vec3 pt);
+-		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern int  sphere_ray_intersect   (Sphere sphere, Ray ray, out Vec3 out_pt);
+-		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern int  sphere_point_contains  (Sphere sphere, Vec3 pt);
+-		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern int  bounds_ray_intersect   (Bounds bounds, Ray ray, out Vec3 out_pt);
+-		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern int  bounds_point_contains  (Bounds bounds, Vec3 pt);
+-		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern int  bounds_line_contains   (Bounds bounds, Vec3 linePt1, Vec3 linePt2);
+-		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern int  bounds_capsule_contains(Bounds bounds, Vec3 linePt1, Vec3 linePt2, float radius);
+-		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern Vec3 ray_point_closest      (Ray ray, Vec3 pt);
+-		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern int  ray_from_mouse         (Vec2 screen_pixel_pos, out Ray out_ray);
++		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern int    plane_ray_intersect    (Plane plane, Ray ray, out Vec3 out_pt);
++		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern int    plane_line_intersect   (Plane plane, Vec3 p1, Vec3 p2, out Vec3 out_pt);
++		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern Vec3   plane_point_closest    (Plane plane, Vec3 pt);
++		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern int    sphere_ray_intersect   (Sphere sphere, Ray ray, out Vec3 out_pt);
++		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern int    sphere_point_contains  (Sphere sphere, Vec3 pt);
++		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern int    bounds_ray_intersect   (Bounds bounds, Ray ray, out Vec3 out_pt);
++		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern int    bounds_point_contains  (Bounds bounds, Vec3 pt);
++		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern int    bounds_line_contains   (Bounds bounds, Vec3 linePt1, Vec3 linePt2);
++		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern int    bounds_capsule_contains(Bounds bounds, Vec3 linePt1, Vec3 linePt2, float radius);
++		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern Bounds bounds_grow_to_fit_pt  (Bounds bounds, Vec3 pt);
++		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern Bounds bounds_grow_to_fit_box (Bounds bounds, Bounds box, in Matrix opt_transform);
++		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern Bounds bounds_grow_to_fit_box (Bounds bounds, Bounds box, IntPtr opt_transform);
++		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern Bounds bounds_transform       (Bounds bounds, Matrix transform);
++		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern Vec3   ray_point_closest      (Ray ray, Vec3 pt);
++		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern int    ray_from_mouse         (Vec2 screen_pixel_pos, out Ray out_ray);
+ 
+ 		///////////////////////////////////////////
+ "
+StereoKit/StereoKit,567,3c3a8c9,StereoKitC/asset_types/mesh.cpp,modified,9,9,18,"@@ -78,18 +78,18 @@ void _mesh_set_verts(mesh_t mesh, const vert_t *vertices, uint32_t vertex_count,
+ 
+ 	// Calculate the bounds for this mesh by searching it for min and max values!
+ 	if (calculate_bounds && vertex_count > 0) {
+-		vec3 min = vertices[0].pos;
+-		vec3 max = vertices[0].pos;
++		XMVECTOR min = XMLoadFloat3((XMFLOAT3*)&vertices[0].pos);
++		XMVECTOR max = min;
+ 		for (uint32_t i = 1; i < vertex_count; i++) {
+-			min.x = fminf(vertices[i].pos.x, min.x);
+-			min.y = fminf(vertices[i].pos.y, min.y);
+-			min.z = fminf(vertices[i].pos.z, min.z);
+ 
+-			max.x = fmaxf(vertices[i].pos.x, max.x);
+-			max.y = fmaxf(vertices[i].pos.y, max.y);
+-			max.z = fmaxf(vertices[i].pos.z, max.z);
++			XMVECTOR pt = XMLoadFloat3((XMFLOAT3*)&vertices[i].pos);
++			min = XMVectorMin(min, pt);
++			max = XMVectorMax(max, pt);
+ 		}
+-		mesh->bounds = bounds_t{ min / 2 + max / 2, max - min };
++		XMVECTOR center     = XMVectorMultiplyAdd(min, g_XMOneHalf, XMVectorMultiply(max, g_XMOneHalf));
++		XMVECTOR dimensions = XMVectorSubtract(max, min);
++		XMStoreFloat3((XMFLOAT3*)&mesh->bounds.center,     center);
++		XMStoreFloat3((XMFLOAT3*)&mesh->bounds.dimensions, dimensions);
+ 	}
+ }
+ ///////////////////////////////////////////"
+StereoKit/StereoKit,567,3c3a8c9,StereoKitC/asset_types/model.cpp,modified,3,1,4,"@@ -486,7 +486,9 @@ model_node_id model_node_add_child(model_t model, model_node_id parent, const ch
+ 		visual.node            = node_id;
+ 		visual.visible         = true;
+ 		node.visual = model->visuals.add(visual);
+-		model->bounds = bounds_grow_to_fit_box(model->bounds, mesh_get_bounds(mesh), &node.transform_model);
++		model->bounds = model->visuals.count == 1
++			? bounds_transform(mesh_get_bounds(mesh), node.transform_model)
++			: bounds_grow_to_fit_box(model->bounds, mesh_get_bounds(mesh), &node.transform_model);
+ 	}
+ 
+ 	model->nodes.add(node);"
+StereoKit/StereoKit,567,3c3a8c9,StereoKitC/intersect.cpp,modified,40,16,56,"@@ -144,30 +144,54 @@ bounds_t bounds_grow_to_fit_pt(bounds_t bounds, vec3 pt) {
+ 
+ ///////////////////////////////////////////
+ 
+-bounds_t bounds_grow_to_fit_box(bounds_t bounds, bounds_t box, const matrix* opt_transform) {
+-	vec3 half = bounds.dimensions / 2;
+-	vec3 min  = bounds.center - half;
+-	vec3 max  = bounds.center + half;
+-	
+-	for (int32_t i = 0; i < 8; i++) {
+-		vec3 pt = bounds_corner(box, i);
+-		if (opt_transform) pt = matrix_transform_pt(*opt_transform, pt);
+-		if      (pt.x > max.x) max.x = pt.x;
+-		else if (pt.x < min.x) min.x = pt.x;
+-		if      (pt.y > max.y) max.y = pt.y;
+-		else if (pt.y < min.y) min.y = pt.y;
+-		if      (pt.z > max.z) max.z = pt.z;
+-		else if (pt.z < min.z) min.z = pt.z;
++bounds_t bounds_grow_to_fit_box_opt(bounds_t *opt_bounds, bounds_t box, const matrix* opt_transform) {
++	XMVECTOR min, max;
++	int32_t start;
++	if (opt_bounds) {
++		vec3 half = opt_bounds->dimensions / 2;
++		vec3 minf = opt_bounds->center - half;
++		vec3 maxf = opt_bounds->center + half;
++		start = 0;
++		min   = XMLoadFloat3((XMFLOAT3*)&minf);
++		max   = XMLoadFloat3((XMFLOAT3*)&maxf);
++	} else {
++		min   = XMLoadFloat3((XMFLOAT3*)&bounds_corner(box, 0));
++		max   = min;
++		start = 1;
+ 	}
+ 
++	for (int32_t i = 1; i < 8; i++) {
++		vec3 pt = opt_transform 
++			? matrix_transform_pt(*opt_transform, bounds_corner(box, i))
++			: bounds_corner(box, i);
++
++		XMVECTOR xpt = XMLoadFloat3((XMFLOAT3*)&pt);
++		min = XMVectorMin(min, xpt);
++		max = XMVectorMax(max, xpt);
++	}
++	XMVECTOR center     = XMVectorMultiplyAdd(min, g_XMOneHalf, XMVectorMultiply(max, g_XMOneHalf));
++	XMVECTOR dimensions = XMVectorSubtract   (max, min);
++
+ 	bounds_t result;
+-	result.center     = vec3_lerp(min, max, 0.5f);
+-	result.dimensions = max - min;
++	XMStoreFloat3((XMFLOAT3*)&result.center,     center);
++	XMStoreFloat3((XMFLOAT3*)&result.dimensions, dimensions);
+ 	return result;
+ }
+ 
+ ///////////////////////////////////////////
+ 
++bounds_t bounds_grow_to_fit_box(bounds_t bounds, bounds_t box, const matrix* opt_transform) {
++	return bounds_grow_to_fit_box_opt(&bounds, box, opt_transform);
++}
++
++///////////////////////////////////////////
++
++bounds_t bounds_transform(bounds_t bounds, matrix transform) {
++	return bounds_grow_to_fit_box_opt(nullptr, bounds, &transform);
++}
++
++///////////////////////////////////////////
++
+ vec3 ray_point_closest(ray_t ray, vec3 pt) {
+ 	float t = vec3_dot(pt - ray.pos, ray.dir);
+ 	return ray.pos + ray.dir * t;"
+StereoKit/StereoKit,567,3c3a8c9,StereoKitC/stereokit.h,modified,2,1,3,"@@ -571,7 +571,8 @@ SK_API bool32_t bounds_point_contains  (bounds_t bounds, vec3 pt);
+ SK_API bool32_t bounds_line_contains   (bounds_t bounds, vec3 pt1, vec3 pt2);
+ SK_API bool32_t bounds_capsule_contains(bounds_t bounds, vec3 pt1, vec3 pt2, float radius);
+ SK_API bounds_t bounds_grow_to_fit_pt  (bounds_t bounds, vec3 pt);
+-SK_API bounds_t bounds_grow_to_fit_box (bounds_t bounds, bounds_t box, const matrix *opt_transform sk_default(nullptr));
++SK_API bounds_t bounds_grow_to_fit_box (bounds_t bounds, bounds_t box, const matrix *opt_box_transform sk_default(nullptr));
++SK_API bounds_t bounds_transform       (bounds_t bounds, matrix transform);
+ SK_API vec3     ray_point_closest      (ray_t ray, vec3 pt);
+ 
+ ///////////////////////////////////////////"
+StereoKit/StereoKit,567,4b7b00d,StereoKitC/asset_types/model_obj.cpp,modified,9,3,12,"@@ -1,4 +1,5 @@
+ #include ""model.h""
++#include ""mesh_.h""
+ #include ""../libraries/stref.h""
+ #include ""../libraries/array.h""
+ 
+@@ -9,9 +10,11 @@ namespace sk {
+ ///////////////////////////////////////////
+ 
+ int indexof(int iV, int iT, int iN, array_t<vec3> *verts, array_t<vec3> *norms, array_t<vec2> *uvs, hashmap_t<vert_t, vind_t> *indmap, array_t<vert_t> *mesh_verts) {
+-	if (uvs  ->count == 0) uvs  ->add(vec2{ 0,0 }  );
+-	if (norms->count == 0) norms->add(vec3{ 0,1,0 });
+-	vert_t v = vert_t{ verts->get(iV - 1LL), norms->get(iN - 1LL), uvs->get(iT - 1LL), {255,255,255,255} };
++	vert_t v = vert_t{
++		iV <= verts->count ? verts->get(iV - 1) : vec3{0,0,0},
++		iN <= norms->count ? norms->get(iN - 1) : vec3{0,1,0},
++		iT <= uvs->count   ? uvs  ->get(iT - 1) : vec2{0,0},
++		{255,255,255,255} };
+ 
+ 	int32_t index = indmap->contains(v);
+ 	if (index < 0) {
+@@ -99,6 +102,9 @@ bool modelfmt_obj(model_t model, const char *filename, void *file_data, size_t,
+ 		}
+ 	}
+ 
++	if (norms.count <= 0)
++		mesh_calculate_normals(&verts[0], verts.count, &faces[0], faces.count);
++
+ 	mesh = mesh_create();
+ 	mesh_set_id  (mesh, id);
+ 	mesh_set_data(mesh, &verts[0], verts.count, &faces[0], faces.count);"
+StereoKit/StereoKit,567,56f3512,StereoKit/StereoKit.csproj,modified,1,1,2,"@@ -18,7 +18,7 @@
+ 	<!-- NuGet package -->
+ 	<PropertyGroup>
+ 		<Id>StereoKit</Id>
+-		<Version>0.3.7-preview.7</Version>
++		<Version>0.3.7-preview.8</Version>
+ 		<Title>StereoKit</Title>
+ 		<Authors>Nick Klingensmith</Authors>
+ 		<PackageProjectUrl>https://github.com/maluoi/StereoKit</PackageProjectUrl>"
+StereoKit/StereoKit,567,56f3512,StereoKitC/stereokit.h,modified,1,1,2,"@@ -3,7 +3,7 @@
+ #define SK_VERSION_MAJOR 0
+ #define SK_VERSION_MINOR 3
+ #define SK_VERSION_PATCH 7
+-#define SK_VERSION_PRERELEASE 7
++#define SK_VERSION_PRERELEASE 8
+ 
+ #if defined(__GNUC__) || defined(__clang__)
+ 	#define SK_DEPRECATED __attribute__((deprecated))"
+StereoKit/StereoKit,567,56f3512,xmake.lua,modified,1,1,2,"@@ -69,7 +69,7 @@ target(""StereoKitC"")
+     add_options(""uwp"")
+     add_options(""linux-graphics-backend"")
+     add_options(""oculus-openxr"")
+-    set_version(""0.3.7-preview.7"")
++    set_version(""0.3.7-preview.8"")
+     set_symbols(""debug"")
+ 
+     -- 2.5.3 is needed for utils.install.pkgconfig_importfiles"

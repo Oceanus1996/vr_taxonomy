@@ -1,0 +1,173 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vircadia/vircadia-native-core,55,d872e9f,interface/src/avatar/MyAvatar.cpp,modified,1,1,2,"@@ -3825,7 +3825,7 @@ void MyAvatar::updateActionMotor(float deltaTime) {
+         }
+         _actionMotorVelocity = motorSpeed * direction;
+     } else {
+-        _actionMotorVelocity = direction;
++        _actionMotorVelocity = sensorToWorldScale * direction;
+     }
+ 
+     float previousBoomLength = _boomLength;"
+vircadia/vircadia-native-core,55,08a177a,interface/resources/controllers/standard.json,modified,13,0,13,"@@ -6,6 +6,11 @@
+ 		  ""to"": ""Actions.TranslateZ""
+         },
+ 
++        { ""from"": ""Standard.RY"",
++		  ""when"": [""!Application.InHMD"", ""Application.RightHandDominant""],
++		  ""to"": ""Actions.Pitch""
++        },
++
+         { ""from"": ""Standard.LX"",
+           ""when"": [
+             ""Application.InHMD"", ""!Application.AdvancedMovement"", ""Application.RightHandDominant"",
+@@ -57,6 +62,11 @@
+ 		  ""to"": ""Actions.TranslateZ""
+         },
+ 
++        { ""from"": ""Standard.LY"",
++		  ""when"": [""!Application.InHMD"", ""Application.LeftHandDominant""],
++		  ""to"": ""Actions.Pitch""
++        },
++
+         { ""from"": ""Standard.RX"",
+           ""when"": [
+             ""Application.InHMD"", ""!Application.AdvancedMovement"", ""Application.LeftHandDominant"",
+@@ -109,6 +119,9 @@
+         { ""from"": ""Standard.LT"", ""to"": ""Actions.LeftHandClick"" },
+         { ""from"": ""Standard.RT"", ""to"": ""Actions.RightHandClick"" },
+ 
++        { ""from"": ""Standard.A"", ""to"": ""Actions.Up"" },
++        { ""from"": ""Standard.B"", ""to"": ""Actions.Down"" },
++
+         { ""from"": ""Standard.LeftHand"", ""to"": ""Actions.LeftHand"" },
+         { ""from"": ""Standard.LeftHandThumb1"", ""to"": ""Actions.LeftHandThumb1""},
+         { ""from"": ""Standard.LeftHandThumb2"", ""to"": ""Actions.LeftHandThumb2""},"
+vircadia/vircadia-native-core,55,08a177a,interface/resources/controllers/standard_navigation.json,modified,3,1,4,"@@ -6,7 +6,9 @@
+         { ""from"": ""Standard.DL"", ""to"": ""Actions.UiNavLateral"", ""filters"": ""invert"" },
+         { ""from"": ""Standard.DR"", ""to"": ""Actions.UiNavLateral"" },
+         { ""from"": ""Standard.LB"", ""to"": ""Actions.UiNavGroup"",""filters"": ""invert"" },
+-        { ""from"": ""Standard.RB"", ""to"": ""Actions.UiNavGroup"" }
++        { ""from"": ""Standard.RB"", ""to"": ""Actions.UiNavGroup"" },
++        { ""from"": [ ""Standard.A"", ""Standard.X"" ], ""to"": ""Actions.UiNavSelect"" },
++        { ""from"": [ ""Standard.B"", ""Standard.Y"" ], ""to"": ""Actions.UiNavBack"" }
+     ]
+ }
+ "
+vircadia/vircadia-native-core,55,08a177a,interface/resources/controllers/xbox.json,modified,5,29,34,"@@ -1,8 +1,8 @@
+ {
+     ""name"": ""XBox to Standard"",
+     ""channels"": [
+-        { ""from"": ""GamePad.LY"", ""filters"": { ""type"": ""deadZone"", ""min"": 0.05 }, ""to"": ""Actions.TranslateZ"" },
+-        { ""from"": ""GamePad.LX"", ""filters"": { ""type"": ""deadZone"", ""min"": 0.05 }, ""to"": ""Actions.TranslateX"" },
++        { ""from"": ""GamePad.LY"", ""filters"": { ""type"": ""deadZone"", ""min"": 0.05 }, ""to"": ""Standard.LY"" },
++        { ""from"": ""GamePad.LX"", ""filters"": { ""type"": ""deadZone"", ""min"": 0.05 }, ""to"": ""Standard.LX"" },
+ 
+         { ""from"": ""GamePad.LT"", ""to"": ""Standard.LTClick"",
+             ""peek"": true,
+@@ -12,29 +12,8 @@
+         { ""from"": ""GamePad.LB"", ""to"": ""Standard.LB"" },
+         { ""from"": ""GamePad.LS"", ""to"": ""Standard.LS"" },
+ 
+-
+-        { ""from"": ""GamePad.RX"",
+-          ""when"": [ ""Application.InHMD"", ""Application.SnapTurn"" ],
+-          ""to"": ""Actions.StepYaw"",
+-          ""filters"":
+-            [
+-                { ""type"": ""deadZone"", ""min"": 0.15 },
+-                ""constrainToInteger"",
+-                { ""type"": ""pulse"", ""interval"": 0.25 },
+-                { ""type"": ""scale"", ""scale"": 22.5 }
+-            ]
+-        },
+-
+-        { ""from"": ""GamePad.RX"", ""filters"": { ""type"": ""deadZone"", ""min"": 0.05 }, ""to"": ""Actions.Yaw"" },
+-
+-        { ""from"": ""GamePad.RY"",
+-          ""to"": ""Actions.VERTICAL_UP"",
+-          ""filters"":
+-            [
+-                { ""type"": ""deadZone"", ""min"": 0.95 },
+-                ""invert""
+-            ]
+-        },
++        { ""from"": ""GamePad.RX"", ""filters"": { ""type"": ""deadZone"", ""min"": 0.05 }, ""to"": ""Standard.RX"" },
++        { ""from"": ""GamePad.RY"", ""filters"": { ""type"": ""deadZone"", ""min"": 0.05 }, ""to"": ""Standard.RY"" },
+ 
+         { ""from"": ""GamePad.RT"", ""to"": ""Standard.RTClick"",
+             ""peek"": true,
+@@ -55,9 +34,6 @@
+         { ""from"": ""GamePad.A"", ""to"": ""Standard.A"" },
+         { ""from"": ""GamePad.B"", ""to"": ""Standard.B"" },
+         { ""from"": ""GamePad.X"", ""to"": ""Standard.X"" },
+-        { ""from"": ""GamePad.Y"", ""to"": ""Standard.Y"" },
+-
+-        { ""from"": [ ""Standard.A"", ""Standard.X"" ], ""to"": ""Actions.UiNavSelect"" },
+-        { ""from"": [ ""Standard.B"", ""Standard.Y"" ], ""to"": ""Actions.UiNavBack"" }
++        { ""from"": ""GamePad.Y"", ""to"": ""Standard.Y"" }
+     ]
+ }"
+vircadia/vircadia-native-core,55,08a177a,interface/resources/controllers/xbox_orig.json,added,63,0,63,"@@ -0,0 +1,63 @@
++{
++    ""name"": ""XBox to Standard"",
++    ""channels"": [
++        { ""from"": ""GamePad.LY"", ""filters"": { ""type"": ""deadZone"", ""min"": 0.05 }, ""to"": ""Actions.TranslateZ"" },
++        { ""from"": ""GamePad.LX"", ""filters"": { ""type"": ""deadZone"", ""min"": 0.05 }, ""to"": ""Actions.TranslateX"" },
++
++        { ""from"": ""GamePad.LT"", ""to"": ""Standard.LTClick"",
++            ""peek"": true,
++            ""filters"": [ { ""type"": ""hysteresis"", ""min"": 0.85, ""max"": 0.9 } ]
++        },
++        { ""from"": ""GamePad.LT"", ""to"": ""Standard.LT"" },
++        { ""from"": ""GamePad.LB"", ""to"": ""Standard.LB"" },
++        { ""from"": ""GamePad.LS"", ""to"": ""Standard.LS"" },
++
++
++        { ""from"": ""GamePad.RX"",
++          ""when"": [ ""Application.InHMD"", ""Application.SnapTurn"" ],
++          ""to"": ""Actions.StepYaw"",
++          ""filters"":
++            [
++                { ""type"": ""deadZone"", ""min"": 0.15 },
++                ""constrainToInteger"",
++                { ""type"": ""pulse"", ""interval"": 0.25 },
++                { ""type"": ""scale"", ""scale"": 22.5 }
++            ]
++        },
++
++        { ""from"": ""GamePad.RX"", ""filters"": { ""type"": ""deadZone"", ""min"": 0.05 }, ""to"": ""Actions.Yaw"" },
++
++        { ""from"": ""GamePad.RY"",
++          ""to"": ""Actions.VERTICAL_UP"",
++          ""filters"":
++            [
++                { ""type"": ""deadZone"", ""min"": 0.95 },
++                ""invert""
++            ]
++        },
++
++        { ""from"": ""GamePad.RT"", ""to"": ""Standard.RTClick"",
++            ""peek"": true,
++            ""filters"": [ { ""type"": ""hysteresis"", ""min"": 0.85, ""max"": 0.9 } ]
++        },
++        { ""from"": ""GamePad.RT"", ""to"": ""Standard.RT"" },
++        { ""from"": ""GamePad.RB"", ""to"": ""Standard.RB"" },
++        { ""from"": ""GamePad.RS"", ""to"": ""Standard.RS"" },
++
++        { ""from"": ""GamePad.Start"", ""to"": ""Standard.Start"" },
++        { ""from"": ""GamePad.Back"", ""to"": ""Actions.CycleCamera"" },
++
++        { ""from"": ""GamePad.DU"", ""to"": ""Standard.DU"" },
++        { ""from"": ""GamePad.DD"", ""to"": ""Standard.DD"" },
++        { ""from"": ""GamePad.DL"", ""to"": ""Standard.DL"" },
++        { ""from"": ""GamePad.DR"", ""to"": ""Standard.DR"" },
++
++        { ""from"": ""GamePad.A"", ""to"": ""Standard.A"" },
++        { ""from"": ""GamePad.B"", ""to"": ""Standard.B"" },
++        { ""from"": ""GamePad.X"", ""to"": ""Standard.X"" },
++        { ""from"": ""GamePad.Y"", ""to"": ""Standard.Y"" },
++
++        { ""from"": [ ""Standard.A"", ""Standard.X"" ], ""to"": ""Actions.UiNavSelect"" },
++        { ""from"": [ ""Standard.B"", ""Standard.Y"" ], ""to"": ""Actions.UiNavBack"" }
++    ]
++}"

@@ -1,0 +1,230 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+musehq/spacesvr,162,39e145fbe95fda2ee3da53ac8e91c9428c5e029e,package.json,modified,1,1,2,"@@ -1,6 +1,6 @@
+ {
+   ""name"": ""spacesvr"",
+-  ""version"": ""2.10.3"",
++  ""version"": ""2.10.4"",
+   ""private"": true,
+   ""description"": ""A standardized reality for future of the 3D Web"",
+   ""keywords"": ["
+musehq/spacesvr,162,39e145fbe95fda2ee3da53ac8e91c9428c5e029e,src/ideas/modifiers/Tool/index.tsx,modified,8,1,9,"@@ -16,6 +16,7 @@ type ToolProps = {
+   range?: number;
+   orderIndex?: number;
+   bobStrength?: number;
++  disableDraggable?: boolean;
+   onSwitch?: (enabled: boolean) => void;
+ };
+ 
+@@ -38,6 +39,7 @@ export function Tool(props: ToolProps) {
+     range,
+     bobStrength,
+     orderIndex,
++    disableDraggable = false,
+     onSwitch,
+   } = props;
+ 
+@@ -74,7 +76,12 @@ export function Tool(props: ToolProps) {
+             range={range}
+             bobStrength={bobStrength}
+           >
+-            <OnScreen distance={DISTANCE} name={name} pos={pos}>
++            <OnScreen
++              distance={DISTANCE}
++              name={name}
++              pos={pos}
++              disableDraggable={disableDraggable}
++            >
+               <FacePlayer enabled={face}>{visible && children}</FacePlayer>
+             </OnScreen>
+           </HUD>"
+musehq/spacesvr,162,39e145fbe95fda2ee3da53ac8e91c9428c5e029e,src/ideas/modifiers/Tool/modifiers/OnScreen.tsx,modified,7,2,9,"@@ -10,11 +10,12 @@ type OnScreenProps = {
+   distance: number;
+   name: string;
+   pos: [number, number];
++  disableDraggable: boolean;
+   children: ReactNode | ReactNode[];
+ };
+ 
+ export default function OnScreen(props: OnScreenProps) {
+-  const { distance, name, pos, children } = props;
++  const { distance, name, pos, disableDraggable, children } = props;
+ 
+   const toolbelt = useToolbelt();
+ 
+@@ -80,7 +81,11 @@ export default function OnScreen(props: OnScreenProps) {
+ 
+   return (
+     <animated.group position={spring.pos} name=""onscreen"">
+-      <Draggable set={set} distance={distance} enabled={ENABLED}>
++      <Draggable
++        set={set}
++        distance={distance}
++        enabled={ENABLED && !disableDraggable}
++      >
+         {children}
+       </Draggable>
+     </animated.group>"
+musehq/spacesvr,162,39e145fbe95fda2ee3da53ac8e91c9428c5e029e,src/ideas/ui/TextInput/index.tsx,modified,15,2,17,"@@ -6,7 +6,7 @@ import { animated, useSpring } from ""@react-spring/three"";
+ import { useTextInput } from ""../../../logic/input"";
+ import { useKeypress, useShiftHold } from ""../../../logic/keys"";
+ import { usePlayer } from ""../../../layers/Player"";
+-import { Mesh, MeshStandardMaterial, Raycaster } from ""three"";
++import { Group, Mesh, MeshStandardMaterial, Raycaster, Vector3 } from ""three"";
+ import { syncOnChange } from ""./logic/sync"";
+ import {
+   getClickedCaret,
+@@ -19,6 +19,7 @@ import { useDragSelect } from ""./logic/drag"";
+ import { useLimitedFrame } from ""../../../logic/limiter"";
+ import { cache } from ""../../../logic/cache"";
+ import { HitBox } from ""../../primitives/HitBox"";
++import { useEnvironment } from ""../../../layers/Environment"";
+ 
+ type TextProps = {
+   value?: string;
+@@ -51,9 +52,12 @@ export function TextInput(props: TextProps) {
+   } = props;
+ 
+   const clock = useThree((st) => st.clock);
++  const camera = useThree((st) => st.camera);
+   const player = usePlayer();
++  const { device } = useEnvironment();
+   const RAYCASTER = passedRaycaster || player.raycaster;
+ 
++  const group = useRef<Group>(null);
+   const textRef = useRef<any>();
+   const caret = useRef<Mesh>(null);
+   const highlight = useRef<Mesh>(null);
+@@ -67,18 +71,27 @@ export function TextInput(props: TextProps) {
+ 
+   const { input, focused, focusInput } = useTextInput(type, val, setVal);
+ 
++  // focus callback
+   useEffect(() => {
+     if (!onFocus) return;
+     input.addEventListener(""focus"", onFocus);
+     return () => input.removeEventListener(""focus"", onFocus);
+   }, [input, onFocus]);
+ 
++  // blur callback
+   useEffect(() => {
+     if (!onBlur) return;
+     input.addEventListener(""blur"", onBlur);
+     return () => input.removeEventListener(""blur"", onBlur);
+   }, [input, onBlur]);
+ 
++  // look at input when focused, only on mobile
++  useEffect(() => {
++    if (!group.current || !focused || !device.mobile) return;
++    const worldpos = group.current.getWorldPosition(new Vector3());
++    camera.lookAt(worldpos);
++  }, [focused, camera, device]);
++
+   const { color } = useSpring({ color: focused ? ""#000"" : ""#828282"" });
+ 
+   const highlightMat = cache.useResource(
+@@ -321,7 +334,7 @@ export function TextInput(props: TextProps) {
+   });
+ 
+   return (
+-    <group name=""spacesvr-text-input"" {...rest}>
++    <group name=""spacesvr-text-input"" {...rest} ref={group}>
+       <group name=""content"" position-z={DEPTH / 2 + 0.001}>
+         <Suspense fallback={null}>
+           <Text"
+musehq/spacesvr,162,39e145fbe95fda2ee3da53ac8e91c9428c5e029e,src/layers/Environment/ui/PauseMenu/index.tsx,modified,1,1,2,"@@ -40,7 +40,7 @@ export default function PauseMenu(props: PauseMenuProps) {
+   const PAUSE_ITEMS: MenuItem[] = [
+     ...pauseMenuItems,
+     {
+-      text: ""v2.10.3"",
++      text: ""v2.10.4"",
+       link: ""https://www.npmjs.com/package/spacesvr"",
+     },
+     ...menuItems,"
+musehq/spacesvr,162,39e145fbe95fda2ee3da53ac8e91c9428c5e029e,src/layers/Player/components/controls/TouchFPSCamera.tsx,modified,4,7,11,"@@ -59,20 +59,17 @@ export default function TouchFPSCamera() {
+   const onTouchMove = (ev: TouchEvent) => {
+     const touch = getCurrentTouch(touchStartPos.current.id, ev.touches);
+ 
+-    if (!touch) {
+-      return;
+-    }
++    if (!touch) return;
+ 
+     const { clientX, clientY } = touch;
+     const newEuler = getNewEuler(clientX, clientY);
+     camera.quaternion.setFromEuler(newEuler);
+   };
++
+   const onTouchEnd = (ev: TouchEvent) => {
+     const touch = getCurrentTouch(touchStartPos.current.id, ev.changedTouches);
+ 
+-    if (!touch) {
+-      return;
+-    }
++    if (!touch) return;
+ 
+     const { clientX, clientY } = touch;
+     originEuler.current = getNewEuler(clientX, clientY);
+@@ -89,7 +86,7 @@ export default function TouchFPSCamera() {
+       document.removeEventListener(""touchmove"", onTouchMove);
+       document.removeEventListener(""touchend"", onTouchEnd);
+     };
+-  }, []);
++  }, [onTouchEnd, onTouchMove, onTouchStart]);
+ 
+   return null;
+ }"
+musehq/spacesvr,162,39e145fbe95fda2ee3da53ac8e91c9428c5e029e,src/layers/Toolbelt/ideas/ToolSwitcher.tsx,modified,5,18,23,"@@ -8,31 +8,23 @@ export default function ToolSwitcher() {
+   const { size, gl } = useThree();
+ 
+   const registered = useRef(false);
+-  const type = useRef<""side"" | ""bottom"">(""side"");
+ 
+   const DETECT_RANGE_X = screen.width * 0.04;
+   const DRAG_RANGE_X = screen.width * 0.08;
+-
+-  const DETECT_RANGE_Y = screen.height * 0.085;
+-  const DRAG_RANGE_Y = screen.height * 0.17;
++  const DETECT_RANGE_Y = screen.height * 0.5;
+ 
+   const valid = useRef(false);
+   useDrag(
+     {
+       onStart: ({ e, touch }) => {
+         valid.current = false;
+ 
+-        const inBottomEdge = size.height - touch.clientY < DETECT_RANGE_Y;
+         const inSideEdge =
+           Math.min(touch.clientX, size.width - touch.clientX) < DETECT_RANGE_X;
++        const inTopThird = touch.clientY < DETECT_RANGE_Y;
+ 
+-        // ignore corners or no match
+-        if (inBottomEdge === inSideEdge) return;
+-        // don't trigger bottom swipe if there's an active tool
+-        if (inBottomEdge && toolbelt.activeIndex !== undefined) return;
+-
+-        if (inBottomEdge) type.current = ""bottom"";
+-        if (inSideEdge) type.current = ""side"";
++        // ignore if not in top third or side edge
++        if (!inSideEdge || !inTopThird) return;
+ 
+         valid.current = true;
+         registered.current = false;
+@@ -43,12 +35,7 @@ export default function ToolSwitcher() {
+       onMove: ({ delta }) => {
+         if (!valid.current || registered.current) return;
+ 
+-        if (type.current == ""bottom"" && delta.y < -DRAG_RANGE_Y) {
+-          registered.current = true;
+-          toolbelt.show();
+-        }
+-
+-        if (type.current == ""side"" && Math.abs(delta.x) > DRAG_RANGE_X) {
++        if (Math.abs(delta.x) > DRAG_RANGE_X) {
+           registered.current = true;
+           if (delta.x > 0) {
+             toolbelt.next();"
+musehq/spacesvr,162,39e145fbe95fda2ee3da53ac8e91c9428c5e029e,src/logic/dom.ts,modified,1,1,2,"@@ -1,3 +1,3 @@
+ // check whether the user is currently typing
+ export const isTyping = (): boolean =>
+-  document?.activeElement?.tagName === ""INPUT"";
++  document?.activeElement?.tagName === ""INPUT"" && document?.hasFocus();"

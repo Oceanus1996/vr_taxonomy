@@ -1,0 +1,60 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+scenerygraphics/scenery,146,3a33b704bacf3822e9251fdb15b6eb0fd5f62eca,src/main/kotlin/graphics/scenery/backends/opengl/OpenGLRenderer.kt,modified,9,4,13,"@@ -399,9 +399,6 @@ class OpenGLRenderer(hub: Hub,
+         buffers.put(""ShaderPropertyBuffer"", OpenGLBuffer(gl, 10 * 1024 * 1024))
+         buffers.put(""ShaderParametersBuffer"", OpenGLBuffer(gl, 128 * 1024))
+ 
+-        settings.set(""Renderer.displayWidth"", window.width)
+-        settings.set(""Renderer.displayHeight"", window.height)
+-
+         prepareDefaultTextures()
+ 
+         renderpasses = prepareRenderpasses(renderConfig, window.width, window.height)
+@@ -460,6 +457,9 @@ class OpenGLRenderer(hub: Hub,
+             settings.get<Float>(""Renderer.SupersamplingFactor"")
+         }
+ 
++        settings.set(""Renderer.displayWidth"", windowWidth)
++        settings.set(""Renderer.displayHeight"", windowHeight)
++
+         flow.map { passName ->
+             val passConfig = config.renderpasses[passName]!!
+             val pass = OpenGLRenderpass(passName, passConfig)
+@@ -468,9 +468,9 @@ class OpenGLRenderer(hub: Hub,
+             var height = windowHeight
+ 
+             config.rendertargets.filter { it.key == passConfig.output }.map { rt ->
+-                logger.info(""Creating render framebuffer ${rt.key} for pass $passName"")
+                 width = (supersamplingFactor * windowWidth * rt.value.size.first).toInt()
+                 height = (supersamplingFactor * windowHeight * rt.value.size.second).toInt()
++                logger.info(""Creating render framebuffer ${rt.key} for pass $passName (${width}x$height)"")
+ 
+                 settings.set(""Renderer.$passName.displayWidth"", width)
+                 settings.set(""Renderer.$passName.displayHeight"", height)
+@@ -613,6 +613,10 @@ class OpenGLRenderer(hub: Hub,
+             renderpasses = prepareRenderpasses(renderConfig, window.width, window.height)
+             flow = renderConfig.createRenderpassFlow()
+ 
++            scene.findObserver()?.let { cam ->
++                cam.perspectiveCamera(cam.fov, window.width.toFloat(), window.height.toFloat(), cam.nearPlaneDistance, cam.farPlaneDistance)
++            }
++
+             mustRecreateFramebuffers = false
+         }
+ 
+@@ -2094,6 +2098,7 @@ class OpenGLRenderer(hub: Hub,
+                 window.width = newWidth
+                 window.height = newHeight
+ 
++                logger.debug(""Resizing window to ${newWidth}x$newHeight"")
+                 mustRecreateFramebuffers = true
+             }
+         }, WINDOW_RESIZE_TIMEOUT)"
+scenerygraphics/scenery,146,3a33b704bacf3822e9251fdb15b6eb0fd5f62eca,src/main/kotlin/graphics/scenery/backends/opengl/OpenGLRenderpass.kt,modified,1,1,2,"@@ -56,7 +56,7 @@ class OpenGLRenderpass(var passName: String = """", var passConfig: RenderConfigRe
+                     else -> ""Renderer.$passName.${entry.key}""
+                 }
+ 
+-                if (!entry.key.startsWith(""Global"")) {
++                if (!entry.key.startsWith(""Global"") && !entry.key.startsWith(""Pass."")) {
+                     settings.set(settingsKey, value)
+                 }
+ "

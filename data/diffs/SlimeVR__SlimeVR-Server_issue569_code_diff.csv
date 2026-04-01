@@ -1,0 +1,73 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+SlimeVR/SlimeVR-Server,569,17474cd,gui/src/components/tracker/TrackersTable.tsx,modified,3,3,6,"@@ -86,9 +86,9 @@ export function TrackerRotCell({
+   const { useRawRotationEulerDegrees, useRefAdjRotationEulerDegrees } =
+     useTracker(tracker);
+ 
+-  const rot = referenceAdjusted
+-    ? useRefAdjRotationEulerDegrees()
+-    : useRawRotationEulerDegrees();
++  const rotationRaw = useRawRotationEulerDegrees();
++  const rotationRef = useRefAdjRotationEulerDegrees() || rotationRaw;
++  const rot = referenceAdjusted ? rotationRef : rotationRaw;
+ 
+   return (
+     <Typography color={color} whitespace=""whitespace-nowrap"">"
+SlimeVR/SlimeVR-Server,569,17474cd,gui/src/components/widgets/IMUVisualizerWidget.tsx,modified,9,7,16,"@@ -129,11 +129,17 @@ function SceneRenderer({ x, y, z, w }: QuatObject) {
+ export function IMUVisualizerWidget({ tracker }: { tracker: TrackerDataT }) {
+   const { l10n } = useLocalization();
+   const [enabled, setEnabled] = useState(false);
+-  const quat = tracker?.rotationIdentityAdjusted || new THREE.Quaternion();
+ 
+   const { useRawRotationEulerDegrees, useIdentAdjRotationEulerDegrees } =
+     useTracker(tracker);
+ 
++  const rotationRaw = useRawRotationEulerDegrees();
++  const rotationIdent = useIdentAdjRotationEulerDegrees() || rotationRaw;
++  const quat =
++    tracker?.rotationIdentityAdjusted ||
++    tracker?.rotation ||
++    new THREE.Quaternion();
++
+   return (
+     <div className=""bg-background-70 flex flex-col p-3 rounded-lg gap-2"">
+       <Typography variant=""section-title"">
+@@ -144,18 +150,14 @@ export function IMUVisualizerWidget({ tracker }: { tracker: TrackerDataT }) {
+         <Typography color=""secondary"">
+           {l10n.getString('widget-imu_visualizer-rotation_raw')}
+         </Typography>
+-        <Typography>
+-          {formatVector3(useRawRotationEulerDegrees(), 2)}
+-        </Typography>
++        <Typography>{formatVector3(rotationRaw, 2)}</Typography>
+       </div>
+ 
+       <div className=""flex justify-between"">
+         <Typography color=""secondary"">
+           {l10n.getString('widget-imu_visualizer-rotation_preview')}
+         </Typography>
+-        <Typography>
+-          {formatVector3(useIdentAdjRotationEulerDegrees(), 2)}
+-        </Typography>
++        <Typography>{formatVector3(rotationIdent, 2)}</Typography>
+       </div>
+ 
+       {!enabled && ("
+SlimeVR/SlimeVR-Server,569,17474cd,gui/src/hooks/tracker.ts,modified,6,2,8,"@@ -51,12 +51,16 @@ export function useTracker(tracker: TrackerDataT) {
+       useMemo(() => QuaternionToEulerDegrees(tracker?.rotation), [tracker.rotation]),
+     useRefAdjRotationEulerDegrees: () =>
+       useMemo(
+-        () => QuaternionToEulerDegrees(tracker?.rotationReferenceAdjusted),
++        () =>
++          tracker?.rotationReferenceAdjusted &&
++          QuaternionToEulerDegrees(tracker?.rotationReferenceAdjusted),
+         [tracker.rotationReferenceAdjusted]
+       ),
+     useIdentAdjRotationEulerDegrees: () =>
+       useMemo(
+-        () => QuaternionToEulerDegrees(tracker?.rotationIdentityAdjusted),
++        () =>
++          tracker?.rotationIdentityAdjusted &&
++          QuaternionToEulerDegrees(tracker?.rotationIdentityAdjusted),
+         [tracker.rotationIdentityAdjusted]
+       ),
+     useVelocity: () => {"

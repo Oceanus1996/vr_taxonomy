@@ -1,0 +1,245 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,264,1629838b211af0ee6272a1cd9dae5ac89935d5ec,src/res/qml/chaperone_page/ChaperonePage.qml,modified,1,1,2,"@@ -385,7 +385,7 @@ MyStackViewPage {
+             MySlider {
+                 id: chaperoneHeightSlider
+                 from: 0.01
+-                to: 15.0
++                to: 5.0
+                 stepSize: 0.01
+                 value: 2.0
+                 Layout.fillWidth: true"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,264,1629838b211af0ee6272a1cd9dae5ac89935d5ec,src/tabcontrollers/ChaperoneTabController.cpp,modified,1,64,65,"@@ -8,8 +8,6 @@ namespace advsettings
+ {
+ void ChaperoneTabController::initStage1()
+ {
+-    m_height = getBoundsMaxY();
+-
+     auto settings = OverlayController::appSettings();
+     settings->beginGroup( ""chaperoneSettings"" );
+     m_enableChaperoneSwitchToBeginner
+@@ -705,7 +703,6 @@ void ChaperoneTabController::updateChaperoneSettings()
+                               vrSettingsError );
+     }
+     setPlaySpaceMarker( ps );
+-    updateHeight( getBoundsMaxY() );
+ }
+ 
+ float ChaperoneTabController::boundsVisibility() const
+@@ -770,31 +767,7 @@ void ChaperoneTabController::setHeight( float value, bool notify )
+     if ( fabs( static_cast<double>( m_height - value ) ) > 0.005 )
+     {
+         m_height = value;
+-        // TODO revert?
+-        // vr::VRChaperoneSetup()->RevertWorkingCopy();
+-        unsigned collisionBoundsCount = 0;
+-        vr::VRChaperoneSetup()->GetWorkingCollisionBoundsInfo(
+-            nullptr, &collisionBoundsCount );
+-        if ( collisionBoundsCount > 0 )
+-        {
+-            vr::HmdQuad_t* collisionBounds
+-                = new vr::HmdQuad_t[collisionBoundsCount];
+-            vr::VRChaperoneSetup()->GetWorkingCollisionBoundsInfo(
+-                collisionBounds, &collisionBoundsCount );
+-            for ( unsigned b = 0; b < collisionBoundsCount; b++ )
+-            {
+-                collisionBounds[b].vCorners[0].v[1] = 0.0;
+-                collisionBounds[b].vCorners[1].v[1] = value;
+-                collisionBounds[b].vCorners[2].v[1] = value;
+-                collisionBounds[b].vCorners[3].v[1] = 0.0;
+-            }
+-            vr::VRChaperoneSetup()->SetWorkingCollisionBoundsInfo(
+-                collisionBounds, collisionBoundsCount );
+-            // TODO revert?
+-            // vr::VRChaperoneSetup()->CommitWorkingCopy(
+-            //    vr::EChaperoneConfigFile_Live );
+-            delete[] collisionBounds;
+-        }
++        parent->m_moveCenterTabController.setBoundsBasisHeight( m_height );
+         if ( notify )
+         {
+             emit heightChanged( m_height );
+@@ -1505,7 +1478,6 @@ void ChaperoneTabController::applyChaperoneProfile( unsigned index )
+                 profile.enableChaperoneShowDashboard );
+         }
+         vr::VRSettings()->Sync( true );
+-        updateHeight( getBoundsMaxY() );
+     }
+ }
+ 
+@@ -1606,41 +1578,6 @@ void ChaperoneTabController::applyAutosavedProfile()
+     }
+ }
+ 
+-float ChaperoneTabController::getBoundsMaxY()
+-{
+-    unsigned collisionBoundsCount = 0;
+-    float result = FP_NAN;
+-    vr::VRChaperoneSetup()->GetLiveCollisionBoundsInfo( nullptr,
+-                                                        &collisionBoundsCount );
+-    if ( collisionBoundsCount > 0 )
+-    {
+-        vr::HmdQuad_t* collisionBounds
+-            = new vr::HmdQuad_t[collisionBoundsCount];
+-        vr::VRChaperoneSetup()->GetLiveCollisionBoundsInfo(
+-            collisionBounds, &collisionBoundsCount );
+-        for ( unsigned b = 0; b < collisionBoundsCount; b++ )
+-        {
+-            int ci;
+-            if ( collisionBounds[b].vCorners[1].v[1]
+-                 >= collisionBounds[b].vCorners[2].v[1] )
+-            {
+-                ci = 1;
+-            }
+-            else
+-            {
+-                ci = 2;
+-            }
+-            if ( std::isnan( result )
+-                 || result < collisionBounds[b].vCorners[ci].v[1] )
+-            {
+-                result = collisionBounds[b].vCorners[ci].v[1];
+-            }
+-        }
+-        delete[] collisionBounds;
+-    }
+-    return result;
+-}
+-
+ void ChaperoneTabController::reset()
+ {
+     vr::EVRSettingsError vrSettingsError;"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,264,1629838b211af0ee6272a1cd9dae5ac89935d5ec,src/tabcontrollers/ChaperoneTabController.h,modified,0,1,1,"@@ -221,7 +221,6 @@ class ChaperoneTabController : public QObject
+     Q_INVOKABLE unsigned getChaperoneProfileCount();
+     Q_INVOKABLE QString getChaperoneProfileName( unsigned index );
+ 
+-    float getBoundsMaxY();
+     std::pair<bool, unsigned>
+         getChaperoneProfileIndexFromName( std::string name );
+     void createNewAutosaveProfile();"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,264,1629838b211af0ee6272a1cd9dae5ac89935d5ec,src/tabcontrollers/MoveCenterTabController.cpp,modified,61,10,71,"@@ -1501,6 +1501,20 @@ void MoveCenterTabController::updateChaperoneResetData()
+     vr::VRChaperoneSetup()->GetWorkingSeatedZeroPoseToRawTrackingPose(
+         &m_seatedCenterForReset );
+ 
++    updateCollisionBoundsForOffset();
++    parent->m_chaperoneTabController.updateHeight( getBoundsBasisMaxY() );
++
++    unsigned checkQuadCount = 0;
++    vr::VRChaperoneSetup()->GetWorkingCollisionBoundsInfo( nullptr,
++                                                           &checkQuadCount );
++    if ( checkQuadCount > 0 )
++    {
++        parent->chaperoneUtils().loadChaperoneData( false );
++    }
++}
++
++void MoveCenterTabController::updateCollisionBoundsForOffset()
++{
+     if ( m_collisionBoundsCountForReset > 0 )
+     {
+         float universeCenterForResetYaw
+@@ -1531,14 +1545,6 @@ void MoveCenterTabController::updateChaperoneResetData()
+             }
+         }
+     }
+-
+-    unsigned checkQuadCount = 0;
+-    vr::VRChaperoneSetup()->GetWorkingCollisionBoundsInfo( nullptr,
+-                                                           &checkQuadCount );
+-    if ( checkQuadCount > 0 )
+-    {
+-        parent->chaperoneUtils().loadChaperoneData( false );
+-    }
+ }
+ 
+ void MoveCenterTabController::applyChaperoneResetData()
+@@ -1566,6 +1572,50 @@ void MoveCenterTabController::applyChaperoneResetData()
+     }
+ }
+ 
++void MoveCenterTabController::setBoundsBasisHeight( float newHeight )
++{
++    if ( m_collisionBoundsCountForReset > 0 )
++    {
++        for ( unsigned b = 0; b < m_collisionBoundsCountForReset; b++ )
++        {
++            m_collisionBoundsForReset[b].vCorners[0].v[1] = 0.0;
++            m_collisionBoundsForReset[b].vCorners[1].v[1] = newHeight;
++            m_collisionBoundsForReset[b].vCorners[2].v[1] = newHeight;
++            m_collisionBoundsForReset[b].vCorners[3].v[1] = 0.0;
++        }
++
++        updateCollisionBoundsForOffset();
++        updateSpace( true );
++    }
++}
++
++float MoveCenterTabController::getBoundsBasisMaxY()
++{
++    float result = FP_NAN;
++    if ( m_collisionBoundsCountForReset > 0 )
++    {
++        for ( unsigned b = 0; b < m_collisionBoundsCountForReset; b++ )
++        {
++            int ci;
++            if ( m_collisionBoundsForReset[b].vCorners[1].v[1]
++                 >= m_collisionBoundsForReset[b].vCorners[2].v[1] )
++            {
++                ci = 1;
++            }
++            else
++            {
++                ci = 2;
++            }
++            if ( std::isnan( result )
++                 || result < m_collisionBoundsForReset[b].vCorners[ci].v[1] )
++            {
++                result = m_collisionBoundsForReset[b].vCorners[ci].v[1];
++            }
++        }
++    }
++    return result;
++}
++
+ // START of drag bindings:
+ 
+ void MoveCenterTabController::leftHandSpaceDrag( bool leftHandDragActive )
+@@ -2677,11 +2727,12 @@ void MoveCenterTabController::updateGravity()
+     m_velocity[2] = 0.0;
+ }
+ 
+-void MoveCenterTabController::updateSpace()
++void MoveCenterTabController::updateSpace( bool forceUpdate )
+ {
+     // Do nothing if all offsets and rotation are still the same...
+     if ( m_offsetX == m_oldOffsetX && m_offsetY == m_oldOffsetY
+-         && m_offsetZ == m_oldOffsetZ && m_rotation == m_oldRotation )
++         && m_offsetZ == m_oldOffsetZ && m_rotation == m_oldRotation
++         && !forceUpdate )
+     {
+         return;
+     }"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,264,1629838b211af0ee6272a1cd9dae5ac89935d5ec,src/tabcontrollers/MoveCenterTabController.h,modified,4,1,5,"@@ -201,13 +201,14 @@ class MoveCenterTabController : public QObject
+               { 0.0f, 1.0f, 0.0f, 0.0f },
+               { 0.0f, 0.0f, 1.0f, 0.0f } } };
+     vr::HmdQuad_t* m_collisionBoundsForOffset;
++    void updateCollisionBoundsForOffset();
+ 
+     void updateHmdRotationCounter( vr::TrackedDevicePose_t hmdPose,
+                                    double angle );
+     void updateHandDrag( vr::TrackedDevicePose_t* devicePoses, double angle );
+     void updateHandTurn( vr::TrackedDevicePose_t* devicePoses, double angle );
+     void updateGravity();
+-    void updateSpace();
++    void updateSpace( bool forceUpdate = false );
+     void clampVelocity( double* velocity );
+     void updateChaperoneResetData();
+     void applyChaperoneResetData();
+@@ -258,6 +259,8 @@ class MoveCenterTabController : public QObject
+     double getHmdYawTotal();
+     void resetHmdYawTotal();
+     void incomingSeatedReset();
++    void setBoundsBasisHeight( float newHeight );
++    float getBoundsBasisMaxY();
+ 
+     void reloadOffsetProfiles();
+     void saveOffsetProfiles();"

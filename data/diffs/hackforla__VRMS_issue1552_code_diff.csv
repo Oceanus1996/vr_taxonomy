@@ -1,0 +1,231 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+hackforla/VRMS,1552,82f608ab3628312d54fc17955f5fc131e7c9bc00,client/src/components/ChangesModal.js,added,73,0,73,"@@ -0,0 +1,73 @@
++import React from 'react'
++import { 
++    Modal,
++    Box,
++    Typography,
++    Grid
++ } from '@mui/material'
++ import { StyledButton } from './ProjectForm';
++ import { Link } from 'react-router-dom';
++ import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
++
++
++ const style = {
++  position: 'absolute',
++  top: '50%',
++  left: '50%',
++  transform: 'translate(-50%, -50%)',
++  width: 400,
++  bgcolor: 'background.paper',
++  border: '2px solid #000',
++  boxShadow: 24,
++  p: 4,
++};
++
++
++ export default function ChangesModal({open, onClose, handleClose, destination }) {
++    return (
++      
++      <Modal
++        open={open}
++        onClose={onClose}
++        aria-labelledby=""modal-modal-title""
++        aria-describedby=""modal-modal-description""
++      >
++        <Box sx={style}>
++          <Typography sx={{textAlign: 'center'}} id=""modal-modal-title"" variant=""h4"" component=""h3"">
++           <WarningAmberRoundedIcon fontSize=""large"" color=""error"" />
++         </Typography>
++
++          <Typography sx={{textAlign: 'center'}} id=""modal-modal-title"" variant=""h4"" component=""h4"">
++           Wait! You made some changes.
++          </Typography>
++          <Typography id=""modal-modal-description"" sx={{ mt: 2, textAlign: 'center' }}>
++            Are you sure you want to exit without saving?
++          </Typography>
++            <Grid direction=""column"" spacing={3} container alignContent=""center"" sx={{ my: 3 }}>
++            <Grid item xs=""auto"">
++              <StyledButton
++                component={Link}
++                to={destination}
++                variant=""secondary""
++                cursor=""pointer""
++                
++              >
++                Yes
++              </StyledButton>
++            </Grid>
++            <Grid item xs=""auto"">
++              <StyledButton
++                type=""submit""
++                form=""project-form""
++                cursor=""pointer""
++                variant=""contained""
++                onClick={handleClose}
++              >
++                No
++              </StyledButton>
++            </Grid>
++          </Grid>
++        </Box>
++      </Modal>
++    )
++ }
+\ No newline at end of file"
+hackforla/VRMS,1552,82f608ab3628312d54fc17955f5fc131e7c9bc00,client/src/components/ProjectForm.js,modified,26,5,31,"@@ -1,6 +1,6 @@
+ import React, { useState } from 'react';
+-import { Link, useHistory } from 'react-router-dom';
+-import { useForm } from 'react-hook-form';
++import { useHistory } from 'react-router-dom';
++import { useForm, useFormState } from 'react-hook-form';
+ import { Redirect } from 'react-router-dom';
+ import {
+   Typography,
+@@ -20,14 +20,15 @@ import { ReactComponent as EditIcon } from '../svg/Icon_Edit.svg';
+ import { ReactComponent as PlusIcon } from '../svg/PlusIcon.svg';
+ import ValidatedTextField from './parts/form/ValidatedTextField';
+ import TitledBox from './parts/boxes/TitledBox';
++import ChangesModal from './ChangesModal';
+ 
+ /** STYLES
+  *  -most TextField and InputLabel styles are controlled by the theme
+  *  -a few repeated styles are parked here
+  *  -the rest are inline
+  */
+ 
+-const StyledButton = styled(Button)(({ theme }) => ({
++export const StyledButton = styled(Button)(({ theme }) => ({
+   width: '150px',
+ }));
+ 
+@@ -72,6 +73,12 @@ export default function ProjectForm({
+   // State to track the toggling from Project view to Edit Project View via edit icon.
+   const [editMode, setEditMode] = useState(false);
+   const { auth } = useAuth();
++  const [isModalOpen, setIsModalOpen] = useState(false);
++  const handleOpen = () => setIsModalOpen(true)
++  const handleClose = () => setIsModalOpen(false)
++  const checkFields = () => {
++     history.push(""/projects"")
++  }
+ 
+   /**
+    * React Hook Forms
+@@ -88,6 +95,7 @@ export default function ProjectForm({
+     handleSubmit,
+     reset,
+     formState: { errors },
++    control
+   } = useForm({
+     mode: 'all',
+     // Holds the current project data in state.
+@@ -96,6 +104,8 @@ export default function ProjectForm({
+     },
+   });
+ 
++  const { dirtyFields } = useFormState({control})
++
+   // ----------------- Submit requests -----------------
+ 
+   // Handles POST request found in api/ProjectApiService.
+@@ -124,6 +134,8 @@ export default function ProjectForm({
+     setEditMode(false);
+   };
+ 
++
++
+   // ----------------- Handles and Toggles -----------------
+ 
+   // Handles the location radio button change.
+@@ -221,12 +233,14 @@ export default function ProjectForm({
+         title={editMode ? 'Editing Project' : 'Project Information'}
+         badge={isEdit ? editIcon() : addIcon()}
+       >
++       
+         <form
+           id=""project-form""
+           onSubmit={handleSubmit((data) => {
+             isEdit ? submitEditProject(data) : submitNewProject(data);
+           })}
+         >
++        
+           {arr.map((input) => (
+             <ValidatedTextField
+               key={input.name}
+@@ -239,6 +253,14 @@ export default function ProjectForm({
+               input={input}
+             />
+           ))}
++          <ChangesModal 
++        open={isModalOpen} 
++        onClose={handleClose} 
++        destination={'/projects'}
++        aria-labelledby=""modal-modal-title""
++        aria-describedby=""modal-modal-description"" 
++        handleClose={handleClose}
++        />
+         </form>
+         <Box>
+           <Grid container justifyContent=""space-evenly"" sx={{ my: 3 }}>
+@@ -255,10 +277,9 @@ export default function ProjectForm({
+             </Grid>
+             <Grid item xs=""auto"">
+               <StyledButton
+-                component={Link}
+-                to=""/projects""
+                 variant=""contained""
+                 cursor=""pointer""
++                onClick={Object.keys(dirtyFields).length > 0 ? handleOpen: checkFields}
+               >
+                 Close
+               </StyledButton>"
+hackforla/VRMS,1552,82f608ab3628312d54fc17955f5fc131e7c9bc00,package.json,modified,1,0,1,"@@ -17,6 +17,7 @@
+     ""test:all"": ""cross-env NODE_ENV=test npm run test:client && npm run test:client-mvp && npm run test:backend && npm run test:cy""
+   },
+   ""dependencies"": {
++    ""@mui/icons-material"": ""^5.14.19"",
+     ""concurrently"": ""^5.3.0"",
+     ""cross-env"": ""^7.0.2"",
+     ""cross-var"": ""^1.1.0"","
+hackforla/VRMS,1552,82f608ab3628312d54fc17955f5fc131e7c9bc00,yarn.lock,modified,19,0,19,"@@ -2,6 +2,13 @@
+ # yarn lockfile v1
+ 
+ 
++""@babel/runtime@^7.23.4"":
++  version ""7.23.5""
++  resolved ""https://registry.yarnpkg.com/@babel/runtime/-/runtime-7.23.5.tgz#11edb98f8aeec529b82b211028177679144242db""
++  integrity sha512-NdUTHcPe4C99WxPub+K9l9tK5/lV4UXIoaHSYgzco9BCyjKAAwzdBI+wWtYqHt7LJdbo74ZjRPJgzVweq1sz0w==
++  dependencies:
++    regenerator-runtime ""^0.14.0""
++
+ ""@cypress/listr-verbose-renderer@^0.4.1"":
+   version ""0.4.1""
+   resolved ""https://registry.yarnpkg.com/@cypress/listr-verbose-renderer/-/listr-verbose-renderer-0.4.1.tgz#a77492f4b11dcc7c446a34b3e28721afd33c642a""
+@@ -75,6 +82,13 @@
+   dependencies:
+     ""@hapi/hoek"" ""^9.0.0""
+ 
++""@mui/icons-material@^5.14.19"":
++  version ""5.14.19""
++  resolved ""https://registry.yarnpkg.com/@mui/icons-material/-/icons-material-5.14.19.tgz#6e0f4e9d89f99517d3c0ee65dee7ac97753755af""
++  integrity sha512-yjP8nluXxZGe3Y7pS+yxBV+hWZSsSBampCxkZwaw+1l+feL+rfP74vbEFbMrX/Kil9I/Y1tWfy5bs/eNvwNpWw==
++  dependencies:
++    ""@babel/runtime"" ""^7.23.4""
++
+ ""@samverschueren/stream-to-observable@^0.3.0"":
+   version ""0.3.1""
+   resolved ""https://registry.yarnpkg.com/@samverschueren/stream-to-observable/-/stream-to-observable-0.3.1.tgz#a21117b19ee9be70c379ec1877537ef2e1c63301""
+@@ -2232,6 +2246,11 @@ regenerator-runtime@^0.11.0:
+   resolved ""https://registry.yarnpkg.com/regenerator-runtime/-/regenerator-runtime-0.11.1.tgz#be05ad7f9bf7d22e056f9726cee5017fbf19e2e9""
+   integrity sha512-MguG95oij0fC3QV3URf4V2SDYGJhJnJGqvIIgdECeODCT98wSWDAJ94SSuVpYQUoTcGUIL6L4yNB7j1DFFHSBg==
+ 
++regenerator-runtime@^0.14.0:
++  version ""0.14.0""
++  resolved ""https://registry.yarnpkg.com/regenerator-runtime/-/regenerator-runtime-0.14.0.tgz#5e19d68eb12d486f797e15a3c6a918f7cec5eb45""
++  integrity sha512-srw17NI0TUWHuGa5CFGGmhfNIeja30WMBfbslPNhf6JrqQlLN5gcrvig1oqPxiVaXb0oW0XRKtH6Nngs5lKCIA==
++
+ regenerator-transform@^0.10.0:
+   version ""0.10.1""
+   resolved ""https://registry.yarnpkg.com/regenerator-transform/-/regenerator-transform-0.10.1.tgz#1e4996837231da8b7f3cf4114d71b5691a0680dd"""

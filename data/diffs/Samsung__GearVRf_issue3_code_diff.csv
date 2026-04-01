@@ -1,0 +1,160 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+Samsung/GearVRf,3,51bd96af752338614e2ea2c9e000ae07c5eeae60,GVRf/Framework/jni/shaders/material/external_renderer_shader.cpp,modified,28,3,31,"@@ -26,15 +26,40 @@ void ExternalRendererShader::render(const glm::mat4& mvp_matrix, RenderData* ren
+         return;
+     }
+ 
+-    Texture* texture = render_data->pass(0)->material()->getTexture(""main_texture"");
++    Material* material = render_data->pass(0)->material();
++    if (material == NULL) {
++        LOGE(""No material"");
++        return;
++    }
++
++    Texture *texture = material->getTexture(""main_texture"");
+     if (texture->getTarget() != ExternalRendererTexture::TARGET) {
+         LOGE(""External renderer only takes external renderer textures"");
+         return;
+     }
+ 
++    Mesh* mesh = render_data->mesh();
++    if (mesh == NULL) {
++        LOGE(""No mesh!?"");
++        return;
++    }
++
++    {
++        const glm::vec3& min_corner = mesh->getBoundingVolume().min_corner();
++        scratchBuffer[0] = min_corner[0];
++        scratchBuffer[1] = min_corner[1];
++        scratchBuffer[2] = min_corner[2];
++        const glm::vec3& max_corner = mesh->getBoundingVolume().max_corner();
++        scratchBuffer[3] = max_corner[0];
++        scratchBuffer[4] = max_corner[1];
++        scratchBuffer[5] = max_corner[2];
++    }
++
+     externalRenderer(reinterpret_cast<ExternalRendererTexture*>(texture)->getData(),
+-                     render_data->mesh()->getBoundingVolume(), 6,
+-                     glm::value_ptr(mvp_matrix), 16);
++                     scratchBuffer, 6,
++                     glm::value_ptr(mvp_matrix), 16,
++                     glm::value_ptr(*mesh->tex_coords().data()), mesh->tex_coords().size() * 2,
++                     material->getFloat(""opacity""));
+ 
+     checkGlError(""ExternalRendererShader::render"");
+ }"
+Samsung/GearVRf,3,51bd96af752338614e2ea2c9e000ae07c5eeae60,GVRf/Framework/jni/shaders/material/external_renderer_shader.h,modified,7,3,10,"@@ -9,10 +9,12 @@
+ #include ""glm/gtc/type_ptr.hpp""
+ 
+ #include ""objects/recyclable_object.h""
+-#include ""objects/bounding_volume.h""
+ 
+-typedef void (*GVRF_ExternalRenderer)(long data, const gvr::BoundingVolume &bounding_volume,
+-                                      int vcount, const float* projection, int pcount);
++typedef void (*GVRF_ExternalRenderer)(long data,
++                                      const float* bounding_volume, int vcount,
++                                      const float* projection, int pcount,
++                                      const float* texCoords, int tcount,
++                                      float opacity);
+ extern ""C"" void GVRF_installExternalRenderer(GVRF_ExternalRenderer renderer);
+ 
+ namespace gvr {
+@@ -32,6 +34,8 @@ class ExternalRendererShader : public RecyclableObject {
+             const ExternalRendererShader& shader);
+     ExternalRendererShader& operator=(
+             ExternalRendererShader&& shader);
++
++    float scratchBuffer[6];
+ };
+ 
+ }"
+Samsung/GearVRf,3,51bd96af752338614e2ea2c9e000ae07c5eeae60,GVRf/Framework/src/org/gearvrf/GVRContext.java,modified,22,17,39,"@@ -15,20 +15,18 @@
+ 
+ package org.gearvrf;
+ 
+-import java.io.FileNotFoundException;
+ import java.io.IOException;
+ import java.io.InputStream;
+ import java.nio.ByteBuffer;
+ import java.util.ArrayList;
++import java.util.EnumSet;
+ import java.util.List;
+ import java.util.concurrent.Future;
+-import java.util.EnumSet;
+ 
+ import org.gearvrf.GVRAndroidResource.BitmapTextureCallback;
+ import org.gearvrf.GVRAndroidResource.CompressedTextureCallback;
+ import org.gearvrf.GVRAndroidResource.MeshCallback;
+ import org.gearvrf.GVRAndroidResource.TextureCallback;
+-import org.gearvrf.GVRImportSettings;
+ import org.gearvrf.GVRMaterial.GVRShaderType;
+ import org.gearvrf.animation.GVRAnimation;
+ import org.gearvrf.animation.GVRAnimationEngine;
+@@ -774,7 +772,7 @@ private GVRSceneObject createSceneObject(
+ 
+         AiMaterial material = this.getMeshMaterial(assimpImporter, node.getName(), index);
+         
+-        GVRMaterial meshMaterial = new GVRMaterial(this,
++        final GVRMaterial meshMaterial = new GVRMaterial(this,
+                 GVRShaderType.Assimp.ID);
+      
+         /* Feature set */
+@@ -809,21 +807,28 @@ private GVRSceneObject createSceneObject(
+         meshMaterial.setOpacity(opacity);
+ 
+         /* Diffuse Texture */
+-        String texDiffuseFileName = material.getTextureFile(
++        final String texDiffuseFileName = material.getTextureFile(
+                 AiTextureType.DIFFUSE, 0);
+         if (texDiffuseFileName != null && !texDiffuseFileName.isEmpty()) {
+-            try {
+-                Future<GVRTexture> futureDiffuseTexture = this
+-                        .loadFutureTexture(new GVRAndroidResource(this,
+-                                texDiffuseFileName));
+-                meshMaterial.setMainTexture(futureDiffuseTexture);
+-                assimpFeatureSet = GVRShaderType.Assimp.setBit(
+-                        assimpFeatureSet,
+-                        GVRShaderType.Assimp.AS_DIFFUSE_TEXTURE);
+-            } catch (FileNotFoundException file) {
+-                android.util.Log.e(TAG, ""Couldn't find diffuse texture: ""
+-                        + texDiffuseFileName);
+-            }
++            loadTexture(new TextureCallback() {
++                @Override
++                public void loaded(GVRTexture texture, GVRAndroidResource ignored) {
++                    meshMaterial.setMainTexture(texture);
++                    final int features = GVRShaderType.Assimp.setBit(
++                            meshMaterial.getShaderFeatureSet(),
++                            GVRShaderType.Assimp.AS_DIFFUSE_TEXTURE);
++                    meshMaterial.setShaderFeatureSet(features);
++                }
++                @Override
++                public void failed(Throwable t, GVRAndroidResource androidResource) {
++                    Log.e(TAG, ""Error loading diffuse texture %s; exception: %s"",
++                        texDiffuseFileName, t.getMessage());
++                }
++                @Override
++                public boolean stillWanted(GVRAndroidResource androidResource) {
++                    return true;
++                }
++            }, new GVRAndroidResource(this, texDiffuseFileName));
+         }
+  
+         /* Apply feature set to the material */"
+Samsung/GearVRf,3,2e4968885128840ff83d2f9f8c341a4947dd91ed,GVRf/Sample/model-viewer/src/org/gearvrf/modelviewer/ViewerScript.java,modified,2,2,4,"@@ -687,14 +687,14 @@ public void onStep() {
+         // THUMBNAIL_ROT += -1.0f;
+         // if( THUMBNAIL_ROT > 360.0f ) THUMBNAIL_ROT = THUMBNAIL_ROT - 360.0f;
+         // }
+-        THUMBNAIL_ROT += -1.0f;
++        THUMBNAIL_ROT = -1.0f;
+         for (int i = 0; i < THUMBNAIL_NUM; i++)
+             ThumbnailRotation[i].getTransform().rotateByAxis(THUMBNAIL_ROT,
+                     0.0f, 1.0f, 0.0f);
+ 
+         // ---------------------------------------object motion
+ 
+-        OBJECT_ROT += -1.0f;
++        OBJECT_ROT = -1.0f;
+         for (int i = 0; i < THUMBNAIL_NUM; i++)
+             Objects[i].getTransform()
+                     .rotateByAxis(OBJECT_ROT, 0.0f, 1.0f, 0.0f);"

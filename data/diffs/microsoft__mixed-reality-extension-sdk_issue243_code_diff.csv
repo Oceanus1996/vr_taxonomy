@@ -1,0 +1,862 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+microsoft/mixed-reality-extension-sdk,243,5ae8c6b5565d1ba7d6bfd6c46d52f1587689c40f,.gitignore,modified,1,0,1,"@@ -333,3 +333,4 @@ npm-debug.log
+ lerna-debug.log
+ .openode
+ Dockerfile
++docker-compose.yml"
+microsoft/mixed-reality-extension-sdk,243,5ae8c6b5565d1ba7d6bfd6c46d52f1587689c40f,packages/functional-tests/src/app.ts,modified,45,11,56,"@@ -14,6 +14,7 @@ import destroyActors from './utils/destroyActors';
+ export const SuccessColor = MRE.Color3.Green();
+ export const FailureColor = MRE.Color3.Red();
+ export const NeutralColor = MRE.Color3.Yellow();
++export const BackgroundColor = new MRE.Color3(0.25, 0.25, 0.25);
+ 
+ /**
+  * Functional Test Application. Takes query arguments to the websocket connection
+@@ -36,6 +37,7 @@ export class App {
+     private playPauseButton: MRE.Actor;
+     private playPauseText: MRE.Actor;
+     private runnerActors: MRE.Actor[];
++    private backgroundMaterial: MRE.Material;
+ 
+     private readonly menu = new Menu(this);
+ 
+@@ -57,6 +59,10 @@ export class App {
+         });
+         this.context.onUserJoined((user) => this.userJoined(user));
+         this.context.onUserLeft((user) => this.userLeft(user));
++        this.backgroundMaterial = this.context.assetManager.createMaterial('background',
++            {
++                color: BackgroundColor
++            }).value;
+ 
+         this.menu.onSelection((name, factory, userId) => {
+             this.menu.hide();
+@@ -186,8 +192,7 @@ export class App {
+                     color: NeutralColor
+                 },
+                 transform: {
+-                    position: { y: 1 },
+-                    rotation: { x: 0, y: 1, z: 0, w: 0 } // 180 turn
++                    position: { y: 1.8 }
+                 }
+             }
+         }).value;
+@@ -207,7 +212,7 @@ export class App {
+                 name: 'playpause',
+                 materialId: ppMat.id,
+                 transform: {
+-                    position: { y: -1 }
++                    position: { x: -0.65, y: 0.15, z: -1.95 }
+                 }
+             }
+         }).value;
+@@ -216,8 +221,7 @@ export class App {
+             actor: {
+                 parentId: this.playPauseButton.id,
+                 transform: {
+-                    position: { z: 0.1 },
+-                    rotation: { x: 0, y: 1, z: 0, w: 0 } // 180 turn
++                    position: { z: -0.1 }
+                 },
+                 text: {
+                     contents: ""Start"",
+@@ -241,13 +245,13 @@ export class App {
+         const menuButton = MRE.Actor.CreatePrimitive(this.context, {
+             definition: {
+                 shape: MRE.PrimitiveShape.Box,
+-                dimensions: { x: 0.3, y: 0.3, z: 0.1 }
++                dimensions: { x: 0.7, y: 0.3, z: 0.1 }
+             },
+             addCollider: true,
+             actor: {
+                 name: 'menu',
+                 transform: {
+-                    position: { x: 0.6, y: -1 }
++                    position: { x: 0.65, y: 0.15, z: -1.95 }
+                 }
+             }
+         }).value;
+@@ -256,11 +260,10 @@ export class App {
+             actor: {
+                 parentId: menuButton.id,
+                 transform: {
+-                    position: { z: 0.1 },
+-                    rotation: { x: 0, y: 1, z: 0, w: 0 } // 180 turn
++                    position: { z: -0.1 }
+                 },
+                 text: {
+-                    contents: ""..."",
++                    contents: ""Return"",
+                     height: 0.15,
+                     anchor: MRE.TextAnchorLocation.MiddleCenter,
+                     justify: MRE.TextJustify.Center,
+@@ -279,6 +282,37 @@ export class App {
+                 this.menu.show();
+             });
+ 
+-        this.runnerActors = [this.contextLabel, this.playPauseButton, this.playPauseText, menuButton, menuText];
++        const floor = MRE.Actor.CreatePrimitive(this.context, {
++            definition: {
++                shape: MRE.PrimitiveShape.Box,
++                dimensions: { x: 2, y: 0.1, z: 2.1 }
++            },
++            addCollider: true,
++            actor: {
++                name: 'floor',
++                transform: {
++                    position: { x: 0, y: -0.05, z: -1 }
++                },
++            }
++        }).value;
++        floor.material = this.backgroundMaterial;
++
++        const wall = MRE.Actor.CreatePrimitive(this.context, {
++            definition: {
++                shape: MRE.PrimitiveShape.Box,
++                dimensions: { x: 2, y: 2, z: 0.1 }
++            },
++            addCollider: true,
++            actor: {
++                name: 'floor',
++                transform: {
++                    position: { x: 0, y: 1, z: 0.1 }
++                }
++            }
++        }).value;
++        wall.material = this.backgroundMaterial;
++
++        this.runnerActors =
++            [this.contextLabel, this.playPauseButton, this.playPauseText, menuButton, menuText, wall, floor];
+     }
+ }"
+microsoft/mixed-reality-extension-sdk,243,5ae8c6b5565d1ba7d6bfd6c46d52f1587689c40f,packages/functional-tests/src/menu.ts,modified,46,14,60,"@@ -5,7 +5,7 @@
+ 
+ import * as MRE from '@microsoft/mixed-reality-extension-sdk';
+ 
+-import { App, FailureColor, NeutralColor, SuccessColor } from './app';
++import { App, BackgroundColor, FailureColor, NeutralColor, SuccessColor } from './app';
+ import { TestFactory } from './test';
+ import { Factories, FactoryMap } from './tests';
+ import destroyActors from './utils/destroyActors';
+@@ -28,9 +28,10 @@ export default class Menu {
+     private successMat: MRE.Material;
+     private failureMat: MRE.Material;
+     private neutralMat: MRE.Material;
++    private backgroundMat: MRE.Material;
+ 
+     private breadcrumbs: number[] = [];
+-    private backActors: MRE.Actor[];
++    private otherActors: MRE.Actor[];
+     private handler: SelectionHandler;
+ 
+     private get context() { return this.app.context; }
+@@ -100,6 +101,7 @@ export default class Menu {
+             this.successMat = am.createMaterial('success', { color: SuccessColor }).value;
+             this.failureMat = am.createMaterial('failure', { color: FailureColor }).value;
+             this.neutralMat = am.createMaterial('neutral', { color: NeutralColor }).value;
++            this.backgroundMat = am.createMaterial('background', { color: BackgroundColor }).value;
+         }
+ 
+         if (this.buttons) {
+@@ -110,19 +112,22 @@ export default class Menu {
+         this.behaviors = [];
+         this.labels = [];
+ 
+-        const buttonSpacing = 2 / pageSize;
++        const buttonSpacing = 2 / (pageSize + 1);
++        const buttonWidth = 0.25;
++        const buttonHeight = buttonSpacing * 0.8;
+ 
+         for (let i = 0; i < pageSize; i++) {
+             const control = MRE.Actor.CreatePrimitive(this.context, {
+                 definition: {
+                     shape: MRE.PrimitiveShape.Box,
+-                    dimensions: { x: 0.25, y: 0.25, z: 0.05 }
++                    dimensions: { x: buttonWidth, y: buttonHeight, z: 0.1 }
+                 },
+                 addCollider: true,
+                 actor: {
+                     name: 'Button' + i,
+                     transform: {
+-                        position: { x: 1, y: 1 - buttonSpacing * i }
++                        position:
++                        { x: -1 + buttonWidth / 2, y: buttonSpacing / 2 + buttonSpacing * (pageSize - i), z: -0.05 }
+                     }
+                 }
+             }).value;
+@@ -134,8 +139,7 @@ export default class Menu {
+                     name: 'Label' + i,
+                     parentId: control.id,
+                     transform: {
+-                        position: { x: -0.25 },
+-                        rotation: { x: 0, y: 1, z: 0, w: 0 }
++                        position: { x: buttonWidth * 1.2, z: 0.05 },
+                     },
+                     text: {
+                         contents: ""Placeholder"",
+@@ -150,13 +154,13 @@ export default class Menu {
+         const backButton = MRE.Actor.CreatePrimitive(this.context, {
+             definition: {
+                 shape: MRE.PrimitiveShape.Box,
+-                dimensions: { x: 0.25, y: 0.25, z: 0.05 }
++                dimensions: { x: buttonWidth, y: buttonHeight, z: 0.1 }
+             },
+             addCollider: true,
+             actor: {
+                 name: 'BackButton',
+                 transform: {
+-                    position: { x: 1, y: -1 }
++                    position: { x: -1 + buttonWidth / 2, y: buttonSpacing / 2, z: -0.05 }
+                 }
+             }
+         }).value;
+@@ -166,8 +170,7 @@ export default class Menu {
+                 name: 'BackLabel',
+                 parentId: backButton.id,
+                 transform: {
+-                    position: { x: -0.25 },
+-                    rotation: { x: 0, y: 1, z: 0, w: 0 }
++                    position: { x: buttonWidth * 1.2, z: 0.05 },
+                 },
+                 text: {
+                     contents: ""Back"",
+@@ -183,16 +186,45 @@ export default class Menu {
+                 this.show();
+             });
+ 
+-        this.backActors = [backButton, backLabel];
++        const floor = MRE.Actor.CreatePrimitive(this.context, {
++            definition: {
++                shape: MRE.PrimitiveShape.Box,
++                dimensions: { x: 2, y: 0.1, z: 2.1 }
++            },
++            addCollider: true,
++            actor: {
++                name: 'floor',
++                transform: {
++                    position: { x: 0, y: -0.05, z: -1 }
++                },
++            }
++        }).value;
++        floor.material = this.backgroundMat;
++
++        const wall = MRE.Actor.CreatePrimitive(this.context, {
++            definition: {
++                shape: MRE.PrimitiveShape.Box,
++                dimensions: { x: 2, y: 2, z: 0.1 }
++            },
++            addCollider: true,
++            actor: {
++                name: 'floor',
++                transform: {
++                    position: { x: 0, y: 1, z: 0.1 }
++                }
++            }
++        }).value;
++        wall.material = this.backgroundMat;
++        this.otherActors = [backButton, backLabel, floor, wall];
+     }
+ 
+     private destroy() {
+         destroyActors(this.buttons);
+-        destroyActors(this.backActors);
++        destroyActors(this.otherActors);
+         this.buttons = null;
+         this.behaviors = null;
+         this.labels = null;
+-        this.backActors = null;
++        this.otherActors = null;
+     }
+ }
+ "
+microsoft/mixed-reality-extension-sdk,243,5ae8c6b5565d1ba7d6bfd6c46d52f1587689c40f,packages/functional-tests/src/tests/altspacevr-library-test.ts,modified,9,7,16,"@@ -17,7 +17,8 @@ export default class AltspaceVRLibraryTest extends Test {
+             actor: {
+                 name: 'Campfire Kit: Cabin',
+                 transform: {
+-                    position: { x: 0, y: 0, z: -0.05 },
++                    position: { x: 0, y: 0.0, z: -0.1 },
++                    rotation: MRE.Quaternion.RotationAxis(MRE.Vector3.Up(), -180.0 * MRE.DegreesToRadians),
+                     scale: { x: 0.08, y: 0.08, z: 0.08 }
+                 }
+             }
+@@ -27,7 +28,7 @@ export default class AltspaceVRLibraryTest extends Test {
+             actor: {
+                 name: 'Home Kit: Chair 2',
+                 transform: {
+-                    position: { x: -1, y: 0, z: 0 },
++                    position: { x: -1, y: 0.0, z: -1.5 },
+                     rotation: MRE.Quaternion.RotationAxis(MRE.Vector3.Up(), -45.0 * MRE.DegreesToRadians),
+                     scale: { x: 0.7, y: 0.7, z: 0.7 }
+                 }
+@@ -38,7 +39,8 @@ export default class AltspaceVRLibraryTest extends Test {
+             actor: {
+                 name: 'Halloween Kit: Pumpkin Happy',
+                 transform: {
+-                    position: { x: 1, y: 0, z: 0 },
++                    position: { x: 1, y: 0.0, z: -1.5 },
++                    scale: { x: 0.7, y: 0.7, z: 0.7 }
+                 }
+             }
+         }));
+@@ -47,8 +49,8 @@ export default class AltspaceVRLibraryTest extends Test {
+             actor: {
+                 name: 'Alien Planet Kit: Island 06',
+                 transform: {
+-                    position: { x: 0, y: -0.25, z: 0 },
+-                    scale: { x: 0.1, y: 0.1, z: 0.1 }
++                    position: { x: 0, y: 0.0, z: -1.5 },
++                    scale: { x: 0.05, y: 0.05, z: 0.05 }
+                 }
+             }
+         }));
+@@ -57,7 +59,7 @@ export default class AltspaceVRLibraryTest extends Test {
+             actor: {
+                 name: 'Teleporter to Campfire',
+                 transform: {
+-                    position: { x: 1.8, y: -0.25, z: 0 }
++                    position: { x: 1.2, y: 0.0, z: -0.5 }
+                 }
+             }
+         }));
+@@ -66,7 +68,7 @@ export default class AltspaceVRLibraryTest extends Test {
+             actor: {
+                 name: 'Teleporter to Altstock',
+                 transform: {
+-                    position: { x: -1.8, y: -0.25, z: 0 }
++                    position: { x: -1.2, y: 0.0, z: -0.5     }
+                 }
+             }
+         }));"
+microsoft/mixed-reality-extension-sdk,243,5ae8c6b5565d1ba7d6bfd6c46d52f1587689c40f,packages/functional-tests/src/tests/altspacevr-video-test.ts,modified,4,5,9,"@@ -41,9 +41,8 @@ export default class AltspaceVRVideoTest extends Test {
+                 parentId: tester.value.id,
+                 name: 'video',
+                 transform: {
+-                    position: { x: 0, y: 3, z: 0 },
+-                    scale: { x: 7, y: 7, z: 7 },
+-                    rotation: { x: 0, y: 1, z: 0, w: 0 } // 180 turn
++                    position: { x: 0, y: 1, z: 0 },
++                    scale: { x: 2, y: 2, z: 2 }
+                 },
+             }
+         });
+@@ -73,7 +72,7 @@ export default class AltspaceVRVideoTest extends Test {
+         const buttonPromise = MRE.Actor.CreatePrimitive(this.app.context, {
+             definition: {
+                 shape: MRE.PrimitiveShape.Sphere,
+-                radius: 0.4,
++                radius: 0.2,
+                 uSegments: 8,
+                 vSegments: 4
+ 
+@@ -83,7 +82,7 @@ export default class AltspaceVRVideoTest extends Test {
+                 name: 'Button',
+                 parentId: tester.value.id,
+                 transform: {
+-                    position: { x: -3.5, y: 5, z: 0 }
++                    position: { x: -0.8, y: 0.2, z: 0 }
+                 }
+             }
+         });"
+microsoft/mixed-reality-extension-sdk,243,5ae8c6b5565d1ba7d6bfd6c46d52f1587689c40f,packages/functional-tests/src/tests/asset-early-assignment-test.ts,modified,4,1,5,"@@ -28,7 +28,10 @@ export default class AssetEarlyAssignmentTest extends Test {
+                 radius: 0.5
+             },
+             actor: {
+-                materialId: mat.id
++                materialId: mat.id,
++                transform: {
++                    position: { y: 1, z: -1 }
++                }
+             }
+         });
+ "
+microsoft/mixed-reality-extension-sdk,243,5ae8c6b5565d1ba7d6bfd6c46d52f1587689c40f,packages/functional-tests/src/tests/asset-mutability-test.ts,modified,4,1,5,"@@ -27,7 +27,10 @@ export default class AssetMutabilityTest extends Test {
+             },
+             actor: {
+                 name: 'box',
+-                materialId: mat.id
++                materialId: mat.id,
++                transform: {
++                    position: { y: 1, z: -1 }
++                }
+             }
+         });
+ "
+microsoft/mixed-reality-extension-sdk,243,5ae8c6b5565d1ba7d6bfd6c46d52f1587689c40f,packages/functional-tests/src/tests/asset-preload-test.ts,modified,2,2,4,"@@ -97,7 +97,7 @@ export default class AssetPreloadTest extends Test {
+             prefabId: this.monkeyPrefab.id,
+             actor: {
+                 transform: {
+-                    position: { x: -0.5, y: 0, z: 0 },
++                    position: { x: -0.5, y: 1, z: -1 },
+                     scale: { x: 0.5, y: 0.5, z: 0.5 }
+                 }
+             }
+@@ -111,7 +111,7 @@ export default class AssetPreloadTest extends Test {
+             actor: {
+                 materialId: this.uvgridMat.id,
+                 transform: {
+-                    position: { x: 0.5, y: 0, z: 0 }
++                    position: { x: 0.5, y: 1, z: -1 }
+                 }
+             }
+         });"
+microsoft/mixed-reality-extension-sdk,243,5ae8c6b5565d1ba7d6bfd6c46d52f1587689c40f,packages/functional-tests/src/tests/clock-sync-test.ts,modified,1,2,3,"@@ -14,8 +14,7 @@ export default class ClockSyncTest extends Test {
+         const tester = MRE.Actor.CreateEmpty(this.app.context, {
+             actor: {
+                 transform: {
+-                    position: { y: -3, z: -0.3 },
+-                    rotation: { x: 0, y: 1, z: 0, w: 0 }
++                    position: { y: -1.5, z: -0.5 }
+                 }
+             }
+         });"
+microsoft/mixed-reality-extension-sdk,243,5ae8c6b5565d1ba7d6bfd6c46d52f1587689c40f,packages/functional-tests/src/tests/gltf-animation-test.ts,modified,1,1,2,"@@ -16,7 +16,7 @@ export default class GltfAnimationTest extends Test {
+             resourceUrl: `https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/CesiumMan/glTF-Binary/CesiumMan.glb`,
+             actor: {
+                 transform: {
+-                    position: { y: -0.72 }
++                    position: { y: 0.0, z: -1 }
+                 }
+             }
+         }).value;"
+microsoft/mixed-reality-extension-sdk,243,5ae8c6b5565d1ba7d6bfd6c46d52f1587689c40f,packages/functional-tests/src/tests/gltf-concurrency-test.ts,modified,3,3,6,"@@ -14,14 +14,14 @@ export default class GltfConcurrencyTest extends Test {
+         const runnerPromise = MRE.Actor.CreateFromGltf(this.app.context, {
+             // tslint:disable-next-line:max-line-length
+             resourceUrl: `https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/CesiumMan/glTF-Binary/CesiumMan.glb`,
+-            actor: { transform: { position: { x: 0.66, y: -0.72 } } }
++            actor: { transform: { position: { x: 0.66, y: 0.0, z: -0.5 } } }
+         });
+         const runner = runnerPromise.value;
+ 
+         const gearboxPromise = MRE.Actor.CreateFromGltf(this.app.context, {
+             // tslint:disable-next-line:max-line-length
+             resourceUrl: 'https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Models/master/2.0/GearboxAssy/glTF/GearboxAssy.gltf',
+-            actor: { transform: { position: { x: 16, y: -1.6, z: -1.2 }, scale: { x: 0.1, y: 0.1, z: 0.1 } } }
++            actor: { transform: { position: { x: 16, y: 0.3, z: -1.5 }, scale: { x: 0.1, y: 0.1, z: 0.1 } } }
+         });
+ 
+         const bottlePromise = this.app.context.assetManager.loadGltf('bottle',
+@@ -47,7 +47,7 @@ export default class GltfConcurrencyTest extends Test {
+ 
+         MRE.Actor.CreateFromPrefab(this.app.context, {
+             prefabId: bottleAsset.prefabs.byIndex(0).id,
+-            actor: { transform: { position: { x: -.66 }, scale: { x: 4, y: 4, z: 4 } } }
++            actor: { transform: { position: { x: -.66, y: 0.5, z: -1 }, scale: { x: 4, y: 4, z: 4 } } }
+         });
+ 
+         await this.stoppedAsync();"
+microsoft/mixed-reality-extension-sdk,243,5ae8c6b5565d1ba7d6bfd6c46d52f1587689c40f,packages/functional-tests/src/tests/gltf-gen-test.ts,modified,6,1,7,"@@ -33,7 +33,12 @@ export default class GltfGenTest extends Test {
+         })]);
+ 
+         MRE.Actor.CreateFromGltf(this.app.context, {
+-            resourceUrl: Server.registerStaticBuffer('sphere.glb', gltfFactory.generateGLTF())
++            resourceUrl: Server.registerStaticBuffer('sphere.glb', gltfFactory.generateGLTF()),
++            actor: {
++                transform: {
++                    position: { y: 1, z: -1 }
++                }
++            }
+         });
+ 
+         await this.stoppedAsync();"
+microsoft/mixed-reality-extension-sdk,243,5ae8c6b5565d1ba7d6bfd6c46d52f1587689c40f,packages/functional-tests/src/tests/input-test.ts,modified,19,2,21,"@@ -16,6 +16,21 @@ export default class InputTest extends Test {
+     private model: MRE.Actor;
+ 
+     public async run(): Promise<boolean> {
++        MRE.Actor.CreateEmpty(this.app.context, {
++            actor: {
++                name: ""Light"",
++                light: {
++                    type: 'point',
++                    range: 5,
++                    intensity: 2,
++                    color: { r: 1, g: 0.5, b: 0.3 }
++                },
++                transform: {
++                    position: { x: -2, y: 2, z: -2 }
++                }
++            }
++        });
++
+         // Load a glTF model
+         this.model = MRE.Actor.CreateFromGltf(this.app.context, {
+             // at the given URL
+@@ -26,7 +41,8 @@ export default class InputTest extends Test {
+             actor: {
+                 name: 'clickable',
+                 transform: {
+-                    scale: { x: 0.4, y: 0.4, z: 0.4 }
++                    scale: { x: 0.4, y: 0.4, z: 0.4 },
++                    position: { x: 0, y: 1, z: -1 }
+                 }
+             }
+         }).value;
+@@ -71,7 +87,8 @@ export default class InputTest extends Test {
+         this.cycleState();
+         await this.stoppedAsync();
+ 
+-        this.model.setBehavior(null);
++        // TODO SOREN: Restore this for 0.8.
++//        this.model.setBehavior(null);
+         this.app.setOverrideText(""Thank you for your cooperation"");
+         await delay(1.2 * 1000);
+ "
+microsoft/mixed-reality-extension-sdk,243,5ae8c6b5565d1ba7d6bfd6c46d52f1587689c40f,packages/functional-tests/src/tests/interpolation-test.ts,modified,21,0,21,"@@ -11,11 +11,32 @@ import delay from '../utils/delay';
+ export default class InterpolationTest extends Test {
+     public expectedResultDescription = ""Lerping scale and rotation"";
+     public async run(): Promise<boolean> {
++        MRE.Actor.CreateEmpty(this.app.context, {
++            actor: {
++                name: ""Light"",
++                light: {
++                    type: 'point',
++                    range: 5,
++                    intensity: 2,
++                    color: { r: 1, g: 0.5, b: 0.3 }
++                },
++                transform: {
++                    position: { x: -2, y: 2, z: -2 }
++                }
++            }
++        });
++
+         const cube = MRE.Actor.CreatePrimitive(this.app.context, {
+             definition: {
+                 shape: MRE.PrimitiveShape.Box,
+                 dimensions: { x: 0.65, y: 0.65, z: 0.65 }
+             },
++            actor: {
++                transform: {
++                    position: { y: 1.0, z: -1.0 }
++
++                }
++            },
+             addCollider: true
+         }).value;
+ "
+microsoft/mixed-reality-extension-sdk,243,5ae8c6b5565d1ba7d6bfd6c46d52f1587689c40f,packages/functional-tests/src/tests/light-test.ts,modified,11,12,23,"@@ -35,7 +35,7 @@ export default class LightTest extends Test {
+         // rotating to face the center of the space.
+         const animateSide = async (dirX: number, dirZ: number, time: number) => {
+             if (!this.stopped) {
+-                const position = new MRE.Vector3(dirX, -0.75 + 1.5 * Math.random(), dirZ);
++                const position = new MRE.Vector3(dirX, 0.5 + 1.5 * Math.random(), dirZ);
+                 const rotation = MRE.Quaternion.LookAt(
+                     position,
+                     props['monkey'].transform.position,
+@@ -53,10 +53,10 @@ export default class LightTest extends Test {
+ 
+         // One loop of the sphere moving along each side of the scene.
+         const animateAround = async (time: number) => {
+-            await animateSide(1, 1, time / 4);
+-            await animateSide(-1, 1, time / 4);
+-            await animateSide(-1, -1, time / 4);
+-            await animateSide(1, -1, time / 4);
++            await animateSide(1, 0, time / 4);
++            await animateSide(-1, 0, time / 4);
++            await animateSide(-1, -2, time / 4);
++            await animateSide(1, -2, time / 4);
+         };
+ 
+         while (!this.stopped) {
+@@ -86,10 +86,13 @@ export default class LightTest extends Test {
+             resourceUrl: `${this.baseUrl}/monkey.glb`,
+             actor: {
+                 transform: {
+-                    scale: { x: 0.5, y: 0.5, z: 0.5 }
++                    scale: { x: 0.5, y: 0.5, z: 0.5 },
++                    position: { y: 1, z: -1 },
++                    rotation: {x: 0, y: 1, z: 0, w: 0}, // rotate 180 degrees
+                 }
+             }
+         }).value;
++
+         const propWidth = 0.33;
+         const propHeight = 0.33;
+         props['left-box'] = MRE.Actor.CreatePrimitive(this.app.context, {
+@@ -99,9 +102,7 @@ export default class LightTest extends Test {
+             },
+             actor: {
+                 transform: {
+-                    position: {
+-                        x: 0.5, y: -0.35
+-                    }
++                    position: { x: 0.5, y: 0.65, z: -1 }
+                 }
+             }
+         }).value;
+@@ -112,9 +113,7 @@ export default class LightTest extends Test {
+             },
+             actor: {
+                 transform: {
+-                    position: {
+-                        x: -0.5, y: -0.35
+-                    }
++                    position: { x: -0.5, y: 0.65, z: -1 }
+                 }
+             }
+         }).value;"
+microsoft/mixed-reality-extension-sdk,243,5ae8c6b5565d1ba7d6bfd6c46d52f1587689c40f,packages/functional-tests/src/tests/look-at-test.ts,modified,20,5,25,"@@ -8,11 +8,11 @@ import * as MRE from '@microsoft/mixed-reality-extension-sdk';
+ import { Test } from '../test';
+ 
+ const circleKeyframes = [
+-    { time: 0, value: { transform: { position: { x: 0, y: -1, z: -0.5 } } } },
+-    { time: 1, value: { transform: { position: { x: 1, y: 0, z: -0.5 } } } },
+-    { time: 2, value: { transform: { position: { x: 0, y: 1, z: -0.5 } } } },
+-    { time: 3, value: { transform: { position: { x: -1, y: 0, z: -0.5 } } } },
+-    { time: 4, value: { transform: { position: { x: 0, y: -1, z: -0.5 } } } }
++    { time: 0, value: { transform: { position: { x: 0, y: 0, z: -0.5 } } } },
++    { time: 1, value: { transform: { position: { x: 1, y: 1, z: -0.5 } } } },
++    { time: 2, value: { transform: { position: { x: 0, y: 2, z: -0.5 } } } },
++    { time: 3, value: { transform: { position: { x: -1, y: 1, z: -0.5 } } } },
++    { time: 4, value: { transform: { position: { x: 0, y: 0, z: -0.5 } } } }
+ ] as MRE.AnimationKeyframe[];
+ 
+ export default class LookAtTest extends Test {
+@@ -21,6 +21,21 @@ export default class LookAtTest extends Test {
+     public state = 0;
+ 
+     public async run(): Promise<boolean> {
++        MRE.Actor.CreateEmpty(this.app.context, {
++            actor: {
++                name: ""Light"",
++                light: {
++                    type: 'point',
++                    range: 5,
++                    intensity: 2,
++                    color: { r: 1, g: 0.5, b: 0.3 }
++                },
++                transform: {
++                    position: { x: -2, y: 2, z: -2 }
++                }
++            }
++        });
++
+         const tester = MRE.Actor.CreateFromGltf(this.app.context, {
+             resourceUrl: `${this.baseUrl}/monkey.glb`,
+             actor: { transform: { scale: { x: 0.5, y: 0.5, z: 0.5 } } }"
+microsoft/mixed-reality-extension-sdk,243,5ae8c6b5565d1ba7d6bfd6c46d52f1587689c40f,packages/functional-tests/src/tests/primitives-test.ts,modified,17,3,20,"@@ -13,7 +13,21 @@ export default class PrimitivesTest extends Test {
+     public async run(): Promise<boolean> {
+         // Make a root object.
+         const tester = MRE.Actor.CreateEmpty(this.app.context, {
+-            actor: { transform: { position: { y: -0.5 }, scale: { x: 0.5, y: 0.5, z: 0.5 } } }
++            actor: { transform: { position: { y: 0.5, z: -0.5 }, scale: { x: 0.5, y: 0.5, z: 0.5 } } }
++        });
++        MRE.Actor.CreateEmpty(this.app.context, {
++            actor: {
++                name: ""Light"",
++                light: {
++                    type: 'point',
++                    range: 5,
++                    intensity: 2,
++                    color: { r: 1, g: 0.5, b: 0.3 }
++                },
++                transform: {
++                    position: { x: -2, y: 2, z: -2 }
++                }
++            }
+         });
+         const primitiveActors: Array<MRE.ForwardPromise<MRE.Actor>> = [];
+ 
+@@ -30,7 +44,7 @@ export default class PrimitivesTest extends Test {
+                             name: 'Box',
+                             parentId: tester.value.id,
+                             transform: {
+-                                position: { x: x * 4 - 0.8, y: y * 4 + 0.3, z: z * 4 - 0.5 }
++                                position: { x: x * 4 - 0.8, y: y * 4 + 0., z: z * 4 - 0.5 }
+                             }
+                         }
+                     }));
+@@ -172,7 +186,7 @@ export default class PrimitivesTest extends Test {
+                 name: 'Plane',
+                 parentId: tester.value.id,
+                 transform: {
+-                    position: { x: -2, y: 0.5, z: 0 }
++                    position: { x: -2, y: 0.0, z: 0 }
+                 }
+             }
+         }));"
+microsoft/mixed-reality-extension-sdk,243,5ae8c6b5565d1ba7d6bfd6c46d52f1587689c40f,packages/functional-tests/src/tests/reparent-test.ts,modified,2,2,4,"@@ -15,14 +15,14 @@ export default class ReparentTest extends Test {
+         const leftParent = MRE.Actor.CreateEmpty(this.app.context, {
+             actor: {
+                 transform: {
+-                    position: { x: -1 }
++                    position: { x: -0.7, y: 0.3, z: -0.3 }
+                 }
+             }
+         }).value;
+         const rightParent = MRE.Actor.CreateEmpty(this.app.context, {
+             actor: {
+                 transform: {
+-                    position: { x: 1 }
++                    position: { x: 0.7, y: 0.3, z: -0.3 }
+                 }
+             }
+         }).value;"
+microsoft/mixed-reality-extension-sdk,243,5ae8c6b5565d1ba7d6bfd6c46d52f1587689c40f,packages/functional-tests/src/tests/sound-test.ts,modified,12,6,18,"@@ -53,7 +53,7 @@ export default class SoundTest extends Test {
+         const musicButtonPromise = MRE.Actor.CreatePrimitive(this.app.context, {
+             definition: {
+                 shape: MRE.PrimitiveShape.Sphere,
+-                radius: 0.3,
++                radius: 0.2,
+                 uSegments: 8,
+                 vSegments: 4
+ 
+@@ -62,7 +62,7 @@ export default class SoundTest extends Test {
+             actor: {
+                 name: 'MusicButton',
+                 transform: {
+-                    position: { x: -1, y: 1.3, z: 1 }
++                    position: { x: -0.8, y: 1.3, z: -0.2 }
+                 }
+             }
+         });
+@@ -94,7 +94,7 @@ export default class SoundTest extends Test {
+         const notesButtonPromise = MRE.Actor.CreatePrimitive(this.app.context, {
+             definition: {
+                 shape: MRE.PrimitiveShape.Sphere,
+-                radius: 0.3,
++                radius: 0.2,
+                 uSegments: 8,
+                 vSegments: 4
+ 
+@@ -103,7 +103,7 @@ export default class SoundTest extends Test {
+             actor: {
+                 name: 'NotesButton',
+                 transform: {
+-                    position: { x: 0, y: 1.3, z: 1 }
++                    position: { x: 0, y: 1.3, z: -0.2 }
+                 }
+             }
+         });
+@@ -131,7 +131,7 @@ export default class SoundTest extends Test {
+         const dopplerButtonPromise = MRE.Actor.CreatePrimitive(this.app.context, {
+             definition: {
+                 shape: MRE.PrimitiveShape.Sphere,
+-                radius: 0.3,
++                radius: 0.2,
+                 uSegments: 8,
+                 vSegments: 4
+ 
+@@ -140,7 +140,7 @@ export default class SoundTest extends Test {
+             actor: {
+                 name: 'DopplerButton',
+                 transform: {
+-                    position: { x: 1, y: 1.3, z: 1 }
++                    position: { x: 0.8, y: 1.3, z: -0.2 }
+                 }
+             }
+         });
+@@ -195,6 +195,12 @@ export default class SoundTest extends Test {
+         dopplerButtonBehavior.onClick('released', cycleDopplerSoundState);
+ 
+         await this.stoppedAsync();
++
++        // TODO SOREN: remove these for 0.8 - in 0.7 there is an error
++        // if running sounds aren't removed before deleting actors
++        dopplerSoundInstance.value.stop();
++        musicSoundInstance.value.stop();
++
+         return true;
+     }
+ "
+microsoft/mixed-reality-extension-sdk,243,5ae8c6b5565d1ba7d6bfd6c46d52f1587689c40f,packages/functional-tests/src/tests/text-test.ts,modified,8,11,19,"@@ -37,31 +37,31 @@ export default class TextTest extends Test {
+     public async run(): Promise<boolean> {
+         const enabled = this.createTemplate(""enabled"");
+         this.enabled = enabled.value;
+-        this.enabled.transform.position.copy({ x: -1, y: 0.5, z: 0 });
++        this.enabled.transform.position.copy({ x: -1, y: 1.5, z: 0 });
+ 
+         const contents = this.createTemplate('contents');
+         this.contents = contents.value;
+-        this.contents.transform.position.copy({ x: 0, y: 0.5, z: 0 });
++        this.contents.transform.position.copy({ x: 0, y: 1.5, z: 0 });
+ 
+         const ppl = this.createTemplate('pixelsPerLine');
+         this.ppl = ppl.value;
+-        this.ppl.transform.position.copy({ x: -1, y: 0, z: 0 });
++        this.ppl.transform.position.copy({ x: -1, y: 1, z: 0 });
+ 
+         const height = this.createTemplate('height');
+         this.height = height.value;
+-        this.height.transform.position.copy({ x: 0, y: 0, z: 0 });
++        this.height.transform.position.copy({ x: 0, y: 1, z: 0 });
+ 
+         const font = this.createTemplate('font');
+         this.font = font.value;
+-        this.font.transform.position.copy({ x: -1, y: -0.5, z: 0 });
++        this.font.transform.position.copy({ x: -1, y: 0.5, z: 0 });
+ 
+         const color = this.createTemplate('color');
+         this.color = color.value;
+-        this.color.transform.position.copy({ x: 0, y: -0.5, z: 0 });
++        this.color.transform.position.copy({ x: 0, y: 0.5, z: 0 });
+ 
+         const anchor = this.createTemplate('anchor');
+         this.anchor = anchor.value;
+-        this.anchor.transform.position.copy({ x: 1, y: 0.3, z: 0 });
++        this.anchor.transform.position.copy({ x: 1, y: 1.3, z: 0 });
+         MRESDK.Actor.CreatePrimitive(this.app.context, {
+             definition: {
+                 shape: MRESDK.PrimitiveShape.Sphere,
+@@ -75,7 +75,7 @@ export default class TextTest extends Test {
+ 
+         const justify = this.createTemplate('multiline\njustify');
+         this.justify = justify.value;
+-        this.justify.transform.position.copy({ x: 1, y: -0.3, z: 0 });
++        this.justify.transform.position.copy({ x: 1, y: 0.7, z: 0 });
+         MRESDK.Actor.CreatePrimitive(this.app.context, {
+             definition: {
+                 shape: MRESDK.PrimitiveShape.Sphere,
+@@ -137,9 +137,6 @@ export default class TextTest extends Test {
+                     height: 0.15,
+                     anchor: MRESDK.TextAnchorLocation.MiddleCenter
+                 },
+-                transform: {
+-                    rotation: { x: 0, y: 1, z: 0, w: 0 }
+-                }
+             }
+         });
+     }"
+microsoft/mixed-reality-extension-sdk,243,5ae8c6b5565d1ba7d6bfd6c46d52f1587689c40f,packages/functional-tests/src/tests/user-test.ts,modified,1,2,3,"@@ -19,8 +19,7 @@ export default class UserTest extends Test {
+         await MRESDK.Actor.CreateEmpty(this.app.context, {
+             actor: {
+                 transform: {
+-                    position: { x: 0, y: 0, z: 0 },
+-                    rotation: { x: 0, y: 1, z: 0, w: 0 }
++                    position: { x: 0, y: 1, z: 0 }
+                 },
+                 text: {
+                     contents: labelText,"
+microsoft/mixed-reality-extension-sdk,243,5ae8c6b5565d1ba7d6bfd6c46d52f1587689c40f,packages/sdk/src/math/color3.ts,modified,10,0,10,"@@ -494,6 +494,16 @@ export class Color3 implements Color3Like {
+      * @returns a new Color3 object
+      */
+     public static Gray(): Color3 { return new Color3(0.5, 0.5, 0.5); }
++    /**
++     * Returns a Color3 value containing a light gray color
++     * @returns a new Color3 object
++     */
++    public static LightGray(): Color3 { return new Color3(0.75, 0.75, 0.75); }
++    /**
++     * Returns a Color3 value containing a dark gray color
++     * @returns a new Color3 object
++     */
++    public static DarkGray(): Color3 { return new Color3(0.25, 0.25, 0.25); }
+     /**
+      * Returns a Color3 value containing a teal color
+      * @returns a new Color3 object"
+microsoft/mixed-reality-extension-sdk,243,5ae8c6b5565d1ba7d6bfd6c46d52f1587689c40f,packages/sdk/src/sound/setSoundStateOptions.ts,modified,7,3,10,"@@ -34,9 +34,13 @@ export type SetSoundStateOptions = {
+     doppler?: number;
+ 
+     /**
+-     * For multi-channel sounds (like music), mix audio direction (which speakers to play) for each
+-     * channel between angle to actor (0.0) and the audio file's channels' original direction (1.0).
+-     * Default to 0.5, which gives a feeling of direction, without collapsing all channels to sound like mono.
++     * Specify how much a sound is non-directional (playing the same volume in each speaker
++     * regardless of facing direction)
++     * vs directional (playing only in the speakers that are pointing towards the sound source).
++     * This can be used to make sounds seem more ""wide"".
++     * It is also useful for multi-channel sounds (such as music), because a fully directional sound
++     * will always sound like mono.
++     * Default to 0.0. For music and ambient looping sounds, set this between 0.5 and 1.0.
+      */
+     multiChannelSpread?: number;
+ "

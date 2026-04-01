@@ -1,0 +1,77 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+OpenKneeboard/OpenKneeboard,146,81725d1,src/injectables/OculusKneeboard.cpp,modified,8,0,8,"@@ -139,6 +139,7 @@ ovrResult OculusKneeboard::OnOVREndFrame(
+   const auto kneeboardLayerCount = snapshot.GetLayerCount();
+   std::vector<ovrLayerQuad> kneeboardLayers;
+   kneeboardLayers.reserve(kneeboardLayerCount);
++  uint16_t topMost = kneeboardLayerCount - 1;
+   for (uint8_t layerIndex = 0; layerIndex < kneeboardLayerCount; ++layerIndex) {
+     auto& swapChain = mSwapChains.at(layerIndex);
+     if (!swapChain) [[unlikely]] {
+@@ -157,6 +158,9 @@ ovrResult OculusKneeboard::OnOVREndFrame(
+ 
+     const auto renderParams = this->GetRenderParameters(
+       snapshot, layer, this->GetHMDPose(predictedTime));
++    if (renderParams.mIsLookingAtKneeboard) {
++      topMost = layerIndex;
++    }
+ 
+     auto& cacheKey = mRenderCacheKeys.at(layerIndex);
+     if (cacheKey != renderParams.mCacheKey) {
+@@ -184,6 +188,10 @@ ovrResult OculusKneeboard::OnOVREndFrame(
+     newLayers.push_back(&kneeboardLayers.back().Header);
+   }
+ 
++  if (topMost != kneeboardLayerCount - 1) {
++    std::swap(kneeboardLayers.back(), kneeboardLayers.at(topMost));
++  }
++
+   return next(
+     session,
+     frameIndex,"
+OpenKneeboard/OpenKneeboard,146,81725d1,src/lib/VRKneeboard.cpp,modified,1,0,1,"@@ -122,6 +122,7 @@ VRKneeboard::RenderParameters VRKneeboard::GetRenderParameters(
+     .mKneeboardOpacity = isLookingAtKneeboard ? config.mVR.mGazeOpacity
+                                               : config.mVR.mNormalOpacity,
+     .mCacheKey = cacheKey,
++    .mIsLookingAtKneeboard = isLookingAtKneeboard,
+   };
+ }
+ "
+OpenKneeboard/OpenKneeboard,146,81725d1,src/lib/include/OpenKneeboard/VRKneeboard.h,modified,1,0,1,"@@ -42,6 +42,7 @@ class VRKneeboard {
+     Vector2 mKneeboardSize;
+     float mKneeboardOpacity;
+     size_t mCacheKey;
++    bool mIsLookingAtKneeboard;
+   };
+ 
+  protected:"
+OpenKneeboard/OpenKneeboard,146,e7582b7,src/injectables/OpenXRKneeboard.cpp,modified,10,0,10,"@@ -127,6 +127,9 @@ XrResult OpenXRKneeboard::xrEndFrame(
+ 
+   std::vector<XrCompositionLayerQuad> kneeboardLayers;
+   kneeboardLayers.reserve(layerCount);
++
++  uint8_t topMost = layerCount - 1;
++
+   for (uint8_t layerIndex = 0; layerIndex < layerCount; ++layerIndex) {
+     const auto& layer = *snapshot.GetLayerConfig(layerIndex);
+     if (!layer.IsValid()) {
+@@ -145,6 +148,9 @@ XrResult OpenXRKneeboard::xrEndFrame(
+ 
+     const auto renderParams
+       = this->GetRenderParameters(snapshot, layer, hmdPose);
++    if (renderParams.mIsLookingAtKneeboard) {
++      topMost = layerIndex;
++    }
+     if (mRenderCacheKeys.at(layerIndex) != renderParams.mCacheKey) {
+       if (!this->Render(swapchain, snapshot, layerIndex, renderParams)) {
+         dprint(""Render failed."");
+@@ -180,6 +186,10 @@ XrResult OpenXRKneeboard::xrEndFrame(
+       reinterpret_cast<XrCompositionLayerBaseHeader*>(&kneeboardLayers.back()));
+   }
+ 
++  if (topMost != layerCount - 1) {
++    std::swap(kneeboardLayers.back(), kneeboardLayers.at(topMost));
++  }
++
+   XrFrameEndInfo nextFrameEndInfo {*frameEndInfo};
+   nextFrameEndInfo.layers = nextLayers.data();
+   nextFrameEndInfo.layerCount = static_cast<uint32_t>(nextLayers.size());"

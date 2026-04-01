@@ -1,0 +1,134 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch,gpt_bug_detection
+aframevr/aframe,1415,793985e7c16ff06bf93ef7fd4f3814fbe662b30c,src/core/a-animation.js,modified,11,11,22,"@@ -43,20 +43,20 @@ module.exports.AAnimation = registerElement('a-animation', {
+     attachedCallback: {
+       value: function () {
+         var self = this;
+-        var el = self.el = self.parentNode;
++        var el = this.el = this.parentNode;
+ 
+-        if (el.isNode) {
+-          if (el.hasLoaded) {
+-            init();
+-          } else {
+-            el.addEventListener('loaded', init.bind(self));
+-          }
+-        } else {
+-          // To handle elements that are not yet `<a-entity>`s (e.g., templates).
+-          el.addEventListener('nodeready', init.bind(self));
+-        }
++        init();
+ 
+         function init () {
++          if (!el.isPlaying) {
++            el.addEventListener('play', init);
++            return;
++          }
++          if (!el.hasLoaded) {
++            el.addEventListener('loaded', init);
++            return;
++          }
++
+           self.applyMixin();
+           self.update();
+           self.load();","{""has_bug"": true, ""bugs"": [{""line_start"": 48, ""line_end"": 48, ""description"": ""The init function is called without checking if the entity is loaded or playing, which may lead to premature execution of animation logic."", ""buggy_code"": ""init();""}, {""line_start"": 56, ""line_end"": 56, ""description"": ""The event listener for 'loaded' is added but not removed, which can lead to memory leaks and unintended behavior if the entity is reattached multiple times."", ""buggy_code"": ""el.addEventListener('loaded', init);""}, {""line_start"": 204, ""line_end"": 204, ""description"": ""The condition checks if the animation is already running or if the entity is not playing, but it does not account for the case where the entity is not loaded, which may cause the animation to not start correctly."", ""buggy_code"": ""if (this.isRunning || !this.el.isPlaying) { return; }""}]}"
+aframevr/aframe,1415,793985e7c16ff06bf93ef7fd4f3814fbe662b30c,src/core/a-entity.js,modified,26,10,36,"@@ -59,13 +59,14 @@ var proto = Object.create(ANode.prototype, {
+     }
+   },
+ 
++  /**
++   * Add to parent, load, play.
++   */
+   attachedCallback: {
+     value: function () {
+       this.addToParent();
+-      if (!this.isScene) {
+-        this.load();
+-        if (this.parentEl.isPlaying) { this.play(); }
+-      }
++      if (this.isScene) { return; }
++      this.load();
+     }
+   },
+ 
+@@ -211,15 +212,26 @@ var proto = Object.create(ANode.prototype, {
+ 
+   load: {
+     value: function () {
++      var self = this;
++
+       if (this.hasLoaded) { return; }
++
+       // Attach to parent object3D.
+       this.addToParent();
++
++      // Scene load.
++      function sceneLoadCallback () { self.updateComponents(); }
+       if (this.isScene) {
+-        ANode.prototype.load.call(this, this.updateComponents.bind(this));
+-      } else {
+-        ANode.prototype.load.call(this, this.updateComponents.bind(this),
+-                                  function (el) { return el.isEntity; });
++        ANode.prototype.load.call(this, sceneLoadCallback);
++        return;
++      }
++
++      // Entity load.
++      function entityLoadCallback () {
++        self.updateComponents();
++        if (self.parentNode.isPlaying) { self.play(); }
+       }
++      ANode.prototype.load.call(this, entityLoadCallback, isEntity);
+     },
+     writable: window.debug
+   },
+@@ -436,8 +448,8 @@ var proto = Object.create(ANode.prototype, {
+       });
+ 
+       // Tell all child entities to play.
+-      this.getChildEntities().forEach(function play (obj) {
+-        obj.play();
++      this.getChildEntities().forEach(function play (entity) {
++        entity.play();
+       });
+ 
+       this.emit('play');
+@@ -701,6 +713,10 @@ function playComponent (component, sceneEl) {
+   sceneEl.addBehavior(component);
+ }
+ 
++function isEntity (el) {
++  return el.isEntity;
++}
++
+ AEntity = registerElement('a-entity', {
+   prototype: proto
+ });","{""has_bug"": true, ""bugs"": [{""line_start"": 232, ""line_end"": 232, ""description"": ""Potential null reference issue when accessing 'parentNode' which may not be defined or loaded yet."", ""buggy_code"": ""if (self.parentNode.isPlaying) { self.play(); }""}, {""line_start"": 234, ""line_end"": 234, ""description"": ""The second argument 'isEntity' in the load call may not be defined, leading to a potential reference error."", ""buggy_code"": ""ANode.prototype.load.call(this, entityLoadCallback, isEntity);""}]}"
+aframevr/aframe,1415,793985e7c16ff06bf93ef7fd4f3814fbe662b30c,tests/core/a-entity.test.js,modified,13,2,15,"@@ -103,15 +103,26 @@ suite('a-entity', function () {
+       });
+     });
+ 
++    test('is playing when loaded', function (done) {
++      var el = document.createElement('a-entity');
++
++      el.addEventListener('loaded', function () {
++        assert.ok(el.isPlaying);
++        done();
++      });
++      this.el.sceneEl.appendChild(el);
++    });
++
+     test('plays when entity is attached after scene load', function (done) {
+       var el = document.createElement('a-entity');
+       this.sinon.spy(AEntity.prototype, 'play');
+ 
+-      this.el.sceneEl.appendChild(el);
+-      el.addEventListener('loaded', function () {
++      el.addEventListener('play', function () {
++        assert.ok(el.hasLoaded);
+         sinon.assert.called(AEntity.prototype.play);
+         done();
+       });
++      this.el.sceneEl.appendChild(el);
+     });
+   });
+ ","{""has_bug"": true, ""bugs"": [{""line_start"": 178, ""line_end"": 182, ""description"": ""The test incorrectly asserts that the entity is in the 'happy' state twice, which is logically incorrect. The second assertion should check for a different state."", ""buggy_code"": ""assert.ok(el.is('happy'));""}, {""line_start"": 228, ""line_end"": 228, ""description"": ""The line is incomplete and likely leads to a syntax error or runtime error due to an unfinished statement."", ""buggy_code"": ""material = el.getAttrib""}]}"

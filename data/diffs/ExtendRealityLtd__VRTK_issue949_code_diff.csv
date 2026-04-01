@@ -1,0 +1,510 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+ExtendRealityLtd/VRTK,949,269d9a9,Assets/VRTK/Scripts/Pointers/PointerRenderers/VRTK_BasePointerRenderer.cs,modified,50,35,85,"@@ -88,6 +88,9 @@ public sealed class PointerOriginSmoothingSettings
+         protected float savedBeamLength = 0f;
+         protected List<GameObject> makeRendererVisible;
+ 
++        protected bool tracerVisible;
++        protected bool cursorVisible;
++
+         /// <summary>
+         /// The InitalizePointer method is used to set up the state of the pointer renderer.
+         /// </summary>
+@@ -122,7 +125,6 @@ public virtual void Toggle(bool pointerState, bool actualState)
+                 PointerExit(destinationHit);
+             }
+             ToggleInteraction(pointerState);
+-            TogglePlayArea(pointerState, actualState);
+             ToggleRenderer(pointerState, actualState);
+         }
+ 
+@@ -140,9 +142,10 @@ public virtual void ToggleInteraction(bool state)
+         /// </summary>
+         public virtual void UpdateRenderer()
+         {
+-            if (playareaCursor && controllingPointer && controllingPointer.IsPointerActive())
++            if (playareaCursor)
+             {
+-                playareaCursor.ToggleVisibility((destinationHit.transform != null));
++                playareaCursor.SetHeadsetPositionCompensation(headsetPositionCompensation);
++                playareaCursor.ToggleState(IsCursorVisible());
+             }
+         }
+ 
+@@ -161,7 +164,34 @@ public virtual RaycastHit GetDestinationHit()
+         /// <returns>Returns true if there is a valid play area and no collisions. Returns false if there is no valid play area or there is but with a collision detected.</returns>
+         public virtual bool ValidPlayArea()
+         {
+-            return (!playareaCursor || !playareaCursor.HasCollided());
++            return (!playareaCursor || !playareaCursor.IsActive() || !playareaCursor.HasCollided());
++        }
++
++        /// <summary>
++        /// The IsVisible method determines if the pointer renderer is at all visible by checking the state of the tracer and the cursor.
++        /// </summary>
++        /// <returns>Returns true if either the tracer or cursor renderers are visible. Returns false if none are visible.</returns>
++        public virtual bool IsVisible()
++        {
++            return (IsTracerVisible() || IsCursorVisible());
++        }
++
++        /// <summary>
++        /// The IsTracerVisible method determines if the pointer tracer renderer is visible.
++        /// </summary>
++        /// <returns>Returns true if the tracer renderers are visible.</returns>
++        public virtual bool IsTracerVisible()
++        {
++            return (tracerVisibility == VisibilityStates.AlwaysOn || tracerVisible);
++        }
++
++        /// <summary>
++        /// The IsCursorVisible method determines if the pointer cursor renderer is visible.
++        /// </summary>
++        /// <returns>Returns true if the cursor renderers are visible.</returns>
++        public virtual bool IsCursorVisible()
++        {
++            return (cursorVisibility == VisibilityStates.AlwaysOn || cursorVisible);
+         }
+ 
+         protected abstract void CreatePointerObjects();
+@@ -282,28 +312,6 @@ protected virtual bool ValidDestination()
+             return (validNavMeshLocation && destinationHit.transform && !(VRTK_PolicyList.Check(destinationHit.transform.gameObject, invalidListPolicy)));
+         }
+ 
+-        protected virtual void TogglePlayArea(bool pointerState, bool actualState)
+-        {
+-            if (playareaCursor)
+-            {
+-                playareaCursor.SetHeadsetPositionCompensation(headsetPositionCompensation);
+-                playareaCursor.ToggleState(pointerState);
+-            }
+-
+-            if (playareaCursor && pointerState)
+-            {
+-                if (actualState)
+-                {
+-                    ToggleRendererVisibility(playareaCursor.GetPlayAreaContainer(), false);
+-                    AddVisibleRenderer(playareaCursor.GetPlayAreaContainer());
+-                }
+-                else
+-                {
+-                    ToggleRendererVisibility(playareaCursor.GetPlayAreaContainer(), true);
+-                }
+-            }
+-        }
+-
+         protected virtual void ToggleElement(GameObject givenObject, bool pointerState, bool actualState, VisibilityStates givenVisibility, ref bool currentVisible)
+         {
+             if (givenObject)
+@@ -314,11 +322,12 @@ protected virtual void ToggleElement(GameObject givenObject, bool pointerState,
+ 
+                 if (givenVisibility == VisibilityStates.AlwaysOff)
+                 {
++                    currentVisible = false;
+                     ToggleRendererVisibility(givenObject, false);
+                 }
+                 else
+                 {
+-                    if (actualState)
++                    if (actualState && givenVisibility != VisibilityStates.AlwaysOn)
+                     {
+                         ToggleRendererVisibility(givenObject, false);
+                         AddVisibleRenderer(givenObject);
+@@ -350,24 +359,30 @@ protected virtual void MakeRenderersVisible()
+ 
+         protected virtual void ToggleRendererVisibility(GameObject givenObject, bool state)
+         {
+-            Renderer[] renderers = givenObject.GetComponentsInChildren<Renderer>();
+-            for (int i = 0; i < renderers.Length; i++)
++            if (givenObject)
+             {
+-                renderers[i].enabled = state;
++                Renderer[] renderers = givenObject.GetComponentsInChildren<Renderer>();
++                for (int i = 0; i < renderers.Length; i++)
++                {
++                    renderers[i].enabled = state;
++                }
+             }
+         }
+ 
+         protected virtual void SetupMaterialRenderer(GameObject givenObject)
+         {
+-            var pointerRenderer = givenObject.GetComponent<MeshRenderer>();
+-            pointerRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+-            pointerRenderer.receiveShadows = false;
+-            pointerRenderer.material = defaultMaterial;
++            if (givenObject)
++            {
++                var pointerRenderer = givenObject.GetComponent<MeshRenderer>();
++                pointerRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
++                pointerRenderer.receiveShadows = false;
++                pointerRenderer.material = defaultMaterial;
++            }
+         }
+ 
+         protected virtual void ChangeColor(Color givenColor)
+         {
+-            if ((playareaCursor && playareaCursor.HasCollided()) || !ValidDestination())
++            if ((playareaCursor && playareaCursor.IsActive() && playareaCursor.HasCollided()) || !ValidDestination())
+             {
+                 givenColor = invalidCollisionColor;
+             }"
+ExtendRealityLtd/VRTK,949,269d9a9,Assets/VRTK/Scripts/Pointers/PointerRenderers/VRTK_BezierPointerRenderer.cs,modified,2,15,17,"@@ -59,15 +59,12 @@ public class VRTK_BezierPointerRenderer : VRTK_BasePointerRenderer
+         protected GameObject actualInvalidLocationObject = null;
+         protected Vector3 fixedForwardBeamForward;
+ 
+-        protected bool tracerVisible;
+-        protected bool cursorVisible;
+-
+         /// <summary>
+         /// The UpdateRenderer method is used to run an Update routine on the pointer.
+         /// </summary>
+         public override void UpdateRenderer()
+         {
+-            if ((controllingPointer && controllingPointer.IsPointerActive()) || IsTracerVisible() || IsCursorVisible())
++            if ((controllingPointer && controllingPointer.IsPointerActive()) || IsVisible())
+             {
+                 Vector3 jointPosition = ProjectForwardBeam();
+                 Vector3 downPosition = ProjectDownBeam(jointPosition);
+@@ -81,7 +78,7 @@ protected override void ToggleRenderer(bool pointerState, bool actualState)
+         {
+             TogglePointerCursor(pointerState, actualState);
+             TogglePointerTracer(pointerState, actualState);
+-            if (actualState)
++            if (actualState && tracerVisibility != VisibilityStates.AlwaysOn)
+             {
+                 ToggleRendererVisibility(actualTracer.gameObject, false);
+                 AddVisibleRenderer(actualTracer.gameObject);
+@@ -135,16 +132,6 @@ protected override void ChangeMaterial(Color givenColor)
+             ChangeMaterialColor(actualCursor, givenColor);
+         }
+ 
+-        protected virtual bool IsTracerVisible()
+-        {
+-            return (tracerVisibility == VisibilityStates.AlwaysOn || tracerVisible);
+-        }
+-
+-        protected virtual bool IsCursorVisible()
+-        {
+-            return (cursorVisibility == VisibilityStates.AlwaysOn || cursorVisible);
+-        }
+-
+         protected virtual void CreateTracer()
+         {
+             actualTracer = actualContainer.gameObject.AddComponent<VRTK_CurveGenerator>();"
+ExtendRealityLtd/VRTK,949,269d9a9,Assets/VRTK/Scripts/Pointers/PointerRenderers/VRTK_StraightPointerRenderer.cs,modified,1,13,14,"@@ -38,16 +38,14 @@ public class VRTK_StraightPointerRenderer : VRTK_BasePointerRenderer
+         protected GameObject actualTracer;
+         protected GameObject actualCursor;
+ 
+-        protected bool tracerVisible;
+-        protected bool cursorVisible;
+         protected Vector3 cursorOriginalScale = Vector3.one;
+ 
+         /// <summary>
+         /// The UpdateRenderer method is used to run an Update routine on the pointer.
+         /// </summary>
+         public override void UpdateRenderer()
+         {
+-            if ((controllingPointer && controllingPointer.IsPointerActive()) || IsTracerVisible() || IsCursorVisible())
++            if ((controllingPointer && controllingPointer.IsPointerActive()) || IsVisible())
+             {
+                 float tracerLength = CastRayForward();
+                 SetPointerAppearance(tracerLength);
+@@ -102,16 +100,6 @@ protected override void UpdateObjectInteractor()
+             }
+         }
+ 
+-        protected virtual bool IsTracerVisible()
+-        {
+-            return (tracerVisibility == VisibilityStates.AlwaysOn || tracerVisible);
+-        }
+-
+-        protected virtual bool IsCursorVisible()
+-        {
+-            return (cursorVisibility == VisibilityStates.AlwaysOn || cursorVisible);
+-        }
+-
+         protected virtual void CreateTracer()
+         {
+             if (customTracer)"
+ExtendRealityLtd/VRTK,949,269d9a9,Assets/VRTK/Scripts/Pointers/VRTK_BasePointer.cs,modified,0,4,4,"@@ -6,7 +6,6 @@ namespace VRTK
+ #if UNITY_5_5_OR_NEWER
+     using UnityEngine.AI;
+ #endif
+-    using System;
+ 
+     /// <summary>
+     /// This abstract class provides any game pointer the ability to know the state of the implemented pointer.
+@@ -32,9 +31,6 @@ public enum pointerVisibilityStates
+             Always_Off
+         }
+ 
+-        /// <summary>
+-        /// Specifies the smoothing to be applied to the pointer.
+-        /// </summary>
+         [Serializable]
+         public sealed class PointerOriginSmoothingSettings
+         {"
+ExtendRealityLtd/VRTK,949,269d9a9,Assets/VRTK/Scripts/Pointers/VRTK_PlayAreaCursor.cs,modified,19,2,21,"@@ -127,6 +127,15 @@ public virtual void ToggleState(bool state)
+             }
+         }
+ 
++        /// <summary>
++        /// The IsActive method returns whether the play area cursor game object is active or not.
++        /// </summary>
++        /// <returns>Returns true if the play area cursor GameObject is active.</returns>
++        public virtual bool IsActive()
++        {
++            return playAreaCursor.activeInHierarchy;
++        }
++
+         /// <summary>
+         /// The GetPlayAreaContainer method returns the created game object that holds the play area cursor representation.
+         /// </summary>
+@@ -297,17 +306,25 @@ public virtual void SetIgnoreTarget(VRTK_PolicyList list = null)
+             targetListPolicy = list;
+         }
+ 
++        protected virtual void OnDisable()
++        {
++            if (parent)
++            {
++                parent.SetPlayAreaCursorCollision(false);
++            }
++        }
++
+         protected virtual void OnTriggerStay(Collider collider)
+         {
+-            if (parent.enabled && parent.gameObject.activeInHierarchy && ValidTarget(collider))
++            if (parent && parent.enabled && parent.gameObject.activeInHierarchy && ValidTarget(collider))
+             {
+                 parent.SetPlayAreaCursorCollision(true);
+             }
+         }
+ 
+         protected virtual void OnTriggerExit(Collider collider)
+         {
+-            if (ValidTarget(collider))
++            if (parent && ValidTarget(collider))
+             {
+                 parent.SetPlayAreaCursorCollision(false);
+             }"
+ExtendRealityLtd/VRTK,949,269d9a9,Assets/VRTK/Scripts/Pointers/VRTK_Pointer.cs,modified,2,2,4,"@@ -175,8 +175,8 @@ protected virtual void Update()
+                 pointerRenderer.UpdateRenderer();
+                 if (!IsPointerActive())
+                 {
+-                    bool interactionState = (pointerRenderer.tracerVisibility == VRTK_BasePointerRenderer.VisibilityStates.AlwaysOn || pointerRenderer.cursorVisibility == VRTK_BasePointerRenderer.VisibilityStates.AlwaysOn);
+-                    pointerRenderer.ToggleInteraction(interactionState);
++                    bool currentPointerVisibility = pointerRenderer.IsVisible();
++                    pointerRenderer.ToggleInteraction(currentPointerVisibility);
+                 }
+             }
+         }"
+ExtendRealityLtd/VRTK,949,269d9a9,Assets/VRTK/Scripts/Utilities/ObjectFollow/VRTK_RigidbodyFollow.cs,modified,2,1,3,"@@ -1,4 +1,5 @@
+-﻿namespace VRTK
++﻿// Rigidbody Follow|Utilities|90061
++namespace VRTK
+ {
+     using UnityEngine;
+ "
+ExtendRealityLtd/VRTK,949,269d9a9,Assets/VRTK/Scripts/Utilities/ObjectFollow/VRTK_TransformFollow.cs,modified,2,1,3,"@@ -1,4 +1,5 @@
+-﻿namespace VRTK
++﻿// Transform Follow|Utilities|90062
++namespace VRTK
+ {
+     using UnityEngine;
+ "
+ExtendRealityLtd/VRTK,949,269d9a9,DOCUMENTATION.md,modified,126,10,136,"@@ -816,6 +816,17 @@ The SetPlayAreaCursorTransform method is used to update the position of the play
+ 
+ The ToggleState method enables or disables the visibility of the play area cursor.
+ 
++#### IsActive/0
++
++  > `public virtual bool IsActive()`
++
++  * Parameters
++   * _none_
++  * Returns
++   * `bool` - Returns true if the play area cursor GameObject is active.
++
++The IsActive method returns whether the play area cursor game object is active or not.
++
+ #### GetPlayAreaContainer/0
+ 
+   > `public virtual GameObject GetPlayAreaContainer()`
+@@ -864,6 +875,10 @@ As this is an abstract class, it cannot be applied directly to a game object and
+ 
+ ### Inspector Parameters
+ 
++ * **Smooths Position:** Whether or not to smooth the position of the pointer origin when positioning the pointer tip.
++ * **Max Allowed Per Frame Distance Difference:** The maximum allowed distance between the unsmoothed pointer origin and the smoothed pointer origin per frame to use for smoothing.
++ * **Smooths Rotation:** Whether or not to smooth the rotation of the pointer origin when positioning the pointer tip.
++ * **Max Allowed Per Frame Angle Difference:** The maximum allowed angle between the unsmoothed pointer origin and the smoothed pointer origin per frame to use for smoothing.
+  * **Playarea Cursor:** An optional Play Area Cursor generator to add to the destination position of the pointer tip.
+  * **Layers To Ignore:** The layers for the pointer's raycasts to ignore.
+  * **Valid Collision Color:** The colour to change the pointer materials when the pointer collides with a valid object. Set to `Color.clear` to bypass changing material colour on valid collision.
+@@ -950,6 +965,39 @@ The GetDestinationHit method is used to get the RaycastHit of the pointer destin
+ 
+ The ValidPlayArea method is used to determine if there is a valid play area and if it has had any collisions.
+ 
++#### IsVisible/0
++
++  > `public virtual bool IsVisible()`
++
++  * Parameters
++   * _none_
++  * Returns
++   * `bool` - Returns true if either the tracer or cursor renderers are visible. Returns false if none are visible.
++
++The IsVisible method determines if the pointer renderer is at all visible by checking the state of the tracer and the cursor.
++
++#### IsTracerVisible/0
++
++  > `public virtual bool IsTracerVisible()`
++
++  * Parameters
++   * _none_
++  * Returns
++   * `bool` - Returns true if the tracer renderers are visible.
++
++The IsTracerVisible method determines if the pointer tracer renderer is visible.
++
++#### IsCursorVisible/0
++
++  > `public virtual bool IsCursorVisible()`
++
++  * Parameters
++   * _none_
++  * Returns
++   * `bool` - Returns true if the cursor renderers are visible.
++
++The IsCursorVisible method determines if the pointer cursor renderer is visible.
++
+ ---
+ 
+ ## Straight Pointer Renderer (VRTK_StraightPointerRenderer)
+@@ -4517,12 +4565,12 @@ Adding the `VRTK_UIPointer_UnityEvents` component to `VRTK_UIPointer` object all
+ 
+ #### SetEventSystem/1
+ 
+-  > `public virtual VRTK_EventSystemVRInput SetEventSystem(EventSystem eventSystem)`
++  > `public virtual VRTK_VRInputModule SetEventSystem(EventSystem eventSystem)`
+ 
+   * Parameters
+    * `EventSystem eventSystem` - The global Unity event system to be used by the UI pointers.
+   * Returns
+-   * `VRTK_EventSystemVRInput` - A custom event system input class that is used to detect input from VR pointers.
++   * `VRTK_VRInputModule` - A custom input module that is used to detect input from VR pointers.
+ 
+ The SetEventSystem method is used to set up the global Unity event system for the UI pointer. It also handles disabling the existing Standalone Input Module that exists on the EventSystem and adds a custom VRTK Event System VR Input component that is required for interacting with the UI with VR inputs.
+ 
+@@ -4535,7 +4583,7 @@ The SetEventSystem method is used to set up the global Unity event system for th
+   * Returns
+    * _none_
+ 
+-The RemoveEventSystem resets the Unity EventSystem back to the original state before the VRTK_EventSystemVRInput was swapped for it.
++The RemoveEventSystem resets the Unity EventSystem back to the original state before the VRTK_VRInputModule was swapped for it.
+ 
+ #### PointerActive/0
+ 
+@@ -5031,7 +5079,9 @@ A collection of scripts that provide useful functionality to aid the creation pr
+  * [Shared Methods](#shared-methods-vrtk_sharedmethods)
+  * [Policy List](#policy-list-vrtk_policylist)
+  * [Adaptive Quality](#adaptive-quality-vrtk_adaptivequality)
+- * [Object Transform Follow](#object-transform-follow-vrtk_objectfollow)
++ * [Object Follow](#object-follow-vrtk_objectfollow)
++ * [Rigidbody Follow](#rigidbody-follow-vrtk_rigidbodyfollow)
++ * [Transform Follow](#transform-follow-vrtk_transformfollow)
+  * [Simulating Headset Movement](#simulating-headset-movement-vrtk_simulator)
+ 
+ ---
+@@ -5639,18 +5689,84 @@ Eventually when lots of spheres are present the FPS will drop and demonstrate th
+ 
+ ---
+ 
+-## Object Transform Follow (VRTK_ObjectFollow)
++## Object Follow (VRTK_ObjectFollow)
+ 
+ ### Overview
+ 
+-A simple script that when attached to a GameObject will follow the position, scale and rotation of the given Transform.
++Abstract class that allows to change one game object's properties to follow another game object.
+ 
+ ### Inspector Parameters
+ 
+- * **Object To Follow:** A transform of an object to follow the position, scale and rotation of.
+- * **Follow Position:** Follow the position of the given object.
+- * **Follow Rotation:** Follow the rotation of the given object.
+- * **Follow Scale:** Follow the scale of the given object.
++ * **Game Object To Follow:** The game object to follow. The followed property values will be taken from this one.
++ * **Game Object To Change:** The game object to change the property values of. If left empty no game object will be changed.
++ * **Follows Position:** Whether to follow the position of the given game object.
++ * **Smooths Position:** Whether to smooth the position when following `gameObjectToFollow`.
++ * **Max Allowed Per Frame Distance Difference:** The maximum allowed distance between the unsmoothed source and the smoothed target per frame to use for smoothing.
++ * **Follows Rotation:** Whether to follow the rotation of the given game object.
++ * **Smooths Rotation:** Whether to smooth the rotation when following `gameObjectToFollow`.
++ * **Max Allowed Per Frame Angle Difference:** The maximum allowed angle between the unsmoothed source and the smoothed target per frame to use for smoothing.
++ * **Follows Scale:** Whether to follow the scale of the given game object.
++ * **Smooths Scale:** Whether to smooth the scale when following `gameObjectToFollow`.
++ * **Max Allowed Per Frame Size Difference:** The maximum allowed size between the unsmoothed source and the smoothed target per frame to use for smoothing.
++
++### Class Variables
++
++ * `public Vector3 targetPosition { get private set }` - The position that results by following `gameObjectToFollow`.
++ * `public Quaternion targetRotation { get private set }` - The rotation that results by following `gameObjectToFollow`.
++ * `public Vector3 targetScale { get private set }` - The scale that results by following `gameObjectToFollow`.
++
++### Class Methods
++
++#### Follow/0
++
++  > `public void Follow()`
++
++  * Parameters
++   * _none_
++  * Returns
++   * _none_
++
++Follow `gameObjectToFollow` using the current settings.
++
++---
++
++## Rigidbody Follow (VRTK_RigidbodyFollow)
++ > extends [VRTK_ObjectFollow](#object-follow-vrtk_objectfollow)
++
++### Overview
++
++Changes one game object's rigidbody to follow another game object's rigidbody.
++
++### Inspector Parameters
++
++ * **Movement Option:** Specifies how to position and rotate the rigidbody.
++
++### Class Variables
++
++ * `public enum MovementOption` - Specifies how to position and rotate the rigidbody.
++  * `Set` - Use  and .
++  * `Move` - Use  and .
++  * `Add` - Use  and .
++
++---
++
++## Transform Follow (VRTK_TransformFollow)
++ > extends [VRTK_ObjectFollow](#object-follow-vrtk_objectfollow)
++
++### Overview
++
++Changes one game object's transform to follow another game object's transform.
++
++### Inspector Parameters
++
++ * **Moment:** The moment at which to follow.
++
++### Class Variables
++
++ * `public enum FollowMoment` - The moment at which to follow.
++  * `OnUpdate` - Follow in the Update method.
++  * `OnLateUpdate` - Follow in the LateUpdate method.
++  * `OnPreRender` - Follow in the OnPreRender method. (This script doesn't have to be attached to a camera.)
+ 
+ ---
+ "

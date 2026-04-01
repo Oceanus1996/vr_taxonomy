@@ -1,0 +1,228 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vizorvr/patches,1187,884d430,browser/scripts/node.js,modified,17,6,23,"@@ -411,17 +411,24 @@ Node.prototype.update_recursive = function(conns) {
+ 
+ 	var secondPassUpdateInputs = []
+ 
+-	// first pass input update: update active inputs
++	// input update step 1: collect inactive inputs before any inputs haven't been updated
++	// (which could change the state of activeness on other inputs)
+ 	for (var i = 0, len = inputs.length; i < len; ++i) {
+ 		var inp = inputs[i]
+-
+ 		if (inp.dst_slot.inactive) {
+-			if(inp.ui && inp.ui.flow) {
+-				this._cascadeFlowOff(inp)
+-				dirty = true;
++			if (inp.ui && inp.ui.flow) {
++				this._cascadeFlowOff()
++				dirty = true
+ 			}
+ 			secondPassUpdateInputs.push(inp)
++		}
++	}
++
++	// input update step 2: first pass input update: update active inputs
++	for (var i = 0, len = inputs.length; i < len; ++i) {
++		var inp = inputs[i]
+ 
++		if (inp.dst_slot.inactive) {
+ 			continue;
+ 		}
+ 
+@@ -431,10 +438,14 @@ Node.prototype.update_recursive = function(conns) {
+ 		needs_update = needs_update || result.needs_update
+ 	}
+ 
+-	// second pass input update: update any inputs that were activated
++	// input update step 3: second pass input update: recheck and update any inputs that were deactivated
++	// before the first update
+ 	for (var i = 0, len = secondPassUpdateInputs.length; i < len; ++i) {
+ 		var inp = secondPassUpdateInputs[i]
+ 		if (!inp.dst_slot.inactive) {
++			// set reactivated inputs as updated so that their values are fetched
++			inp.src_node.plugin.updated = true
++			
+ 			var result = this._update_input(inp, pl, conns, needs_update)
+ 
+ 			dirty = dirty || result.dirty"
+vizorvr/patches,1187,884d430,browser/test/integration/array_switch_modulator.js,modified,22,5,27,"@@ -201,6 +201,8 @@ describe('array_switch_modulator', function() {
+ 	it('propagates arrayness', function() {
+ 		var graph = E2.core.active_graph
+ 
++		var inputSelectorNumberNode = E2.app.instantiatePlugin('const_float_generator')
++
+ 		var floatNode1 = E2.app.instantiatePlugin('const_float_generator')
+ 		var floatNode2 = E2.app.instantiatePlugin('const_float_generator')
+ 		var floatNode3 = E2.app.instantiatePlugin('const_float_generator')
+@@ -228,6 +230,9 @@ describe('array_switch_modulator', function() {
+ 			dt: arraySwitchModulator.plugin.lsg.dt
+ 		})
+ 
++		// connect input selector to revolver
++		connect(graph, inputSelectorNumberNode, 0, arraySwitchModulator, 0, false)
++
+ 		// connect arrays to revolver
+ 		var arrayConn1 = connect(graph, inputsToArrayNode1, 0, arraySwitchModulator, 0, true)
+ 		var arrayConn2 = connect(graph, inputsToArrayNode2, 0, arraySwitchModulator, 1, true)
+@@ -244,13 +249,15 @@ describe('array_switch_modulator', function() {
+ 		assert.equal(arraySwitchModulator.plugin.update_output({index: 1}), 2)
+ 
+ 		// select the second array, expect [20, 30]
+-		arraySwitchModulator.plugin.update_input({index: 0}, 1)
++		inputSelectorNumberNode.plugin.state.val = 1
++		inputSelectorNumberNode.plugin.updated = true
+ 		graph.update()
+ 		arraySwitchModulator.plugin.update_state()
+ 		assert.deepEqual(arraySwitchModulator.plugin.update_output({index: 0}), [20, 30])
+ 
+ 		// select the first array, expect [10, 20]
+-		arraySwitchModulator.plugin.update_input({index: 0}, 0)
++		inputSelectorNumberNode.plugin.state.val = 0
++		inputSelectorNumberNode.plugin.updated = true
+ 		graph.update()
+ 		arraySwitchModulator.plugin.update_state()
+ 		assert.deepEqual(arraySwitchModulator.plugin.update_output({index: 0}), [10, 20])
+@@ -279,17 +286,27 @@ describe('array_switch_modulator', function() {
+ 		assert.equal(arraySwitchModulator.plugin.update_output({index: 1}), 2)
+ 
+ 		// select first input, expect 40
+-		arraySwitchModulator.plugin.update_input({index: 0}, 0)
++		inputSelectorNumberNode.plugin.state.val = 0
++		inputSelectorNumberNode.plugin.updated = true
+ 		graph.update()
+ 		arraySwitchModulator.plugin.update_state()
+ 		assert.deepEqual(arraySwitchModulator.plugin.update_output({index: 0}), 40)
+ 
+ 		// select second input, expect 50
+-		// ATTENTION: this doesn't work - pending bug #1090
+-		arraySwitchModulator.plugin.update_input({index: 0}, 1)
++		inputSelectorNumberNode.plugin.state.val = 1
++		inputSelectorNumberNode.plugin.updated = true
+ 		graph.update()
+ 		arraySwitchModulator.plugin.update_state()
+ 		assert.deepEqual(arraySwitchModulator.plugin.update_output({index: 0}), 50)
++
++		floatNode1.plugin.state.val = 60
++
++		// select first input again, expect 60
++		inputSelectorNumberNode.plugin.state.val = 0
++		inputSelectorNumberNode.plugin.updated = true
++		graph.update()
++		arraySwitchModulator.plugin.update_state()
++		assert.deepEqual(arraySwitchModulator.plugin.update_output({index: 0}), 60)
+ 	})
+ })
+ "
+vizorvr/patches,1187,9172cae,browser/scripts/node.js,modified,16,5,21,"@@ -411,17 +411,24 @@ Node.prototype.update_recursive = function(conns) {
+ 
+ 	var secondPassUpdateInputs = []
+ 
+-	// first pass input update: update active inputs
++	// input update step 1: collect inactive inputs before any inputs have been updated
++	// (which could change the state of activeness on other inputs)
+ 	for (var i = 0, len = inputs.length; i < len; ++i) {
+ 		var inp = inputs[i]
+-
+ 		if (inp.dst_slot.inactive) {
+-			if(inp.ui && inp.ui.flow) {
++			if (inp.ui && inp.ui.flow) {
+ 				this._cascadeFlowOff(inp)
+-				dirty = true;
++				dirty = true
+ 			}
+ 			secondPassUpdateInputs.push(inp)
++		}
++	}
++
++	// input update step 2: first pass input update: update active inputs
++	for (var i = 0, len = inputs.length; i < len; ++i) {
++		var inp = inputs[i]
+ 
++		if (inp.dst_slot.inactive) {
+ 			continue;
+ 		}
+ 
+@@ -431,10 +438,14 @@ Node.prototype.update_recursive = function(conns) {
+ 		needs_update = needs_update || result.needs_update
+ 	}
+ 
+-	// second pass input update: update any inputs that were activated
++	// input update step 3: second pass input update: recheck and update any inputs that were deactivated
++	// before the first update
+ 	for (var i = 0, len = secondPassUpdateInputs.length; i < len; ++i) {
+ 		var inp = secondPassUpdateInputs[i]
+ 		if (!inp.dst_slot.inactive) {
++			// set reactivated inputs as updated so that their values are fetched
++			inp.src_node.plugin.updated = true
++			
+ 			var result = this._update_input(inp, pl, conns, needs_update)
+ 
+ 			dirty = dirty || result.dirty"
+vizorvr/patches,1187,9172cae,browser/test/integration/array_switch_modulator.js,modified,22,5,27,"@@ -201,6 +201,8 @@ describe('array_switch_modulator', function() {
+ 	it('propagates arrayness', function() {
+ 		var graph = E2.core.active_graph
+ 
++		var inputSelectorNumberNode = E2.app.instantiatePlugin('const_float_generator')
++
+ 		var floatNode1 = E2.app.instantiatePlugin('const_float_generator')
+ 		var floatNode2 = E2.app.instantiatePlugin('const_float_generator')
+ 		var floatNode3 = E2.app.instantiatePlugin('const_float_generator')
+@@ -228,6 +230,9 @@ describe('array_switch_modulator', function() {
+ 			dt: arraySwitchModulator.plugin.lsg.dt
+ 		})
+ 
++		// connect input selector to revolver
++		connect(graph, inputSelectorNumberNode, 0, arraySwitchModulator, 0, false)
++
+ 		// connect arrays to revolver
+ 		var arrayConn1 = connect(graph, inputsToArrayNode1, 0, arraySwitchModulator, 0, true)
+ 		var arrayConn2 = connect(graph, inputsToArrayNode2, 0, arraySwitchModulator, 1, true)
+@@ -244,13 +249,15 @@ describe('array_switch_modulator', function() {
+ 		assert.equal(arraySwitchModulator.plugin.update_output({index: 1}), 2)
+ 
+ 		// select the second array, expect [20, 30]
+-		arraySwitchModulator.plugin.update_input({index: 0}, 1)
++		inputSelectorNumberNode.plugin.state.val = 1
++		inputSelectorNumberNode.plugin.updated = true
+ 		graph.update()
+ 		arraySwitchModulator.plugin.update_state()
+ 		assert.deepEqual(arraySwitchModulator.plugin.update_output({index: 0}), [20, 30])
+ 
+ 		// select the first array, expect [10, 20]
+-		arraySwitchModulator.plugin.update_input({index: 0}, 0)
++		inputSelectorNumberNode.plugin.state.val = 0
++		inputSelectorNumberNode.plugin.updated = true
+ 		graph.update()
+ 		arraySwitchModulator.plugin.update_state()
+ 		assert.deepEqual(arraySwitchModulator.plugin.update_output({index: 0}), [10, 20])
+@@ -279,17 +286,27 @@ describe('array_switch_modulator', function() {
+ 		assert.equal(arraySwitchModulator.plugin.update_output({index: 1}), 2)
+ 
+ 		// select first input, expect 40
+-		arraySwitchModulator.plugin.update_input({index: 0}, 0)
++		inputSelectorNumberNode.plugin.state.val = 0
++		inputSelectorNumberNode.plugin.updated = true
+ 		graph.update()
+ 		arraySwitchModulator.plugin.update_state()
+ 		assert.deepEqual(arraySwitchModulator.plugin.update_output({index: 0}), 40)
+ 
+ 		// select second input, expect 50
+-		// ATTENTION: this doesn't work - pending bug #1090
+-		arraySwitchModulator.plugin.update_input({index: 0}, 1)
++		inputSelectorNumberNode.plugin.state.val = 1
++		inputSelectorNumberNode.plugin.updated = true
+ 		graph.update()
+ 		arraySwitchModulator.plugin.update_state()
+ 		assert.deepEqual(arraySwitchModulator.plugin.update_output({index: 0}), 50)
++
++		floatNode1.plugin.state.val = 60
++
++		// select first input again, expect 60
++		inputSelectorNumberNode.plugin.state.val = 0
++		inputSelectorNumberNode.plugin.updated = true
++		graph.update()
++		arraySwitchModulator.plugin.update_state()
++		assert.deepEqual(arraySwitchModulator.plugin.update_output({index: 0}), 60)
+ 	})
+ })
+ "

@@ -1,0 +1,178 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch,gpt_bug_detection
+frustra/strayphotons,329,a3a98bf64bc80bb489dabe5b309545b9d7a52d7d,assets/scenes/vr.json,modified,6,8,14,"@@ -68,9 +68,7 @@
+         },
+         {
+             ""name"": ""left_hand_skeleton"",
+-            ""transform"": {
+-                ""parent"": ""input:vr_actions_main_in_lefthand_anim""
+-            },
++            ""transform"": {},
+             ""physics"": {
+                 ""group"": ""player_left_hand"",
+                 ""density"": 300,
+@@ -90,16 +88,15 @@
+                 {
+                     ""onPhysicsUpdate"": ""vr_hand"",
+                     ""parameters"": {
+-                        ""hand"": ""left""
++                        ""hand"": ""left"",
++                        ""teleport_distance"": 2.0
+                     }
+                 }
+             ]
+         },
+         {
+             ""name"": ""right_hand_skeleton"",
+-            ""transform"": {
+-                ""parent"": ""input:vr_actions_main_in_righthand_anim""
+-            },
++            ""transform"": {},
+             ""physics"": {
+                 ""group"": ""player_right_hand"",
+                 ""density"": 300,
+@@ -119,7 +116,8 @@
+                 {
+                     ""onPhysicsUpdate"": ""vr_hand"",
+                     ""parameters"": {
+-                        ""hand"": ""right""
++                        ""hand"": ""right"",
++                        ""teleport_distance"": 2.0
+                     }
+                 }
+             ]","{""has_bug"": true, ""bugs"": [{""line_start"": 6, ""line_end"": 7, ""description"": ""The player may jump on boot when the headset starts tracking due to the absence of a condition to check if the headset is already tracking."", ""buggy_code"": ""\""onTick\"": \""player_rotation\"",""}, {""line_start"": 10, ""line_end"": 11, ""description"": ""The event input for snap rotation may not be properly handled if the player is not grounded or if the headset is not tracking, potentially causing unexpected behavior."", ""buggy_code"": ""\""/action/snap_rotate\""""}, {""line_start"": 25, ""line_end"": 25, ""description"": ""The grab distance for the interact handler is set to a fixed value of 0.5, which may not be suitable for all VR environments, leading to interaction issues."", ""buggy_code"": ""\""grab_distance\"": 0.5""}, {""line_start"": 91, ""line_end"": 92, ""description"": ""The teleport distance is hardcoded to 2.0, which may not be appropriate for all users or environments, potentially causing teleportation issues."", ""buggy_code"": ""\""teleport_distance\"": 2.0""}, {""line_start"": 119, ""line_end"": 120, ""description"": ""Similar to the left hand, the teleport distance for the right hand is hardcoded to 2.0, which may not be appropriate for all users or environments."", ""buggy_code"": ""\""teleport_distance\"": 2.0""}]}"
+frustra/strayphotons,329,a3a98bf64bc80bb489dabe5b309545b9d7a52d7d,src/physx/physx/CharacterControlSystem.cc,modified,40,14,54,"@@ -120,6 +120,19 @@ namespace sp {
+                 targetPosition = targetTree.GetGlobalTransform(lock).GetPosition();
+                 targetPosition.y = transform.GetPosition().y;
+                 targetHeight = std::max(0.1f, targetTree.pose.GetPosition().y - ecs::PLAYER_RADIUS);
++
++                if (target != userData->target) {
++                    // Move the target to the physics actor when the target changes
++                    auto movementProxy = controller.movementProxy.Get(lock);
++                    if (movementProxy.Has<ecs::TransformTree>(lock)) {
++                        auto &proxyTransform = movementProxy.Get<ecs::TransformTree>(lock);
++                        auto deltaPos = userData->actorData.pose.GetPosition() - targetPosition;
++                        proxyTransform.pose.Translate(deltaPos);
++                        targetPosition += deltaPos;
++                    }
++
++                    userData->target = target;
++                }
+             }
+ 
+             // If the origin moved, teleport the controller
+@@ -203,7 +216,16 @@ namespace sp {
+             if (noclip) {
+                 targetPosition += lateralMovement * dt;
+                 targetPosition.y += verticalMovement * dt;
+-                controller.pxController->setFootPosition(GlmVec3ToPxExtendedVec3(targetPosition + targetDelta));
++                targetPosition += targetDelta;
++                controller.pxController->setFootPosition(GlmVec3ToPxExtendedVec3(targetPosition));
++                transform.SetPosition(targetPosition);
++
++                auto movementProxy = controller.movementProxy.Get(lock);
++                if (movementProxy.Has<ecs::TransformTree>(lock)) {
++                    auto &proxyTransform = movementProxy.Get<ecs::TransformTree>(lock);
++                    auto deltaPos = (lateralMovement + glm::vec3(0, verticalMovement, 0)) * dt;
++                    proxyTransform.pose.Translate(deltaPos);
++                }
+ 
+                 userData->onGround = false;
+                 userData->actorData.velocity = lateralMovement;
+@@ -247,9 +269,12 @@ namespace sp {
+                 //     inGround,
+                 //     glm::to_string(PxVec3ToGlmVec3(state.deltaXP)),
+                 //     glm::to_string(userData->actorData.velocity));
+-                displacement += targetDelta;
+ 
+-                auto moveResult = controller.pxController->move(GlmVec3ToPxVec3(displacement), 0, dt, moveQueryFilter);
++                auto moveResult =
++                    controller.pxController->move(GlmVec3ToPxVec3(displacement + targetDelta), 0, dt, moveQueryFilter);
++
++                auto newPosition = PxExtendedVec3ToGlmVec3(controller.pxController->getFootPosition());
++                auto deltaPos = newPosition - userData->actorData.pose.GetPosition() - targetDelta;
+ 
+                 if (moveResult & PxControllerCollisionFlag::eCOLLISION_DOWN) {
+                     userData->actorData.velocity = PxVec3ToGlmVec3(state.deltaXP);
+@@ -268,29 +293,30 @@ namespace sp {
+                         //     glm::to_string(PxVec3ToGlmVec3(state.deltaXP)),
+                         //     glm::to_string(userData->actorData.velocity));
+                     } else {
+-                        auto deltaPos = PxExtendedVec3ToGlmVec3(controller.pxController->getFootPosition()) -
+-                                        userData->actorData.pose.GetPosition() - targetDelta;
+                         userData->actorData.velocity = deltaPos / dt;
+                         userData->actorData.velocity.y -= ecs::PLAYER_GRAVITY * dt;
+                         // Logf(""OffGround, DeltaPos: %s - %s, Vel: %s"",
+-                        //     glm::to_string(PxExtendedVec3ToGlmVec3(controller.pxController->getFootPosition()) -
+-                        //                    userData->actorData.pose.GetPosition()),
++                        //     glm::to_string(newPosition - userData->actorData.pose.GetPosition()),
+                         //     glm::to_string(targetDelta),
+                         //     glm::to_string(userData->actorData.velocity));
+                     }
+ 
+                     userData->onGround = false;
+                 }
+-            }
+ 
+-            auto newPosition = PxExtendedVec3ToGlmVec3(controller.pxController->getFootPosition());
+-            auto movementProxy = controller.movementProxy.Get(lock);
+-            if (movementProxy.Has<ecs::TransformTree>(lock)) {
+-                auto &proxyTransform = movementProxy.Get<ecs::TransformTree>(lock);
+-                proxyTransform.pose.Translate(newPosition - userData->actorData.pose.GetPosition() - targetDelta);
++                auto movementProxy = controller.movementProxy.Get(lock);
++                if (movementProxy.Has<ecs::TransformTree>(lock)) {
++                    auto &proxyTransform = movementProxy.Get<ecs::TransformTree>(lock);
++                    // Only move the VR player if the movement is in line with the input displacement
++                    // This allows the headset to detatch from the player capsule so they don't get pushed back by walls
++                    auto absDeltaPos = glm::abs(deltaPos) + 0.00001f;
++                    glm::vec3 clampRatio = glm::min(glm::abs(displacement), absDeltaPos) / absDeltaPos;
++                    proxyTransform.pose.Translate(deltaPos * clampRatio);
++                }
++
++                transform.SetPosition(newPosition);
+             }
+ 
+-            transform.SetPosition(newPosition);
+             userData->actorData.pose = transform;
+         }
+     }","{""has_bug"": true, ""bugs"": [{""line_start"": 140, ""line_end"": 140, ""description"": ""Potential off-by-one error when setting the height of the controller. The height should be adjusted based on the player's current state, but it may not account for the player's actual height or the ground level."", ""buggy_code"": ""controller.pxController->setHeight(targetHeight);""}, {""line_start"": 141, ""line_end"": 141, ""description"": ""The function GlmVec3ToPxExtendedVec3 is not defined in the provided code, which may lead to a compilation error or runtime issue if it is not implemented elsewhere."", ""buggy_code"": ""controller.pxController->setFootPosition(GlmVec3ToPxExtendedVec3(targetPosition));""}, {""line_start"": 102, ""line_end"": 104, ""description"": ""The assertion checks if the character controller should not have a TransformTree parent, but it does not handle the case where it does, which could lead to undefined behavior."", ""buggy_code"": ""Assertf(!transformTree.parent, \""CharacterController should not have a TransformTree parent: %s\"", transformTree.parent.Name().String());""}]}"
+frustra/strayphotons,329,a3a98bf64bc80bb489dabe5b309545b9d7a52d7d,src/physx/physx/LaserSystem.cc,modified,1,1,2,"@@ -24,7 +24,7 @@ namespace sp {
+             sensor.illuminance = glm::vec3(0);
+         }
+         for (auto &entity : lock.EntitiesWith<ecs::LaserEmitter>()) {
+-            if (!entity.Has<ecs::TransformSnapshot>(lock)) continue;
++            if (!entity.Has<ecs::TransformSnapshot, ecs::LaserLine>(lock)) continue;
+ 
+             auto &emitter = entity.Get<ecs::LaserEmitter>(lock);
+             if (!emitter.on) continue;","{""has_bug"": true, ""bugs"": [{""line_start"": 57, ""line_end"": 57, ""description"": ""Off-by-one error in the reflection loop. The loop should iterate only up to maxReflections, not including it."", ""buggy_code"": ""for (int reflectCount = 0; status && reflectCount <= maxReflections; reflectCount++)""}, {""line_start"": 68, ""line_end"": 68, ""description"": ""Potential null reference issue. If 'status' is false, 'hit.block.distance' is not accessed, but 'hitPos' is calculated based on 'rayStart' and 'rayDir'. If 'rayDir' is zero, this could lead to undefined behavior."", ""buggy_code"": ""hitPos = rayStart + rayDir * maxDistance;""}, {""line_start"": 70, ""line_end"": 70, ""description"": ""Potential null reference issue. If 'hit.block.distance' is not valid (e.g., negative), it could lead to incorrect calculations for 'hitPos'."", ""buggy_code"": ""hitPos = rayStart + rayDir * hit.block.distance;""}, {""line_start"": 93, ""line_end"": 93, ""description"": ""Potential issue with rayStart calculation. If 'hitPos' is very close to the object, adding a small offset could still result in hitting the same object again, especially if the ray direction is not normalized."", ""buggy_code"": ""rayStart = hitPos + rayDir * 0.01f;""}]}"
+frustra/strayphotons,329,a3a98bf64bc80bb489dabe5b309545b9d7a52d7d,src/physx/physx/PhysxManager.hh,modified,1,0,1,"@@ -60,6 +60,7 @@ namespace sp {
+     struct CharacterControllerUserData {
+         ActorUserData actorData;
+ 
++        ecs::Entity target;
+         bool onGround = false;
+         bool noclipping = false;
+ ","{""has_bug"": true, ""bugs"": [{""line_start"": 101, ""line_end"": 101, ""description"": ""Potential type mismatch: 'vector' should be 'std::vector'."", ""buggy_code"": ""vector<uint8_t> scratchBlock;""}, {""line_start"": 122, ""line_end"": 122, ""description"": ""Potential null reference issue: 'ecs::Name' constructor may not be valid for 'ecs::EntityRef'."", ""buggy_code"": ""ecs::EntityRef debugLineEntity = ecs::Name(\""physx\"", \""debug_lines\"");""}]}"
+frustra/strayphotons,329,a3a98bf64bc80bb489dabe5b309545b9d7a52d7d,src/scripts/scripts/PhysicsScripts.cc,modified,17,0,17,"@@ -220,6 +220,23 @@ namespace ecs {
+                             physicsTransform.parent = physicsRoot;
+                         }
+                     }
++
++                    // Teleport the hands back to the player if they get too far away
++                    if (ph.constraint && ent.Has<TransformTree>(lock)) {
++                        auto teleportDistance = state.GetParam<double>(""teleport_distance"");
++                        if (teleportDistance > 0) {
++                            // TODO: Release any objects the player is holding
++                            auto parentEnt = ph.constraint.Get(lock);
++                            if (parentEnt.Has<TransformSnapshot>(lock)) {
++                                auto &transform = ent.Get<TransformTree>(lock);
++                                Assertf(!transform.parent, ""vr_hand script transform can't have parent"");
++                                auto &parentTransform = parentEnt.Get<const TransformSnapshot>(lock);
++
++                                auto dist = glm::length(transform.pose.GetPosition() - parentTransform.GetPosition());
++                                if (dist >= teleportDistance) transform.pose = parentTransform;
++                            }
++                        }
++                    }
+                 }
+             }),
+     };","{""has_bug"": true, ""bugs"": [{""line_start"": 9, ""line_end"": 9, ""description"": ""Missing template arguments for std::array, which can lead to type mismatches."", ""buggy_code"": ""std::array physicsScripts = {""}, {""line_start"": 28, ""line_end"": 28, ""description"": ""Potential null reference issue if alignmentEntity is not valid, leading to dereferencing a null pointer."", ""buggy_code"": ""bool existingAlignment = (bool)alignmentEntity;""}, {""line_start"": 58, ""line_end"": 58, ""description"": ""Potential null reference issue if followEntity is not valid, leading to dereferencing a null pointer."", ""buggy_code"": ""if (followEntity.Name() != targetName) followEntity = targetName;""}, {""line_start"": 93, ""line_end"": 93, ""description"": ""Potential null reference issue if state.scope.scene.lock() returns null, leading to dereferencing a null pointer."", ""buggy_code"": ""auto scene = state.scope.scene.lock();""}, {""line_start"": 97, ""line_end"": 97, ""description"": ""Potential null reference issue if prefabName is not valid, leading to dereferencing a null pointer."", ""buggy_code"": ""auto &prefabName = ent.Get<Name>(lock);""}, {""line_start"": 121, ""line_end"": 121, ""description"": ""Potential null reference issue if physicsScope is not valid, leading to dereferencing a null pointer."", ""buggy_code"": ""auto physicsRoot = EntityRef(physicsScope).Get(lock);""}]}"

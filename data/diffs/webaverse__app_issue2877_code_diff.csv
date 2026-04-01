@@ -1,0 +1,132 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+webaverse/app,2877,73b0eab3aecd02621c7a094eb9478248ad25e127,src/User.jsx,modified,56,33,89,"@@ -49,9 +49,11 @@ export const User = ({ address, setAddress, setLoginFrom }) => {
+                 // if (!live) return;
+                 setEnsName(ensName);
+ 
+-                const avatarUrl = await blockchainManager.getAvatarUrl(ensName);
+-                // if (!live) return;
+-                setAvatarUrl(avatarUrl);
++                if ( ensName ) {
++                    const avatarUrl = await blockchainManager.getAvatarUrl(ensName);
++                    // if (!live) return;
++                    setAvatarUrl(avatarUrl);
++                }
+             // })();
+ 
+             /* return () => {
+@@ -108,64 +110,85 @@ export const User = ({ address, setAddress, setLoginFrom }) => {
+ 
+     useEffect( () => {
+ 
+-        (async () => {
++        const { error, code, id, play, realmId } = parseQuery( window.location.search );
+ 
+-            const { error, code, id, play, realmId } = parseQuery( window.location.search );
++        //
+ 
+-            if ( ! autoLoginRequestMade ) {
++        const discordLogin = async () => {
+ 
+-                setAutoLoginRequestMade( true );
++            const { address, error } = await WebaWallet.loginDiscord( code, id );
+ 
+-                if ( code ) {
++            if ( address ) {
+ 
+-                    setLoggingIn( true );
++                await _setAddress( address );
++                // setAddress( address );
++                setLoginFrom( 'discord' );
++                // setShow( false );
+ 
+-                    WebaWallet.waitForLaunch().then( async () => {
++            } else if ( error ) {
+ 
+-                        const { address, error } = await WebaWallet.loginDiscord( code, id );
++                setLoginError( String( error ).toLocaleUpperCase() );
+ 
+-                        if ( address ) {
++            }
+ 
+-                            await _setAddress( address );
+-                            setLoginFrom( 'discord' );
+-                            // setShow( false );
++            window.history.pushState( {}, '', window.location.origin );
++            setLoggingIn( false );
+ 
+-                        } else if ( error ) {
++        };
+ 
+-                            setLoginError( String( error ).toLocaleUpperCase() );
++        const metamaskLogin = async () => {
+ 
+-                        }
++            const { address } = await WebaWallet.autoLogin();
+ 
+-                        window.history.pushState( {}, '', window.location.origin );
+-                        setLoggingIn( false );
++            if ( address ) {
+ 
+-                    }); // it may occur that wallet loading is in progress already
++                await _setAddress( address );
++                setLoginFrom( 'metamask' );
++                // setShow( false );
+ 
+-                } else {
++            } else if ( error ) {
++
++                setLoginError( String( error ).toLocaleUpperCase() );
++
++            }
++
++        };
++
++        //
++
++        if ( ! autoLoginRequestMade ) {
+ 
+-                    WebaWallet.waitForLaunch().then( async () => {
++            setAutoLoginRequestMade( true );
+ 
+-                        const { address, error } = await WebaWallet.autoLogin();
++            if ( code ) {
+ 
+-                        if ( address ) {
++                setLoggingIn( true );
++
++                if ( WebaWallet.launched ) {
++
++                    discordLogin();
++
++                } else {
+ 
+-                            await  _setAddress( address );
+-                            setLoginFrom( 'discord' );
+-                            // setShow( false );
++                    WebaWallet.waitForLaunch().then( discordLogin );
+ 
+-                        } else if ( error ) {
++                }
++
++            } else {
+ 
+-                            setLoginError( String( error ).toLocaleUpperCase() );
++                if ( WebaWallet.launched ) {
+ 
+-                        }
++                    metamaskLogin();
+ 
+-                    }); // it may occur that wallet loading is in progress already
++                } else {
++
++                    WebaWallet.waitForLaunch().then( metamaskLogin );
+ 
+                 }
+ 
+             }
+ 
+-        })();
++        }
+ 
+     }, [ address ] );
+ "

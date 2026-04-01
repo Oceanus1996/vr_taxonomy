@@ -1,0 +1,866 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe,695,a8a4f06bcac4001f55f154ecc98075ac10b9febe,src/components/camera.js,modified,1,1,2,"@@ -16,7 +16,7 @@ module.exports.Component = registerComponent('camera', {
+     var camera = this.camera = new THREE.PerspectiveCamera();
+     var el = this.el;
+     el.object3D.add(camera);
+-    el.sceneEl.cameraEl = el;
++    el.sceneEl.registerCamera(el);
+   },
+ 
+   /**"
+aframevr/aframe,695,a8a4f06bcac4001f55f154ecc98075ac10b9febe,src/components/look-at.js,modified,1,1,2,"@@ -58,7 +58,7 @@ module.exports.Component = registerComponent('look-at', {
+         warn('""' + targetSelector + '"" does not point to a valid entity to look-at');
+         return;
+       }
+-      if (!targetEl.object3D) {
++      if (!targetEl.hasLoaded) {
+         return targetEl.addEventListener('loaded', function () {
+           self.beginTracking(targetEl);
+         });"
+aframevr/aframe,695,a8a4f06bcac4001f55f154ecc98075ac10b9febe,src/core/a-animation.js,modified,5,1,6,"@@ -72,7 +72,11 @@ module.exports.AAnimation = registerElement('a-animation', {
+         var el = self.el = self.parentNode;
+ 
+         if (el.isNode) {
+-          init();
++          if (el.hasLoaded) {
++            init();
++          } else {
++            el.addEventListener('loaded', init.bind(self));
++          }
+         } else {
+           // To handle elements that are not yet `<a-entity>`s (e.g., templates).
+           el.addEventListener('nodeready', init.bind(self));"
+aframevr/aframe,695,a8a4f06bcac4001f55f154ecc98075ac10b9febe,src/core/a-assets.js,modified,14,66,80,"@@ -1,67 +1,15 @@
+-/* global HTMLElement */
+-var re = require('./a-register-element');
+-var utils = require('../utils/');
+-
+-var isNode = re.isNode;
+-var registerElement = re.registerElement;
+-
+-module.exports = registerElement(
+-  'a-assets',
+-  {
+-    prototype: Object.create(
+-      HTMLElement.prototype,
+-      {
+-        attachedCallback: {
+-          value: function () {
+-            this.attachEventListeners();
+-          }
+-        },
+-
+-        attachEventListeners: {
+-          value: function () {
+-            var self = this;
+-            var assetLoaded = this.assetLoaded.bind(this);
+-            this.assetsPending = 0;
+-            var children = this.querySelectorAll('*');
+-            Array.prototype.slice.call(children).forEach(countElement);
+-
+-            if (!this.assetsPending) {
+-              assetLoaded();
+-            }
+-
+-            function countElement (node) {
+-              if (!isNode(node)) { return; }
+-              if (!node.hasLoaded) {
+-                attachEventListener(node);
+-                self.assetsPending++;
+-              }
+-            }
+-
+-            function attachEventListener (node) {
+-              node.addEventListener('loaded', assetLoaded);
+-            }
+-          }
+-        },
+-
+-        assetLoaded: {
+-          value: function () {
+-            this.assetsPending--;
+-            if (this.assetsPending <= 0) {
+-              this.load();
+-            }
+-          }
+-        },
+-
+-        load: {
+-          value: function () {
+-            // To prevent emitting the loaded event more than once.
+-            if (this.hasLoaded) { return; }
+-            this.hasLoaded = true;
+-            var data = { bubbles: false, detail: {} };
+-            utils.fireEvent(this, 'loaded', data);
+-          }
+-        }
++var ANode = require('./a-node');
++var registerElement = require('./a-register-element').registerElement;
++
++/**
++ * TODO: Block on assets before loading.
++ */
++module.exports = registerElement('a-assets', {
++  prototype: Object.create(ANode.prototype, {
++    load: {
++      value: function () {
++        ANode.prototype.load.call(this);
+       }
+-    )
+-  }
+-);
++    }
++  })
++});"
+aframevr/aframe,695,a8a4f06bcac4001f55f154ecc98075ac10b9febe,src/core/a-entity.js,modified,43,16,59,"@@ -10,6 +10,8 @@ var log = debug('core:a-entity');
+ var error = debug('core:a-entity:error');
+ var registerElement = re.registerElement;
+ 
++var AEntity;
++
+ /**
+  * Entity element definition.
+  * Entities represent all elements that are part of the scene, and always have
+@@ -25,7 +27,7 @@ var registerElement = re.registerElement;
+  * @member {object} object3D - three.js object.
+  * @member {array} states
+  */
+-var proto = {
++var proto = Object.create(ANode.prototype, {
+   defaults: {
+     value: {
+       position: '',
+@@ -37,6 +39,7 @@ var proto = {
+ 
+   createdCallback: {
+     value: function () {
++      this.isEntity = true;
+       this.states = [];
+       this.components = {};
+       this.object3D = new THREE.Mesh();
+@@ -52,7 +55,9 @@ var proto = {
+   attachedCallback: {
+     value: function () {
+       this.addToParent();
+-      this.load();
++      if (!this.isScene) {
++        this.load();
++      }
+     }
+   },
+ 
+@@ -155,16 +160,18 @@ var proto = {
+ 
+   load: {
+     value: function () {
+-      // To prevent calling load more than once
+       if (this.hasLoaded) { return; }
+-      // Handle to the associated DOM element
+       this.object3D.el = this;
+-      // It attaches itself to the threejs parent object3D
++
++      // Attach to parent object3D.
+       this.addToParent();
+-      // Components initialization
+-      this.updateComponents();
+-      // Call the parent class
+-      ANode.prototype.load.call(this);
++
++      if (this.isScene) {
++        ANode.prototype.load.call(this, this.updateComponents.bind(this));
++      } else {
++        ANode.prototype.load.call(this, this.updateComponents.bind(this),
++                                  function (el) { return el.isEntity; });
++      }
+     },
+     writable: window.debug
+   },
+@@ -175,6 +182,25 @@ var proto = {
+     }
+   },
+ 
++  /**
++   * @returns {array} Direct children that are entities.
++   */
++  getChildEntities: {
++    value: function () {
++      var children = this.children;
++      var childEntities = [];
++
++      for (var i = 0; i < this.children.length; i++) {
++        var child = children[i];
++        if (child instanceof AEntity) {
++          childEntities.push(child);
++        }
++      }
++
++      return childEntities;
++    }
++  },
++
+   /**
+    * Check if a component is defined for an entity, including defaults and mixins.
+    *
+@@ -297,7 +323,6 @@ var proto = {
+           newData = component.parse(newData);
+         }
+         // Component already initialized. Update component.
+-        // TODO: update component attribute more granularly.
+         component.updateAttributes(newData);
+         return;
+       }
+@@ -341,9 +366,10 @@ var proto = {
+     value: function (attr, oldVal, newVal) {
+       var component = components[attr];
+       oldVal = oldVal || this.getAttribute(attr);
+-      // When creating objects programatically and setting attributes, the object is not part
+-      // of the scene until is inserted into the DOM.
+-      if (!this.hasLoaded) { return; }
++      // When creating entities programatically and setting attributes, it is not part
++      // of the scene until it is inserted into the DOM. This does not apply to scenes as
++      // scenes depend on its child entities to load.
++      if (!this.hasLoaded && !this.isScene) { return; }
+       if (attr === 'mixin') {
+         this.updateStateMixins(newVal, oldVal);
+         this.updateComponents();
+@@ -465,8 +491,9 @@ var proto = {
+       return is;
+     }
+   }
+-};
++});
+ 
+-module.exports = registerElement('a-entity', {
+-  prototype: Object.create(ANode.prototype, proto)
++AEntity = registerElement('a-entity', {
++  prototype: proto
+ });
++module.exports = AEntity;"
+aframevr/aframe,695,a8a4f06bcac4001f55f154ecc98075ac10b9febe,src/core/a-node.js,modified,46,8,54,"@@ -4,11 +4,16 @@ var utils = require('../utils/');
+ 
+ /**
+  * Base class for A-Frame that manages loading of objects.
++ *
++ * Nodes can be modified using mixins.
++ * Nodes emit a `loaded` event when they and their children have initialized. Which children
++ * to wait for can be customized using `loadChildrenFilter`.
+  */
+ module.exports = registerElement('a-node', {
+   prototype: Object.create(HTMLElement.prototype, {
+     createdCallback: {
+       value: function () {
++        this.hasLoaded = false;
+         this.isNode = true;
+         this.mixinEls = [];
+         this.mixinObservers = {};
+@@ -18,28 +23,61 @@ module.exports = registerElement('a-node', {
+     attachedCallback: {
+       value: function () {
+         var mixins = this.getAttribute('mixin');
++
+         this.sceneEl = document.querySelector('a-scene');
+         this.emit('nodeready', {}, false);
+         if (mixins) { this.updateMixins(mixins); }
+       }
+     },
+ 
+-    detachedCallback: {
+-      value: function () { /* no-op */ }
+-    },
+-
+     attributeChangedCallback: {
+       value: function (attr, oldVal, newVal) {
+         if (attr === 'mixin') { this.updateMixins(newVal, oldVal); }
+       }
+     },
+ 
++    detachedCallback: {
++      value: function () { /* no-op */ }
++    },
++
++    /**
++     * Wait for children to load, if any.
++     * Then emit `loaded` event and set `hasLoaded`.
++     */
+     load: {
++      value: function (cb, childFilter) {
++        var children;
++        var childrenLoaded;
++        var self = this;
++
++        if (self.hasLoaded) { return; }
++
++        // Default to waiting for all nodes.
++        childFilter = childFilter || function (el) { return el.isNode; };
++
++        // Wait for children to load (if any), then load.
++        children = this.getChildren();
++        childrenLoaded = children.filter(childFilter).map(function (child) {
++          return new Promise(function waitForLoaded (resolve) {
++            child.addEventListener('loaded', resolve);
++          });
++        });
++
++        Promise.all(childrenLoaded).then(function emitLoaded () {
++          if (cb) { cb(); }
++          self.hasLoaded = true;
++          self.emit('loaded', {}, false);
++        });
++      }
++    },
++
++    getChildren: {
+       value: function () {
+-        // To prevent emmitting the loaded event more than once
+-        if (this.hasLoaded) { return; }
+-        this.hasLoaded = true;
+-        this.emit('loaded', {}, false);
++        var children = [];
++        for (var i = 0; i < this.children.length; i++) {
++          children.push(this.children[i]);
++        }
++        return children;
+       }
+     },
+ "
+aframevr/aframe,695,a8a4f06bcac4001f55f154ecc98075ac10b9febe,src/core/a-scene.js,modified,53,82,135,"@@ -9,7 +9,6 @@ var Wakelock = require('../../lib/vendor/wakelock/wakelock');
+ 
+ var dummyDolly = new THREE.Object3D();
+ var controls = new THREE.VRControls(dummyDolly);
+-var isNode = re.isNode;
+ var DEFAULT_CAMERA_ATTR = 'data-aframe-default-camera';
+ var DEFAULT_LIGHT_ATTR = 'data-aframe-default-light';
+ var HIDDEN_CLASS = 'a-hidden';
+@@ -30,6 +29,7 @@ var isMobile = utils.isMobile();
+            updated on every tick.
+  * @member {object} cameraEl - Set the entity with a camera component.
+  * @member {object} canvas
++ * @member {bool} defaultCameraEnabled - false if user has not added camera.
+  * @member {bool} defaultLightsEnabled - false if user has not added lights.
+  * @member {Element} enterVREl
+  * @member {bool} insideIframe
+@@ -39,10 +39,8 @@ var isMobile = utils.isMobile();
+  * @member {bool} isMobile - Whether browser is mobile (via UA detection).
+  * @member {object} object3D - The root three.js Scene object.
+  * @member {object} monoRenderer
+- * @member {number} pendingElements - Number of elements currently waiting to
+- *         initialize before beginning rendering.
+  * @member {object} renderer
+- * @member {bool} renderLoopStarted
++ * @member {bool} renderStarted
+  * @member {object} stats
+  * @member {object} stereoRenderer
+  * @member {object} wakelock
+@@ -52,6 +50,7 @@ var AScene = module.exports = registerElement('a-scene', {
+     createdCallback: {
+       value: function () {
+         this.behaviors = [];
++        this.defaultCameraEnabled = true;
+         this.defaultLightsEnabled = true;
+         this.enterVREl = null;
+         this.insideIframe = window.top !== window.self;
+@@ -78,10 +77,11 @@ var AScene = module.exports = registerElement('a-scene', {
+         this.setupCanvas();
+         this.setupKeyboardShortcuts();
+         this.setupRenderer();
++        this.setupDefaultCamera();
+         this.setupDefaultLights();
+-        this.attachEventListeners();
+         this.attachFullscreenListeners();
+         this.attachOrientationListeners();
++        this.start();
+ 
+         // For Chrome (https://github.com/aframevr/aframe-core/issues/321).
+         window.addEventListener('load', resizeCanvas);
+@@ -120,40 +120,6 @@ var AScene = module.exports = registerElement('a-scene', {
+       }
+     },
+ 
+-    /**
+-     * Attaches event listeners to all assets and entities and wait for them
+-     * all to load before kicking things off.
+-     */
+-    attachEventListeners: {
+-      value: function () {
+-        var self = this;
+-        var elementLoadedCallback = this.elementLoadedCallback.bind(this);
+-        this.pendingElements = 0;
+-        var assets = document.querySelector('a-assets');
+-        if (assets && !assets.hasLoaded) {
+-          this.pendingElements++;
+-          attachEventListener(assets);
+-        }
+-
+-        var children = this.querySelectorAll('*');
+-        Array.prototype.slice.call(children).forEach(countElement);
+-
+-        function countElement (node) {
+-          if (!isNode(node)) { return; }
+-          self.pendingElements++;
+-          if (!node.hasLoaded) {
+-            attachEventListener(node);
+-          } else {
+-            elementLoadedCallback(node);
+-          }
+-        }
+-
+-        function attachEventListener (node) {
+-          node.addEventListener('loaded', elementLoadedCallback);
+-        }
+-      }
+-    },
+-
+     attachOrientationListeners: {
+       value: function (e) {
+         window.addEventListener('orientationchange', this.showOrientationModal.bind(this));
+@@ -231,34 +197,6 @@ var AScene = module.exports = registerElement('a-scene', {
+       }
+     },
+ 
+-    /**
+-     * Handler attached to elements to help scene know when to kick off.
+-     * Scene waits for all entities to load.
+-     */
+-    elementLoadedCallback: {
+-      value: function () {
+-        this.pendingElements--;
+-        // Still waiting on elements.
+-        if (this.pendingElements > 0) { return; }
+-        // Render loop already running.
+-        if (this.renderLoopStarted) { return; }
+-
+-        this.setupLoader();
+-        if (!this.cameraEl) {
+-          // Add default camera if user has not added one. Wait for it to load.
+-          this.setupDefaultCamera();
+-          return;
+-        }
+-        this.resizeCanvas();
+-
+-        // Kick off render loop.
+-        this.render();
+-        this.renderLoopStarted = true;
+-        this.load();
+-        this.checkUrlParameters();
+-      }
+-    },
+-
+     /**
+      * Enters VR when ?mode=vr is specified in the querystring.
+      */
+@@ -322,28 +260,37 @@ var AScene = module.exports = registerElement('a-scene', {
+       }
+     },
+ 
+-    load: {
+-      value: function () {
+-        // To prevent emmitting the loaded event more than once
+-        // and to prevent triggering loaded if there are still
+-        // pending elements to be loaded
+-        if (this.hasLoaded || this.pendingElements !== 0) { return; }
+-        AEntity.prototype.load.call(this);
++    /**
++     * Notify scene that camera has been added and to remove the default.
++     *
++e    * @param {object} el - element holding the camera component.
++     */
++    registerCamera: {
++      value: function (el) {
++        var defaultCamera;
++        if (this.defaultCameraEnabled && !el.parentNode.hasAttribute(DEFAULT_CAMERA_ATTR)) {
++          // User added a camera, remove default camera through DOM.
++          defaultCamera = document.querySelector('[' + DEFAULT_CAMERA_ATTR + ']');
++          if (defaultCamera) {
++            this.removeChild(defaultCamera);
++          }
++          this.cameraEl = el;
++          this.defaultCameraEnabled = false;
++        }
+       }
+     },
+ 
+     /**
+-     * Notify scene that light has been added and to remove the default
++     * Notify scene that light has been added and to remove the default.
+      *
+      * @param {object} el - element holding the light component.
+      */
+     registerLight: {
+       value: function (el) {
+-        if (this.defaultLightsEnabled &&
+-            !el.hasAttribute(DEFAULT_LIGHT_ATTR)) {
++        var defaultLights;
++        if (this.defaultLightsEnabled && !el.hasAttribute(DEFAULT_LIGHT_ATTR)) {
+           // User added a light, remove default lights through DOM.
+-          var defaultLights = document.querySelectorAll(
+-            '[' + DEFAULT_LIGHT_ATTR + ']');
++          defaultLights = document.querySelectorAll('[' + DEFAULT_LIGHT_ATTR + ']');
+           for (var i = 0; i < defaultLights.length; i++) {
+             this.removeChild(defaultLights[i]);
+           }
+@@ -479,9 +426,7 @@ var AScene = module.exports = registerElement('a-scene', {
+         defaultCamera.setAttribute('camera');
+         defaultCamera.setAttribute('wasd-controls');
+         defaultCamera.setAttribute('look-controls');
+-        this.pendingElements++;
+-        defaultCamera.addEventListener('loaded',
+-                                       this.elementLoadedCallback.bind(this));
++        this.cameraEl = defaultCamera;
+         cameraWrapperEl.appendChild(defaultCamera);
+         this.appendChild(cameraWrapperEl);
+       }
+@@ -635,6 +580,32 @@ var AScene = module.exports = registerElement('a-scene', {
+       }
+     },
+ 
++    /**
++     * Handler attached to elements to help scene know when to kick off.
++     * Scene waits for all entities to load.
++     */
++    start: {
++      value: function () {
++        if (this.renderStarted) { return; }
++
++        this.addEventListener('loaded', function () {
++          if (this.renderStarted) { return; }
++
++          this.setupLoader();
++          this.resizeCanvas();
++
++          // Kick off render loop.
++          this.render();
++          this.renderStarted = true;
++          this.emit('renderstart');
++
++          this.checkUrlParameters();
++        });
++
++        AEntity.prototype.load.call(this);
++      }
++    },
++
+     /**
+      * Stops tracking material.
+      *"
+aframevr/aframe,695,a8a4f06bcac4001f55f154ecc98075ac10b9febe,tests/components/fog.test.js,modified,2,6,8,"@@ -6,15 +6,11 @@ suite('fog', function () {
+   'use strict';
+ 
+   setup(function () {
+-    var el;
+     this.entityEl = entityFactory();
+-    el = this.el = this.entityEl.parentNode;
++    var el = this.el = this.entityEl.parentNode;
+     this.updateMaterialsSpy = this.sinon.spy(AScene.prototype, 'updateMaterials');
+ 
+-    // We force loading of the scene since the logic
+-    // that fires the event is in attachedCallback
+-    // which is stubbed to avoid running any WebGL code
+-    el.pendingElements = 0;
++    // Stub scene load to avoid WebGL code.
+     el.load();
+     el.setAttribute('fog', '');
+   });"
+aframevr/aframe,695,a8a4f06bcac4001f55f154ecc98075ac10b9febe,tests/components/look-at.test.js,modified,4,6,10,"@@ -67,14 +67,12 @@ suite('look-at', function () {
+       nestedEl.setAttribute('position', '1 2 3');
+       nestedEl.setAttribute('id', 'squirrel-nest');
+       anotherEl.appendChild(nestedEl);
+-      nestedEl.addEventListener('loaded', function () {
++      nestedEl.parentNode.addEventListener('loaded', function () {
+         el.setAttribute('look-at', '#squirrel-nest');
+         el.parentNode.object3D.updateMatrixWorld();
+-        setTimeout(function () {
+-          el.components['look-at'].update();
+-          assert.ok(spy.calledWith({x: 2, y: 4, z: 6}));
+-          done();
+-        });
++        el.components['look-at'].update();
++        assert.ok(spy.calledWith({x: 2, y: 4, z: 6}));
++        done();
+       });
+     });
+ "
+aframevr/aframe,695,a8a4f06bcac4001f55f154ecc98075ac10b9febe,tests/core/a-animation.test.js,modified,1,1,2,"@@ -58,7 +58,7 @@ suite('a-animation', function () {
+   });
+ 
+   suite('update', function () {
+-    test('it is called on initialization', function (done) {
++    test('called on initialization', function (done) {
+       this.sinon.stub(AAnimation.prototype, 'update');
+       setupAnimation({}, function (el, animationEl) {
+         sinon.assert.called(AAnimation.prototype.update);"
+aframevr/aframe,695,a8a4f06bcac4001f55f154ecc98075ac10b9febe,tests/core/a-entity.test.js,modified,35,0,35,"@@ -44,6 +44,21 @@ suite('a-entity', function () {
+         done();
+       });
+     });
++
++    test('waits for children to load', function (done) {
++      var entity = document.createElement('a-entity');
++      var entityChild1 = document.createElement('a-entity');
++      var entityChild2 = document.createElement('a-entity');
++      entity.appendChild(entityChild1);
++      entity.appendChild(entityChild2);
++      document.body.appendChild(entity);
++
++      entity.addEventListener('loaded', function () {
++        assert.ok(entityChild1.hasLoaded);
++        assert.ok(entityChild2.hasLoaded);
++        done();
++      });
++    });
+   });
+ 
+   /**
+@@ -150,6 +165,26 @@ suite('a-entity', function () {
+     });
+   });
+ 
++  suite('getChildEntities', function () {
++    test('returns child entities', function (done) {
++      var entity = document.createElement('a-entity');
++      var animationChild = document.createElement('a-animation');
++      var entityChild1 = document.createElement('a-entity');
++      var entityChild2 = document.createElement('a-entity');
++      entity.appendChild(animationChild);
++      entity.appendChild(entityChild1);
++      entity.appendChild(entityChild2);
++      document.body.appendChild(entity);
++
++      entity.addEventListener('loaded', function () {
++        var childEntities = entity.getChildEntities();
++        assert.equal(childEntities.length, 2);
++        assert.equal(childEntities.indexOf(animationChild), -1);
++        done();
++      });
++    });
++  });
++
+   suite('getComputedAttribute', function () {
+     test('returns full component data', function () {
+       var componentData;"
+aframevr/aframe,695,a8a4f06bcac4001f55f154ecc98075ac10b9febe,tests/core/a-node.test.js,added,118,0,118,"@@ -0,0 +1,118 @@
++/* global assert, setup, suite, test */
++
++suite('a-node', function () {
++  'use strict';
++
++  setup(function () {
++    this.el = document.createElement('a-node');
++  });
++
++  suite('emit', function () {
++    test('can emit event', function (done) {
++      var el = this.el;
++      el.addEventListener('hadouken', function () {
++        done();
++      });
++      el.emit('hadouken');
++    });
++
++    test('can emit event with detail', function (done) {
++      var el = this.el;
++      el.addEventListener('hadouken', function (event) {
++        assert.equal(event.detail.power, 10);
++        assert.equal(event.detail.target, el);
++        done();
++      });
++      el.emit('hadouken', { power: 10 });
++    });
++
++    test('bubbles', function (done) {
++      var el = this.el;
++      var child = document.createElement('a-node');
++      el.appendChild(child);
++      el.addEventListener('hadouken', function (event) {
++        done();
++      });
++      child.emit('hadouken', {}, true);
++    });
++
++    test('can disable bubble', function (done) {
++      var el = this.el;
++      var child = document.createElement('a-node');
++      el.appendChild(child);
++      el.addEventListener('hadouken', function (event) {
++        // Failure case.
++        assert.equal(1, 2);
++        done();
++      });
++      child.emit('hadouken', {}, false);
++      setTimeout(function () {
++        done();
++      }, 50);
++    });
++  });
++
++  suite('getChildren', function () {
++    test('returns all children', function () {
++      var el = this.el;
++      var child1 = document.createElement('a-node');
++      var child2 = document.createElement('a');
++      var child3 = document.createElement('a-entity');
++      var nestedChild = document.createElement('a-node');
++      child1.appendChild(nestedChild);
++      el.appendChild(child1);
++      el.appendChild(child2);
++      el.appendChild(child3);
++      assert.deepEqual(el.getChildren(), [
++        child1, child2, child3
++      ]);
++    });
++  });
++
++  suite('load', function () {
++    test('can load when empty', function (done) {
++      var el = this.el;
++      el.load();
++      el.addEventListener('loaded', function () {
++        done();
++      });
++    });
++
++    test('sets hasLoaded', function (done) {
++      var el = this.el;
++      assert.notOk(el.hasLoaded);
++      el.load();
++      el.addEventListener('loaded', function () {
++        assert.ok(el.hasLoaded);
++        done();
++      });
++    });
++
++    test('can load with a child node', function (done) {
++      var el = this.el;
++      var child = document.createElement('a-node');
++      el.appendChild(child);
++      child.load();
++      el.load();
++      el.addEventListener('loaded', function () {
++        done();
++      });
++    });
++
++    test('can load with a callback', function (done) {
++      this.el.load(function () {
++        done();
++      });
++    });
++
++    test('does not wait for non-nodes to load', function (done) {
++      var el = this.el;
++      var a = document.createElement('a');
++      el.appendChild(a);
++      el.load();
++      el.addEventListener('loaded', function () {
++        done();
++      });
++    });
++  });
++});"
+aframevr/aframe,695,a8a4f06bcac4001f55f154ecc98075ac10b9febe,tests/core/a-scene.test.js,modified,11,2,13,"@@ -98,7 +98,7 @@ helpers.getSkipCISuite()('a-scene (with renderer)', function () {
+     process.nextTick(function () {
+       el = self.el = document.createElement('a-scene');
+       document.body.appendChild(el);
+-      el.addEventListener('loaded', function () {
++      el.addEventListener('renderstart', function () {
+         done();
+       });
+     });
+@@ -125,12 +125,21 @@ helpers.getSkipCISuite()('a-scene (with renderer)', function () {
+       var cancelSpy = this.sinon.spy(window, 'cancelAnimationFrame');
+ 
+       assert.ok(el.animationFrameID);
+-      el.parentNode.removeChild(el);
++      document.body.removeChild(el);
+       process.nextTick(function () {
+         assert.notOk(el.animationFrameID);
+         assert.ok(cancelSpy.calledWith(animationFrameID));
+         done();
+       });
+     });
++
++    test('does not destroy document.body', function (done) {
++      var el = this.el;
++      document.body.removeChild(el);
++      process.nextTick(function () {
++        assert.ok(document.body);
++        done();
++      });
++    });
+   });
+ });"
+aframevr/aframe,695,a8a4f06bcac4001f55f154ecc98075ac10b9febe,tests/core/component.test.js,modified,3,1,4,"@@ -35,12 +35,14 @@ suite('component', function () {
+ 
+     test('can change behavior of entity', function (done) {
+       var el = entityFactory();
++      registerComponent('clone', cloneComponent);
++
+       el.addEventListener('loaded', function () {
+         assert.notOk('clone' in el.components);
+         assert.notOk(el.object3D.children.length);
+         el.setAttribute('clone', '');
+         assert.ok('clone' in el.components);
+-        assert.ok(el.object3D.children[0].uuid, 'Bubble Fett');
++        assert.equal(el.object3D.children[0].uuid, 'Bubble Fett');
+         done();
+       });
+     });"
+aframevr/aframe,695,f6faccaf54bbd701c99e45cb201df27bb710361b,src/components/material.js,modified,2,0,2,"@@ -22,6 +22,7 @@ var MATERIAL_TYPE_STANDARD = 'MeshStandardMaterial';
+  * @param {string} envMap - To load a environment cubemap. Takes a selector
+  *         to an element containing six img elements, or a comma-separated
+  *         string of direct url()s.
++ * @param {boolean} fog - Whether or not to be affected by fog.
+  * @param {number} height - Height to render texture.
+  * @param {number} metalness - Parameter for physical/standard material.
+  * @param {number} opacity - [0-1].
+@@ -44,6 +45,7 @@ module.exports.Component = registerComponent('material', {
+   schema: {
+     color: { default: '#FFF' },
+     envMap: { default: '' },
++    fog: { default: true },
+     height: { default: 360 },
+     metalness: { default: 0.0, min: 0.0, max: 1.0 },
+     opacity: { default: 1.0, min: 0.0, max: 1.0 },"
+aframevr/aframe,695,f6faccaf54bbd701c99e45cb201df27bb710361b,tests/components/material.test.js,modified,7,0,7,"@@ -50,6 +50,13 @@ suite('material', function () {
+       assert.equal(el.object3D.material.type, 'MeshStandardMaterial');
+     });
+ 
++    test('can unset fog', function () {
++      var el = this.el;
++      assert.ok(el.object3D.material.fog);
++      el.setAttribute('material', 'fog: false');
++      assert.notOk(el.object3D.material.fog);
++    });
++
+     test('re-registers material when toggling material to flat shading', function () {
+       var el = this.el;
+       var oldMaterial = el.object3D.material;"
+aframevr/aframe,695,f10e5c4a01b4807d0d65565ca1ba5ac0e1faa7ff,src/components/material.js,modified,2,0,2,"@@ -22,6 +22,7 @@ var MATERIAL_TYPE_STANDARD = 'MeshStandardMaterial';
+  * @param {string} envMap - To load a environment cubemap. Takes a selector
+  *         to an element containing six img elements, or a comma-separated
+  *         string of direct url()s.
++ * @param {boolean} fog - Whether or not to be affected by fog.
+  * @param {number} height - Height to render texture.
+  * @param {number} metalness - Parameter for physical/standard material.
+  * @param {number} opacity - [0-1].
+@@ -44,6 +45,7 @@ module.exports.Component = registerComponent('material', {
+   schema: {
+     color: { default: '#FFF' },
+     envMap: { default: '' },
++    fog: { default: true },
+     height: { default: 360 },
+     metalness: { default: 0.0, min: 0.0, max: 1.0 },
+     opacity: { default: 1.0, min: 0.0, max: 1.0 },"
+aframevr/aframe,695,f10e5c4a01b4807d0d65565ca1ba5ac0e1faa7ff,tests/components/material.test.js,modified,7,0,7,"@@ -50,6 +50,13 @@ suite('material', function () {
+       assert.equal(el.object3D.material.type, 'MeshStandardMaterial');
+     });
+ 
++    test('can unset fog', function () {
++      var el = this.el;
++      assert.ok(el.object3D.material.fog);
++      el.setAttribute('material', 'fog: false');
++      assert.notOk(el.object3D.material.fog);
++    });
++
+     test('re-registers material when toggling material to flat shading', function () {
+       var el = this.el;
+       var oldMaterial = el.object3D.material;"

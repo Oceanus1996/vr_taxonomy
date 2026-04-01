@@ -1,0 +1,85 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+webaverse/app,221,299531c89f57be35cad9b25b962932cde54025fc,edit.js,modified,6,1,7,"@@ -1278,6 +1278,7 @@ const _initializeLogin = async () => {
+   _initializeUserUi();
+   const _initializeRigUi = () => {
+     const username = loginManager.getUsername() || 'Anonymous';
++    const avatarImage = loginManager.getAvatarPreview();
+     rigManager.setLocalAvatarName(username);
+ 
+     loginManager.addEventListener('usernamechange', e => {
+@@ -1297,11 +1298,15 @@ const _initializeLogin = async () => {
+     if (avatar.url) {
+       rigManager.setLocalAvatarUrl(avatar.url, avatar.filename);
+     }
++    if (avatar.preview) {
++      rigManager.setLocalAvatarImage(avatar.preview);
++    }
+     loginManager.addEventListener('avatarchange', e => {
+       const avatar = e.data;
+       const newAvatarUrl = avatar ? avatar.url : null;
+       if (newAvatarUrl !== rigManager.localRig.avatarUrl) {
+         rigManager.setLocalAvatarUrl(newAvatarUrl, avatar.filename);
++        rigManager.setLocalAvatarImage(avatar.preview);
+ 
+         const {menu} = getState();
+         menu.avatarUrl = avatar.url;
+@@ -1373,4 +1378,4 @@ const _initializeXr = () => {
+     });
+   }
+ };
+-_initializeXr();
+\ No newline at end of file
++_initializeXr();"
+webaverse/app,221,299531c89f57be35cad9b25b962932cde54025fc,login.js,modified,4,0,4,"@@ -375,6 +375,10 @@ class LoginManager extends EventTarget {
+     return userObject && userObject.avatar;
+   }
+ 
++  getAvatarPreview() {
++    return userObject && userObject.avatar.preview;
++  }
++
+   async setAvatar(id) {
+     if (loginToken) {
+       // const {mnemonic} = loginToken;"
+webaverse/app,221,299531c89f57be35cad9b25b962932cde54025fc,rig.js,modified,29,1,30,"@@ -127,6 +127,34 @@ class RigManager {
+     this.localRig.textMesh.sync();
+   }
+ 
++  setLocalAvatarImage(avatarImage) {
++    if (this.localRig.textMesh.avatarMesh) {
++      this.localRig.textMesh.remove(this.localRig.textMesh.avatarMesh);
++    }
++    const geometry = new THREE.CircleBufferGeometry(0.1, 32);
++    const img = new Image();
++    img.src = avatarImage;
++    img.crossOrigin = 'Anonymous';
++    img.onload = () => {
++      texture.needsUpdate = true;
++    };
++    img.onerror = err => {
++      console.warn(err.stack);
++    };
++    const texture = new THREE.Texture(img);
++    const material = new THREE.MeshBasicMaterial({
++      map: texture,
++      side: THREE.DoubleSide,
++    });
++
++    const avatarMesh = new THREE.Mesh(geometry, material);
++    avatarMesh.position.x = -0.5;
++    avatarMesh.position.y = -0.02;
++
++    this.localRig.textMesh.avatarMesh = avatarMesh;
++    this.localRig.textMesh.add(avatarMesh);
++  }
++
+   async setLocalAvatarUrl(url, filename) {
+     // await this.localRigQueue.lock();
+ 
+@@ -509,4 +537,4 @@ const rigManager = new RigManager(scene);
+ export {
+   // RigManager,
+   rigManager,
+-};
+\ No newline at end of file
++};"

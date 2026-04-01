@@ -1,0 +1,30 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe,4039,4b0b72a2d031b7967b77528a6c9fe0902a418bc6,src/shaders/msdf.js,modified,8,0,8,"@@ -58,6 +58,14 @@ module.exports.Shader = registerShader('msdf', {
+     '  vec2 duv = dscale * (dFdx(vUV) + dFdy(vUV));',
+     '  float isBigEnough = max(abs(duv.x), abs(duv.y));',
+ 
++    // When texel is too small, blend raw alpha value rather than supersampling.
++    // FIXME: Experimentally determined constant.
++    '  // Do modified alpha test.',
++    '  if (isBigEnough > BIG_ENOUGH) {',
++    '    float ratio = BIG_ENOUGH / isBigEnough;',
++    '    alpha = ratio * alpha + (1.0 - ratio) * (sigDist + 0.5);',
++    '  }',
++
+     '  // Do modified alpha test.',
+     '  if (alpha < alphaTest * MODIFIED_ALPHATEST) { discard; return; }',
+     '  gl_FragColor = vec4(color.xyz, alpha * opacity);',"
+aframevr/aframe,4039,4b0b72a2d031b7967b77528a6c9fe0902a418bc6,src/shaders/sdf.js,modified,7,0,7,"@@ -68,6 +68,13 @@ module.exports.Shader = registerShader('sdf', {
+     '    vec2 duv = dscale * (dFdx(uv) + dFdy(uv));',
+     '    float isBigEnough = max(abs(duv.x), abs(duv.y));',
+ 
++         // When texel is too small, blend raw alpha value rather than supersampling.
++         // FIXME: experimentally determined constant
++    '    if (isBigEnough > BIG_ENOUGH) {',
++    '      float ratio = BIG_ENOUGH / isBigEnough;',
++    '      alpha = ratio * alpha + (1.0 - ratio) * dist;',
++    '    }',
++
+          // Otherwise do weighted supersampling.
+          // FIXME: why this weighting?
+     '    if (isBigEnough <= BIG_ENOUGH) {',"

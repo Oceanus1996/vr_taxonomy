@@ -1,0 +1,279 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vrcx-team/VRCX,1078,5221b9d8c1241bc9a898081b18ba1c3b40bdb5c5,src/app.js,modified,2,0,2,"@@ -10532,6 +10532,8 @@ console.log(`isLinux: ${LINUX}`);
+         bundleSizes: [],
+         lastUpdated: ''
+     };
++
++    $app.data.currentInstanceWorldDescriptionExpanded = false;
+     $app.data.currentInstanceLocation = {};
+ 
+     $app.methods.updateCurrentInstanceWorld = function () {"
+vrcx-team/VRCX,1078,5221b9d8c1241bc9a898081b18ba1c3b40bdb5c5,src/app.scss,modified,6,3,9,"@@ -781,6 +781,7 @@ i.x-status-icon.red {
+ }
+ 
+ .avatar-info {
++    margin-top: 2px;
+     cursor: pointer;
+     width: fit-content;
+     vertical-align: top;
+@@ -818,8 +819,10 @@ i.x-status-icon.red {
+     width: unset;
+     height: 16px;
+     margin-right: 0;
+-    margin-left: 3px;
++    margin-left: 1px;
++    margin-top: 4px;
+     border-radius: 2px;
++    margin-bottom: -1px;
+ }
+ 
+ .el-pagination .el-select .el-input .el-input__inner,
+@@ -921,7 +924,7 @@ i.x-status-icon.red {
+ 
+ // feed table detail time tag line-height
+ .el-table__expanded-cell .el-tag--mini {
+-    line-height: 17px;
++    line-height: 18px;
+ }
+ 
+ // User dialog memo: input count background color
+@@ -951,4 +954,4 @@ i.x-status-icon.red {
+     background-color: rgba(76, 255, 80, 0.2);
+     padding: 2px 2px;
+     border-radius: 4px;
+-}
+\ No newline at end of file
++}"
+vrcx-team/VRCX,1078,5221b9d8c1241bc9a898081b18ba1c3b40bdb5c5,src/mixins/dialogs/previousInstances.pug,modified,5,5,10,"@@ -49,15 +49,15 @@ mixin previousInstances()
+     //- dialog Table: Previous Instance Info
+     el-dialog.x-dialog(:before-close=""beforeDialogClose"" @mousedown.native=""dialogMouseDown"" @mouseup.native=""dialogMouseUp"" ref=""previousInstanceInfoDialog"" :visible.sync=""previousInstanceInfoDialog.visible"" :title=""$t('dialog.previous_instances.info')"" width=""800px"")
+         location(:location=""previousInstanceInfoDialog.$location.tag"" style=""font-size:14px"")
+-        el-input(v-model=""previousInstanceInfoDialogTable.filters[0].value"" placeholder=""Search"" style=""display:block;width:150px;margin-top:15px"")
++        el-input(v-model=""previousInstanceInfoDialogTable.filters[0].value"" :placeholder=""$t('dialog.previous_instances.search_placeholder')"" style=""display:block;width:150px;margin-top:15px"" clearable)
+         data-tables(v-if=""previousInstanceInfoDialog.visible"" v-bind=""previousInstanceInfoDialogTable"" v-loading=""previousInstanceInfoDialog.loading"" style=""margin-top:10px"")
+-            el-table-column(:label=""$t('table.previous_instances.date')"" prop=""created_at"" sortable width=""120"")
++            el-table-column(:label=""$t('table.previous_instances.date')"" prop=""created_at"" sortable width=""110"")
+                 template(v-once #default=""scope"")
+                     el-tooltip(placement=""left"")
+                         template(#content)
+                             span {{ scope.row.created_at | formatDate('long') }}
+                         span {{ scope.row.created_at | formatDate('short') }}
+-            el-table-column(:label=""$t('table.gameLog.icon')"" prop=""isFriend"" width=""70"")
++            el-table-column(:label=""$t('table.gameLog.icon')"" prop=""isFriend"" width=""70"" align=""center"")
+                 template(v-once #default=""scope"")
+                     template(v-if=""gameLogIsFriend(scope.row)"")
+                         el-tooltip(v-if=""gameLogIsFavorite(scope.row)"" placement=""top"" content=""Favorite"")
+@@ -67,9 +67,9 @@ mixin previousInstances()
+             el-table-column(:label=""$t('table.previous_instances.display_name')"" prop=""displayName"" sortable)
+                 template(v-once #default=""scope"")
+                     span.x-link(v-text=""scope.row.displayName"" @click=""lookupUser(scope.row)"")
+-            el-table-column(:label=""$t('table.previous_instances.time')"" prop=""time"" width=""90"" sortable)
++            el-table-column(:label=""$t('table.previous_instances.time')"" prop=""time"" width=""100"" sortable)
+                 template(v-once #default=""scope"")
+                     span(v-text=""scope.row.timer"")
+-            el-table-column(:label=""$t('table.previous_instances.count')"" prop=""count"" width=""90"" sortable)
++            el-table-column(:label=""$t('table.previous_instances.count')"" prop=""count"" width=""100"" sortable)
+                 template(v-once #default=""scope"")
+                     span(v-text=""scope.row.count"")"
+vrcx-team/VRCX,1078,5221b9d8c1241bc9a898081b18ba1c3b40bdb5c5,src/mixins/tabs/feed.pug,modified,18,17,35,"@@ -26,22 +26,23 @@ mixin feedTab()
+                         template(v-else-if=""scope.row.type === 'Online'"")
+                             location(v-if=""scope.row.location"" :location=""scope.row.location"" :hint=""scope.row.worldName"" :grouphint=""scope.row.groupName"")
+                         template(v-else-if=""scope.row.type === 'Avatar'"")
+-                            el-popover(placement=""right"" width=""500px"" trigger=""click"")
+-                                div(slot=""reference"" style=""display:inline-block;vertical-align:top;width:160px"")
+-                                    template(v-if=""scope.row.previousCurrentAvatarThumbnailImageUrl"")
+-                                        img.x-link(v-lazy=""scope.row.previousCurrentAvatarThumbnailImageUrl"" style=""flex:none;width:160px;height:120px;border-radius:4px"")
+-                                        br
+-                                    avatar-info(:imageurl=""scope.row.previousCurrentAvatarThumbnailImageUrl"" :userid=""scope.row.userId"" :hintownerid=""scope.row.previousOwnerId"" :hintavatarname=""scope.row.previousAvatarName"" :avatartags=""scope.row.previousCurrentAvatarTags"")
+-                                img.x-link(v-lazy=""scope.row.previousCurrentAvatarImageUrl"" style=""width:500px;height:375px"" @click=""showFullscreenImageDialog(scope.row.previousCurrentAvatarImageUrl)"")
+-                            span(style=""position:relative;vertical-align:top;margin:0 5px"")
+-                                i.el-icon-right
+-                            el-popover(placement=""right"" width=""500px"" trigger=""click"")
+-                                div(slot=""reference"" style=""display:inline-block;vertical-align:top;width:160px"")
+-                                    template(v-if=""scope.row.currentAvatarThumbnailImageUrl"")
+-                                        img.x-link(v-lazy=""scope.row.currentAvatarThumbnailImageUrl"" style=""flex:none;width:160px;height:120px;border-radius:4px"")
+-                                        br
+-                                    avatar-info(:imageurl=""scope.row.currentAvatarThumbnailImageUrl"" :userid=""scope.row.userId"" :hintownerid=""scope.row.ownerId"" :hintavatarname=""scope.row.avatarName"" :avatartags=""scope.row.currentAvatarTags"")
+-                                img.x-link(v-lazy=""scope.row.currentAvatarImageUrl"" style=""width:500px;height:375px"" @click=""showFullscreenImageDialog(scope.row.currentAvatarImageUrl)"")
++                            div(style=""display:flex;align-items:center"")
++                                el-popover(placement=""right"" width=""500px"" trigger=""click"")
++                                    div(slot=""reference"" style=""display:inline-block;vertical-align:top;width:160px"")
++                                        template(v-if=""scope.row.previousCurrentAvatarThumbnailImageUrl"")
++                                            img.x-link(v-lazy=""scope.row.previousCurrentAvatarThumbnailImageUrl"" style=""flex:none;width:160px;height:120px;border-radius:4px"")
++                                            br
++                                        avatar-info(:imageurl=""scope.row.previousCurrentAvatarThumbnailImageUrl"" :userid=""scope.row.userId"" :hintownerid=""scope.row.previousOwnerId"" :hintavatarname=""scope.row.previousAvatarName"" :avatartags=""scope.row.previousCurrentAvatarTags"")
++                                    img.x-link(v-lazy=""scope.row.previousCurrentAvatarImageUrl"" style=""width:500px;height:375px"" @click=""showFullscreenImageDialog(scope.row.previousCurrentAvatarImageUrl)"")
++                                span(style=""position:relative;margin:0 10px"")
++                                    i.el-icon-right
++                                el-popover(placement=""right"" width=""500px"" trigger=""click"")
++                                    div(slot=""reference"" style=""display:inline-block;vertical-align:top;width:160px"")
++                                        template(v-if=""scope.row.currentAvatarThumbnailImageUrl"")
++                                            img.x-link(v-lazy=""scope.row.currentAvatarThumbnailImageUrl"" style=""flex:none;width:160px;height:120px;border-radius:4px"")
++                                            br
++                                        avatar-info(:imageurl=""scope.row.currentAvatarThumbnailImageUrl"" :userid=""scope.row.userId"" :hintownerid=""scope.row.ownerId"" :hintavatarname=""scope.row.avatarName"" :avatartags=""scope.row.currentAvatarTags"")
++                                    img.x-link(v-lazy=""scope.row.currentAvatarImageUrl"" style=""width:500px;height:375px"" @click=""showFullscreenImageDialog(scope.row.currentAvatarImageUrl)"")
+                         template(v-else-if=""scope.row.type === 'Status'"")
+                             el-tooltip(placement=""top"")
+                                 template(#content)
+@@ -72,7 +73,7 @@ mixin feedTab()
+                         template(#content)
+                             span {{ scope.row.created_at | formatDate('long') }}
+                         span {{ scope.row.created_at | formatDate('short') }}
+-            el-table-column(:label=""$t('table.feed.type')"" prop=""type"" width=""70"")
++            el-table-column(:label=""$t('table.feed.type')"" prop=""type"" width=""80"")
+                 template(v-once #default=""scope"")
+                     span.x-link(v-text=""$t('view.feed.filters.' + scope.row.type)"")
+             el-table-column(:label=""$t('table.feed.user')"" prop=""displayName"" width=""180"")"
+vrcx-team/VRCX,1078,5221b9d8c1241bc9a898081b18ba1c3b40bdb5c5,src/mixins/tabs/friendsList.pug,modified,3,3,6,"@@ -59,7 +59,7 @@ mixin friendsListTab()
+                         el-tooltip(v-for=""item in scope.row.$languages"" :key=""item.key"" placement=""top"")
+                             template(#content)
+                                 span {{ item.value }} ({{ item.key }})
+-                            span.flags(:class=""languageClass(item.key)"" style=""display:inline-block;margin-left:5px"")
++                            span.flags(:class=""languageClass(item.key)"" style=""display:inline-block;margin-right:5px"")
+                 el-table-column(:label=""$t('table.friendList.bioLink')"" width=""100"" prop=""bioLinks"")
+                     template(v-once #default=""scope"")
+                         el-tooltip(v-if=""link"" v-for=""(link, index) in scope.row.bioLinks"" :key=""index"")
+@@ -80,6 +80,6 @@ mixin friendsListTab()
+                     template(v-once #default=""scope"")
+                         span {{ scope.row.last_login | formatDate('long') }}
+                 el-table-column(:label=""$t('table.friendList.dateJoined')"" width=""120"" prop=""date_joined"" sortable :sort-method=""(a, b) => sortAlphabetically(a, b, 'date_joined')"")
+-                el-table-column(:label=""$t('table.friendList.unfriend')"" width=""80"")
++                el-table-column(:label=""$t('table.friendList.unfriend')"" width=""100"" align=""center"")
+                     template(v-once #default=""scope"")
+-                        el-button(type=""text"" icon=""el-icon-close"" size=""mini"" @click.stop=""confirmDeleteFriend(scope.row.id)"")
++                        el-button(type=""text"" icon=""el-icon-close"" style=""color:#f56c6c"" size=""mini"" @click.stop=""confirmDeleteFriend(scope.row.id)"")"
+vrcx-team/VRCX,1078,5221b9d8c1241bc9a898081b18ba1c3b40bdb5c5,src/mixins/tabs/gameLog.pug,modified,1,1,2,"@@ -19,7 +19,7 @@ mixin gameLogTab()
+                 template(v-once #default=""scope"")
+                     span.x-link(v-if=""scope.row.location && scope.row.type !== 'Location'"" v-text=""$t('view.game_log.filters.' + scope.row.type)"" @click=""showWorldDialog(scope.row.location)"")
+                     span(v-else v-text=""$t('view.game_log.filters.' + scope.row.type)"")
+-            el-table-column(:label=""$t('table.gameLog.icon')"" prop=""isFriend"" width=""70"")
++            el-table-column(:label=""$t('table.gameLog.icon')"" prop=""isFriend"" width=""70"" align=""center"")
+                 template(v-once #default=""scope"")
+                     template(v-if=""gameLogIsFriend(scope.row)"")
+                         el-tooltip(v-if=""gameLogIsFavorite(scope.row)"" placement=""top"" content=""Favorite"")"
+vrcx-team/VRCX,1078,5221b9d8c1241bc9a898081b18ba1c3b40bdb5c5,src/mixins/tabs/notifications.pug,modified,2,2,4,"@@ -61,14 +61,14 @@ mixin notificationsTab()
+                     template(v-if=""scope.row.senderUserId !== API.currentUser.id && !scope.row.$isExpired"")
+                         template(v-if=""scope.row.type === 'friendRequest'"")
+                             el-tooltip(placement=""top"" content=""Accept"" :disabled=""hideTooltips"")
+-                                el-button(type=""text"" icon=""el-icon-check"" size=""mini"" @click=""acceptFriendRequestNotification(scope.row)"")
++                                el-button(type=""text"" icon=""el-icon-check"" style=""color:#67c23a"" size=""mini"" @click=""acceptFriendRequestNotification(scope.row)"")
+                         template(v-else-if=""scope.row.type === 'invite'"")
+                             el-tooltip(placement=""top"" content=""Decline with message"" :disabled=""hideTooltips"")
+                                 el-button(type=""text"" icon=""el-icon-chat-line-square"" size=""mini"" @click=""showSendInviteResponseDialog(scope.row)"")
+                         template(v-else-if=""scope.row.type === 'requestInvite'"")
+                             template(v-if=""lastLocation.location && isGameRunning && checkCanInvite(lastLocation.location)"")
+                                 el-tooltip(placement=""top"" content=""Invite"" :disabled=""hideTooltips"")
+-                                    el-button(type=""text"" icon=""el-icon-check"" size=""mini"" @click=""acceptRequestInvite(scope.row)"")
++                                    el-button(type=""text"" icon=""el-icon-check"" style=""color:#67c23a"" size=""mini"" @click=""acceptRequestInvite(scope.row)"")
+                             el-tooltip(placement=""top"" content=""Decline with message"" :disabled=""hideTooltips"")
+                                 el-button(type=""text"" icon=""el-icon-chat-line-square"" size=""mini"" style=""margin-left:5px"" @click=""showSendInviteRequestResponseDialog(scope.row)"")
+                         template(v-if=""scope.row.responses"")"
+vrcx-team/VRCX,1078,5221b9d8c1241bc9a898081b18ba1c3b40bdb5c5,src/mixins/tabs/playerList.pug,modified,18,15,33,"@@ -25,14 +25,16 @@ mixin playerListTab()
+                         el-tag(v-if=""currentInstanceWorld.inCache"" type=""info"" effect=""plain"" size=""mini"" style=""margin-right:5px"")
+                             span(v-text=""currentInstanceWorld.cacheSize"")
+                             |  {{ $t('dialog.world.tags.cache') }}
+-                        br
+-                        location-world(:locationobject=""currentInstanceLocation"" :currentuserid=""API.currentUser.id"")
+-                        span(v-if=""lastLocation.playerList.size > 0"" style=""margin-left:5px"")
+-                            | {{ lastLocation.playerList.size }}
+-                            | #[template(v-if=""lastLocation.friendList.size > 0"") ({{ lastLocation.friendList.size }})]
+-                        | &nbsp;&horbar; #[timer(v-if=""lastLocation.date"" :epoch=""lastLocation.date"")]
++                        div(style=""margin-top:5px"")
++                            location-world(:locationobject=""currentInstanceLocation"" :currentuserid=""API.currentUser.id"")
++                            span(v-if=""lastLocation.playerList.size > 0"" style=""margin-left:5px"")
++                                | {{ lastLocation.playerList.size }}
++                                | #[template(v-if=""lastLocation.friendList.size > 0"") ({{ lastLocation.friendList.size }})]
++                            | &nbsp;&horbar; #[timer(v-if=""lastLocation.date"" :epoch=""lastLocation.date"")]
+                     div(style=""margin-top:5px"")
+-                        span(v-show=""currentInstanceWorld.ref.name !== currentInstanceWorld.ref.description"" v-text=""currentInstanceWorld.ref.description"" style=""font-size:12px;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2"")
++                        span(v-show=""currentInstanceWorld.ref.name !== currentInstanceWorld.ref.description"" v-text=""currentInstanceWorld.ref.description"" :style=""{fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', display:'-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: currentInstanceWorldDescriptionExpanded  ? 'none' : '2'}"")
++                        div(style=""display:flex;justify-content:end"")
++                            el-button(v-if=""currentInstanceWorld.ref.description.length > 50 && !currentInstanceWorldDescriptionExpanded"" type=""text"" size=""mini"" @click=""currentInstanceWorldDescriptionExpanded = true"") {{ !currentInstanceWorldDescriptionExpanded && 'Show more' }}
+                 div(style=""display:flex;flex-direction:column;margin-left:20px"")
+                     .x-friend-item(style=""cursor:default"")
+                         .detail
+@@ -204,11 +206,11 @@ mixin playerListTab()
+                 data-tables(v-bind=""currentInstanceUserList"" @row-click=""selectCurrentInstanceRow"" style=""margin-top:10px;cursor:pointer"")
+                     el-table-column(:label=""$t('table.playerList.avatar')"" width=""70"" prop=""photo"")
+                         template(v-once #default=""scope"")
+-                            template(v-if=""userImage(scope.row.ref)"")
++                            div(v-if=""userImage(scope.row.ref)"" style=""display:flex;align-items:center;"")
+                                 el-popover(placement=""right"" height=""500px"" trigger=""hover"")
+                                     img.friends-list-avatar(slot=""reference"" v-lazy=""userImage(scope.row.ref)"")
+                                     img.friends-list-avatar(v-lazy=""userImageFull(scope.row.ref)"" style=""height:500px;cursor:pointer"" @click=""showFullscreenImageDialog(userImageFull(scope.row.ref))"")
+-                    el-table-column(:label=""$t('table.playerList.timer')"" width=""90"" prop=""timer"" sortable)
++                    el-table-column(:label=""$t('table.playerList.timer')"" width=""80"" prop=""timer"" sortable)
+                         template(v-once #default=""scope"")
+                             timer(:epoch=""scope.row.timer"")
+                     el-table-column(v-if=""photonLoggingEnabled"" :label=""$t('table.playerList.photonId')"" width=""110"" prop=""photonId"" sortable)
+@@ -220,7 +222,7 @@ mixin playerListTab()
+                                 el-tooltip(placement=""left"" content=""Block chatbox messages"")
+                                     el-button(type=""text"" icon=""el-icon-microphone"" size=""mini"" style=""margin-right:5px"" @click.stop=""addChatboxUserBlacklist(scope.row.ref)"")
+                             span(v-text=""scope.row.photonId"")
+-                    el-table-column(:label=""$t('table.playerList.icon')"" prop=""isMaster"" width=""100"")
++                    el-table-column(:label=""$t('table.playerList.icon')"" prop=""isMaster"" width=""70"" align=""center"")
+                         template(v-once #default=""scope"")
+                             el-tooltip(v-if=""scope.row.isMaster"" placement=""left"" content=""Instance Master"")
+                                 span 👑
+@@ -262,10 +264,11 @@ mixin playerListTab()
+                             el-tooltip(v-for=""item in scope.row.ref.$languages"" :key=""item.key"" placement=""top"")
+                                 template(#content)
+                                     span {{ item.value }} ({{ item.key }})
+-                                span.flags(:class=""languageClass(item.key)"" style=""display:inline-block;margin-left:5px"")
++                                span.flags(:class=""languageClass(item.key)"" style=""display:inline-block;margin-right:5px"")
+                     el-table-column(:label=""$t('table.playerList.bioLink')"" width=""100"" prop=""ref.bioLinks"")
+                         template(v-once #default=""scope"")
+-                            el-tooltip(v-if=""link"" v-for=""(link, index) in scope.row.ref.bioLinks"" :key=""index"")
+-                                template(#content)
+-                                    span(v-text=""link"")
+-                                img(:src=""getFaviconUrl(link)"" style=""width:16px;height:16px;vertical-align:middle;margin-right:5px;cursor:pointer"" @click.stop=""openExternalLink(link)"")
++                            div(style=""display:flex;align-items:center"")
++                                el-tooltip(v-if=""link"" v-for=""(link, index) in scope.row.ref.bioLinks"" :key=""index"")
++                                    template(#content)
++                                        span(v-text=""link"")
++                                    img(:src=""getFaviconUrl(link)"" style=""width:16px;height:16px;vertical-align:middle;margin-right:5px;cursor:pointer"" @click.stop=""openExternalLink(link)"")"
+vrcx-team/VRCX,1078,5221b9d8c1241bc9a898081b18ba1c3b40bdb5c5,src/mixins/tabs/search.pug,modified,5,5,10,"@@ -4,7 +4,7 @@ mixin searchTab()
+             el-input(v-model=""searchText"" :placeholder=""$t('view.search.search_placeholder')"" @keyup.native.13=""search()"" style=""flex:1"")
+             el-tooltip(placement=""bottom"" :content=""$t('view.search.clear_results_tooltip')"" :disabled=""hideTooltips"")
+                 el-button(type=""default"" @click=""clearSearch()"" icon=""el-icon-delete"" circle style=""flex:none;margin-left:10px"")
+-        el-tabs(ref=""searchTab"" type=""card"" style=""margin-top:15px"")
++        el-tabs(ref=""searchTab"" type=""card"" style=""margin-top:15px"" @tab-click=""searchText = ''"")
+             el-tab-pane(:label=""$t('view.search.user.header')"" v-loading=""isSearchUserLoading"" style=""min-height:60px"")
+                 .x-friend-list(style=""min-height:500px"")
+                     .x-friend-item(v-for=""user in searchUserResults"" :key=""user.id"" @click=""showUserDialog(user.id)"")
+@@ -15,7 +15,7 @@ mixin searchTab()
+                                 span.name(v-text=""user.displayName"")
+                                 span.extra(v-if=""randomUserColours"" v-text=""user.$trustLevel"" :class=""user.$trustClass"")
+                                 span.extra(v-else v-text=""user.$trustLevel"" :style=""{'color':user.$userColour}"")
+-                el-button-group(style=""margin-top:15px"")
++                el-button-group(style=""margin-top:15px""  v-if=""searchUserResults.length"")
+                     el-button(:disabled=""!searchUserParams.offset"" @click=""moreSearchUser(-1)"" icon=""el-icon-back"" size=""small"") {{ $t('view.search.prev_page') }}
+                     el-button(:disabled=""searchUserResults.length < 10"" @click=""moreSearchUser(1)"" icon=""el-icon-right"" size=""small"") {{ $t('view.search.next_page') }}
+             el-tab-pane(:label=""$t('view.search.world.header')"" v-loading=""isSearchWorldLoading"" style=""min-height:60px"")
+@@ -33,7 +33,7 @@ mixin searchTab()
+                                 span.name(v-text=""world.name"")
+                                 span.extra(v-if=""world.occupants"") {{ world.authorName }} ({{ world.occupants }})
+                                 span.extra(v-else v-text=""world.authorName"")
+-                el-button-group(style=""margin-top:15px"")
++                el-button-group(style=""margin-top:15px"" v-if=""searchWorldResults.length"")
+                     el-button(:disabled=""!searchWorldParams.offset"" @click=""moreSearchWorld(-1)"" icon=""el-icon-back"" size=""small"") {{ $t('view.search.prev_page') }}
+                     el-button(:disabled=""searchWorldResults.length < 10"" @click=""moreSearchWorld(1)"" icon=""el-icon-right"" size=""small"") {{ $t('view.search.next_page') }}
+             el-tab-pane(:label=""$t('view.search.avatar.header')"" v-loading=""isSearchAvatarLoading"" style=""min-height:60px"")
+@@ -73,7 +73,7 @@ mixin searchTab()
+                                 span.extra(v-text=""avatar.releaseStatus"" v-else-if=""avatar.releaseStatus === 'private'"" style=""color: #f56c6c;"")
+                                 span.extra(v-text=""avatar.releaseStatus"" v-else)
+                                 span.extra(v-text=""avatar.authorName"")
+-                el-button-group(style=""margin-top:15px"")
++                el-button-group(style=""margin-top:15px"" v-if=""searchAvatarPage.length"")
+                     el-button(:disabled=""!searchAvatarPageNum"" @click=""moreSearchAvatar(-1)"" icon=""el-icon-back"" size=""small"") {{ $t('view.search.prev_page') }}
+                     el-button(:disabled=""searchAvatarResults.length < 10 || (searchAvatarPageNum + 1) * 10 >= searchAvatarResults.length"" @click=""moreSearchAvatar(1)"" icon=""el-icon-right"" size=""small"") {{ $t('view.search.next_page') }}
+             el-tab-pane(:label=""$t('view.search.group.header')"" v-loading=""isSearchGroupLoading"" style=""min-height:60px"")
+@@ -88,6 +88,6 @@ mixin searchTab()
+                                     span(style=""margin-left:5px;font-weight:normal"") ({{ group.memberCount }})
+                                     span(style=""margin-left:5px;color:#909399;font-weight:normal;font-family:monospace;font-size:12px"") {{ group.shortCode }}.{{ group.discriminator }}
+                                 span.extra(v-text=""group.description"")
+-                el-button-group(style=""margin-top:15px"")
++                el-button-group(style=""margin-top:15px"" v-if=""searchGroupResults.length"")
+                     el-button(:disabled=""!searchGroupParams.offset"" @click=""moreSearchGroup(-1)"" icon=""el-icon-back"" size=""small"") {{ $t('view.search.prev_page') }}
+                     el-button(:disabled=""searchGroupResults.length < 10"" @click=""moreSearchGroup(1)"" icon=""el-icon-right"" size=""small"") {{ $t('view.search.next_page') }}
+\ No newline at end of file"

@@ -1,0 +1,355 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+cosmoscout/cosmoscout-vr,186,f6475f3,make_externals.sh,modified,1,0,1,"@@ -181,6 +181,7 @@ echo """"
+ 
+ cmake -E make_directory ""$BUILD_DIR/civetweb"" && cd ""$BUILD_DIR/civetweb""
+ cmake ""${CMAKE_FLAGS[@]}"" -DCMAKE_INSTALL_PREFIX=""$INSTALL_DIR"" -DCIVETWEB_ENABLE_CXX=On \
++      -DCIVETWEB_BUILD_TESTING=Off \
+       -DBUILD_SHARED_LIBS=On -DCMAKE_BUILD_TYPE=$BUILD_TYPE ""$EXTERNALS_DIR/civetweb""
+ cmake --build . --target install --parallel ""$(nproc)""
+ "
+cosmoscout/cosmoscout-vr,186,f6475f3,plugins/csp-lod-bodies/gui/lod_body_settings.html,modified,10,6,16,"@@ -35,29 +35,33 @@
+       <span>Wireframe Planets</span>
+     </label>
+   </div>
++  <div class=""col-7 offset-5"">
++    <label class=""checklabel"">
++      <input type=""checkbox"" data-callback=""lodBodies.setEnableBounds"" />
++      <i class=""material-icons""></i>
++      <span>Tile Bounds</span>
++    </label>
++  </div>
+ </div>
+ <div class=""row"">
+   <div class=""col-5"">
+     Projection Type
+   </div>
+   <div class=""col-7"">
+     <label class=""radiolabel"">
+-      <input name=""terrain_projection"" type=""radio""
+-        data-callback=""lodBodies.setTerrainProjectionMode0"" />
++      <input name=""terrain_projection"" type=""radio"" data-callback=""lodBodies.setTerrainProjectionMode0"" />
+       <span>HEALPix</span>
+     </label>
+   </div>
+   <div class=""col-7 offset-5"">
+     <label class=""radiolabel"">
+-      <input name=""terrain_projection"" type=""radio""
+-        data-callback=""lodBodies.setTerrainProjectionMode1"" />
++      <input name=""terrain_projection"" type=""radio"" data-callback=""lodBodies.setTerrainProjectionMode1"" />
+       <span>Linear Interpolation</span>
+     </label>
+   </div>
+   <div class=""col-7 offset-5"">
+     <label class=""radiolabel"">
+-      <input name=""terrain_projection"" type=""radio""
+-        data-callback=""lodBodies.setTerrainProjectionMode2"" checked />
++      <input name=""terrain_projection"" type=""radio"" data-callback=""lodBodies.setTerrainProjectionMode2"" checked />
+       <span>Hybrid</span>
+     </label>
+   </div>"
+cosmoscout/cosmoscout-vr,186,f6475f3,plugins/csp-lod-bodies/shaders/Planet.frag,modified,1,2,3,"@@ -8,7 +8,6 @@ uniform float slopeMin;
+ uniform float slopeMax;
+ uniform float ambientBrightness;
+ uniform float texGamma;
+-uniform float farClip;
+ uniform vec4 uSunDirIlluminance;
+ 
+ uniform sampler1D heightTex;
+@@ -65,7 +64,7 @@ void main()
+     return;
+   }
+ 
+-  gl_FragDepth = length(fsIn.position) / farClip;
++  gl_FragDepth = length(fsIn.position) / VP_farClip;
+ 
+   fragColor = vec3(1);
+ "
+cosmoscout/cosmoscout-vr,186,f6475f3,plugins/csp-lod-bodies/shaders/VistaPlanetTileBounds.frag,modified,3,0,3,"@@ -6,6 +6,8 @@
+ 
+ #version 330
+ 
++uniform float VP_farClip;
++
+ in vec3 position;
+ 
+ // outputs ---------------------------------------------------------------------
+@@ -15,4 +17,5 @@ layout(location = 0) out vec4 color;
+ void main(void)
+ {
+     color = vec4(0.0, 1.0, 0.0, 1.0);
++    gl_FragDepth = length(position) / VP_farClip;
+ }"
+cosmoscout/cosmoscout-vr,186,f6475f3,plugins/csp-lod-bodies/src/LODVisitor.cpp,modified,2,3,5,"@@ -98,9 +98,8 @@ bool testFrontFacing(glm::dvec3 const& camPos, PlanetParameters const* params,
+     minHeight              = std::min(minHeight, castedTile.getMinMaxPyramid()->getMin());
+   }
+ 
+-  double dScaledPolarRadius = params->mRadii.y + (minHeight * params->mHeightScale);
+-  double dProxyRadius       = std::min(dScaledPolarRadius,
+-      std::max(params->mRadii.x, params->mRadii.y) + (minHeight * params->mHeightScale));
++  double dProxyRadius = std::min(params->mRadii.x, std::min(params->mRadii.y, params->mRadii.z)) +
++                        (minHeight * params->mHeightScale);
+ 
+   glm::dvec3 const& tbMin = tb.getMin();
+   glm::dvec3 const& tbMax = tb.getMax();"
+cosmoscout/cosmoscout-vr,186,f6475f3,plugins/csp-lod-bodies/src/LodBody.cpp,modified,3,0,3,"@@ -63,6 +63,9 @@ LodBody::LodBody(std::shared_ptr<cs::core::Settings> const& settings,
+   mPluginSettings->mEnableWireframe.connectAndTouch(
+       [this](bool val) { mPlanet.getTileRenderer().setWireframe(val); });
+ 
++  mPluginSettings->mEnableBounds.connectAndTouch(
++      [this](bool val) { mPlanet.getTileRenderer().setDrawBounds(val); });
++
+   mPluginSettings->mEnableTilesFreeze.connectAndTouch([this](bool val) {
+     mPlanet.getLODVisitor().setUpdateLOD(!val);
+     mPlanet.getLODVisitor().setUpdateCulling(!val);"
+cosmoscout/cosmoscout-vr,186,f6475f3,plugins/csp-lod-bodies/src/PlanetShader.cpp,modified,0,3,3,"@@ -194,9 +194,6 @@ void PlanetShader::bind() {
+   loc = mShader.GetUniformLocation(""uSunDirIlluminance"");
+   mShader.SetUniform(loc, mSunDirection.x, mSunDirection.y, mSunDirection.z, mSunIlluminance);
+ 
+-  loc = mShader.GetUniformLocation(""farClip"");
+-  mShader.SetUniform(loc, cs::utils::getCurrentFarClipDistance());
+-
+   mFontTexture->Bind(TEXUNITNAMEFONT);
+ 
+   auto it(mColorMaps.find(mPluginSettings->mTerrainColorMap.get()));"
+cosmoscout/cosmoscout-vr,186,f6475f3,plugins/csp-lod-bodies/src/Plugin.cpp,modified,9,0,9,"@@ -110,6 +110,7 @@ void from_json(nlohmann::json const& j, Plugin::Settings& o) {
+   cs::core::Settings::deserialize(j, ""heightRange"", o.mHeightRange);
+   cs::core::Settings::deserialize(j, ""slopeRange"", o.mSlopeRange);
+   cs::core::Settings::deserialize(j, ""enableWireframe"", o.mEnableWireframe);
++  cs::core::Settings::deserialize(j, ""enableBounds"", o.mEnableBounds);
+   cs::core::Settings::deserialize(j, ""enableTilesDebug"", o.mEnableTilesDebug);
+   cs::core::Settings::deserialize(j, ""enableTilesFreeze"", o.mEnableTilesFreeze);
+   cs::core::Settings::deserialize(j, ""maxGPUTilesColor"", o.mMaxGPUTilesColor);
+@@ -132,6 +133,7 @@ void to_json(nlohmann::json& j, Plugin::Settings const& o) {
+   cs::core::Settings::serialize(j, ""heightRange"", o.mHeightRange);
+   cs::core::Settings::serialize(j, ""slopeRange"", o.mSlopeRange);
+   cs::core::Settings::serialize(j, ""enableWireframe"", o.mEnableWireframe);
++  cs::core::Settings::serialize(j, ""enableBounds"", o.mEnableBounds);
+   cs::core::Settings::serialize(j, ""enableTilesDebug"", o.mEnableTilesDebug);
+   cs::core::Settings::serialize(j, ""enableTilesFreeze"", o.mEnableTilesFreeze);
+   cs::core::Settings::serialize(j, ""maxGPUTilesColor"", o.mMaxGPUTilesColor);
+@@ -180,6 +182,12 @@ void Plugin::init() {
+     mGuiManager->setCheckboxValue(""lodBodies.setEnableWireframe"", enable);
+   });
+ 
++  mGuiManager->getGui()->registerCallback(""lodBodies.setEnableBounds"",
++      ""Enables or disables bounding box rendering of the planet's tiles."",
++      std::function([this](bool enable) { mPluginSettings->mEnableBounds = enable; }));
++  mPluginSettings->mEnableBounds.connectAndTouch(
++      [this](bool enable) { mGuiManager->setCheckboxValue(""lodBodies.setEnableBounds"", enable); });
++
+   mGuiManager->getGui()->registerCallback(""lodBodies.setEnableHeightlines"",
+       ""Enables or disables rendering of iso-altitude lines."",
+       std::function([this](bool enable) { mPluginSettings->mEnableHeightlines = enable; }));
+@@ -403,6 +411,7 @@ void Plugin::deInit() {
+   mGuiManager->getGui()->unregisterCallback(""lodBodies.setEnableTilesFreeze"");
+   mGuiManager->getGui()->unregisterCallback(""lodBodies.setEnableTilesDebug"");
+   mGuiManager->getGui()->unregisterCallback(""lodBodies.setEnableWireframe"");
++  mGuiManager->getGui()->unregisterCallback(""lodBodies.setEnableBounds"");
+   mGuiManager->getGui()->unregisterCallback(""lodBodies.setEnableHeightlines"");
+   mGuiManager->getGui()->unregisterCallback(""lodBodies.setEnableLatLongGrid"");
+   mGuiManager->getGui()->unregisterCallback(""lodBodies.setEnableLatLongGridLabels"");"
+cosmoscout/cosmoscout-vr,186,f6475f3,plugins/csp-lod-bodies/src/Plugin.hpp,modified,3,0,3,"@@ -76,6 +76,9 @@ class Plugin : public cs::core::PluginBase {
+     /// Enables or disables wireframe rendering of the planet.
+     cs::utils::DefaultProperty<bool> mEnableWireframe{false};
+ 
++    /// Enables or disables bounding box rendering of the planet's tiles.
++    cs::utils::DefaultProperty<bool> mEnableBounds{false};
++
+     /// Enables or disables debug coloring of the planet's tiles.
+     cs::utils::DefaultProperty<bool> mEnableTilesDebug{false};
+ "
+cosmoscout/cosmoscout-vr,186,f6475f3,plugins/csp-lod-bodies/src/TileRenderer.cpp,modified,11,0,11,"@@ -391,6 +391,8 @@ void TileRenderer::preRenderTiles(cs::graphics::ShadowMap* shadowMap) {
+   glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(glm::fmat4x4(mMatP)));
+   loc = shader.GetUniformLocation(""VP_matModelView"");
+   glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(glm::fmat4x4(mMatVM)));
++  loc = shader.GetUniformLocation(""VP_farClip"");
++  shader.SetUniform(loc, mFarClip);
+   loc = shader.GetUniformLocation(""VP_heightScale"");
+   shader.SetUniform(loc, static_cast<float>(mParams->mHeightScale));
+   loc = shader.GetUniformLocation(""VP_radii"");
+@@ -601,6 +603,9 @@ void TileRenderer::preRenderBounds() {
+ 
+   GLint loc = mProgBounds->GetUniformLocation(""VP_matProjection"");
+   glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(glm::fmat4x4(mMatP)));
++
++  loc = mProgBounds->GetUniformLocation(""VP_farClip"");
++  mProgBounds->SetUniform(loc, mFarClip);
+ }
+ 
+ ////////////////////////////////////////////////////////////////////////////////////////////////////
+@@ -896,6 +901,12 @@ void TileRenderer::setModelview(glm::dmat4 const& m) {
+ 
+ ////////////////////////////////////////////////////////////////////////////////////////////////////
+ 
++void TileRenderer::setFarClip(float farClip) {
++  mFarClip = farClip;
++}
++
++////////////////////////////////////////////////////////////////////////////////////////////////////
++
+ void TileRenderer::setDrawTiles(bool enable) {
+   mEnableDrawTiles = enable;
+ }"
+cosmoscout/cosmoscout-vr,186,f6475f3,plugins/csp-lod-bodies/src/TileRenderer.hpp,modified,2,0,2,"@@ -67,6 +67,7 @@ class TileRenderer : private boost::noncopyable {
+   void setFrameCount(int frameCount);
+   void setProjection(glm::dmat4 const& m);
+   void setModelview(glm::dmat4 const& m);
++  void setFarClip(float farClip);
+ 
+   /// Render the elevation and image tiles in reqDEM and reqIMG respectively.
+   void render(std::vector<RenderData*> const& reqDEM, std::vector<RenderData*> const& reqIMG,
+@@ -130,6 +131,7 @@ class TileRenderer : private boost::noncopyable {
+ 
+   glm::dmat4 mMatVM;
+   glm::dmat4 mMatP;
++  float      mFarClip;
+ 
+   static std::unique_ptr<VistaBufferObject>      mVboTerrain;
+   static std::unique_ptr<VistaBufferObject>      mIboTerrain;"
+cosmoscout/cosmoscout-vr,186,f6475f3,plugins/csp-lod-bodies/src/VistaPlanet.cpp,modified,3,0,3,"@@ -9,6 +9,8 @@
+ #include ""TileSource.hpp""
+ #include ""UpdateBoundsVisitor.hpp""
+ 
++#include <../../../src/cs-utils/utils.hpp>
++
+ #include <VistaBase/VistaStreamUtils.h>
+ #include <VistaKernel/DisplayManager/VistaDisplayManager.h>
+ #include <VistaKernel/DisplayManager/VistaDisplaySystem.h>
+@@ -343,6 +345,7 @@ void VistaPlanet::renderTiles(int frameCount, glm::dmat4 const& matVM, glm::fmat
+   mRenderer.setFrameCount(frameCount);
+   mRenderer.setModelview(matVM);
+   mRenderer.setProjection(matP);
++  mRenderer.setFarClip(cs::utils::getCurrentFarClipDistance());
+   mRenderer.render(mLodVisitor.getRenderDEM(), mLodVisitor.getRenderIMG(), shadowMap);
+ }
+ "
+cosmoscout/cosmoscout-vr,186,f6475f3,plugins/csp-sharad/src/Sharad.cpp,modified,30,21,51,"@@ -33,10 +33,10 @@ const char* Sharad::VERT = R""(
+ uniform mat4 uMatModelView;
+ uniform mat4 uMatProjection;
+ uniform float uHeightScale;
+-uniform float uRadius;
++uniform vec3 uRadii;
+ 
+ // inputs
+-layout(location = 0) in vec3  iPosition;
++layout(location = 0) in vec2  iLngLat;
+ layout(location = 1) in vec2  iTexCoords;
+ layout(location = 2) in float iTime;
+ 
+@@ -45,17 +45,26 @@ out vec3  vPosition;
+ out vec2  vTexCoords;
+ out float vTime;
+ 
++vec3 geodeticSurfaceNormal(vec2 lngLat) {
++  return vec3(cos(lngLat.y) * sin(lngLat.x), sin(lngLat.y),
++      cos(lngLat.y) * cos(lngLat.x));
++}
++
++vec3 toCartesian(vec2 lonLat, float height) {
++  vec3 n = geodeticSurfaceNormal(lonLat);
++  vec3 k = n * uRadii * uRadii;
++  float gamma = sqrt(dot(k, n));
++  return k / gamma + height * n;
++}
++
+ void main()
+ {
+     vTexCoords = iTexCoords;
+     vTime      = iTime;
+ 
+-    float height = vTexCoords.y < 0.5 ? 
+-                        uRadius + 10000 * uHeightScale : 
+-                        uRadius - 10100 * uHeightScale ;
+-
+-    vPosition   = (uMatModelView * vec4(iPosition * height, 1.0)).xyz;
+-    gl_Position =  uMatProjection * vec4(vPosition, 1);
++    float height = vTexCoords.y < 0.5 ? 10000 * uHeightScale: -10100 * uHeightScale;
++    vPosition    = (uMatModelView * vec4(toCartesian(iLngLat, height), 1.0)).xyz;
++    gl_Position  =  uMatProjection * vec4(vPosition, 1);
+ }
+ )"";
+ 
+@@ -141,7 +150,8 @@ Sharad::Sharad(std::shared_ptr<cs::core::Settings> settings, std::string const&
+     std::string const& sFrameName, std::string const& sTiffFile, std::string const& sTabFile)
+     : cs::scene::CelestialObject(sCenterName, sFrameName, 0, 0)
+     , mSettings(std::move(settings))
+-    , mTexture(cs::graphics::TextureLoader::loadFromFile(sTiffFile)) {
++    , mTexture(cs::graphics::TextureLoader::loadFromFile(sTiffFile))
++    , mRadii(cs::core::SolarSystem::getRadii(sCenterName)) {
+   // arbitray date in future
+   mEndExistence = cs::utils::convert::time::toSpice(""2040-01-01T00:00:00.000Z"");
+ 
+@@ -202,7 +212,7 @@ Sharad::Sharad(std::shared_ptr<cs::core::Settings> settings, std::string const&
+ 
+   // create geometry ---------------------------------------------------------
+   struct Vertex {
+-    glm::vec3 pos;
++    glm::vec2 lngLat;
+     glm::vec2 tc;
+     float     time;
+   };
+@@ -220,27 +230,26 @@ Sharad::Sharad(std::shared_ptr<cs::core::Settings> settings, std::string const&
+       mStartExistence = tTime;
+     }
+ 
+-    glm::dvec2 lngLat(
++    glm::vec2 lngLat(
+         cs::utils::convert::toRadians(glm::dvec2(meta[i].Longitude, meta[i].Latitude)));
+-    glm::dvec3 point = cs::utils::convert::toCartesian(lngLat, glm::dvec3(1.0));
+ 
+     float x    = 1.F * static_cast<float>(i) / (static_cast<float>(mSamples) - 1.F);
+     auto  time = static_cast<float>(tTime - mStartExistence);
+ 
+-    vertices[i * 2 + 0].pos  = point;
+-    vertices[i * 2 + 0].tc   = glm::vec2(x, 1.F);
+-    vertices[i * 2 + 0].time = time;
+-    vertices[i * 2 + 1].pos  = point;
+-    vertices[i * 2 + 1].tc   = glm::vec2(x, 0.F);
+-    vertices[i * 2 + 1].time = time;
++    vertices[i * 2 + 0].lngLat = lngLat;
++    vertices[i * 2 + 0].tc     = glm::vec2(x, 1.F);
++    vertices[i * 2 + 0].time   = time;
++    vertices[i * 2 + 1].lngLat = lngLat;
++    vertices[i * 2 + 1].tc     = glm::vec2(x, 0.F);
++    vertices[i * 2 + 1].time   = time;
+   }
+ 
+   mVBO.Bind(GL_ARRAY_BUFFER);
+   mVBO.BufferData(vertices.size() * sizeof(Vertex), vertices.data(), GL_STATIC_DRAW);
+   mVBO.Release();
+ 
+   mVAO.EnableAttributeArray(0);
+-  mVAO.SpecifyAttributeArrayFloat(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), 0, &mVBO);
++  mVAO.SpecifyAttributeArrayFloat(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), 0, &mVBO);
+ 
+   mVAO.EnableAttributeArray(1);
+   mVAO.SpecifyAttributeArrayFloat(
+@@ -308,8 +317,8 @@ bool Sharad::Do() {
+     mShader.SetUniform(mShader.GetUniformLocation(""uSceneScale""), static_cast<float>(mSceneScale));
+     mShader.SetUniform(
+         mShader.GetUniformLocation(""uHeightScale""), mSettings->mGraphics.pHeightScale.get());
+-    mShader.SetUniform(mShader.GetUniformLocation(""uRadius""),
+-        static_cast<float>(cs::core::SolarSystem::getRadii(getCenterName())[0]));
++    mShader.SetUniform(mShader.GetUniformLocation(""uRadii""), static_cast<float>(mRadii[0]),
++        static_cast<float>(mRadii[1]), static_cast<float>(mRadii[2]));
+     mShader.SetUniform(
+         mShader.GetUniformLocation(""uTime""), static_cast<float>(mCurrTime - mStartExistence));
+     mShader.SetUniform("
+cosmoscout/cosmoscout-vr,186,f6475f3,plugins/csp-sharad/src/Sharad.hpp,modified,2,0,2,"@@ -67,6 +67,8 @@ class Sharad : public cs::scene::CelestialObject, public IVistaOpenGLDraw {
+   VistaVertexArrayObject mVAO;
+   VistaBufferObject      mVBO;
+ 
++  glm::dvec3 mRadii;
++
+   int    mSamples;
+   double mCurrTime   = -1.0;
+   double mSceneScale = -1.0;"
+cosmoscout/cosmoscout-vr,186,f6475f3,resources/gui/js/apis/utils.js,modified,1,1,2,"@@ -83,7 +83,7 @@ class UtilsApi extends IApi {
+     number = Number(number);
+ 
+     // Set very small numbers to 0
+-    if (number < Number.EPSILON && -Number.EPSILON > number) {
++    if (number < Number.EPSILON && number > -Number.EPSILON) {
+       number = 0;
+     }
+ "

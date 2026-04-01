@@ -1,0 +1,762 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+secondlife/viewer,1200,3b04c12,indra/newview/llagent.cpp,modified,54,32,86,"@@ -1453,48 +1453,70 @@ LLVector3 LLAgent::getReferenceUpVector()
+ 	return up_vector;
+ }
+ 
+-
++#pragma optimize("""", off)
+ // Radians, positive is forward into ground
+ //-----------------------------------------------------------------------------
+ // pitch()
+ //-----------------------------------------------------------------------------
+ void LLAgent::pitch(F32 angle)
+ {
+-	// don't let user pitch if pointed almost all the way down or up
++    if (fabs(angle) <= 1e-4)
++        return;
+ 
+-	// A dot B = mag(A) * mag(B) * cos(angle between A and B)
+-	// so... cos(angle between A and B) = A dot B / mag(A) / mag(B)
+-	//                                  = A dot B for unit vectors
++    LLCoordFrame newCoordFrame(mFrameAgent);
++    newCoordFrame.pitch(angle);
+ 
+-	LLVector3 skyward = getReferenceUpVector();
++    // don't let user pitch if rotated 180 degree around the vertical axis
++    if ((newCoordFrame.getXAxis()[VX] * mFrameAgent.getXAxis()[VX] < 0) &&
++        (newCoordFrame.getXAxis()[VY] * mFrameAgent.getXAxis()[VY] < 0))
++        return;
+ 
+-	// clamp pitch to limits
+-	if (angle >= 0.f)
+-	{
+-		const F32 look_down_limit = 179.f * DEG_TO_RAD;
+-		F32 angle_from_skyward = acos(mFrameAgent.getAtAxis() * skyward);
+-		if (angle_from_skyward + angle > look_down_limit)
+-		{
+-			angle = look_down_limit - angle_from_skyward;
+-		}
+-	}
+-	else if (angle < 0.f)
+-	{
+-		const F32 look_up_limit = 5.f * DEG_TO_RAD;
+-		const LLVector3& viewer_camera_pos = LLViewerCamera::getInstance()->getOrigin();
+-		LLVector3 agent_focus_pos = getPosAgentFromGlobal(gAgentCamera.calcFocusPositionTargetGlobal());
+-		LLVector3 look_dir = agent_focus_pos - viewer_camera_pos;
+-		F32 angle_from_skyward = angle_between(look_dir, skyward);
+-		if (angle_from_skyward + angle < look_up_limit)
+-		{
+-			angle = look_up_limit - angle_from_skyward;
+-		}
+-	}
++    // don't let user pitch if pointed almost all the way down or up
++    if (gAgentCamera.getCameraMode() == CAMERA_MODE_THIRD_PERSON ||
++        gAgentCamera.getCameraMode() == CAMERA_MODE_MOUSELOOK)
++    {
++        // A dot B = mag(A) * mag(B) * cos(angle between A and B)
++        // so... cos(angle between A and B) = A dot B / mag(A) / mag(B)
++        //                                  = A dot B for unit vectors
++        LLVector3 skyward = getReferenceUpVector();
++        F32 agent_angle_from_skyward = acos(newCoordFrame.getAtAxis() * skyward) * RAD_TO_DEG;
+ 
+-	if (fabs(angle) > 1e-4)
+-	{
+-		mFrameAgent.pitch(angle);
+-	}
++        F32 min_angle = 1;
++        F32 max_angle = 179;
++        bool check_camera = false;
++
++        if (gAgentCamera.getCameraMode() == CAMERA_MODE_THIRD_PERSON)
++        {
++            if (gAgentCamera.getCameraPreset() == CAMERA_PRESET_REAR_VIEW)
++            {
++                min_angle = 10;
++                check_camera = true;
++            }
++            else if (gAgentCamera.getCameraPreset() == CAMERA_PRESET_GROUP_VIEW)
++            {
++                min_angle = 10;
++                max_angle = 170;
++                check_camera = true;
++            }
++        }
++
++        if ((angle < 0 && agent_angle_from_skyward < min_angle) ||
++            (angle > 0 && agent_angle_from_skyward > max_angle))
++            return;
++
++        if (check_camera)
++        {
++            const LLVector3& viewer_camera_pos = LLViewerCamera::getInstance()->getOrigin();
++            LLVector3 agent_focus_pos = getPosAgentFromGlobal(gAgentCamera.calcFocusPositionTargetGlobal());
++            LLVector3 look_dir = agent_focus_pos - viewer_camera_pos;
++            F32 camera_angle_from_skyward = angle_between(look_dir, skyward) * RAD_TO_DEG;
++            if ((angle < 0 && camera_angle_from_skyward < min_angle) ||
++                (angle > 0 && camera_angle_from_skyward > max_angle))
++                return;
++        }
++    }
++
++	mFrameAgent = newCoordFrame;
+ }
+ 
+ "
+secondlife/viewer,1200,3b04c12,indra/newview/llagentcamera.h,modified,1,0,1,"@@ -112,6 +112,7 @@ class LLAgentCamera
+ 	//--------------------------------------------------------------------
+ public:
+ 	void switchCameraPreset(ECameraPreset preset);
++	ECameraPreset getCameraPreset() const { return mCameraPreset; }
+ 	/** Determines default camera offset depending on the current camera preset */
+ 	LLVector3 getCameraOffsetInitial();
+ 	/** Determines default focus offset depending on the current camera preset */"
+secondlife/viewer,1200,2fb93f7,indra/newview/llagent.cpp,modified,53,32,85,"@@ -1453,48 +1453,69 @@ LLVector3 LLAgent::getReferenceUpVector()
+ 	return up_vector;
+ }
+ 
+-
+ // Radians, positive is forward into ground
+ //-----------------------------------------------------------------------------
+ // pitch()
+ //-----------------------------------------------------------------------------
+ void LLAgent::pitch(F32 angle)
+ {
+-	// don't let user pitch if pointed almost all the way down or up
++    if (fabs(angle) <= 1e-4)
++        return;
+ 
+-	// A dot B = mag(A) * mag(B) * cos(angle between A and B)
+-	// so... cos(angle between A and B) = A dot B / mag(A) / mag(B)
+-	//                                  = A dot B for unit vectors
++    LLCoordFrame newCoordFrame(mFrameAgent);
++    newCoordFrame.pitch(angle);
+ 
+-	LLVector3 skyward = getReferenceUpVector();
++    // don't let user pitch if rotated 180 degree around the vertical axis
++    if ((newCoordFrame.getXAxis()[VX] * mFrameAgent.getXAxis()[VX] < 0) &&
++        (newCoordFrame.getXAxis()[VY] * mFrameAgent.getXAxis()[VY] < 0))
++        return;
+ 
+-	// clamp pitch to limits
+-	if (angle >= 0.f)
+-	{
+-		const F32 look_down_limit = 179.f * DEG_TO_RAD;
+-		F32 angle_from_skyward = acos(mFrameAgent.getAtAxis() * skyward);
+-		if (angle_from_skyward + angle > look_down_limit)
+-		{
+-			angle = look_down_limit - angle_from_skyward;
+-		}
+-	}
+-	else if (angle < 0.f)
+-	{
+-		const F32 look_up_limit = 5.f * DEG_TO_RAD;
+-		const LLVector3& viewer_camera_pos = LLViewerCamera::getInstance()->getOrigin();
+-		LLVector3 agent_focus_pos = getPosAgentFromGlobal(gAgentCamera.calcFocusPositionTargetGlobal());
+-		LLVector3 look_dir = agent_focus_pos - viewer_camera_pos;
+-		F32 angle_from_skyward = angle_between(look_dir, skyward);
+-		if (angle_from_skyward + angle < look_up_limit)
+-		{
+-			angle = look_up_limit - angle_from_skyward;
+-		}
+-	}
++    // don't let user pitch if pointed almost all the way down or up
++    if (gAgentCamera.getCameraMode() == CAMERA_MODE_THIRD_PERSON ||
++        gAgentCamera.getCameraMode() == CAMERA_MODE_MOUSELOOK)
++    {
++        // A dot B = mag(A) * mag(B) * cos(angle between A and B)
++        // so... cos(angle between A and B) = A dot B / mag(A) / mag(B)
++        //                                  = A dot B for unit vectors
++        LLVector3 skyward = getReferenceUpVector();
++        F32 agent_angle_from_skyward = acos(newCoordFrame.getAtAxis() * skyward) * RAD_TO_DEG;
+ 
+-	if (fabs(angle) > 1e-4)
+-	{
+-		mFrameAgent.pitch(angle);
+-	}
++        F32 min_angle = 1;
++        F32 max_angle = 179;
++        bool check_camera = false;
++
++        if (gAgentCamera.getCameraMode() == CAMERA_MODE_THIRD_PERSON)
++        {
++            if (gAgentCamera.getCameraPreset() == CAMERA_PRESET_REAR_VIEW)
++            {
++                min_angle = 10;
++                check_camera = true;
++            }
++            else if (gAgentCamera.getCameraPreset() == CAMERA_PRESET_GROUP_VIEW)
++            {
++                min_angle = 10;
++                max_angle = 170;
++                check_camera = true;
++            }
++        }
++
++        if ((angle < 0 && agent_angle_from_skyward < min_angle) ||
++            (angle > 0 && agent_angle_from_skyward > max_angle))
++            return;
++
++        if (check_camera)
++        {
++            const LLVector3& viewer_camera_pos = LLViewerCamera::getInstance()->getOrigin();
++            LLVector3 agent_focus_pos = getPosAgentFromGlobal(gAgentCamera.calcFocusPositionTargetGlobal());
++            LLVector3 look_dir = agent_focus_pos - viewer_camera_pos;
++            F32 camera_angle_from_skyward = angle_between(look_dir, skyward) * RAD_TO_DEG;
++            if ((angle < 0 && camera_angle_from_skyward < min_angle) ||
++                (angle > 0 && camera_angle_from_skyward > max_angle))
++                return;
++        }
++    }
++
++	mFrameAgent = newCoordFrame;
+ }
+ 
+ "
+secondlife/viewer,1200,2fb93f7,indra/newview/llagentcamera.h,modified,1,0,1,"@@ -112,6 +112,7 @@ class LLAgentCamera
+ 	//--------------------------------------------------------------------
+ public:
+ 	void switchCameraPreset(ECameraPreset preset);
++	ECameraPreset getCameraPreset() const { return mCameraPreset; }
+ 	/** Determines default camera offset depending on the current camera preset */
+ 	LLVector3 getCameraOffsetInitial();
+ 	/** Determines default focus offset depending on the current camera preset */"
+secondlife/viewer,1200,c5a009e,indra/newview/llagent.cpp,modified,51,32,83,"@@ -1453,48 +1453,67 @@ LLVector3 LLAgent::getReferenceUpVector()
+ 	return up_vector;
+ }
+ 
+-
+ // Radians, positive is forward into ground
+ //-----------------------------------------------------------------------------
+ // pitch()
+ //-----------------------------------------------------------------------------
+ void LLAgent::pitch(F32 angle)
+ {
+-	// don't let user pitch if pointed almost all the way down or up
++    if (fabs(angle) <= 1e-4)
++        return;
+ 
+-	// A dot B = mag(A) * mag(B) * cos(angle between A and B)
+-	// so... cos(angle between A and B) = A dot B / mag(A) / mag(B)
+-	//                                  = A dot B for unit vectors
++    LLCoordFrame newCoordFrame(mFrameAgent);
++    newCoordFrame.pitch(angle);
+ 
+-	LLVector3 skyward = getReferenceUpVector();
++    // don't let user pitch if rotated 180 degree around the vertical axis
++    if ((newCoordFrame.getXAxis()[VX] * mFrameAgent.getXAxis()[VX] < 0) &&
++        (newCoordFrame.getXAxis()[VY] * mFrameAgent.getXAxis()[VY] < 0))
++        return;
+ 
+-	// clamp pitch to limits
+-	if (angle >= 0.f)
+-	{
+-		const F32 look_down_limit = 179.f * DEG_TO_RAD;
+-		F32 angle_from_skyward = acos(mFrameAgent.getAtAxis() * skyward);
+-		if (angle_from_skyward + angle > look_down_limit)
+-		{
+-			angle = look_down_limit - angle_from_skyward;
+-		}
+-	}
+-	else if (angle < 0.f)
+-	{
+-		const F32 look_up_limit = 5.f * DEG_TO_RAD;
+-		const LLVector3& viewer_camera_pos = LLViewerCamera::getInstance()->getOrigin();
+-		LLVector3 agent_focus_pos = getPosAgentFromGlobal(gAgentCamera.calcFocusPositionTargetGlobal());
+-		LLVector3 look_dir = agent_focus_pos - viewer_camera_pos;
+-		F32 angle_from_skyward = angle_between(look_dir, skyward);
+-		if (angle_from_skyward + angle < look_up_limit)
+-		{
+-			angle = look_up_limit - angle_from_skyward;
+-		}
+-	}
++    // don't let user pitch if pointed almost all the way down or up
++    LLVector3 skyward = getReferenceUpVector();
+ 
+-	if (fabs(angle) > 1e-4)
+-	{
+-		mFrameAgent.pitch(angle);
+-	}
++    // A dot B = mag(A) * mag(B) * cos(angle between A and B)
++    // so... cos(angle between A and B) = A dot B / mag(A) / mag(B)
++    //                                  = A dot B for unit vectors
++    F32 agent_camera_angle_from_skyward = acos(newCoordFrame.getAtAxis() * skyward) * RAD_TO_DEG;
++
++    F32 min_angle = 1;
++    F32 max_angle = 179;
++    bool check_viewer_camera = false;
++
++    if (gAgentCamera.getCameraMode() == CAMERA_MODE_THIRD_PERSON)
++    {
++        // These values of min_angle and max_angle are obtained purely empirically
++        if (gAgentCamera.getCameraPreset() == CAMERA_PRESET_REAR_VIEW)
++        {
++            min_angle = 10;
++            check_viewer_camera = true;
++        }
++        else if (gAgentCamera.getCameraPreset() == CAMERA_PRESET_GROUP_VIEW)
++        {
++            min_angle = 10;
++            max_angle = 170;
++            check_viewer_camera = true;
++        }
++    }
++
++    if ((angle < 0 && agent_camera_angle_from_skyward < min_angle) ||
++        (angle > 0 && agent_camera_angle_from_skyward > max_angle))
++        return;
++
++    if (check_viewer_camera)
++    {
++        const LLVector3& viewer_camera_pos = LLViewerCamera::getInstance()->getOrigin();
++        LLVector3 agent_focus_pos = getPosAgentFromGlobal(gAgentCamera.calcFocusPositionTargetGlobal());
++        LLVector3 look_dir = agent_focus_pos - viewer_camera_pos;
++        F32 viewer_camera_angle_from_skyward = angle_between(look_dir, skyward) * RAD_TO_DEG;
++        if ((angle < 0 && viewer_camera_angle_from_skyward < min_angle) ||
++            (angle > 0 && viewer_camera_angle_from_skyward > max_angle))
++            return;
++    }
++
++	mFrameAgent = newCoordFrame;
+ }
+ 
+ "
+secondlife/viewer,1200,c5a009e,indra/newview/llagentcamera.h,modified,1,0,1,"@@ -112,6 +112,7 @@ class LLAgentCamera
+ 	//--------------------------------------------------------------------
+ public:
+ 	void switchCameraPreset(ECameraPreset preset);
++	ECameraPreset getCameraPreset() const { return mCameraPreset; }
+ 	/** Determines default camera offset depending on the current camera preset */
+ 	LLVector3 getCameraOffsetInitial();
+ 	/** Determines default focus offset depending on the current camera preset */"
+secondlife/viewer,1200,1fa3bf4,indra/newview/llagent.cpp,modified,51,32,83,"@@ -1453,48 +1453,67 @@ LLVector3 LLAgent::getReferenceUpVector()
+ 	return up_vector;
+ }
+ 
+-
+ // Radians, positive is forward into ground
+ //-----------------------------------------------------------------------------
+ // pitch()
+ //-----------------------------------------------------------------------------
+ void LLAgent::pitch(F32 angle)
+ {
+-	// don't let user pitch if pointed almost all the way down or up
++    if (fabs(angle) <= 1e-4)
++        return;
+ 
+-	// A dot B = mag(A) * mag(B) * cos(angle between A and B)
+-	// so... cos(angle between A and B) = A dot B / mag(A) / mag(B)
+-	//                                  = A dot B for unit vectors
++    LLCoordFrame newCoordFrame(mFrameAgent);
++    newCoordFrame.pitch(angle);
+ 
+-	LLVector3 skyward = getReferenceUpVector();
++    // don't let user pitch if rotated 180 degree around the vertical axis
++    if ((newCoordFrame.getXAxis()[VX] * mFrameAgent.getXAxis()[VX] < 0) &&
++        (newCoordFrame.getXAxis()[VY] * mFrameAgent.getXAxis()[VY] < 0))
++        return;
+ 
+-	// clamp pitch to limits
+-	if (angle >= 0.f)
+-	{
+-		const F32 look_down_limit = 179.f * DEG_TO_RAD;
+-		F32 angle_from_skyward = acos(mFrameAgent.getAtAxis() * skyward);
+-		if (angle_from_skyward + angle > look_down_limit)
+-		{
+-			angle = look_down_limit - angle_from_skyward;
+-		}
+-	}
+-	else if (angle < 0.f)
+-	{
+-		const F32 look_up_limit = 5.f * DEG_TO_RAD;
+-		const LLVector3& viewer_camera_pos = LLViewerCamera::getInstance()->getOrigin();
+-		LLVector3 agent_focus_pos = getPosAgentFromGlobal(gAgentCamera.calcFocusPositionTargetGlobal());
+-		LLVector3 look_dir = agent_focus_pos - viewer_camera_pos;
+-		F32 angle_from_skyward = angle_between(look_dir, skyward);
+-		if (angle_from_skyward + angle < look_up_limit)
+-		{
+-			angle = look_up_limit - angle_from_skyward;
+-		}
+-	}
++    // don't let user pitch if pointed almost all the way down or up
++    LLVector3 skyward = getReferenceUpVector();
+ 
+-	if (fabs(angle) > 1e-4)
+-	{
+-		mFrameAgent.pitch(angle);
+-	}
++    // A dot B = mag(A) * mag(B) * cos(angle between A and B)
++    // so... cos(angle between A and B) = A dot B / mag(A) / mag(B)
++    //                                  = A dot B for unit vectors
++    F32 agent_camera_angle_from_skyward = acos(newCoordFrame.getAtAxis() * skyward) * RAD_TO_DEG;
++
++    F32 min_angle = 1;
++    F32 max_angle = 179;
++    bool check_viewer_camera = false;
++
++    if (gAgentCamera.getCameraMode() == CAMERA_MODE_THIRD_PERSON)
++    {
++        // These values of min_angle and max_angle are obtained purely empirically
++        if (gAgentCamera.getCameraPreset() == CAMERA_PRESET_REAR_VIEW)
++        {
++            min_angle = 10;
++            check_viewer_camera = true;
++        }
++        else if (gAgentCamera.getCameraPreset() == CAMERA_PRESET_GROUP_VIEW)
++        {
++            min_angle = 10;
++            max_angle = 170;
++            check_viewer_camera = true;
++        }
++    }
++
++    if ((angle < 0 && agent_camera_angle_from_skyward < min_angle) ||
++        (angle > 0 && agent_camera_angle_from_skyward > max_angle))
++        return;
++
++    if (check_viewer_camera)
++    {
++        const LLVector3& viewer_camera_pos = LLViewerCamera::getInstance()->getOrigin();
++        LLVector3 agent_focus_pos = getPosAgentFromGlobal(gAgentCamera.calcFocusPositionTargetGlobal());
++        LLVector3 look_dir = agent_focus_pos - viewer_camera_pos;
++        F32 viewer_camera_angle_from_skyward = angle_between(look_dir, skyward) * RAD_TO_DEG;
++        if ((angle < 0 && viewer_camera_angle_from_skyward < min_angle) ||
++            (angle > 0 && viewer_camera_angle_from_skyward > max_angle))
++            return;
++    }
++
++	mFrameAgent = newCoordFrame;
+ }
+ 
+ "
+secondlife/viewer,1200,1fa3bf4,indra/newview/llagentcamera.h,modified,1,0,1,"@@ -112,6 +112,7 @@ class LLAgentCamera
+ 	//--------------------------------------------------------------------
+ public:
+ 	void switchCameraPreset(ECameraPreset preset);
++	ECameraPreset getCameraPreset() const { return mCameraPreset; }
+ 	/** Determines default camera offset depending on the current camera preset */
+ 	LLVector3 getCameraOffsetInitial();
+ 	/** Determines default focus offset depending on the current camera preset */"
+secondlife/viewer,1200,565146b,indra/newview/llagent.cpp,modified,51,32,83,"@@ -1453,48 +1453,67 @@ LLVector3 LLAgent::getReferenceUpVector()
+ 	return up_vector;
+ }
+ 
+-
+ // Radians, positive is forward into ground
+ //-----------------------------------------------------------------------------
+ // pitch()
+ //-----------------------------------------------------------------------------
+ void LLAgent::pitch(F32 angle)
+ {
+-	// don't let user pitch if pointed almost all the way down or up
++    if (fabs(angle) <= 1e-4)
++        return;
+ 
+-	// A dot B = mag(A) * mag(B) * cos(angle between A and B)
+-	// so... cos(angle between A and B) = A dot B / mag(A) / mag(B)
+-	//                                  = A dot B for unit vectors
++    LLCoordFrame newCoordFrame(mFrameAgent);
++    newCoordFrame.pitch(angle);
+ 
+-	LLVector3 skyward = getReferenceUpVector();
++    // don't let user pitch if rotated 180 degree around the vertical axis
++    if ((newCoordFrame.getXAxis()[VX] * mFrameAgent.getXAxis()[VX] < 0) &&
++        (newCoordFrame.getXAxis()[VY] * mFrameAgent.getXAxis()[VY] < 0))
++        return;
+ 
+-	// clamp pitch to limits
+-	if (angle >= 0.f)
+-	{
+-		const F32 look_down_limit = 179.f * DEG_TO_RAD;
+-		F32 angle_from_skyward = acos(mFrameAgent.getAtAxis() * skyward);
+-		if (angle_from_skyward + angle > look_down_limit)
+-		{
+-			angle = look_down_limit - angle_from_skyward;
+-		}
+-	}
+-	else if (angle < 0.f)
+-	{
+-		const F32 look_up_limit = 5.f * DEG_TO_RAD;
+-		const LLVector3& viewer_camera_pos = LLViewerCamera::getInstance()->getOrigin();
+-		LLVector3 agent_focus_pos = getPosAgentFromGlobal(gAgentCamera.calcFocusPositionTargetGlobal());
+-		LLVector3 look_dir = agent_focus_pos - viewer_camera_pos;
+-		F32 angle_from_skyward = angle_between(look_dir, skyward);
+-		if (angle_from_skyward + angle < look_up_limit)
+-		{
+-			angle = look_up_limit - angle_from_skyward;
+-		}
+-	}
++    // don't let user pitch if pointed almost all the way down or up
++    LLVector3 skyward = getReferenceUpVector();
+ 
+-	if (fabs(angle) > 1e-4)
+-	{
+-		mFrameAgent.pitch(angle);
+-	}
++    // A dot B = mag(A) * mag(B) * cos(angle between A and B)
++    // so... cos(angle between A and B) = A dot B / mag(A) / mag(B)
++    //                                  = A dot B for unit vectors
++    F32 agent_camera_angle_from_skyward = acos(newCoordFrame.getAtAxis() * skyward) * RAD_TO_DEG;
++
++    F32 min_angle = 1;
++    F32 max_angle = 179;
++    bool check_viewer_camera = false;
++
++    if (gAgentCamera.getCameraMode() == CAMERA_MODE_THIRD_PERSON)
++    {
++        // These values of min_angle and max_angle are obtained purely empirically
++        if (gAgentCamera.getCameraPreset() == CAMERA_PRESET_REAR_VIEW)
++        {
++            min_angle = 10;
++            check_viewer_camera = true;
++        }
++        else if (gAgentCamera.getCameraPreset() == CAMERA_PRESET_GROUP_VIEW)
++        {
++            min_angle = 10;
++            max_angle = 170;
++            check_viewer_camera = true;
++        }
++    }
++
++    if ((angle < 0 && agent_camera_angle_from_skyward < min_angle) ||
++        (angle > 0 && agent_camera_angle_from_skyward > max_angle))
++        return;
++
++    if (check_viewer_camera)
++    {
++        const LLVector3& viewer_camera_pos = LLViewerCamera::getInstance()->getOrigin();
++        LLVector3 agent_focus_pos = getPosAgentFromGlobal(gAgentCamera.calcFocusPositionTargetGlobal());
++        LLVector3 look_dir = agent_focus_pos - viewer_camera_pos;
++        F32 viewer_camera_angle_from_skyward = angle_between(look_dir, skyward) * RAD_TO_DEG;
++        if ((angle < 0 && viewer_camera_angle_from_skyward < min_angle) ||
++            (angle > 0 && viewer_camera_angle_from_skyward > max_angle))
++            return;
++    }
++
++	mFrameAgent = newCoordFrame;
+ }
+ 
+ "
+secondlife/viewer,1200,565146b,indra/newview/llagentcamera.h,modified,1,0,1,"@@ -112,6 +112,7 @@ class LLAgentCamera
+ 	//--------------------------------------------------------------------
+ public:
+ 	void switchCameraPreset(ECameraPreset preset);
++	ECameraPreset getCameraPreset() const { return mCameraPreset; }
+ 	/** Determines default camera offset depending on the current camera preset */
+ 	LLVector3 getCameraOffsetInitial();
+ 	/** Determines default focus offset depending on the current camera preset */"
+secondlife/viewer,1200,9acb3a7,indra/newview/llagent.cpp,modified,51,32,83,"@@ -1453,48 +1453,67 @@ LLVector3 LLAgent::getReferenceUpVector()
+ 	return up_vector;
+ }
+ 
+-
+ // Radians, positive is forward into ground
+ //-----------------------------------------------------------------------------
+ // pitch()
+ //-----------------------------------------------------------------------------
+ void LLAgent::pitch(F32 angle)
+ {
+-	// don't let user pitch if pointed almost all the way down or up
++    if (fabs(angle) <= 1e-4)
++        return;
+ 
+-	// A dot B = mag(A) * mag(B) * cos(angle between A and B)
+-	// so... cos(angle between A and B) = A dot B / mag(A) / mag(B)
+-	//                                  = A dot B for unit vectors
++    LLCoordFrame newCoordFrame(mFrameAgent);
++    newCoordFrame.pitch(angle);
+ 
+-	LLVector3 skyward = getReferenceUpVector();
++    // don't let user pitch if rotated 180 degree around the vertical axis
++    if ((newCoordFrame.getXAxis()[VX] * mFrameAgent.getXAxis()[VX] < 0) &&
++        (newCoordFrame.getXAxis()[VY] * mFrameAgent.getXAxis()[VY] < 0))
++        return;
+ 
+-	// clamp pitch to limits
+-	if (angle >= 0.f)
+-	{
+-		const F32 look_down_limit = 179.f * DEG_TO_RAD;
+-		F32 angle_from_skyward = acos(mFrameAgent.getAtAxis() * skyward);
+-		if (angle_from_skyward + angle > look_down_limit)
+-		{
+-			angle = look_down_limit - angle_from_skyward;
+-		}
+-	}
+-	else if (angle < 0.f)
+-	{
+-		const F32 look_up_limit = 5.f * DEG_TO_RAD;
+-		const LLVector3& viewer_camera_pos = LLViewerCamera::getInstance()->getOrigin();
+-		LLVector3 agent_focus_pos = getPosAgentFromGlobal(gAgentCamera.calcFocusPositionTargetGlobal());
+-		LLVector3 look_dir = agent_focus_pos - viewer_camera_pos;
+-		F32 angle_from_skyward = angle_between(look_dir, skyward);
+-		if (angle_from_skyward + angle < look_up_limit)
+-		{
+-			angle = look_up_limit - angle_from_skyward;
+-		}
+-	}
++    // don't let user pitch if pointed almost all the way down or up
++    LLVector3 skyward = getReferenceUpVector();
+ 
+-	if (fabs(angle) > 1e-4)
+-	{
+-		mFrameAgent.pitch(angle);
+-	}
++    // A dot B = mag(A) * mag(B) * cos(angle between A and B)
++    // so... cos(angle between A and B) = A dot B / mag(A) / mag(B)
++    //                                  = A dot B for unit vectors
++    F32 agent_camera_angle_from_skyward = acos(newCoordFrame.getAtAxis() * skyward) * RAD_TO_DEG;
++
++    F32 min_angle = 1;
++    F32 max_angle = 179;
++    bool check_viewer_camera = false;
++
++    if (gAgentCamera.getCameraMode() == CAMERA_MODE_THIRD_PERSON)
++    {
++        // These values of min_angle and max_angle are obtained purely empirically
++        if (gAgentCamera.getCameraPreset() == CAMERA_PRESET_REAR_VIEW)
++        {
++            min_angle = 10;
++            check_viewer_camera = true;
++        }
++        else if (gAgentCamera.getCameraPreset() == CAMERA_PRESET_GROUP_VIEW)
++        {
++            min_angle = 10;
++            max_angle = 170;
++            check_viewer_camera = true;
++        }
++    }
++
++    if ((angle < 0 && agent_camera_angle_from_skyward < min_angle) ||
++        (angle > 0 && agent_camera_angle_from_skyward > max_angle))
++        return;
++
++    if (check_viewer_camera)
++    {
++        const LLVector3& viewer_camera_pos = LLViewerCamera::getInstance()->getOrigin();
++        LLVector3 agent_focus_pos = getPosAgentFromGlobal(gAgentCamera.calcFocusPositionTargetGlobal());
++        LLVector3 look_dir = agent_focus_pos - viewer_camera_pos;
++        F32 viewer_camera_angle_from_skyward = angle_between(look_dir, skyward) * RAD_TO_DEG;
++        if ((angle < 0 && viewer_camera_angle_from_skyward < min_angle) ||
++            (angle > 0 && viewer_camera_angle_from_skyward > max_angle))
++            return;
++    }
++
++	mFrameAgent = newCoordFrame;
+ }
+ 
+ "
+secondlife/viewer,1200,9acb3a7,indra/newview/llagentcamera.h,modified,1,0,1,"@@ -112,6 +112,7 @@ class LLAgentCamera
+ 	//--------------------------------------------------------------------
+ public:
+ 	void switchCameraPreset(ECameraPreset preset);
++	ECameraPreset getCameraPreset() const { return mCameraPreset; }
+ 	/** Determines default camera offset depending on the current camera preset */
+ 	LLVector3 getCameraOffsetInitial();
+ 	/** Determines default focus offset depending on the current camera preset */"
+secondlife/viewer,1200,0d4f52b,indra/newview/llagent.cpp,modified,51,32,83,"@@ -1453,48 +1453,67 @@ LLVector3 LLAgent::getReferenceUpVector()
+ 	return up_vector;
+ }
+ 
+-
+ // Radians, positive is forward into ground
+ //-----------------------------------------------------------------------------
+ // pitch()
+ //-----------------------------------------------------------------------------
+ void LLAgent::pitch(F32 angle)
+ {
+-	// don't let user pitch if pointed almost all the way down or up
++    if (fabs(angle) <= 1e-4)
++        return;
+ 
+-	// A dot B = mag(A) * mag(B) * cos(angle between A and B)
+-	// so... cos(angle between A and B) = A dot B / mag(A) / mag(B)
+-	//                                  = A dot B for unit vectors
++    LLCoordFrame newCoordFrame(mFrameAgent);
++    newCoordFrame.pitch(angle);
+ 
+-	LLVector3 skyward = getReferenceUpVector();
++    // don't let user pitch if rotated 180 degree around the vertical axis
++    if ((newCoordFrame.getXAxis()[VX] * mFrameAgent.getXAxis()[VX] < 0) &&
++        (newCoordFrame.getXAxis()[VY] * mFrameAgent.getXAxis()[VY] < 0))
++        return;
+ 
+-	// clamp pitch to limits
+-	if (angle >= 0.f)
+-	{
+-		const F32 look_down_limit = 179.f * DEG_TO_RAD;
+-		F32 angle_from_skyward = acos(mFrameAgent.getAtAxis() * skyward);
+-		if (angle_from_skyward + angle > look_down_limit)
+-		{
+-			angle = look_down_limit - angle_from_skyward;
+-		}
+-	}
+-	else if (angle < 0.f)
+-	{
+-		const F32 look_up_limit = 5.f * DEG_TO_RAD;
+-		const LLVector3& viewer_camera_pos = LLViewerCamera::getInstance()->getOrigin();
+-		LLVector3 agent_focus_pos = getPosAgentFromGlobal(gAgentCamera.calcFocusPositionTargetGlobal());
+-		LLVector3 look_dir = agent_focus_pos - viewer_camera_pos;
+-		F32 angle_from_skyward = angle_between(look_dir, skyward);
+-		if (angle_from_skyward + angle < look_up_limit)
+-		{
+-			angle = look_up_limit - angle_from_skyward;
+-		}
+-	}
++    // don't let user pitch if pointed almost all the way down or up
++    LLVector3 skyward = getReferenceUpVector();
+ 
+-	if (fabs(angle) > 1e-4)
+-	{
+-		mFrameAgent.pitch(angle);
+-	}
++    // A dot B = mag(A) * mag(B) * cos(angle between A and B)
++    // so... cos(angle between A and B) = A dot B / mag(A) / mag(B)
++    //                                  = A dot B for unit vectors
++    F32 agent_camera_angle_from_skyward = acos(newCoordFrame.getAtAxis() * skyward) * RAD_TO_DEG;
++
++    F32 min_angle = 1;
++    F32 max_angle = 179;
++    bool check_viewer_camera = false;
++
++    if (gAgentCamera.getCameraMode() == CAMERA_MODE_THIRD_PERSON)
++    {
++        // These values of min_angle and max_angle are obtained purely empirically
++        if (gAgentCamera.getCameraPreset() == CAMERA_PRESET_REAR_VIEW)
++        {
++            min_angle = 10;
++            check_viewer_camera = true;
++        }
++        else if (gAgentCamera.getCameraPreset() == CAMERA_PRESET_GROUP_VIEW)
++        {
++            min_angle = 10;
++            max_angle = 170;
++            check_viewer_camera = true;
++        }
++    }
++
++    if ((angle < 0 && agent_camera_angle_from_skyward < min_angle) ||
++        (angle > 0 && agent_camera_angle_from_skyward > max_angle))
++        return;
++
++    if (check_viewer_camera)
++    {
++        const LLVector3& viewer_camera_pos = LLViewerCamera::getInstance()->getOrigin();
++        LLVector3 agent_focus_pos = getPosAgentFromGlobal(gAgentCamera.calcFocusPositionTargetGlobal());
++        LLVector3 look_dir = agent_focus_pos - viewer_camera_pos;
++        F32 viewer_camera_angle_from_skyward = angle_between(look_dir, skyward) * RAD_TO_DEG;
++        if ((angle < 0 && viewer_camera_angle_from_skyward < min_angle) ||
++            (angle > 0 && viewer_camera_angle_from_skyward > max_angle))
++            return;
++    }
++
++	mFrameAgent = newCoordFrame;
+ }
+ 
+ "
+secondlife/viewer,1200,0d4f52b,indra/newview/llagentcamera.h,modified,1,0,1,"@@ -112,6 +112,7 @@ class LLAgentCamera
+ 	//--------------------------------------------------------------------
+ public:
+ 	void switchCameraPreset(ECameraPreset preset);
++	ECameraPreset getCameraPreset() const { return mCameraPreset; }
+ 	/** Determines default camera offset depending on the current camera preset */
+ 	LLVector3 getCameraOffsetInitial();
+ 	/** Determines default focus offset depending on the current camera preset */"

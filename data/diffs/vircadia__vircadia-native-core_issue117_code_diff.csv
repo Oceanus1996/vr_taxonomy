@@ -1,0 +1,60 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vircadia/vircadia-native-core,117,3b5eb2d,interface/resources/qml/dialogs/preferences/SpinBoxPreference.qml,modified,1,0,1,"@@ -51,6 +51,7 @@ Preference {
+             decimals: preference.decimals
+             minimumValue: preference.min
+             maximumValue: preference.max
++            realStepSize: preference.step
+             width: 100
+             anchors {
+                 verticalCenter: parent.verticalCenter"
+vircadia/vircadia-native-core,117,3b5eb2d,interface/src/ui/PreferencesDialog.cpp,modified,2,2,4,"@@ -465,8 +465,8 @@ void setupPreferences() {
+         auto preference = new SpinnerPreference(VR_MOVEMENT, ""User real-world height (meters)"", getter, setter);
+         preference->setMin(1.0f);
+         preference->setMax(2.2f);
+-        preference->setDecimals(3);
+-        preference->setStep(0.001f);
++        preference->setDecimals(2);
++        preference->setStep(0.01);
+         preferences->addPreference(preference);
+     }
+ "
+vircadia/vircadia-native-core,117,3b5eb2d,libraries/shared/src/Preferences.h,modified,8,8,16,"@@ -152,8 +152,8 @@ class FloatPreference : public Preference {
+     Q_PROPERTY(float value READ getValue WRITE setValue NOTIFY valueChanged)
+     Q_PROPERTY(float min READ getMin CONSTANT)
+     Q_PROPERTY(float max READ getMax CONSTANT)
+-    Q_PROPERTY(float step READ getStep CONSTANT)
+-    Q_PROPERTY(float decimals READ getDecimals CONSTANT)
++    Q_PROPERTY(double step READ getStep CONSTANT)
++    Q_PROPERTY(uint decimals READ getDecimals CONSTANT)
+ 
+ public:
+     using Getter = std::function<float()>;
+@@ -178,11 +178,11 @@ class FloatPreference : public Preference {
+     float getMax() const { return _max; }
+     void setMax(float max) { _max = max; };
+ 
+-    float getStep() const { return _step; }
+-    void setStep(float step) { _step = step; };
++    double getStep() const { return _step; }
++    void setStep(double step) { _step = step; };
+ 
+-    float getDecimals() const { return _decimals; }
+-    void setDecimals(float decimals) { _decimals = decimals; };
++    uint getDecimals() const { return _decimals; }
++    void setDecimals(uint decimals) { _decimals = decimals; };
+ 
+ signals:
+     void valueChanged();
+@@ -194,10 +194,10 @@ class FloatPreference : public Preference {
+     const Getter _getter;
+     const Setter _setter;
+ 
+-    float _decimals { 0 };
++    uint _decimals { 0 };
+     float _min { 0 };
+     float _max { 1 };
+-    float _step { 0.1f };
++    double _step { 0.1 };
+ };
+ 
+ class IntPreference : public Preference {"

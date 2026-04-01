@@ -1,0 +1,404 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+Samsung/GearVRf,812,9981292a0d546202b149aab24aa54ea4ee15192f,GVRf/Framework/framework/src/main/java/org/gearvrf/GVRCameraRigBase.java,modified,1,1,2,"@@ -103,7 +103,7 @@ protected void init(GVRContext gvrContext) {
+     }
+ 
+     protected abstract void addHeadTransformObject();
+-    protected final GVRSceneObject getHeadTransformObject() {
++    public final GVRSceneObject getHeadTransformObject() {
+         return headTransformObject;
+     }
+ "
+Samsung/GearVRf,812,9981292a0d546202b149aab24aa54ea4ee15192f,GVRf/Framework/framework/src/main/java/org/gearvrf/GVRFrustumPicker.java,modified,11,11,22,"@@ -20,7 +20,6 @@
+ import java.util.List;
+ import java.util.concurrent.locks.ReentrantLock;
+ 
+-import org.gearvrf.utility.Log;
+ import org.joml.FrustumCuller;
+ import org.joml.Matrix4f;
+ import org.joml.Vector3f;
+@@ -61,13 +60,12 @@
+  *  - onNoPick(GVRPicker)      called once when nothing is picked.
+  *
+  * @see IPickEvents
+- * @see GVRSceneObject.attachCollider
++ * @see GVRSceneObject.attachComponent
+  * @see GVRCollider
+- * @see GVRCollider.setEnable
++ * @see GVRComponent.setEnable
+  * @see GVRPickedObject
+  */
+ public class GVRFrustumPicker extends GVRPicker {
+-    private static final String TAG = Log.tag(GVRFrustumPicker.class);
+     protected FrustumCuller mCuller;
+     protected float[] mProjMatrix = null;
+     protected Matrix4f mProjection = null;
+@@ -191,8 +189,6 @@ public void doPick()
+         if ((owner != null) && (mProjMatrix != null))
+         {
+             Matrix4f view_matrix = owner.getTransform().getModelMatrix4f();
+-            Vector4f center = new Vector4f(0, 0, 0, 1);
+-            Vector4f dir = new Vector4f(0, 0, 1, 0);
+ 
+             view_matrix.invert();
+             if (mCuller != null)
+@@ -212,13 +208,17 @@ public void doPick()
+                 {
+                     GVRSceneObject sceneObj = hit.hitObject;
+                     GVRSceneObject.BoundingVolume bv = sceneObj.getBoundingVolume();
+-                    center.set(bv.center, 1);
++                    Vector4f center = new Vector4f(bv.center.x, bv.center.y, bv.center.z, 1);
++                    Vector4f p = new Vector4f(bv.center.x, bv.center.y, bv.center.z + bv.radius, 1);
++                    float radius;
++
+                     center.mul(view_matrix);
+-                    dir.z = bv.radius;
+-                    dir.mul(view_matrix);
+-                    if (!mCuller.isSphereInsideFrustum(center.x, center.y, center.z, dir.length()))
++                    p.mul(view_matrix);
++                    p.sub(center, p);
++                    p.w = 0;
++                    radius = p.length();
++                    if (!mCuller.isSphereInsideFrustum(center.x, center.y, center.z, radius))
+                     {
+-                        Log.d(""Picker"", ""Picker: outside %s (%f, %f, %f) %f"", sceneObj.getName(), center.x, center.y, center.z, dir.length());
+                         picked[i] = null;
+                     }
+                 }"
+Samsung/GearVRf,812,9981292a0d546202b149aab24aa54ea4ee15192f,GVRf/Framework/framework/src/main/java/org/gearvrf/GVRPicker.java,modified,12,21,33,"@@ -43,10 +43,8 @@
+  * The picked object contains the collider instance hit, the distance from the
+  * camera and the hit position.
+  * 
+- * If it is attached to a scene object, the picker maintains the list of currently
+- * picked objects which can be obtains with getPicked() and continually
+- * updates it each frame. (If it is not attached to a scene object,
+- * you must manually call doPick() to cause pick events to be generated.)
++ * The picker maintains the list of currently picked objects
++ * (which can be obtains with getPicked()) and continually updates it each frame.
+  *
+  * In this mode, when the ray from the scene object hits a pickable object,
+  * the picker generates one or more pick events (IPickEvents interface)
+@@ -71,21 +69,23 @@ public class GVRPicker extends GVRBehavior {
+     private Vector3f mRayDirection = new Vector3f(0, 0, -1);
+     private float[] mPickRay = new float[6];
+ 
+-    protected boolean mHasChanged;
+     protected GVRScene mScene;
+     protected GVRPickedObject[] mPicked = null;
+ 
+     /**
+      * Construct a picker which picks from a given scene.
++     * Instantiating the picker will cause it to scan the scene
++     * every frame and generate pick events based on the result.
++     *
+      * @param context context that owns the scene
+      * @param scene scene containing the scene objects to pick from
+      */
+     public GVRPicker(GVRContext context, GVRScene scene)
+     {
+         super(context);
+         mScene = scene;
+-        mHasChanged = true;
+         mType = getComponentType();
++        startListening();
+     }
+ 
+     static public long getComponentType() { return TYPE_PICKMANAGER; }
+@@ -139,10 +139,6 @@ public final GVRPickedObject[] getPicked()
+     /*
+      * Sets the origin and direction of the pick ray.
+      * 
+-     * If the picker is not attached to a scene object but you
+-     * still want to get pick events, you must set the pick
+-     * ray manually with this function and call {@link doPick}.
+-     * 
+      * @param ox    X coordinate of origin.
+      * @param oy    Y coordinate of origin.
+      * @param oz    Z coordinate of origin.
+@@ -169,31 +165,25 @@ public void setPickRay(float ox, float oy, float oz, float dx, float dy, float d
+         mRayDirection.x = dx;
+         mRayDirection.y = dy;
+         mRayDirection.z = dz;
+-        mHasChanged = true;
+     }
+     
+     public void onDrawFrame(float frameTime)
+     {
+-        if (isEnabled() && ((getOwnerObject() != null) || mHasChanged))
++        if (isEnabled())
+         {
+             doPick();
+-            mHasChanged = false;
+-        }        
++        }
+     }
+     
+     /**
+      * Scans the scene graph to collect picked items
+      * and generates appropriate pick events.
+      * This function is called automatically by
+-     * the picker if it is attached to a scene object.
+-     * You can instantiate the picker and not attach
+-     * it to a scene object. In this case you must
+-     * manually set the pick ray and call doPick()
+-     * to generate the pick events.
++     * the picker every frame.
+      * @see IPickEvents 
+      * @see pickObjects
+      */
+-    public void doPick()
++    protected void doPick()
+     {
+         GVRSceneObject owner = getOwnerObject();
+         GVRTransform trans = (owner != null) ? owner.getTransform() : null;
+@@ -552,7 +542,8 @@ public static final GVRPickedObject[] pickObjects(GVRScene scene, GVRTransform t
+                                                       float dy, float dz) {
+         sFindObjectsLock.lock();
+         try {
+-            final GVRPickedObject[] result = NativePicker.pickObjects(scene.getNative(), trans.getNative(), ox, oy, oz, dx, dy, dz);
++            long nativeTrans = (trans != null) ? trans.getNative() : 0L;
++            final GVRPickedObject[] result = NativePicker.pickObjects(scene.getNative(), nativeTrans, ox, oy, oz, dx, dy, dz);
+             return result;
+         } finally {
+             sFindObjectsLock.unlock();"
+Samsung/GearVRf,812,9981292a0d546202b149aab24aa54ea4ee15192f,GVRf/Framework/framework/src/main/jni/engine/picker/picker.cpp,modified,9,9,18,"@@ -27,6 +27,7 @@
+ #include ""objects/scene.h""
+ #include ""objects/scene_object.h""
+ #include ""objects/components/camera_rig.h""
++#include ""objects/components/perspective_camera.h""
+ #include ""objects/components/render_data.h""
+ #include ""objects/components/mesh_collider.h""
+ 
+@@ -45,13 +46,14 @@ Picker::~Picker() {
+  * This function is not thread-safe because it relies on a static
+  * array of colliders which could be updated by a different thread.
+  */
+-void Picker::pickScene(Scene* scene, std::vector<ColliderData>& picklist, Transform* t, float ox,
+-        float oy, float oz, float dx, float dy, float dz) {
++void Picker::pickScene(Scene* scene, std::vector<ColliderData>& picklist, Transform* t,
++         float ox, float oy, float oz, float dx, float dy, float dz) {
+     glm::vec3 ray_start(ox, oy, oz);
+     glm::vec3 ray_dir(dx, dy, dz);
+     const std::vector<Component*>& colliders = scene->lockColliders();
++    const glm::mat4& model_matrix = t->getModelMatrix();
+ 
+-    Collider::transformRay(t->getModelMatrix(), ray_start, ray_dir);
++    Collider::transformRay(model_matrix, ray_start, ray_dir);
+     for (auto it = colliders.begin(); it != colliders.end(); ++it) {
+         Collider* collider = reinterpret_cast<Collider*>(*it);
+         SceneObject* owner = collider->owner_object();
+@@ -81,7 +83,7 @@ float Picker::pickSceneObject(const SceneObject* scene_object,
+     if (scene_object->collider() != 0) {
+         Collider* collider = scene_object->collider();
+         if (collider->enabled()) {
+-            glm::mat4 view_matrix = camera_rig->getHeadTransform()->getModelMatrix();
++            glm::mat4 view_matrix = camera_rig->center_camera()->getViewMatrix();
+             glm::vec3 rayStart(0, 0, 0);
+             glm::vec3 rayDir(0, 0, -1);
+ 
+@@ -104,20 +106,19 @@ float Picker::pickSceneObject(const SceneObject* scene_object,
+  * to the ray to put it into mesh coordinates.
+  */
+ glm::vec3 Picker::pickSceneObjectAgainstBoundingBox(
+-        const SceneObject* scene_object, float ox, float oy, float oz, float dx,
+-        float dy, float dz) {
++        const SceneObject* scene_object, float ox, float oy, float oz, float dx, float dy, float dz) {
+     RenderData* rd = scene_object->render_data();
+ 
+     if ((rd == NULL) || (rd->mesh() == NULL)) {
+         return glm::vec3(std::numeric_limits<float>::infinity());
+     }
+-    glm::mat4 model_matrix = scene_object->transform()->getModelMatrix();
++    glm::mat4 model_inverse = glm::affineInverse(scene_object->transform()->getModelMatrix());
+     const BoundingVolume& bounds = rd->mesh()->getBoundingVolume();
+     glm::vec3 rayStart(ox, oy, oz);
+     glm::vec3 rayDir(dx, dy, dz);
+ 
+     glm::normalize(rayDir);
+-    Collider::transformRay(model_matrix, rayStart, rayDir);
++    Collider::transformRay(model_inverse, rayStart, rayDir);
+     ColliderData data = MeshCollider::isHit(bounds, rayStart, rayDir);
+     if (data.IsHit) {
+         return data.HitPosition;
+@@ -133,7 +134,6 @@ glm::vec3 Picker::pickSceneObjectAgainstBoundingBox(
+  */
+ void Picker::pickVisible(Scene* scene, Transform* t, std::vector<ColliderData>& picklist) {
+     const std::vector<Component*>& colliders = scene->lockColliders();
+-    glm::mat4 view_matrix = glm::affineInverse(t->getModelMatrix());
+ 
+     for (auto it = colliders.begin(); it != colliders.end(); ++it) {
+         Collider* collider = reinterpret_cast<Collider*>(*it);"
+Samsung/GearVRf,812,9981292a0d546202b149aab24aa54ea4ee15192f,GVRf/Framework/framework/src/main/jni/engine/picker/picker_jni.cpp,modified,2,2,4,"@@ -52,8 +52,8 @@ Java_org_gearvrf_NativePicker_pickScene(JNIEnv * env,
+         jfloat dy, jfloat dz) {
+     Scene* scene = reinterpret_cast<Scene*>(jscene);
+     std::vector<ColliderData> colliders;
+-
+-    Picker::pickScene(scene, colliders, (Transform*) NULL, ox, oy, oz, dx, dy, dz);
++    Transform* t = scene->main_camera_rig()->getHeadTransform();
++    Picker::pickScene(scene, colliders, t, ox, oy, oz, dx, dy, dz);
+     jlongArray jcolliders = env->NewLongArray(colliders.size());
+     jlong* ptrArray = env->GetLongArrayElements(jcolliders, 0);
+     jlong* ptrs = ptrArray;"
+Samsung/GearVRf,812,9981292a0d546202b149aab24aa54ea4ee15192f,GVRf/Framework/framework/src/main/jni/objects/components/collider.cpp,modified,6,7,13,"@@ -31,16 +31,15 @@ namespace gvr {
+  * @param rayStart origin of ray in world coordinates
+  * @param rayDir directin of ray in world coordinates
+  *
+- * To put the ray in model coordinates it is pre-mulitplied by
+- * the inverse of the model mtraix
++ * To put the ray in model coordinates it is pre-mulitplied by the input matrix
+  */
+ void Collider::transformRay(const glm::mat4& model_matrix, glm::vec3& rayStart, glm::vec3& rayDir)
+ {
+-    glm::mat4 model_inverse = glm::affineInverse(model_matrix);
+-    glm::vec4 start = model_inverse * glm::vec4(rayStart, 1);
+-    glm::vec4 dir(rayDir, 0);
+-    dir = model_inverse * dir;
+-    rayDir = glm::vec3(glm::normalize(dir));
++    glm::vec4 start = model_matrix * glm::vec4(rayStart, 1);
++    glm::vec4 end = model_matrix * glm::vec4(rayStart + rayDir, 1);
++
++    rayDir = glm::vec3(end - start);
++    rayDir = glm::normalize(rayDir);
+     rayStart = glm::vec3(start);
+ }
+ "
+Samsung/GearVRf,812,9981292a0d546202b149aab24aa54ea4ee15192f,GVRf/Framework/framework/src/main/jni/objects/components/collider_group.cpp,modified,4,2,6,"@@ -21,6 +21,8 @@
+ #include ""collider_group.h""
+ 
+ #include ""objects/scene_object.h""
++#include ""glm/gtc/matrix_inverse.hpp""
++
+ 
+ namespace gvr {
+ 
+@@ -49,11 +51,11 @@ ColliderData ColliderGroup::isHit(const glm::vec3& rayStart, const glm::vec3& ra
+         Transform* transform = ownerObject->transform();
+         finalHit.ObjectHit = ownerObject;
+         if (nullptr != transform) {
+-            glm::mat4 model_matrix = transform->getModelMatrix();
++            glm::mat4 model_inverse = glm::affineInverse(transform->getModelMatrix());
+             glm::vec3 O(rayStart);
+             glm::vec3 D(rayDir);
+ 
+-            transformRay(model_matrix, O, D);
++            transformRay(model_inverse, O, D);
+             for (auto it = colliders_.begin(); it != colliders_.end(); ++it) {
+                 ColliderData currentHit = (*it)->isHit(O, D);
+                 if (currentHit.IsHit && (currentHit.Distance < finalHit.Distance)) {"
+Samsung/GearVRf,812,9981292a0d546202b149aab24aa54ea4ee15192f,GVRf/Framework/framework/src/main/jni/objects/components/mesh_collider.cpp,modified,10,15,25,"@@ -22,6 +22,7 @@
+ 
+ #include ""glm/glm.hpp""
+ #include ""glm/gtc/matrix_inverse.hpp""
++#include ""glm/gtx/intersect.hpp""
+ #include ""util/gvr_log.h""
+ #include ""mesh_collider.h""
+ #include ""render_data.h""
+@@ -79,7 +80,9 @@ ColliderData MeshCollider::isHit(const glm::vec3& rayStart, const glm::vec3& ray
+     {
+         RenderData* rd = owner->render_data();
+         model_matrix = owner->transform()->getModelMatrix();
+-        transformRay(model_matrix, O, D);
++        glm::mat4 model_inverse = glm::affineInverse(model_matrix);
++
++        transformRay(model_inverse, O, D);
+         if ((mesh == NULL) && (rd != NULL))
+         {
+             mesh = rd->mesh();
+@@ -105,6 +108,7 @@ ColliderData MeshCollider::isHit(const glm::vec3& rayStart, const glm::vec3& ray
+         if (data.IsHit)
+         {
+             glm::vec4 hitPos = model_matrix * glm::vec4(data.HitPosition, 1);
++
+             data.Distance = glm::distance(rayStart, glm::vec3(hitPos));
+             data.ColliderHit = this;
+             data.ObjectHit = owner;
+@@ -125,32 +129,24 @@ ColliderData MeshCollider::isHit(const Mesh& mesh, const glm::vec3& rayStart, co
+     ColliderData data;
+     if (vertices.size() > 0)
+     {
+-        //http://en.wikipedia.org/wiki/M%C3%B6ller%E2%80%93Trumbore_intersection_algorithm
+         for (int i = 0; i < mesh.triangles().size(); i += 3)
+         {
+             glm::vec3 V1(vertices[mesh.triangles()[i]]);
+             glm::vec3 V2(vertices[mesh.triangles()[i + 1]]);
+             glm::vec3 V3(vertices[mesh.triangles()[i + 2]]);
+-            glm::vec3 hitPos;
+-            float     distance = rayTriangleIntersect(hitPos, rayStart, rayDir,
+-                                                      (const glm::vec3&) V1, (const glm::vec3&) V2, (const glm::vec3&) V3);
+ 
+             /*
+              * Compute the point where the ray penetrates the mesh in
+              * the coordinate space of the mesh. The hit point will
+-             * be in mesh coordinates as will the distance. We must
+-             * recompute the distance in world coordinates.
++             * be in mesh coordinates as will the distance.
+              */
+-            if (distance <= 0)
+-            {
+-                continue;
+-            }
+-            distance = glm::distance(rayStart, hitPos);
+-            if (distance < data.Distance)
++            glm::vec3 hitPos;
++            float distance = rayTriangleIntersect(hitPos, rayStart, rayDir, V1, V2, V3);
++            if ((distance > 0) && (distance < data.Distance))
+             {
+                 data.IsHit = true;
+                 data.HitPosition = hitPos;
+-             }
++            }
+          }
+       }
+       return data;
+@@ -210,5 +206,4 @@ ColliderData MeshCollider::isHit(const Mesh& mesh, const glm::vec3& rayStart, co
+         }
+         return -1;
+     }
+-
+ }"
+Samsung/GearVRf,812,9981292a0d546202b149aab24aa54ea4ee15192f,GVRf/Framework/framework/src/main/jni/objects/components/mesh_collider.h,modified,2,3,5,"@@ -44,8 +44,6 @@ class MeshCollider: public Collider {
+     }
+ 
+     ColliderData isHit(const glm::vec3& rayStart, const glm::vec3& rayDir);
+-    static float rayTriangleIntersect(glm::vec3& hitPos, const glm::vec3& rayStart, const glm::vec3& rayDir,
+-                                      const glm::vec3& V1, const glm::vec3& V2, const glm::vec3& V3);
+     static ColliderData isHit(const BoundingVolume& bounds, const glm::vec3& rayStart, const glm::vec3& rayDir);
+ 
+ private:
+@@ -54,7 +52,8 @@ class MeshCollider: public Collider {
+     MeshCollider& operator=(const MeshCollider& mesh_collider);
+     MeshCollider& operator=(MeshCollider&& mesh_collider);
+     static ColliderData isHit(const Mesh& mesh, const glm::vec3& rayStart, const glm::vec3& rayDir);
+-
++    static float rayTriangleIntersect(glm::vec3& hitPos, const glm::vec3& rayStart, const glm::vec3& rayDir,
++                               const glm::vec3& V1, const glm::vec3& V2, const glm::vec3& V3);
+ private:
+     bool useMeshBounds_;
+     Mesh* mesh_;"
+Samsung/GearVRf,812,9981292a0d546202b149aab24aa54ea4ee15192f,GVRf/Framework/framework/src/main/jni/objects/components/sphere_collider.cpp,modified,6,5,11,"@@ -115,21 +115,22 @@ ColliderData SphereCollider::isHit(const glm::mat4& model_matrix, const glm::vec
+      */
+     glm::vec3 start(rayStart);
+     glm::vec3 dir(rayDir);
+-    transformRay(model_matrix, start, dir);
++    glm::mat4 model_inverse = glm::affineInverse(model_matrix);
+ 
++    transformRay(model_inverse, start, dir);
+     /*
+      * Compute the intersection of the ray and sphere in local coordinates.
+      * The distance will be in world coordinates.
+      */
+-    glm::vec3 hitPoint;
++    glm::vec3 hitPos;
+     glm::vec3 hitNormal;
+ 
+-    if (glm::intersectRaySphere(start, dir, center, radius, hitPoint, hitNormal))
++    if (glm::intersectRaySphere(start, dir, center, radius, hitPos, hitNormal))
+     {
+-        glm::vec4 p = glm::vec4(hitPoint, 1);
++        glm::vec4 p = glm::vec4(hitPos, 1);
+ 
+         hitData.IsHit = true;
+-        hitData.HitPosition = hitPoint;
++        hitData.HitPosition = hitPos;
+         p = model_matrix * p;
+         hitData.Distance = glm::length(rayStart - glm::vec3(p));
+     }"

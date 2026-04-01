@@ -1,0 +1,375 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe,201,cd91193f448b5b6306fd4f33ef8981f412227b5f,elements/a-event/a-event.js,modified,36,16,52,"@@ -88,7 +88,7 @@ function getTargetData (type) {
+ 
+ function targetListener (e) {
+   // Not to be confused with the `target` we are modifying below.
+-  var eventFiredOnEl = e.target;
++  var eventFiredOnEl = getRealNode(e.target);
+   var eventType = e.type;
+ 
+   var allTargetData = getTargetData(eventType, eventFiredOnEl);
+@@ -163,13 +163,16 @@ window.addEventListener('stateremoved', function (e) {
+   }
+ });
+ 
++/**
++ * Returns the true node (useful for a wrapped object in a template instance).
++ */
+ function getRealNode (el) {
+-  if (el.isAEvent) {
+-    return getRealNode(el.parentNode);
++  if (el.tagName.toLowerCase() === 'a-root') {
++    return el.parentNode;
++  }
++  if (!el.previousElementSibling && !el.nextElementSibling && el.closest('a-root')) {
++    return el.closest('a-root').parentNode;
+   }
+-  // if (el.root) {
+-  //   return el.root;
+-  // }
+   return el;
+ }
+ 
+@@ -181,11 +184,21 @@ var AEvent = registerElement(
+       {
+         attachedCallback: {
+           value: function () {
+-            this.isAEvent = true;
+-            this.type = this.type || this.getAttribute('type');
+-            this.target = this.target || this.getAttribute('target');
+-            this.sceneEl = utils.$('a-scene');
+-            this.attachEventListener();
++            var self = this;
++            var el = self.parentNode;
++            if (el.isNode) {
++              attach();
++            } else {
++              el.addEventListener('nodeready', attach);
++            }
++
++            function attach () {
++              self.isAEvent = true;
++              self.type = self.type || self.getAttribute('type');
++              self.target = self.target || self.getAttribute('target');
++              self.sceneEl = utils.$('a-scene');
++              self.attachEventListener();
++            }
+           },
+           writable: window.debug
+         },
+@@ -212,15 +225,18 @@ var AEvent = registerElement(
+         attachEventListener: {
+           value: function () {
+             var self = this;
++            var sourceEl;
++            var targetEl;
++            var listener;
+ 
+             // TODO: Land `on` PR in `aframe-core`: https://github.com/MozVR/aframe-core/pull/330
+ 
+             this.sceneEl = this.sceneEl || utils.$('a-scene');
+ 
+             if (self.type === 'load') {
+-              var sourceEl = getRealNode(self.parentNode);
+-              var targetEl = self.target ? utils.$(self.target) : getRealNode(self.parentNode);
+-              var listener = function (e) {
++              sourceEl = getRealNode(self.parentNode);
++              targetEl = self.target ? utils.$(self.target) : sourceEl;
++              listener = function (e) {
+                 if (e.target !== sourceEl) { return; }
+                 updateAttrs(targetEl, self.attributes);
+               };
+@@ -232,9 +248,13 @@ var AEvent = registerElement(
+               return;
+             }
+ 
++            listener = targetListener;
++
+             // We must delegate events because the target nodes may not exist yet.
+-            addDelegatedListener(this.sceneEl, self.type, targetListener);
+-            recordTargetData(self.type, getRealNode(self.parentNode), self.target || self.parentNode, self.attributes);
++            addDelegatedListener(this.sceneEl, self.type, listener);
++            sourceEl = getRealNode(self.parentNode);
++            targetEl = self.target || sourceEl;
++            recordTargetData(self.type, sourceEl, targetEl, self.attributes);
+           },
+           writable: window.debug
+         }"
+aframevr/aframe,201,cd91193f448b5b6306fd4f33ef8981f412227b5f,elements/lib/register-template.js,modified,1,1,2,"@@ -87,7 +87,7 @@ module.exports = function (tagName) {
+                 if (key in this.attributeBlacklist) {
+                   // Move these unique identifier attributes over
+                   // (i.e., `id`, `name`, `class`, `target`).
+-                  this.removeAttribute(key);
++                  delete templateAttrs[key];
+                 }
+                 var value = templateAttrs[key];
+                 var component = this.components[key];"
+aframevr/aframe,201,c5091bb81492f59adc3c17540c1adf36612fa26d,elements/a-event/a-event.js,modified,36,16,52,"@@ -88,7 +88,7 @@ function getTargetData (type) {
+ 
+ function targetListener (e) {
+   // Not to be confused with the `target` we are modifying below.
+-  var eventFiredOnEl = e.target;
++  var eventFiredOnEl = getRealNode(e.target);
+   var eventType = e.type;
+ 
+   var allTargetData = getTargetData(eventType, eventFiredOnEl);
+@@ -163,13 +163,16 @@ window.addEventListener('stateremoved', function (e) {
+   }
+ });
+ 
++/**
++ * Returns the true node (useful for a wrapped object in a template instance).
++ */
+ function getRealNode (el) {
+-  if (el.isAEvent) {
+-    return getRealNode(el.parentNode);
++  if (el.tagName.toLowerCase() === 'a-root') {
++    return el.parentNode;
++  }
++  if (!el.previousElementSibling && !el.nextElementSibling && el.closest('a-root')) {
++    return el.closest('a-root').parentNode;
+   }
+-  // if (el.root) {
+-  //   return el.root;
+-  // }
+   return el;
+ }
+ 
+@@ -181,11 +184,21 @@ var AEvent = registerElement(
+       {
+         attachedCallback: {
+           value: function () {
+-            this.isAEvent = true;
+-            this.type = this.type || this.getAttribute('type');
+-            this.target = this.target || this.getAttribute('target');
+-            this.sceneEl = utils.$('a-scene');
+-            this.attachEventListener();
++            var self = this;
++            var el = self.parentNode;
++            if (el.isNode) {
++              attach();
++            } else {
++              el.addEventListener('nodeready', attach);
++            }
++
++            function attach () {
++              self.isAEvent = true;
++              self.type = self.type || self.getAttribute('type');
++              self.target = self.target || self.getAttribute('target');
++              self.sceneEl = utils.$('a-scene');
++              self.attachEventListener();
++            }
+           },
+           writable: window.debug
+         },
+@@ -212,15 +225,18 @@ var AEvent = registerElement(
+         attachEventListener: {
+           value: function () {
+             var self = this;
++            var sourceEl;
++            var targetEl;
++            var listener;
+ 
+             // TODO: Land `on` PR in `aframe-core`: https://github.com/MozVR/aframe-core/pull/330
+ 
+             this.sceneEl = this.sceneEl || utils.$('a-scene');
+ 
+             if (self.type === 'load') {
+-              var sourceEl = getRealNode(self.parentNode);
+-              var targetEl = self.target ? utils.$(self.target) : getRealNode(self.parentNode);
+-              var listener = function (e) {
++              sourceEl = getRealNode(self.parentNode);
++              targetEl = self.target ? utils.$(self.target) : sourceEl;
++              listener = function (e) {
+                 if (e.target !== sourceEl) { return; }
+                 updateAttrs(targetEl, self.attributes);
+               };
+@@ -232,9 +248,13 @@ var AEvent = registerElement(
+               return;
+             }
+ 
++            listener = targetListener;
++
+             // We must delegate events because the target nodes may not exist yet.
+-            addDelegatedListener(this.sceneEl, self.type, targetListener);
+-            recordTargetData(self.type, getRealNode(self.parentNode), self.target || self.parentNode, self.attributes);
++            addDelegatedListener(this.sceneEl, self.type, listener);
++            sourceEl = getRealNode(self.parentNode);
++            targetEl = self.target || sourceEl;
++            recordTargetData(self.type, sourceEl, targetEl, self.attributes);
+           },
+           writable: window.debug
+         }"
+aframevr/aframe,201,c5091bb81492f59adc3c17540c1adf36612fa26d,elements/lib/register-template.js,modified,1,1,2,"@@ -87,7 +87,7 @@ module.exports = function (tagName) {
+                 if (key in this.attributeBlacklist) {
+                   // Move these unique identifier attributes over
+                   // (i.e., `id`, `name`, `class`, `target`).
+-                  this.removeAttribute(key);
++                  delete templateAttrs[key];
+                 }
+                 var value = templateAttrs[key];
+                 var component = this.components[key];"
+aframevr/aframe,201,70766867aef57d4ad372e406b8b97d32949ffb37,.nojekyll,added,0,0,0,
+aframevr/aframe,201,70766867aef57d4ad372e406b8b97d32949ffb37,README.md,modified,26,7,33,"@@ -11,6 +11,8 @@ __NOTE:__ For folks creating scenes and third-party components, we recommend get
+ 
+ Proceed below if you would like to use the minimal set of primitive components available here in __`vr-markup`__.
+ 
++### Downloads
++
+ To get started, simply include these files in your project:
+ 
+ * [`vr-markup.min.js`](dist/vr-markup.min.js)
+@@ -26,6 +28,15 @@ __Also, be sure to check out these awesome examples:__
+ * [__`vr-markup`__ examples](http://mozvr.github.io/vr-markup/examples/) ([source](https://github.com/MozVR/vr-markup/tree/master/examples/))
+ * [__`vr-components`__ examples](http://mozvr.github.io/vr-components/examples/) ([source](https://github.com/MozVR/vr-components/tree/master/examples/))
+ 
++### npm
++
++First install from npm:
++
++    npm install @mozvr/vr-markup
++
++And in your Browserify/Webpack modules, simply require the module:
++
++    require('@mozvr/vr-markup')
+ 
+ ## Local installation
+ 
+@@ -38,6 +49,10 @@ __Also, be sure to check out these awesome examples:__
+     npm start
+     open http://localhost:9001/examples/
+ 
++If you'd like to hack on this project and don't have access to the npm repos, contact @cvan and he'll give you the info you'll need to log in:
++
++    npm login
++
+ ## Running tests
+ 
+     npm test
+@@ -54,19 +69,22 @@ __Also, be sure to check out these awesome examples:__
+ 
+ Assuming you want to publish a version of `dev` to the private package for testing:
+ 
+-    npm run dist
+     npm run release
+ 
+-## Publishing the latest official `dist` to GitHub Pages
++## Updating `dist` files
++
++    npm run dist
++    git commit -am 'Bump dist'
+ 
+-    npm run gh-pages
++## Publishing to GitHub Pages
+ 
+-## Publishing the latest changes to GitHub Pages
++To publish to __https://mozvr.github.io/vr-markup/__:
+ 
+-    npm run dist
+-    npm run gh-pages
++    npm run ghpages
++
++To publish to __https://cvan.github.io/vr-markup/__:
+ 
+-## Publishing to Production
++    npm run ghpages cvan
+ 
+ ### Releasing and tagging a **production** release to GitHub
+ 
+@@ -75,6 +93,7 @@ Assuming `dev` has already been reviewed and merged to `master`:
+     git checkout master
+     git pull --rebase
+     npm run dist
++    git commit -am 'Version 0.1.8'
+     git tag 0.1.8
+     git push origin head --tags
+ "
+aframevr/aframe,201,70766867aef57d4ad372e406b8b97d32949ffb37,package.json,modified,7,8,15,"@@ -32,17 +32,16 @@
+   },
+   ""scripts"": {
+     ""start"": ""npm run dev"",
+-    ""dev"": ""npm run build && budo src/vr-markup.js:build/vr-markup.js --debug --verbose --live --port 9001 --onupdate 'semistandard -v $(git ls-files '*.js') | snazzy' -- -r ./src/vr-markup.js:vr-markup | garnish -v"",
+-    ""build"": ""mkdir -p build && browserify -r ./src/vr-markup.js:vr-markup -o build/vr-markup.js --debug"",
+-    ""dist"": ""rm -rf dist/ && mkdir -p dist/ && npm run dist:js:dev && npm run dist:js:min && npm run dist:css:dev && npm run dist:css:min &&  git commit -am 'Bump dist'"",
+-    ""dist:js:dev"": ""browserify -r ./src/vr-markup.js:vr-markup -o dist/vr-markup.js --debug"",
+-    ""dist:js:min"": ""browserify -r ./src/vr-markup.js:vr-markup | uglifyjs -cm > dist/vr-markup.min.js"",
++    ""dev"": ""npm run build && budo src/vr-markup.js:build/vr-markup.js --debug --verbose --live --port 9001 --onupdate 'semistandard -v $(git ls-files '*.js') | snazzy' -- ./src/vr-markup.js -s 'vr-markup' | garnish -v"",
++    ""build"": ""mkdir -p build && browserify ./src/vr-markup.js -s 'vr-markup' -o build/vr-markup.js --debug"",
++    ""dist"": ""rm -rf dist/ && mkdir -p dist/ && npm run dist:js:dev && npm run dist:js:min && npm run dist:css:dev && npm run dist:css:min"",
++    ""dist:js:dev"": ""browserify ./src/vr-markup.js -s 'vr-markup' -o dist/vr-markup.js --debug"",
++    ""dist:js:min"": ""browserify ./src/vr-markup.js -s 'vr-markup' -o dist/vr-markup.min.js"",
+     ""dist:css:dev"": ""cp ./style/vr-markup.css dist/."",
+     ""dist:css:min"": ""crass ./style/vr-markup.css > dist/vr-markup.min.css"",
+-    ""replacepaths"": ""replace '../build/vr-markup.js' '../dist/vr-markup.min.js' gh-pages/ -r && replace '../style/vr-markup.css' '../dist/vr-markup.min.css' gh-pages/ -r"",
++    ""preghpages"": ""npm run dist && rm -rf gh-pages && mkdir -p gh-pages && cp -r {.nojekyll,dist,lib,examples,index.html} gh-pages/. && git checkout dist/ && replace 'build/vr-markup.js' 'dist/vr-markup.min.js' gh-pages/ -r --silent && replace 'style/vr-markup.css' 'dist/vr-markup.min.css' gh-pages/ -r --silent"",
++    ""ghpages"": ""node ./scripts/gh-pages"",
+     ""gh-pages"": ""npm run ghpages"",
+-    ""preghpages"": ""mkdir -p gh-pages && cp -r {dist,examples,lib,index.html} gh-pages/."",
+-    ""ghpages"": ""gh-pages -d gh-pages && rm -rf gh-pages"",
+     ""release"": ""npm version patch --minor && npm login && npm publish"",
+     ""test"": ""karma start ./test/karma.conf.js"",
+     ""test:ci"": ""karma start ./test/karma.conf.js --single-run"","
+aframevr/aframe,201,70766867aef57d4ad372e406b8b97d32949ffb37,scripts/gh-pages.js,added,63,0,63,"@@ -0,0 +1,63 @@
++#!/usr/bin/env node
++
++/**
++ * Fancy script to deploy to GitHub Pages
++ * ======================================
++ *
++ * Sample usage
++ * ------------
++ *
++ * % node ./scripts/gh-pages
++ * gh-pages -d dist -r git@github.com:MozVR/vr-markup.git
++ *
++ * % node ./scripts/gh-pages cvan
++ * gh-pages -d dist -r git@github.com:cvan/vr-markup.git
++ *
++ * % node ./scripts/gh-pages git@github.com:dmarcos/vr-markup.git
++ * gh-pages -d dist -r git@github.com:dmarcos/vr-markup.git
++ *
++ */
++
++var spawn = require('child_process').spawn;
++
++var ghpages = require('gh-pages');
++var path = require('path');
++
++var repo = {
++  username: 'MozVR',
++  name: 'vr-markup'
++};
++
++var arg = process.argv[2];
++if (arg) {
++  if (arg.indexOf(':') === -1) {
++    repo.username = arg;
++  } else {
++    repo.url = arg;
++    var usernameMatches = arg.match(':(.+)/');
++    if (usernameMatches) {
++      repo.username = usernameMatches[1];
++    }
++  }
++}
++
++if (!repo.url) {
++  repo.url = 'git@github.com:' + repo.username + '/' + repo.name + '.git';
++}
++
++repo.ghPagesUrl = 'https://' + repo.username + '.github.io/' + repo.name + '/';
++
++console.log('Publishing to', repo.url);
++
++ghpages.clean();  // Wipe out the checkout from scratch every time in case we change repos.
++ghpages.publish(path.join(process.cwd(), 'gh-pages'), {
++  repo: repo.url,
++  dotfiles: true,
++  logger: function (message) {
++    console.log(message);
++  }
++}, function () {
++  console.log('Published');
++  console.log(repo.ghPagesUrl);
++  spawn('open', [repo.ghPagesUrl]);
++});"

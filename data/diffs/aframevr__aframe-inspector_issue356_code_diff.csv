@@ -1,0 +1,259 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe-inspector,356,8a78c5ce7eb7ebb49fa5b5ac5f554443878d98d2,example/index.html,modified,1,1,2,"@@ -6,7 +6,7 @@
+     <script src=""js/aframe.min.js""></script>
+   </head>
+   <body>
+-    <a-scene>
++    <a-scene debug=""true"">
+       <a-assets>
+         <a-mixin id=""blue"" material=""color: #4CC3D9""></a-mixin>
+         <a-mixin id=""blueBox"" geometry=""primitive: box; depth: 2; height: 5; width: 1"" material=""color: #4CC3D9""></a-mixin>"
+aframevr/aframe-inspector,356,8a78c5ce7eb7ebb49fa5b5ac5f554443878d98d2,src/actions/entity.js,modified,10,12,22,"@@ -12,28 +12,26 @@ import DEFAULT_COMPONENTS from '../components/components/DefaultComponents';
+  * @param {string} property - Property name.
+  * @param {string|number} value - New value.
+  */
+-export function updateEntity (entity, componentName, propertyName, value) {
+-  var isSingle = isSingleProperty(components[entity.components[componentName].name].schema);
+-
+-  if (propertyName && !isSingle) {
+-    // Multi-prop.
++export function updateEntity (entity, propertyName, value) {
++  if (propertyName.indexOf('.') !== -1) {
++    // Multi-prop
++    var splitName = propertyName.split('.');
+     if (value === null || value === undefined) {
+       // Remove property.
+-      var parameters = entity.getAttribute(componentName);
+-      delete parameters[propertyName];
+-      entity.setAttribute(componentName, parameters);
++      var parameters = entity.getAttribute(splitName[0]);
++      delete parameters[splitName[1]];
++      entity.setAttribute(splitName[0], parameters);
+     } else {
+       // Set property.
+-      entity.setAttribute(componentName, propertyName, value);
++      entity.setAttribute(splitName[0], splitName[1], value);
+     }
+   } else {
+-    // Single-prop.
+     if (value === null || value === undefined) {
+       // Remove property.
+-      entity.removeAttribute(componentName);
++      entity.removeAttribute(propertyName);
+     } else {
+       // Set property.
+-      entity.setAttribute(componentName, value);
++      entity.setAttribute(propertyName, value);
+     }
+   }
+   Events.emit('objectchanged', entity.object3D);"
+aframevr/aframe-inspector,356,8a78c5ce7eb7ebb49fa5b5ac5f554443878d98d2,src/components/components/CommonComponents.js,modified,1,1,2,"@@ -49,7 +49,7 @@ export default class CommonComponents extends React.Component {
+       return (
+         <PropertyRow onChange={updateEntity} key={componentName} name={componentName}
+           showHelp={true} schema={schema} data={componentData.data}
+-          componentname={componentName} entity={entity}/>
++          isSingle={true} componentname={componentName} entity={entity}/>
+       );
+     });
+   }"
+aframevr/aframe-inspector,356,8a78c5ce7eb7ebb49fa5b5ac5f554443878d98d2,src/components/components/Component.js,modified,2,2,4,"@@ -77,15 +77,15 @@ export default class Component extends React.Component {
+       return (
+         <PropertyRow key={componentName} name={componentName} schema={schema}
+           data={componentData.data} componentname={componentName}
+-          entity={this.props.entity}/>
++          isSingle={true} entity={this.props.entity}/>
+       );
+     }
+ 
+     return Object.keys(componentData.schema).map(propertyName => (
+       <PropertyRow key={propertyName} name={propertyName}
+         schema={componentData.schema[propertyName]}
+         data={componentData.data[propertyName]} componentname={this.props.name}
+-        entity={this.props.entity}/>
++        isSingle={false} entity={this.props.entity}/>
+     ));
+   }
+ "
+aframevr/aframe-inspector,356,8a78c5ce7eb7ebb49fa5b5ac5f554443878d98d2,src/components/components/PropertyRow.js,modified,12,2,14,"@@ -8,6 +8,7 @@ import NumberWidget from '../widgets/NumberWidget';
+ import SelectWidget from '../widgets/SelectWidget';
+ import TextureWidget from '../widgets/TextureWidget';
+ import Vec3Widget from '../widgets/Vec3Widget';
++import Vec2Widget from '../widgets/Vec2Widget';
+ import {updateEntity} from '../../actions/entity';
+ import {getComponentDocsHtmlLink} from '../../actions/component';
+ 
+@@ -36,10 +37,16 @@ export default class PropertyRow extends React.Component {
+     const widgetProps = {
+       componentname: props.componentname,
+       entity: props.entity,
++      isSingle: props.isSingle,
+       name: props.name,
+       // Wrap updateEntity for tracking.
+-      onChange: function () {
+-        updateEntity.apply(this, arguments);
++      onChange: function (name, value) {
++        var propertyName = props.componentname;
++        if (!props.isSingle) {
++          propertyName +='.' + props.name;
++        }
++
++        updateEntity.apply(this, [props.entity, propertyName, value]);
+         gaTrackComponentUpdate();
+       },
+       value: props.data
+@@ -63,6 +70,9 @@ export default class PropertyRow extends React.Component {
+       case 'int': {
+         return <NumberWidget {...widgetProps} {...numberWidgetProps} precision={0}/>;
+       }
++      case 'vec2': {
++        return <Vec2Widget {...widgetProps}/>;
++      }
+       case 'vec3': {
+         return <Vec3Widget {...widgetProps}/>;
+       }"
+aframevr/aframe-inspector,356,8a78c5ce7eb7ebb49fa5b5ac5f554443878d98d2,src/components/widgets/BooleanWidget.js,modified,1,1,2,"@@ -28,7 +28,7 @@ export default class BooleanWidget extends React.Component {
+     var value = e.target.checked;
+     this.setState({value: value});
+     if (this.props.onChange) {
+-      this.props.onChange(this.props.entity, this.props.componentname, this.props.name, value);
++      this.props.onChange(this.props.name, value);
+     }
+   }
+ "
+aframevr/aframe-inspector,356,8a78c5ce7eb7ebb49fa5b5ac5f554443878d98d2,src/components/widgets/ColorWidget.js,modified,1,1,2,"@@ -28,7 +28,7 @@ export default class ColorWidget extends React.Component {
+     var value = e.target.value;
+     this.setState({value: value});
+     if (this.props.onChange) {
+-      this.props.onChange(this.props.entity, this.props.componentname, this.props.name, value);
++      this.props.onChange(this.props.name, value);
+     }
+   }
+ "
+aframevr/aframe-inspector,356,8a78c5ce7eb7ebb49fa5b5ac5f554443878d98d2,src/components/widgets/InputWidget.js,modified,1,1,2,"@@ -18,7 +18,7 @@ export default class InputWidget extends React.Component {
+     var value = e.target.value;
+     this.setState({value: value});
+     if (this.props.onChange) {
+-      this.props.onChange(this.props.entity, this.props.componentname, this.props.name, value);
++      this.props.onChange(this.props.name, value);
+     }
+   }
+ "
+aframevr/aframe-inspector,356,8a78c5ce7eb7ebb49fa5b5ac5f554443878d98d2,src/components/widgets/NumberWidget.js,modified,1,2,3,"@@ -93,8 +93,7 @@ export default class NumberWidget extends React.Component {
+       this.setState({value: value, displayValue: value.toFixed(this.props.precision)});
+ 
+       if (this.props.onChange) {
+-        this.props.onChange(this.props.entity, this.props.componentname, this.props.name,
+-                            value);
++        this.props.onChange(this.props.name, value);
+       }
+     }
+   }"
+aframevr/aframe-inspector,356,8a78c5ce7eb7ebb49fa5b5ac5f554443878d98d2,src/components/widgets/SelectWidget.js,modified,1,1,2,"@@ -20,7 +20,7 @@ export default class SelectWidget extends React.Component {
+   onChange = value => {
+     this.setState({value: value});
+     if (this.props.onChange) {
+-      this.props.onChange(this.props.entity, this.props.componentname, this.props.name, value);
++      this.props.onChange(this.props.name, value);
+     }
+   }
+ "
+aframevr/aframe-inspector,356,8a78c5ce7eb7ebb49fa5b5ac5f554443878d98d2,src/components/widgets/TextureWidget.js,modified,2,2,4,"@@ -141,7 +141,7 @@ export default class TextureWidget extends React.Component {
+ 
+   notifyChanged = value => {
+     if (this.props.onChange) {
+-      this.props.onChange(this.props.entity, this.props.componentname, this.props.name, value);
++      this.props.onChange(this.props.name, value);
+     }
+     this.setState({value: value});
+   }
+@@ -169,7 +169,7 @@ export default class TextureWidget extends React.Component {
+         value = '#' + assetId;
+       }
+       if (this.props.onChange) {
+-        this.props.onChange(this.props.entity, this.props.componentname, this.props.name, value);
++        this.props.onChange(this.props.name, value);
+       }
+       this.setValue(value);
+     });"
+aframevr/aframe-inspector,356,8a78c5ce7eb7ebb49fa5b5ac5f554443878d98d2,src/components/widgets/Vec2Widget.js,added,47,0,47,"@@ -0,0 +1,47 @@
++import React from 'react';
++
++import NumberWidget from './NumberWidget';
++
++export default class Vec2Widget extends React.Component {
++  static propTypes = {
++    componentname: React.PropTypes.string,
++    entity: React.PropTypes.object,
++    onChange: React.PropTypes.func,
++    value: React.PropTypes.object.isRequired
++  };
++
++  constructor (props) {
++    super(props);
++    this.state = {
++      x: props.value.x,
++      y: props.value.y
++    };
++  }
++
++  onChange = (name, value) => {
++    this.setState({[name]: value}, () => {
++      if (this.props.onChange) {
++        this.props.onChange(name, this.state);
++      }
++    });
++  }
++
++  componentWillReceiveProps (nextProps) {
++    this.setState(nextProps.value);
++  }
++
++  render () {
++    const widgetProps = {
++      componentname: this.props.componentname,
++      entity: this.props.entity,
++      onChange: this.onChange
++    };
++
++    return (
++      <div className='vec2'>
++        <NumberWidget name='x' value={this.state.x} {...widgetProps}/>
++        <NumberWidget name='y' value={this.state.y} {...widgetProps}/>
++      </div>
++    );
++  }
++}"
+aframevr/aframe-inspector,356,8a78c5ce7eb7ebb49fa5b5ac5f554443878d98d2,src/components/widgets/Vec3Widget.js,modified,2,2,4,"@@ -19,10 +19,10 @@ export default class Vec3Widget extends React.Component {
+     };
+   }
+ 
+-  onChange = (entity, componentName, name, value) => {
++  onChange = (name, value) => {
+     this.setState({[name]: value}, () => {
+       if (this.props.onChange) {
+-        this.props.onChange(entity, componentName, name, this.state);
++        this.props.onChange(name, this.state);
+       }
+     });
+   }"
+aframevr/aframe-inspector,356,8a78c5ce7eb7ebb49fa5b5ac5f554443878d98d2,src/components/widgets/index.js,modified,2,1,3,"@@ -5,5 +5,6 @@ module.exports = {
+   NumberWidget: require('./NumberWidget').default,
+   SelectWidget: require('./SelectWidget').default,
+   TextureWidget: require('./TextureWidget').default,
+-  Vec3Widget: require('./Vec3Widget').default
++  Vec3Widget: require('./Vec3Widget').default,
++  Vec2Widget: require('./Vec2Widget').default
+ };"
+aframevr/aframe-inspector,356,8a78c5ce7eb7ebb49fa5b5ac5f554443878d98d2,src/css/main.css,modified,2,0,2,"@@ -259,10 +259,12 @@ body.editor-opened {
+   overflow: auto;
+ }
+ 
++div.vec2,
+ div.vec3 {
+   display: inline;
+ }
+ 
++.vec2 input.number,
+ .vec3 input.number {
+   width: 46px;
+ }"

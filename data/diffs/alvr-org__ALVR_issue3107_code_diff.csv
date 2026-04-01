@@ -1,0 +1,229 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+alvr-org/ALVR,3107,4400dcb0aada150334294a746fa58482ae04ce9c,alvr/dashboard/src/dashboard/components/devices.rs,modified,0,5,5,"@@ -273,11 +273,6 @@ fn new_clients_section(
+                     // Extend to the right
+                     ui.with_layout(Layout::right_to_left(Align::Center), |_| ());
+                 });
+-
+-                if clients.is_empty() {
+-                    // for some reson any positive value adds too much space
+-                    ui.add_space(-10.0);
+-                }
+             });
+             for (hostname, _) in clients {
+                 Frame::group(ui.style())"
+alvr-org/ALVR,3107,4400dcb0aada150334294a746fa58482ae04ce9c,alvr/dashboard/src/dashboard/components/installation.rs,modified,14,16,30,"@@ -1,9 +1,6 @@
+ use crate::dashboard::ServerRequest;
+ use alvr_gui_common::theme;
+-use eframe::{
+-    egui::{Frame, Grid, Layout, RichText, Ui},
+-    emath::Align,
+-};
++use eframe::egui::{Frame, Grid, RichText, ScrollArea, Ui};
+ use std::{
+     path::PathBuf,
+     time::{Duration, Instant},
+@@ -66,23 +63,24 @@ impl InstallationTab {
+                 .fill(theme::SECTION_BG)
+                 .inner_margin(theme::FRAME_PADDING)
+                 .show(ui, |ui| {
+-                    ui.vertical_centered(|ui| {
++                    ui.vertical_centered_justified(|ui| {
+                         ui.label(RichText::new(""Registered drivers"").size(18.0));
+                     });
+ 
+                     Grid::new(0).num_columns(2).show(ui, |ui| {
+                         for driver_path in &self.drivers {
+-                            ui.horizontal(|ui| {
+-                                ui.add_space(5.0);
+-                                ui.label(driver_path.to_string_lossy());
+-                            });
+-                            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+-                                if ui.button(""Remove"").clicked() {
+-                                    requests.push(InstallationTabRequest::ServerRequest(
+-                                        ServerRequest::UnregisterDriver(driver_path.clone()),
+-                                    ));
+-                                }
+-                            });
++                            if ui.button(""Remove"").clicked() {
++                                requests.push(InstallationTabRequest::ServerRequest(
++                                    ServerRequest::UnregisterDriver(driver_path.clone()),
++                                ));
++                            }
++
++                            ScrollArea::new([true, false])
++                                .auto_shrink([false, false])
++                                .id_salt(driver_path)
++                                .show(ui, |ui| {
++                                    ui.label(driver_path.to_string_lossy());
++                                });
+                             ui.end_row();
+                         }
+                     });"
+alvr-org/ALVR,3107,4400dcb0aada150334294a746fa58482ae04ce9c,alvr/dashboard/src/dashboard/components/notifications.rs,modified,29,22,51,"@@ -2,9 +2,9 @@ use alvr_common::{LogEntry, LogSeverity};
+ use alvr_gui_common::theme::{self, log_colors};
+ use alvr_session::Settings;
+ use eframe::{
+-    egui::{self, Frame, Label, Layout, RichText, TopBottomPanel},
++    egui::{self, Frame, Label, Layout, RichText, TextWrapMode, TopBottomPanel},
+     emath::Align,
+-    epaint::{Color32, Stroke},
++    epaint::Color32,
+ };
+ use rand::seq::IndexedRandom;
+ use std::time::Duration;
+@@ -21,29 +21,28 @@ const NOTIFICATION_TIPS: &[&str] = &[
+     r#""If you started having crashes after changing some settings, reset ALVR by re-running ""Run setup wizard"" from the ""Installation"" tab and clicking ""Reset settings"".""#,
+     r#""Some settings are hidden by default. Click the ""Expand"" button next to some settings to expand the submenus.""#,
+     r#""It's highly advisable to keep audio settings as default in ALVR and modify the default audio device in the taskbar tray.""#,
+-    r#""Increasing ""Maximum buffering"" may reduce stutters at the cost of more latency.""#,
++    r#""Increasing ""Video""->""Maximum buffering"" may reduce stutters at the cost of more latency.""#,
+     r#""Sometimes switching between h264 and HEVC codecs is necessary on certain GPUs to fix crashing or fallback to software encoding.""#,
+     r#""If you're using an NVIDIA GPU, it's best to use high-bitrate H264; if you're using an AMD GPU, HEVC might look better.""#,
+-    r#""If you experience ""white snow"" flickering, reduce the resolution to ""Low"" and disable ""Foveated encoding"".""#,
+-    r#""Increasing ""Color correction""->""Sharpness"" may improve the perceived image quality.""#,
+-    r#""If you have problems syncing external controllers or trackers to ALVR tracking space, add one element to ""Extra openvr props"", then set a custom ""Tracking system name"".""#,
++    r#""If you experience ""white snow"" flickering, set ""Presets""->""Resolution"" to ""Low"" and disable ""Video""->""Foveated encoding"".""#,
++    r#""Increasing ""Video""->""Color correction""->""Sharpness"" may improve the perceived image quality.""#,
++    r#""If you have problems syncing external controllers or trackers to ALVR tracking space, add one element to ""Headset""->""Extra OpenVR properties"", then set a custom ""Tracking system name string"".""#,
+     r#""To change the visual appearance of controllers, set ""Headset""->""Controllers""->""Emulation mode"".""#,
+     r#""ALVR supports custom button bindings! If you need help, please ask us on our Discord server.""#,
+-    r#""ALVR supports hand tracking gestures (""Presets""->""Hand tracking interaction""->""ALVR Bindings""). Check out wiki how to use them properly: https://github.com/alvr-org/ALVR/wiki/Hand-tracking-controller-bindings.""#,
+-    r#""If hand tracking gestures are annoying, you can disable them in ""Controllers""->""Gestures"". Alternatively, you can enable ""Gestures""->""Only touch"".""#,
+-    r#""You can fine-tune the controllers responsiveness with ""Controllers""->""Prediction"".""#,
+-    r#""If the visual controller/hand models do not match the physical controller, you can tweak the offset in ""Headset""->""Controllers""->""Left controller position/rotation offset"" (affects both controllers).""#,
+-    r#""When using external trackers or controllers, you should set both ""Position/Rotation recentering mode"" to ""Disabled"".""#,
+-    r#""You can enable tilt mode. Set ""Position recentering mode"" to ""Local"" and ""Rotation recentering mode"" to ""Tilted"".""#,
+-    r#""If you often experience image glitching, you can trade that with stutter frames using ""Avoid video glitching"".""#,
+-    r#""You can run custom commands/programs at headset connection/disconnection using the ""On connect/disconnect script"".""#,
++    r#""ALVR supports hand tracking gestures (""Presets""->""Hand tracking interaction""->""ALVR bindings""). Check out wiki how to use them properly: https://github.com/alvr-org/ALVR/wiki/Hand-tracking-controller-bindings.""#,
++    r#""If hand tracking gestures are annoying, you can disable them in ""Headset""->""Controllers""->""Hand tracking interaction"". Alternatively, you can enable ""Hand tracking interaction""->""Only touch"".""#,
++    r#""You can fine-tune the controllers' responsiveness with ""Headset""->""Controllers""->""Prediction"".""#,
++    r#""If the visual controller/hand models do not match the physical controller's position, you can tweak the offset in ""Headset""->""Controllers""->""Left controller position/rotation offset"" (affects both controllers).""#,
++    r#""When using external trackers or controllers, you should set both ""Headset""->""Position/Rotation recentering mode"" to ""Disabled"".""#,
++    r#""You can enable tilt mode. Set ""Headset""->""Position recentering mode"" to ""Local"" and ""Headset""->""Rotation recentering mode"" to ""Tilted"".""#,
++    r#""If you often experience image glitching, you can trade that with stutter frames using ""Connection""->""Avoid video glitching"".""#,
++    r#""You can run custom commands/programs at headset connection/disconnection using ""Connection""->""Enable on connect/disconnect script"".""#,
+     r#""In case you want to report a bug, to get a log file, enable ""Extra""->""Logging""->""Log to disk"". The log will be inside ""session_log.txt"".""#,
+-    r#""For hacking purposes, you can enable ""Log tracking"", ""Log button presses"" and ""Log haptics"". You can get the data using a websocket at ws://localhost:8082/api/events""#,
++    r#""For hacking purposes, you can enable ""Extra""->""Logging""->""Log tracking"", ""Log button presses"" and ""Log haptics"". You can get the data using a websocket at ws://localhost:8082/api/events.""#,
+     r#""In case you want to report a bug and share your log, you should enable ""Extra""->""Logging""->""Prefer backtrace"".""#,
+-    r#""You can quickly cycle through tips like this one by toggling ""Show notification tip""""#,
+-    r#""If you want to use body trackers or other SteamVR drivers together with ALVR, set ""Driver launch action"" to ""Unregister ALVR at shutdown""""#,
+-    r#""It's handy to enable ""Extra""->""Steamvr Launcher""->""Open and close SteamVR with dashboard""""#,
+-    r#""If you want to share a video recording for reporting a bug, you can enable ""Extra""->""Capture""->""Rolling video files"" to limit the file size of the upload""#,
++    r#""You can quickly cycle through tips like this one by toggling ""Extra""->""Logging""->""Show notification tip"".""#,
++    r#""It's handy to enable ""Extra""->""SteamVR Launcher""->""Open and close SteamVR automatically"".""#,
++    r#""If you want to share a video recording for reporting a bug, you can enable ""Extra""->""Capture""->""Rolling video files"" to limit the file size of the upload.""#,
+     // Miscellaneous
+     r#""If your headset does not appear in the device list, it might be in a different subnet. Try ""Add device manually"" with IP shown from inside device.""#,
+ ];
+@@ -124,8 +123,7 @@ impl NotificationBar {
+         let mut bottom_bar = TopBottomPanel::bottom(""bottom_panel"").frame(
+             Frame::default()
+                 .inner_margin(egui::vec2(10.0, 5.0))
+-                .fill(bg)
+-                .stroke(Stroke::new(1.0, theme::SEPARATOR_BG)),
++                .fill(bg),
+         );
+         let alignment = if !self.expanded {
+             bottom_bar = bottom_bar.max_height(26.0);
+@@ -134,6 +132,11 @@ impl NotificationBar {
+         } else {
+             Align::Center
+         };
++        let wrapping = if !self.expanded {
++            TextWrapMode::Truncate
++        } else {
++            TextWrapMode::Wrap
++        };
+ 
+         bottom_bar.show(context, |ui| {
+             ui.with_layout(Layout::right_to_left(alignment), |ui| {
+@@ -145,7 +148,11 @@ impl NotificationBar {
+                     self.expanded = false;
+                 }
+                 ui.with_layout(Layout::left_to_right(alignment), |ui| {
+-                    ui.add(Label::new(RichText::new(&self.message).color(fg).size(12.0)).wrap());
++                    //A LayoutJob that has its TextWrapping updated to fill the available space would probably be a more elegant solution.
++                    ui.add(
++                        Label::new(RichText::new(&self.message).color(fg).size(12.0))
++                            .wrap_mode(wrapping),
++                    );
+                 })
+             })
+         });"
+alvr-org/ALVR,3107,4400dcb0aada150334294a746fa58482ae04ce9c,alvr/dashboard/src/dashboard/components/statistics.rs,modified,1,1,2,"@@ -55,7 +55,7 @@ impl StatisticsTab {
+         } else {
+             ui.heading(
+                 ""No statistics available. 
+-            Start SteamVR and connect to a device to gather statistics"",
++            Start SteamVR and connect to a device to gather statistics."",
+             );
+         }
+ "
+alvr-org/ALVR,3107,4400dcb0aada150334294a746fa58482ae04ce9c,alvr/dashboard/src/dashboard/mod.rs,modified,18,17,35,"@@ -15,7 +15,9 @@ use alvr_events::EventType;
+ use alvr_gui_common::theme;
+ use alvr_packets::{ClientConnectionsAction, PathValuePair};
+ use alvr_session::SessionConfig;
+-use eframe::egui::{self, Align, CentralPanel, Frame, Layout, Margin, RichText, SidePanel, Stroke};
++use eframe::egui::{
++    self, Align, CentralPanel, Direction, Frame, Layout, Margin, RichText, SidePanel,
++};
+ use serde::{Deserialize, Serialize};
+ use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
+ 
+@@ -89,7 +91,7 @@ impl Dashboard {
+             tab_labels: [
+                 (Tab::Devices, ""🔌  Devices""),
+                 (Tab::Statistics, ""📈  Statistics""),
+-                (Tab::Settings, ""⚙  Settings""),
++                (Tab::Settings, ""🔧  Settings""),
+                 #[cfg(not(target_arch = ""wasm32""))]
+                 (Tab::Installation, ""💾  Installation""),
+                 (Tab::Logs, ""📝  Logs""),
+@@ -236,8 +238,7 @@ impl eframe::App for Dashboard {
+                 .frame(
+                     Frame::new()
+                         .fill(theme::LIGHTER_BG)
+-                        .inner_margin(Margin::same(7))
+-                        .stroke(Stroke::new(1.0, theme::SEPARATOR_BG)),
++                        .inner_margin(Margin::same(7)),
+                 )
+                 .exact_width(160.0)
+                 .show(context, |ui| {
+@@ -268,22 +269,22 @@ impl eframe::App for Dashboard {
+                             }
+ 
+                             ui.horizontal(|ui| {
+-                                ui.add_space(5.0);
++                                ui.add_space(4.0);
+                                 ui.label(RichText::new(""SteamVR:"").size(13.0));
+                                 ui.add_space(-10.0);
+-                                if connected_to_server {
+-                                    ui.label(
+-                                        RichText::new(""Connected"")
+-                                            .color(theme::OK_GREEN)
+-                                            .size(13.0),
+-                                    );
+-                                } else {
+-                                    ui.label(
+-                                        RichText::new(""Disconnected"")
+-                                            .color(theme::KO_RED)
++                                ui.with_layout(
++                                    Layout::centered_and_justified(Direction::LeftToRight),
++                                    |ui| {
++                                        ui.label(
++                                            if connected_to_server {
++                                                RichText::new(""Connected"").color(theme::OK_GREEN)
++                                            } else {
++                                                RichText::new(""Disconnected"").color(theme::KO_RED)
++                                            }
+                                             .size(13.0),
+-                                    );
+-                                }
++                                        )
++                                    },
++                                );
+                             })
+                         },
+                     )"

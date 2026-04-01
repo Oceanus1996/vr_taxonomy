@@ -1,0 +1,90 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vizorvr/patches,1440,edc9755,browser/plugins/three_gaze_clicker.plugin.js,modified,1,1,2,"@@ -5,7 +5,7 @@
+ 
+ 		this.core = core
+ 
+-		this.iconDistance = 0.032
++		this.iconDistance = 0.030
+ 
+ 		this.input_slots = [
+ 			{name: 'camera', dt: core.datatypes.CAMERA},"
+vizorvr/patches,1440,edc9755,browser/plugins/three_scene.plugin.js,modified,12,9,21,"@@ -78,11 +78,9 @@
+ 		var that = this
+ 		var i
+ 
+-		this.clickableObjectsInSlot[slot.index] = 0
+-
+ 		if (slot.dynamic) {
+ 			var parent = this.scene.children[0].children[slot.index]
+-
++	
+ 			if (data && (!slot.array || (data.length > 0 && data[0]))) {
+ 				if (slot.array) {
+ 					if (parent.children.length === data.length) {
+@@ -100,6 +98,8 @@
+ 
+ 					parent.children = data
+ 
++					this.clickableObjectsInSlot[slot.index] = 0
++
+ 					for (i = 0; i < data.length; ++i) {
+ 						if (data[i].parent && data[i].parent !== parent) {
+ 							// the object is in another scene, remove from there
+@@ -129,6 +129,8 @@
+ 					data.parent = parent
+ 					data.dispatchEvent({ type: 'added' })
+ 
++					this.clickableObjectsInSlot[slot.index] = 0
++
+ 					if (data.gazeClickerCount)
+ 						that.clickableObjectsInSlot[slot.index] += data.gazeClickerCount
+ 				}
+@@ -138,18 +140,19 @@
+ 					parent.remove(parent.children[0])
+ 				}
+ 			}
++
+ 			this.update_meshes()
++	
++			var totalClickables = 0
++			for (i=0; i < this.clickableObjectsInSlot.length; i++)
++				totalClickables += this.clickableObjectsInSlot[i] || 0
++
++			this.scene.hasClickableObjects = totalClickables > 0
+ 		}
+ 		else {
+ 			// the only static input slot is environment settings
+ 			this.envSettings = data
+ 		}
+-
+-		var totalClickables = 0
+-		for (i=0; i < this.clickableObjectsInSlot.length; i++)
+-			totalClickables += this.clickableObjectsInSlot[i] || 0
+-
+-		this.scene.hasClickableObjects = totalClickables > 0
+ 	}
+ 
+ 	ThreeScenePlugin.prototype.connection_changed = function(on, conn, slot) {"
+vizorvr/patches,1440,edc9755,browser/scripts/abstractObjectGazePlugin.js,modified,3,1,4,"@@ -182,8 +182,10 @@
+ 
+ 		findSelectableMeshNodes()
+ 		.map(function(selectable) {
++			var nodeRef = selectable.node.getFullUid()
+ 			$('<option>', {
+-				value: selectable.node.parent_graph.uid + '.' + selectable.node.uid,
++				value: nodeRef,
++				selected: nodeRef === that.state.nodeRef,
+ 				text: selectable.title
+ 			})
+ 			.appendTo(that.$selectObject)"
+vizorvr/patches,1440,edc9755,browser/scripts/node.js,modified,4,0,4,"@@ -103,6 +103,10 @@ Node.prototype.destroy_ui = function() {
+ 		this.plugin.destroy_ui()
+ }
+ 
++Node.prototype.getFullUid = function() {
++	return this.parent_graph.uid + '.' + this.uid
++}
++
+ Node.prototype.destroy = function()
+ {
+ 	var graph = this.parent_graph;"

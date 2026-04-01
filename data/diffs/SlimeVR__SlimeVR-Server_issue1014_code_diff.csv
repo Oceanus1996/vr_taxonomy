@@ -1,0 +1,1636 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+SlimeVR/SlimeVR-Server,1014,a5f28e1,server/core/src/main/java/dev/slimevr/tracking/trackers/Tracker.kt,modified,8,0,8,"@@ -382,4 +382,12 @@ class Tracker @JvmOverloads constructor(
+ 	 */
+ 	val tps: Float
+ 		get() = timer.averageFPS
++
++	companion object {
++		/**
++		 * Changes from IMU axis to OpenGL/SteamVR axis
++		 */
++		private fun axisOffet(v : Vector3): Vector3 = Vector3(v.x, v.z, -v.y)
++		private fun axisOffet(q : Quaternion): Quaternion = Quaternion(INV_SQRT_TWO, -INV_SQRT_TWO, 0, 0) * Quaternion(q.w, axisOffet(q.xyz))
++	}
+ }"
+SlimeVR/SlimeVR-Server,1014,a5f28e1,server/core/src/main/java/dev/slimevr/tracking/trackers/udp/TrackersUDPServer.kt,modified,5,10,15,"@@ -1,14 +1,13 @@
+ package dev.slimevr.tracking.trackers.udp
+ 
+-import com.jme3.math.FastMath
+ import dev.slimevr.NetworkProtocol
+ import dev.slimevr.VRServer
+ import dev.slimevr.tracking.trackers.Tracker
++import dev.slimevr.tracking.trackers.Tracker.Companion.axisOffet
+ import dev.slimevr.tracking.trackers.TrackerStatus
+ import io.eiren.util.Util
+ import io.eiren.util.collections.FastList
+ import io.eiren.util.logging.LogManager
+-import io.github.axisangles.ktmath.Quaternion.Companion.fromRotationVector
+ import io.github.axisangles.ktmath.Vector3
+ import org.apache.commons.lang3.ArrayUtils
+ import solarxr_protocol.rpc.ResetType
+@@ -317,13 +316,13 @@ class TrackersUDPServer(private val port: Int, name: String, private val tracker
+ 
+ 			is RotationPacket -> {
+ 				var rot = packet.rotation
+-				rot = AXES_OFFSET.times(rot)
++				rot = axisOffet(rot)
+ 				tracker = connection?.getTracker(packet.sensorId)
+ 				if (tracker == null) return
+ 				tracker.setRotation(rot)
+ 				if (packet is UDPPacket23RotationAndAcceleration) {
+ 					// Switch x and y around to adjust for different axes
+-					tracker.setAcceleration(Vector3(packet.acceleration.y, packet.acceleration.x, packet.acceleration.z))
++					tracker.setAcceleration(axisOffet(packet.acceleration))
+ 				}
+ 				tracker.dataTick()
+ 			}
+@@ -332,7 +331,7 @@ class TrackersUDPServer(private val port: Int, name: String, private val tracker
+ 				tracker = connection?.getTracker(packet.sensorId)
+ 				if (tracker == null) return
+ 				var rot17 = packet.rotation
+-				rot17 = AXES_OFFSET * rot17
++				rot17 = axisOffet(rot17)
+ 				when (packet.dataType) {
+ 					UDPPacket17RotationData.DATA_TYPE_NORMAL -> {
+ 						tracker.setRotation(rot17)
+@@ -356,7 +355,7 @@ class TrackersUDPServer(private val port: Int, name: String, private val tracker
+ 				tracker = connection?.getTracker(packet.sensorId)
+ 				if (tracker == null) return
+ 				// Switch x and y around to adjust for different axes
+-				tracker.setAcceleration(Vector3(packet.acceleration.y, packet.acceleration.x, packet.acceleration.z))
++				tracker.setAcceleration(axisOffet(packet.acceleration))
+ 			}
+ 
+ 			is UDPPacket10PingPong -> {
+@@ -495,10 +494,6 @@ class TrackersUDPServer(private val port: Int, name: String, private val tracker
+ 	}
+ 
+ 	companion object {
+-		/**
+-		 * Change between IMU axes and OpenGL/SteamVR axes
+-		 */
+-		private val AXES_OFFSET = fromRotationVector(-FastMath.HALF_PI, 0f, 0f)
+ 		private const val RESET_SOURCE_NAME = ""TrackerServer""
+ 		private fun packetToString(packet: DatagramPacket?): String {
+ 			val sb = StringBuilder()"
+SlimeVR/SlimeVR-Server,1014,a5f28e1,server/core/src/main/java/io/eiren/math/FloatMath.kt,modified,4,4,8,"@@ -16,10 +16,10 @@ object FloatMath {
+ 	const val ZERO_TOLERANCE_F: Float = FastMath.ZERO_TOLERANCE
+ 	const val ZERO_TOLERANCE_D: Double = 0.0001
+ 
+-	val SQRT_TWO: Float = kotlin.math.sqrt(2.0).toFloat()
+-	val INV_SQRT_TWO: Float = 1f / SQRT_TWO
+-	val SQRT_THREE: Float = kotlin.math.sqrt(3.0).toFloat()
+-	val INV_SQRT_THREE: Float = 1f / SQRT_THREE
++	const val SQRT_TWO: Float = kotlin.math.sqrt(2.0).toFloat()
++	const val INV_SQRT_TWO: Float = (1.0 / kotlin.math.sqrt(2.0)).toFloat()
++	const val SQRT_THREE: Float = kotlin.math.sqrt(3.0).toFloat()
++	const val INV_SQRT_THREE: Float = 1f / SQRT_THREE
+ 	const val TWO_FPI: Float = PI * 2
+ 
+ 	const val SIN_75_DEG: Float = 0.965926f"
+SlimeVR/SlimeVR-Server,1014,a5f28e1,server/desktop/src/main/java/dev/slimevr/desktop/tracking/trackers/hid/TrackersHID.kt,modified,4,7,11,"@@ -1,14 +1,13 @@
+ package dev.slimevr.desktop.tracking.trackers.hid
+ 
+-import com.jme3.math.FastMath
+ import dev.slimevr.VRServer
+ import dev.slimevr.tracking.trackers.Device
+ import dev.slimevr.tracking.trackers.Tracker
++import dev.slimevr.tracking.trackers.Tracker.Companion.axisOffet
+ import dev.slimevr.tracking.trackers.TrackerStatus
+ import dev.slimevr.tracking.trackers.udp.IMUType
+ import io.eiren.util.logging.LogManager
+ import io.github.axisangles.ktmath.Quaternion
+-import io.github.axisangles.ktmath.Quaternion.Companion.fromRotationVector
+ import io.github.axisangles.ktmath.Vector3
+ import org.hid4java.HidDevice
+ import org.hid4java.HidManager
+@@ -236,13 +235,15 @@ class TrackersHID(name: String, private val trackersConsumer: Consumer<Tracker>)
+ 						// x y z w -> w x y z
+ 						var rot = Quaternion(q[3].toFloat(), q[0].toFloat(), q[1].toFloat(), q[2].toFloat())
+ 						val scaleRot = 1 / (1 shl 15).toFloat() // compile time evaluation
+-						rot = AXES_OFFSET.times(scaleRot).times(rot) // no division
++						rot = rot.times(scaleRot) // no division
++						rot = axisOffet(rot)
+ 						tracker.setRotation(rot)
+ 						// TODO: I think the acceleration is wrong???
+ 						// Yes it was. And rotation was wrong too.
+ 						// At lease we have fixed the fixed point decoding.
+ 						val scaleAccel = 1 / (1 shl 7).toFloat() // compile time evaluation
+ 						var acceleration = Vector3(a[0].toFloat(), a[1].toFloat(), a[2].toFloat()).times(scaleAccel) // no division
++						acceleration = axisOffet(acceleration)
+ 						tracker.setAcceleration(acceleration)
+ 						tracker.dataTick()
+ 						i += 20
+@@ -305,10 +306,6 @@ class TrackersHID(name: String, private val trackersConsumer: Consumer<Tracker>)
+ 	}
+ 
+ 	companion object {
+-		/**
+-		 * Change between IMU axes and OpenGL/SteamVR axes
+-		 */
+-		private val AXES_OFFSET = fromRotationVector(-FastMath.HALF_PI, 0f, 0f)
+ 		private const val resetSourceName = ""TrackerServer""
+ 	}
+ }"
+SlimeVR/SlimeVR-Server,1014,3e9fd6d,server/core/src/main/java/dev/slimevr/tracking/trackers/Tracker.kt,modified,8,0,8,"@@ -382,4 +382,12 @@ class Tracker @JvmOverloads constructor(
+ 	 */
+ 	val tps: Float
+ 		get() = timer.averageFPS
++
++	companion object {
++		/**
++		 * Changes from IMU axis to OpenGL/SteamVR axis
++		 */
++		private fun axisOffet(v: Vector3): Vector3 = Vector3(v.x, v.z, -v.y)
++		private fun axisOffet(q: Quaternion): Quaternion = Quaternion(INV_SQRT_TWO, -INV_SQRT_TWO, 0, 0) * q
++	}
+ }"
+SlimeVR/SlimeVR-Server,1014,3e9fd6d,server/core/src/main/java/dev/slimevr/tracking/trackers/udp/TrackersUDPServer.kt,modified,5,11,16,"@@ -1,15 +1,13 @@
+ package dev.slimevr.tracking.trackers.udp
+ 
+-import com.jme3.math.FastMath
+ import dev.slimevr.NetworkProtocol
+ import dev.slimevr.VRServer
+ import dev.slimevr.tracking.trackers.Tracker
++import dev.slimevr.tracking.trackers.Tracker.Companion.axisOffet
+ import dev.slimevr.tracking.trackers.TrackerStatus
+ import io.eiren.util.Util
+ import io.eiren.util.collections.FastList
+ import io.eiren.util.logging.LogManager
+-import io.github.axisangles.ktmath.Quaternion.Companion.fromRotationVector
+-import io.github.axisangles.ktmath.Vector3
+ import org.apache.commons.lang3.ArrayUtils
+ import solarxr_protocol.rpc.ResetType
+ import java.net.DatagramPacket
+@@ -317,13 +315,13 @@ class TrackersUDPServer(private val port: Int, name: String, private val tracker
+ 
+ 			is RotationPacket -> {
+ 				var rot = packet.rotation
+-				rot = AXES_OFFSET.times(rot)
++				rot = axisOffet(rot)
+ 				tracker = connection?.getTracker(packet.sensorId)
+ 				if (tracker == null) return
+ 				tracker.setRotation(rot)
+ 				if (packet is UDPPacket23RotationAndAcceleration) {
+ 					// Switch x and y around to adjust for different axes
+-					tracker.setAcceleration(Vector3(packet.acceleration.y, packet.acceleration.x, packet.acceleration.z))
++					tracker.setAcceleration(axisOffet(packet.acceleration))
+ 				}
+ 				tracker.dataTick()
+ 			}
+@@ -332,7 +330,7 @@ class TrackersUDPServer(private val port: Int, name: String, private val tracker
+ 				tracker = connection?.getTracker(packet.sensorId)
+ 				if (tracker == null) return
+ 				var rot17 = packet.rotation
+-				rot17 = AXES_OFFSET * rot17
++				rot17 = axisOffet(rot17)
+ 				when (packet.dataType) {
+ 					UDPPacket17RotationData.DATA_TYPE_NORMAL -> {
+ 						tracker.setRotation(rot17)
+@@ -356,7 +354,7 @@ class TrackersUDPServer(private val port: Int, name: String, private val tracker
+ 				tracker = connection?.getTracker(packet.sensorId)
+ 				if (tracker == null) return
+ 				// Switch x and y around to adjust for different axes
+-				tracker.setAcceleration(Vector3(packet.acceleration.y, packet.acceleration.x, packet.acceleration.z))
++				tracker.setAcceleration(axisOffet(packet.acceleration))
+ 			}
+ 
+ 			is UDPPacket10PingPong -> {
+@@ -495,10 +493,6 @@ class TrackersUDPServer(private val port: Int, name: String, private val tracker
+ 	}
+ 
+ 	companion object {
+-		/**
+-		 * Change between IMU axes and OpenGL/SteamVR axes
+-		 */
+-		private val AXES_OFFSET = fromRotationVector(-FastMath.HALF_PI, 0f, 0f)
+ 		private const val RESET_SOURCE_NAME = ""TrackerServer""
+ 		private fun packetToString(packet: DatagramPacket?): String {
+ 			val sb = StringBuilder()"
+SlimeVR/SlimeVR-Server,1014,3e9fd6d,server/core/src/main/java/io/eiren/math/FloatMath.kt,modified,4,4,8,"@@ -16,10 +16,10 @@ object FloatMath {
+ 	const val ZERO_TOLERANCE_F: Float = FastMath.ZERO_TOLERANCE
+ 	const val ZERO_TOLERANCE_D: Double = 0.0001
+ 
+-	val SQRT_TWO: Float = kotlin.math.sqrt(2.0).toFloat()
+-	val INV_SQRT_TWO: Float = 1f / SQRT_TWO
+-	val SQRT_THREE: Float = kotlin.math.sqrt(3.0).toFloat()
+-	val INV_SQRT_THREE: Float = 1f / SQRT_THREE
++	const val SQRT_TWO: Float = kotlin.math.sqrt(2.0).toFloat()
++	const val INV_SQRT_TWO: Float = (1.0 / kotlin.math.sqrt(2.0)).toFloat()
++	const val SQRT_THREE: Float = kotlin.math.sqrt(3.0).toFloat()
++	const val INV_SQRT_THREE: Float = 1f / SQRT_THREE
+ 	const val TWO_FPI: Float = PI * 2
+ 
+ 	const val SIN_75_DEG: Float = 0.965926f"
+SlimeVR/SlimeVR-Server,1014,3e9fd6d,server/desktop/src/main/java/dev/slimevr/desktop/tracking/trackers/hid/TrackersHID.kt,modified,4,7,11,"@@ -1,14 +1,13 @@
+ package dev.slimevr.desktop.tracking.trackers.hid
+ 
+-import com.jme3.math.FastMath
+ import dev.slimevr.VRServer
+ import dev.slimevr.tracking.trackers.Device
+ import dev.slimevr.tracking.trackers.Tracker
++import dev.slimevr.tracking.trackers.Tracker.Companion.axisOffet
+ import dev.slimevr.tracking.trackers.TrackerStatus
+ import dev.slimevr.tracking.trackers.udp.IMUType
+ import io.eiren.util.logging.LogManager
+ import io.github.axisangles.ktmath.Quaternion
+-import io.github.axisangles.ktmath.Quaternion.Companion.fromRotationVector
+ import io.github.axisangles.ktmath.Vector3
+ import org.hid4java.HidDevice
+ import org.hid4java.HidManager
+@@ -236,13 +235,15 @@ class TrackersHID(name: String, private val trackersConsumer: Consumer<Tracker>)
+ 						// x y z w -> w x y z
+ 						var rot = Quaternion(q[3].toFloat(), q[0].toFloat(), q[1].toFloat(), q[2].toFloat())
+ 						val scaleRot = 1 / (1 shl 15).toFloat() // compile time evaluation
+-						rot = AXES_OFFSET.times(scaleRot).times(rot) // no division
++						rot = rot.times(scaleRot) // no division
++						rot = axisOffet(rot)
+ 						tracker.setRotation(rot)
+ 						// TODO: I think the acceleration is wrong???
+ 						// Yes it was. And rotation was wrong too.
+ 						// At lease we have fixed the fixed point decoding.
+ 						val scaleAccel = 1 / (1 shl 7).toFloat() // compile time evaluation
+ 						var acceleration = Vector3(a[0].toFloat(), a[1].toFloat(), a[2].toFloat()).times(scaleAccel) // no division
++						acceleration = axisOffet(acceleration)
+ 						tracker.setAcceleration(acceleration)
+ 						tracker.dataTick()
+ 						i += 20
+@@ -305,10 +306,6 @@ class TrackersHID(name: String, private val trackersConsumer: Consumer<Tracker>)
+ 	}
+ 
+ 	companion object {
+-		/**
+-		 * Change between IMU axes and OpenGL/SteamVR axes
+-		 */
+-		private val AXES_OFFSET = fromRotationVector(-FastMath.HALF_PI, 0f, 0f)
+ 		private const val resetSourceName = ""TrackerServer""
+ 	}
+ }"
+SlimeVR/SlimeVR-Server,1014,d7f9a3f,server/core/src/main/java/dev/slimevr/tracking/trackers/Tracker.kt,modified,9,0,9,"@@ -4,6 +4,7 @@ import dev.slimevr.VRServer
+ import dev.slimevr.config.TrackerConfig
+ import dev.slimevr.tracking.trackers.TrackerPosition.Companion.getByDesignation
+ import dev.slimevr.tracking.trackers.udp.IMUType
++import io.eiren.math.FloatMath.INV_SQRT_TWO
+ import io.eiren.util.BufferedTimer
+ import io.github.axisangles.ktmath.Quaternion
+ import io.github.axisangles.ktmath.Vector3
+@@ -382,4 +383,12 @@ class Tracker @JvmOverloads constructor(
+ 	 */
+ 	val tps: Float
+ 		get() = timer.averageFPS
++
++	companion object {
++		/**
++		 * Changes from IMU axis to OpenGL/SteamVR axis
++		 */
++		private fun axisOffet(v: Vector3): Vector3 = Vector3(v.x, v.z, -v.y)
++		private fun axisOffet(q: Quaternion): Quaternion = Quaternion(INV_SQRT_TWO, -INV_SQRT_TWO, 0, 0) * q
++	}
+ }"
+SlimeVR/SlimeVR-Server,1014,d7f9a3f,server/core/src/main/java/dev/slimevr/tracking/trackers/udp/TrackersUDPServer.kt,modified,5,11,16,"@@ -1,15 +1,13 @@
+ package dev.slimevr.tracking.trackers.udp
+ 
+-import com.jme3.math.FastMath
+ import dev.slimevr.NetworkProtocol
+ import dev.slimevr.VRServer
+ import dev.slimevr.tracking.trackers.Tracker
++import dev.slimevr.tracking.trackers.Tracker.Companion.axisOffet
+ import dev.slimevr.tracking.trackers.TrackerStatus
+ import io.eiren.util.Util
+ import io.eiren.util.collections.FastList
+ import io.eiren.util.logging.LogManager
+-import io.github.axisangles.ktmath.Quaternion.Companion.fromRotationVector
+-import io.github.axisangles.ktmath.Vector3
+ import org.apache.commons.lang3.ArrayUtils
+ import solarxr_protocol.rpc.ResetType
+ import java.net.DatagramPacket
+@@ -317,13 +315,13 @@ class TrackersUDPServer(private val port: Int, name: String, private val tracker
+ 
+ 			is RotationPacket -> {
+ 				var rot = packet.rotation
+-				rot = AXES_OFFSET.times(rot)
++				rot = axisOffet(rot)
+ 				tracker = connection?.getTracker(packet.sensorId)
+ 				if (tracker == null) return
+ 				tracker.setRotation(rot)
+ 				if (packet is UDPPacket23RotationAndAcceleration) {
+ 					// Switch x and y around to adjust for different axes
+-					tracker.setAcceleration(Vector3(packet.acceleration.y, packet.acceleration.x, packet.acceleration.z))
++					tracker.setAcceleration(axisOffet(packet.acceleration))
+ 				}
+ 				tracker.dataTick()
+ 			}
+@@ -332,7 +330,7 @@ class TrackersUDPServer(private val port: Int, name: String, private val tracker
+ 				tracker = connection?.getTracker(packet.sensorId)
+ 				if (tracker == null) return
+ 				var rot17 = packet.rotation
+-				rot17 = AXES_OFFSET * rot17
++				rot17 = axisOffet(rot17)
+ 				when (packet.dataType) {
+ 					UDPPacket17RotationData.DATA_TYPE_NORMAL -> {
+ 						tracker.setRotation(rot17)
+@@ -356,7 +354,7 @@ class TrackersUDPServer(private val port: Int, name: String, private val tracker
+ 				tracker = connection?.getTracker(packet.sensorId)
+ 				if (tracker == null) return
+ 				// Switch x and y around to adjust for different axes
+-				tracker.setAcceleration(Vector3(packet.acceleration.y, packet.acceleration.x, packet.acceleration.z))
++				tracker.setAcceleration(axisOffet(packet.acceleration))
+ 			}
+ 
+ 			is UDPPacket10PingPong -> {
+@@ -495,10 +493,6 @@ class TrackersUDPServer(private val port: Int, name: String, private val tracker
+ 	}
+ 
+ 	companion object {
+-		/**
+-		 * Change between IMU axes and OpenGL/SteamVR axes
+-		 */
+-		private val AXES_OFFSET = fromRotationVector(-FastMath.HALF_PI, 0f, 0f)
+ 		private const val RESET_SOURCE_NAME = ""TrackerServer""
+ 		private fun packetToString(packet: DatagramPacket?): String {
+ 			val sb = StringBuilder()"
+SlimeVR/SlimeVR-Server,1014,d7f9a3f,server/core/src/main/java/io/eiren/math/FloatMath.kt,modified,4,4,8,"@@ -16,10 +16,10 @@ object FloatMath {
+ 	const val ZERO_TOLERANCE_F: Float = FastMath.ZERO_TOLERANCE
+ 	const val ZERO_TOLERANCE_D: Double = 0.0001
+ 
+-	val SQRT_TWO: Float = kotlin.math.sqrt(2.0).toFloat()
+-	val INV_SQRT_TWO: Float = 1f / SQRT_TWO
+-	val SQRT_THREE: Float = kotlin.math.sqrt(3.0).toFloat()
+-	val INV_SQRT_THREE: Float = 1f / SQRT_THREE
++	const val SQRT_TWO: Float = kotlin.math.sqrt(2.0).toFloat()
++	const val INV_SQRT_TWO: Float = (1.0 / kotlin.math.sqrt(2.0)).toFloat()
++	const val SQRT_THREE: Float = kotlin.math.sqrt(3.0).toFloat()
++	const val INV_SQRT_THREE: Float = 1f / SQRT_THREE
+ 	const val TWO_FPI: Float = PI * 2
+ 
+ 	const val SIN_75_DEG: Float = 0.965926f"
+SlimeVR/SlimeVR-Server,1014,d7f9a3f,server/desktop/src/main/java/dev/slimevr/desktop/tracking/trackers/hid/TrackersHID.kt,modified,4,7,11,"@@ -1,14 +1,13 @@
+ package dev.slimevr.desktop.tracking.trackers.hid
+ 
+-import com.jme3.math.FastMath
+ import dev.slimevr.VRServer
+ import dev.slimevr.tracking.trackers.Device
+ import dev.slimevr.tracking.trackers.Tracker
++import dev.slimevr.tracking.trackers.Tracker.Companion.axisOffet
+ import dev.slimevr.tracking.trackers.TrackerStatus
+ import dev.slimevr.tracking.trackers.udp.IMUType
+ import io.eiren.util.logging.LogManager
+ import io.github.axisangles.ktmath.Quaternion
+-import io.github.axisangles.ktmath.Quaternion.Companion.fromRotationVector
+ import io.github.axisangles.ktmath.Vector3
+ import org.hid4java.HidDevice
+ import org.hid4java.HidManager
+@@ -236,13 +235,15 @@ class TrackersHID(name: String, private val trackersConsumer: Consumer<Tracker>)
+ 						// x y z w -> w x y z
+ 						var rot = Quaternion(q[3].toFloat(), q[0].toFloat(), q[1].toFloat(), q[2].toFloat())
+ 						val scaleRot = 1 / (1 shl 15).toFloat() // compile time evaluation
+-						rot = AXES_OFFSET.times(scaleRot).times(rot) // no division
++						rot = rot.times(scaleRot) // no division
++						rot = axisOffet(rot)
+ 						tracker.setRotation(rot)
+ 						// TODO: I think the acceleration is wrong???
+ 						// Yes it was. And rotation was wrong too.
+ 						// At lease we have fixed the fixed point decoding.
+ 						val scaleAccel = 1 / (1 shl 7).toFloat() // compile time evaluation
+ 						var acceleration = Vector3(a[0].toFloat(), a[1].toFloat(), a[2].toFloat()).times(scaleAccel) // no division
++						acceleration = axisOffet(acceleration)
+ 						tracker.setAcceleration(acceleration)
+ 						tracker.dataTick()
+ 						i += 20
+@@ -305,10 +306,6 @@ class TrackersHID(name: String, private val trackersConsumer: Consumer<Tracker>)
+ 	}
+ 
+ 	companion object {
+-		/**
+-		 * Change between IMU axes and OpenGL/SteamVR axes
+-		 */
+-		private val AXES_OFFSET = fromRotationVector(-FastMath.HALF_PI, 0f, 0f)
+ 		private const val resetSourceName = ""TrackerServer""
+ 	}
+ }"
+SlimeVR/SlimeVR-Server,1014,908f4df,server/core/src/main/java/dev/slimevr/tracking/trackers/Tracker.kt,modified,9,0,9,"@@ -4,6 +4,7 @@ import dev.slimevr.VRServer
+ import dev.slimevr.config.TrackerConfig
+ import dev.slimevr.tracking.trackers.TrackerPosition.Companion.getByDesignation
+ import dev.slimevr.tracking.trackers.udp.IMUType
++import io.eiren.math.FloatMath.INV_SQRT_TWO
+ import io.eiren.util.BufferedTimer
+ import io.github.axisangles.ktmath.Quaternion
+ import io.github.axisangles.ktmath.Vector3
+@@ -382,4 +383,12 @@ class Tracker @JvmOverloads constructor(
+ 	 */
+ 	val tps: Float
+ 		get() = timer.averageFPS
++
++	companion object {
++		/**
++		 * Changes from IMU axis to OpenGL/SteamVR axis
++		 */
++		fun axisOffet(v: Vector3): Vector3 = Vector3(v.x, v.z, -v.y)
++		fun axisOffet(q: Quaternion): Quaternion = Quaternion(INV_SQRT_TWO, -INV_SQRT_TWO, 0, 0) * q
++	}
+ }"
+SlimeVR/SlimeVR-Server,1014,908f4df,server/core/src/main/java/dev/slimevr/tracking/trackers/udp/TrackersUDPServer.kt,modified,5,13,18,"@@ -1,15 +1,13 @@
+ package dev.slimevr.tracking.trackers.udp
+ 
+-import com.jme3.math.FastMath
+ import dev.slimevr.NetworkProtocol
+ import dev.slimevr.VRServer
+ import dev.slimevr.tracking.trackers.Tracker
++import dev.slimevr.tracking.trackers.Tracker.Companion.axisOffet
+ import dev.slimevr.tracking.trackers.TrackerStatus
+ import io.eiren.util.Util
+ import io.eiren.util.collections.FastList
+ import io.eiren.util.logging.LogManager
+-import io.github.axisangles.ktmath.Quaternion.Companion.fromRotationVector
+-import io.github.axisangles.ktmath.Vector3
+ import org.apache.commons.lang3.ArrayUtils
+ import solarxr_protocol.rpc.ResetType
+ import java.net.DatagramPacket
+@@ -317,13 +315,12 @@ class TrackersUDPServer(private val port: Int, name: String, private val tracker
+ 
+ 			is RotationPacket -> {
+ 				var rot = packet.rotation
+-				rot = AXES_OFFSET.times(rot)
++				rot = axisOffet(rot)
+ 				tracker = connection?.getTracker(packet.sensorId)
+ 				if (tracker == null) return
+ 				tracker.setRotation(rot)
+ 				if (packet is UDPPacket23RotationAndAcceleration) {
+-					// Switch x and y around to adjust for different axes
+-					tracker.setAcceleration(Vector3(packet.acceleration.y, packet.acceleration.x, packet.acceleration.z))
++					tracker.setAcceleration(axisOffet(packet.acceleration))
+ 				}
+ 				tracker.dataTick()
+ 			}
+@@ -332,7 +329,7 @@ class TrackersUDPServer(private val port: Int, name: String, private val tracker
+ 				tracker = connection?.getTracker(packet.sensorId)
+ 				if (tracker == null) return
+ 				var rot17 = packet.rotation
+-				rot17 = AXES_OFFSET * rot17
++				rot17 = axisOffet(rot17)
+ 				when (packet.dataType) {
+ 					UDPPacket17RotationData.DATA_TYPE_NORMAL -> {
+ 						tracker.setRotation(rot17)
+@@ -355,8 +352,7 @@ class TrackersUDPServer(private val port: Int, name: String, private val tracker
+ 			is UDPPacket4Acceleration -> {
+ 				tracker = connection?.getTracker(packet.sensorId)
+ 				if (tracker == null) return
+-				// Switch x and y around to adjust for different axes
+-				tracker.setAcceleration(Vector3(packet.acceleration.y, packet.acceleration.x, packet.acceleration.z))
++				tracker.setAcceleration(axisOffet(packet.acceleration))
+ 			}
+ 
+ 			is UDPPacket10PingPong -> {
+@@ -495,10 +491,6 @@ class TrackersUDPServer(private val port: Int, name: String, private val tracker
+ 	}
+ 
+ 	companion object {
+-		/**
+-		 * Change between IMU axes and OpenGL/SteamVR axes
+-		 */
+-		private val AXES_OFFSET = fromRotationVector(-FastMath.HALF_PI, 0f, 0f)
+ 		private const val RESET_SOURCE_NAME = ""TrackerServer""
+ 		private fun packetToString(packet: DatagramPacket?): String {
+ 			val sb = StringBuilder()"
+SlimeVR/SlimeVR-Server,1014,908f4df,server/core/src/main/java/io/eiren/math/FloatMath.kt,modified,4,4,8,"@@ -16,10 +16,10 @@ object FloatMath {
+ 	const val ZERO_TOLERANCE_F: Float = FastMath.ZERO_TOLERANCE
+ 	const val ZERO_TOLERANCE_D: Double = 0.0001
+ 
+-	val SQRT_TWO: Float = kotlin.math.sqrt(2.0).toFloat()
+-	val INV_SQRT_TWO: Float = 1f / SQRT_TWO
+-	val SQRT_THREE: Float = kotlin.math.sqrt(3.0).toFloat()
+-	val INV_SQRT_THREE: Float = 1f / SQRT_THREE
++	const val SQRT_TWO: Float = kotlin.math.sqrt(2.0).toFloat()
++	const val INV_SQRT_TWO: Float = (1.0 / kotlin.math.sqrt(2.0)).toFloat()
++	const val SQRT_THREE: Float = kotlin.math.sqrt(3.0).toFloat()
++	const val INV_SQRT_THREE: Float = 1f / SQRT_THREE
+ 	const val TWO_FPI: Float = PI * 2
+ 
+ 	const val SIN_75_DEG: Float = 0.965926f"
+SlimeVR/SlimeVR-Server,1014,908f4df,server/desktop/src/main/java/dev/slimevr/desktop/tracking/trackers/hid/TrackersHID.kt,modified,4,7,11,"@@ -1,14 +1,13 @@
+ package dev.slimevr.desktop.tracking.trackers.hid
+ 
+-import com.jme3.math.FastMath
+ import dev.slimevr.VRServer
+ import dev.slimevr.tracking.trackers.Device
+ import dev.slimevr.tracking.trackers.Tracker
++import dev.slimevr.tracking.trackers.Tracker.Companion.axisOffet
+ import dev.slimevr.tracking.trackers.TrackerStatus
+ import dev.slimevr.tracking.trackers.udp.IMUType
+ import io.eiren.util.logging.LogManager
+ import io.github.axisangles.ktmath.Quaternion
+-import io.github.axisangles.ktmath.Quaternion.Companion.fromRotationVector
+ import io.github.axisangles.ktmath.Vector3
+ import org.hid4java.HidDevice
+ import org.hid4java.HidManager
+@@ -236,13 +235,15 @@ class TrackersHID(name: String, private val trackersConsumer: Consumer<Tracker>)
+ 						// x y z w -> w x y z
+ 						var rot = Quaternion(q[3].toFloat(), q[0].toFloat(), q[1].toFloat(), q[2].toFloat())
+ 						val scaleRot = 1 / (1 shl 15).toFloat() // compile time evaluation
+-						rot = AXES_OFFSET.times(scaleRot).times(rot) // no division
++						rot = rot.times(scaleRot) // no division
++						rot = axisOffet(rot)
+ 						tracker.setRotation(rot)
+ 						// TODO: I think the acceleration is wrong???
+ 						// Yes it was. And rotation was wrong too.
+ 						// At lease we have fixed the fixed point decoding.
+ 						val scaleAccel = 1 / (1 shl 7).toFloat() // compile time evaluation
+ 						var acceleration = Vector3(a[0].toFloat(), a[1].toFloat(), a[2].toFloat()).times(scaleAccel) // no division
++						acceleration = axisOffet(acceleration)
+ 						tracker.setAcceleration(acceleration)
+ 						tracker.dataTick()
+ 						i += 20
+@@ -305,10 +306,6 @@ class TrackersHID(name: String, private val trackersConsumer: Consumer<Tracker>)
+ 	}
+ 
+ 	companion object {
+-		/**
+-		 * Change between IMU axes and OpenGL/SteamVR axes
+-		 */
+-		private val AXES_OFFSET = fromRotationVector(-FastMath.HALF_PI, 0f, 0f)
+ 		private const val resetSourceName = ""TrackerServer""
+ 	}
+ }"
+SlimeVR/SlimeVR-Server,1014,7405063,server/core/src/main/java/dev/slimevr/tracking/trackers/Tracker.kt,modified,9,0,9,"@@ -4,6 +4,7 @@ import dev.slimevr.VRServer
+ import dev.slimevr.config.TrackerConfig
+ import dev.slimevr.tracking.trackers.TrackerPosition.Companion.getByDesignation
+ import dev.slimevr.tracking.trackers.udp.IMUType
++import io.eiren.math.FloatMath.INV_SQRT_TWO
+ import io.eiren.util.BufferedTimer
+ import io.github.axisangles.ktmath.Quaternion
+ import io.github.axisangles.ktmath.Vector3
+@@ -382,4 +383,12 @@ class Tracker @JvmOverloads constructor(
+ 	 */
+ 	val tps: Float
+ 		get() = timer.averageFPS
++
++	companion object {
++		/**
++		 * Changes from IMU axis to OpenGL/SteamVR axis
++		 */
++		fun axisOffet(v: Vector3): Vector3 = Vector3(v.x, v.z, -v.y)
++		fun axisOffet(q: Quaternion): Quaternion = Quaternion(INV_SQRT_TWO, -INV_SQRT_TWO, 0, 0) * q
++	}
+ }"
+SlimeVR/SlimeVR-Server,1014,7405063,server/core/src/main/java/dev/slimevr/tracking/trackers/udp/TrackersUDPServer.kt,modified,5,13,18,"@@ -1,15 +1,13 @@
+ package dev.slimevr.tracking.trackers.udp
+ 
+-import com.jme3.math.FastMath
+ import dev.slimevr.NetworkProtocol
+ import dev.slimevr.VRServer
+ import dev.slimevr.tracking.trackers.Tracker
++import dev.slimevr.tracking.trackers.Tracker.Companion.axisOffet
+ import dev.slimevr.tracking.trackers.TrackerStatus
+ import io.eiren.util.Util
+ import io.eiren.util.collections.FastList
+ import io.eiren.util.logging.LogManager
+-import io.github.axisangles.ktmath.Quaternion.Companion.fromRotationVector
+-import io.github.axisangles.ktmath.Vector3
+ import org.apache.commons.lang3.ArrayUtils
+ import solarxr_protocol.rpc.ResetType
+ import java.net.DatagramPacket
+@@ -317,13 +315,12 @@ class TrackersUDPServer(private val port: Int, name: String, private val tracker
+ 
+ 			is RotationPacket -> {
+ 				var rot = packet.rotation
+-				rot = AXES_OFFSET.times(rot)
++				rot = axisOffet(rot)
+ 				tracker = connection?.getTracker(packet.sensorId)
+ 				if (tracker == null) return
+ 				tracker.setRotation(rot)
+ 				if (packet is UDPPacket23RotationAndAcceleration) {
+-					// Switch x and y around to adjust for different axes
+-					tracker.setAcceleration(Vector3(packet.acceleration.y, packet.acceleration.x, packet.acceleration.z))
++					tracker.setAcceleration(axisOffet(packet.acceleration))
+ 				}
+ 				tracker.dataTick()
+ 			}
+@@ -332,7 +329,7 @@ class TrackersUDPServer(private val port: Int, name: String, private val tracker
+ 				tracker = connection?.getTracker(packet.sensorId)
+ 				if (tracker == null) return
+ 				var rot17 = packet.rotation
+-				rot17 = AXES_OFFSET * rot17
++				rot17 = axisOffet(rot17)
+ 				when (packet.dataType) {
+ 					UDPPacket17RotationData.DATA_TYPE_NORMAL -> {
+ 						tracker.setRotation(rot17)
+@@ -355,8 +352,7 @@ class TrackersUDPServer(private val port: Int, name: String, private val tracker
+ 			is UDPPacket4Acceleration -> {
+ 				tracker = connection?.getTracker(packet.sensorId)
+ 				if (tracker == null) return
+-				// Switch x and y around to adjust for different axes
+-				tracker.setAcceleration(Vector3(packet.acceleration.y, packet.acceleration.x, packet.acceleration.z))
++				tracker.setAcceleration(axisOffet(packet.acceleration))
+ 			}
+ 
+ 			is UDPPacket10PingPong -> {
+@@ -495,10 +491,6 @@ class TrackersUDPServer(private val port: Int, name: String, private val tracker
+ 	}
+ 
+ 	companion object {
+-		/**
+-		 * Change between IMU axes and OpenGL/SteamVR axes
+-		 */
+-		private val AXES_OFFSET = fromRotationVector(-FastMath.HALF_PI, 0f, 0f)
+ 		private const val RESET_SOURCE_NAME = ""TrackerServer""
+ 		private fun packetToString(packet: DatagramPacket?): String {
+ 			val sb = StringBuilder()"
+SlimeVR/SlimeVR-Server,1014,7405063,server/core/src/main/java/io/eiren/math/FloatMath.kt,modified,1,1,2,"@@ -17,7 +17,7 @@ object FloatMath {
+ 	const val ZERO_TOLERANCE_D: Double = 0.0001
+ 
+ 	val SQRT_TWO: Float = kotlin.math.sqrt(2.0).toFloat()
+-	val INV_SQRT_TWO: Float = 1f / SQRT_TWO
++	val INV_SQRT_TWO: Float = (1.0 / kotlin.math.sqrt(2.0)).toFloat()
+ 	val SQRT_THREE: Float = kotlin.math.sqrt(3.0).toFloat()
+ 	val INV_SQRT_THREE: Float = 1f / SQRT_THREE
+ 	const val TWO_FPI: Float = PI * 2"
+SlimeVR/SlimeVR-Server,1014,7405063,server/desktop/src/main/java/dev/slimevr/desktop/tracking/trackers/hid/TrackersHID.kt,modified,4,7,11,"@@ -1,14 +1,13 @@
+ package dev.slimevr.desktop.tracking.trackers.hid
+ 
+-import com.jme3.math.FastMath
+ import dev.slimevr.VRServer
+ import dev.slimevr.tracking.trackers.Device
+ import dev.slimevr.tracking.trackers.Tracker
++import dev.slimevr.tracking.trackers.Tracker.Companion.axisOffet
+ import dev.slimevr.tracking.trackers.TrackerStatus
+ import dev.slimevr.tracking.trackers.udp.IMUType
+ import io.eiren.util.logging.LogManager
+ import io.github.axisangles.ktmath.Quaternion
+-import io.github.axisangles.ktmath.Quaternion.Companion.fromRotationVector
+ import io.github.axisangles.ktmath.Vector3
+ import org.hid4java.HidDevice
+ import org.hid4java.HidManager
+@@ -236,13 +235,15 @@ class TrackersHID(name: String, private val trackersConsumer: Consumer<Tracker>)
+ 						// x y z w -> w x y z
+ 						var rot = Quaternion(q[3].toFloat(), q[0].toFloat(), q[1].toFloat(), q[2].toFloat())
+ 						val scaleRot = 1 / (1 shl 15).toFloat() // compile time evaluation
+-						rot = AXES_OFFSET.times(scaleRot).times(rot) // no division
++						rot = rot.times(scaleRot) // no division
++						rot = axisOffet(rot)
+ 						tracker.setRotation(rot)
+ 						// TODO: I think the acceleration is wrong???
+ 						// Yes it was. And rotation was wrong too.
+ 						// At lease we have fixed the fixed point decoding.
+ 						val scaleAccel = 1 / (1 shl 7).toFloat() // compile time evaluation
+ 						var acceleration = Vector3(a[0].toFloat(), a[1].toFloat(), a[2].toFloat()).times(scaleAccel) // no division
++						acceleration = axisOffet(acceleration)
+ 						tracker.setAcceleration(acceleration)
+ 						tracker.dataTick()
+ 						i += 20
+@@ -305,10 +306,6 @@ class TrackersHID(name: String, private val trackersConsumer: Consumer<Tracker>)
+ 	}
+ 
+ 	companion object {
+-		/**
+-		 * Change between IMU axes and OpenGL/SteamVR axes
+-		 */
+-		private val AXES_OFFSET = fromRotationVector(-FastMath.HALF_PI, 0f, 0f)
+ 		private const val resetSourceName = ""TrackerServer""
+ 	}
+ }"
+SlimeVR/SlimeVR-Server,1014,7ef0d59,server/core/src/main/java/dev/slimevr/VRServer.kt,modified,16,2,18,"@@ -308,12 +308,26 @@ class VRServer @JvmOverloads constructor(
+ 		queueTask { humanPoseManager.clearTrackersMounting(resetSourceName) }
+ 	}
+ 
++	fun getPauseTracking(): Boolean = humanPoseManager.getPauseTracking()
++
+ 	fun setPauseTracking(pauseTracking: Boolean, sourceName: String?) {
+-		queueTask { humanPoseManager.setPauseTracking(pauseTracking, sourceName) }
++		queueTask {
++			humanPoseManager.setPauseTracking(pauseTracking, sourceName)
++			// Toggle trackers as they don't toggle when tracking is paused
++			if (this.getVRBridge(ISteamVRBridge::class.java)?.updateShareSettingsAutomatically() == true) {
++				RPCSettingsHandler.sendSteamVRUpdatedSettings(protocolAPI, protocolAPI.rpcHandler)
++			}
++		}
+ 	}
+ 
+ 	fun togglePauseTracking(sourceName: String?) {
+-		queueTask { humanPoseManager.togglePauseTracking(sourceName) }
++		queueTask {
++			humanPoseManager.togglePauseTracking(sourceName)
++			// Toggle trackers as they don't toggle when tracking is paused
++			if (this.getVRBridge(ISteamVRBridge::class.java)?.updateShareSettingsAutomatically() == true) {
++				RPCSettingsHandler.sendSteamVRUpdatedSettings(protocolAPI, protocolAPI.rpcHandler)
++			}
++		}
+ 	}
+ 
+ 	fun scheduleResetTrackersFull(resetSourceName: String?, delay: Long) {"
+SlimeVR/SlimeVR-Server,1014,7ef0d59,server/core/src/main/java/dev/slimevr/protocol/rpc/RPCHandler.kt,modified,1,1,2,"@@ -461,7 +461,7 @@ class RPCHandler(private val api: ProtocolAPI) : ProtocolHandler<RpcMessageHeade
+ 		val req = messageHeader
+ 			.message(SetPauseTrackingRequest()) as? SetPauseTrackingRequest ?: return
+ 
+-		api.server.humanPoseManager.setPauseTracking(req.pauseTracking(), RESET_SOURCE_NAME)
++		api.server.setPauseTracking(req.pauseTracking(), RESET_SOURCE_NAME)
+ 	}
+ 
+ 	fun onHeightRequest(conn: GenericConnection, messageHeader: RpcMessageHeader?) {"
+SlimeVR/SlimeVR-Server,1014,7ef0d59,server/core/src/main/java/dev/slimevr/tracking/processor/HumanPoseManager.kt,modified,2,0,2,"@@ -690,6 +690,8 @@ class HumanPoseManager(val server: VRServer?) {
+ 		get() = skeletonConfigManager.userHeightFromOffsets
+ 
+ 	// #endregion
++	fun getPauseTracking(): Boolean = skeleton.getPauseTracking()
++
+ 	fun setPauseTracking(pauseTracking: Boolean, sourceName: String?) {
+ 		skeleton.setPauseTracking(pauseTracking, sourceName)
+ 	}"
+SlimeVR/SlimeVR-Server,1014,7ef0d59,server/core/src/main/java/dev/slimevr/tracking/trackers/Tracker.kt,modified,9,0,9,"@@ -4,6 +4,7 @@ import dev.slimevr.VRServer
+ import dev.slimevr.config.TrackerConfig
+ import dev.slimevr.tracking.trackers.TrackerPosition.Companion.getByDesignation
+ import dev.slimevr.tracking.trackers.udp.IMUType
++import io.eiren.math.FloatMath.INV_SQRT_TWO
+ import io.eiren.util.BufferedTimer
+ import io.github.axisangles.ktmath.Quaternion
+ import io.github.axisangles.ktmath.Vector3
+@@ -382,4 +383,12 @@ class Tracker @JvmOverloads constructor(
+ 	 */
+ 	val tps: Float
+ 		get() = timer.averageFPS
++
++	companion object {
++		/**
++		 * Changes from IMU axis to OpenGL/SteamVR axis
++		 */
++		fun axisOffet(v: Vector3): Vector3 = Vector3(v.x, v.z, -v.y)
++		fun axisOffet(q: Quaternion): Quaternion = Quaternion(INV_SQRT_TWO, -INV_SQRT_TWO, 0f, 0f) * q
++	}
+ }"
+SlimeVR/SlimeVR-Server,1014,7ef0d59,server/core/src/main/java/dev/slimevr/tracking/trackers/udp/TrackersUDPServer.kt,modified,5,13,18,"@@ -1,15 +1,13 @@
+ package dev.slimevr.tracking.trackers.udp
+ 
+-import com.jme3.math.FastMath
+ import dev.slimevr.NetworkProtocol
+ import dev.slimevr.VRServer
+ import dev.slimevr.tracking.trackers.Tracker
++import dev.slimevr.tracking.trackers.Tracker.Companion.axisOffet
+ import dev.slimevr.tracking.trackers.TrackerStatus
+ import io.eiren.util.Util
+ import io.eiren.util.collections.FastList
+ import io.eiren.util.logging.LogManager
+-import io.github.axisangles.ktmath.Quaternion.Companion.fromRotationVector
+-import io.github.axisangles.ktmath.Vector3
+ import org.apache.commons.lang3.ArrayUtils
+ import solarxr_protocol.rpc.ResetType
+ import java.net.DatagramPacket
+@@ -317,13 +315,12 @@ class TrackersUDPServer(private val port: Int, name: String, private val tracker
+ 
+ 			is RotationPacket -> {
+ 				var rot = packet.rotation
+-				rot = AXES_OFFSET.times(rot)
++				rot = axisOffet(rot)
+ 				tracker = connection?.getTracker(packet.sensorId)
+ 				if (tracker == null) return
+ 				tracker.setRotation(rot)
+ 				if (packet is UDPPacket23RotationAndAcceleration) {
+-					// Switch x and y around to adjust for different axes
+-					tracker.setAcceleration(Vector3(packet.acceleration.y, packet.acceleration.x, packet.acceleration.z))
++					tracker.setAcceleration(axisOffet(packet.acceleration))
+ 				}
+ 				tracker.dataTick()
+ 			}
+@@ -332,7 +329,7 @@ class TrackersUDPServer(private val port: Int, name: String, private val tracker
+ 				tracker = connection?.getTracker(packet.sensorId)
+ 				if (tracker == null) return
+ 				var rot17 = packet.rotation
+-				rot17 = AXES_OFFSET * rot17
++				rot17 = axisOffet(rot17)
+ 				when (packet.dataType) {
+ 					UDPPacket17RotationData.DATA_TYPE_NORMAL -> {
+ 						tracker.setRotation(rot17)
+@@ -355,8 +352,7 @@ class TrackersUDPServer(private val port: Int, name: String, private val tracker
+ 			is UDPPacket4Acceleration -> {
+ 				tracker = connection?.getTracker(packet.sensorId)
+ 				if (tracker == null) return
+-				// Switch x and y around to adjust for different axes
+-				tracker.setAcceleration(Vector3(packet.acceleration.y, packet.acceleration.x, packet.acceleration.z))
++				tracker.setAcceleration(axisOffet(packet.acceleration))
+ 			}
+ 
+ 			is UDPPacket10PingPong -> {
+@@ -495,10 +491,6 @@ class TrackersUDPServer(private val port: Int, name: String, private val tracker
+ 	}
+ 
+ 	companion object {
+-		/**
+-		 * Change between IMU axes and OpenGL/SteamVR axes
+-		 */
+-		private val AXES_OFFSET = fromRotationVector(-FastMath.HALF_PI, 0f, 0f)
+ 		private const val RESET_SOURCE_NAME = ""TrackerServer""
+ 		private fun packetToString(packet: DatagramPacket?): String {
+ 			val sb = StringBuilder()"
+SlimeVR/SlimeVR-Server,1014,7ef0d59,server/core/src/main/java/io/eiren/math/FloatMath.kt,modified,1,1,2,"@@ -17,7 +17,7 @@ object FloatMath {
+ 	const val ZERO_TOLERANCE_D: Double = 0.0001
+ 
+ 	val SQRT_TWO: Float = kotlin.math.sqrt(2.0).toFloat()
+-	val INV_SQRT_TWO: Float = 1f / SQRT_TWO
++	val INV_SQRT_TWO: Float = (1.0 / kotlin.math.sqrt(2.0)).toFloat()
+ 	val SQRT_THREE: Float = kotlin.math.sqrt(3.0).toFloat()
+ 	val INV_SQRT_THREE: Float = 1f / SQRT_THREE
+ 	const val TWO_FPI: Float = PI * 2"
+SlimeVR/SlimeVR-Server,1014,7ef0d59,server/desktop/src/main/java/dev/slimevr/desktop/platform/SteamVRBridge.kt,modified,5,2,7,"@@ -20,7 +20,7 @@ import solarxr_protocol.rpc.StatusDataUnion
+ import solarxr_protocol.rpc.StatusSteamVRDisconnectedT
+ 
+ abstract class SteamVRBridge(
+-	server: VRServer,
++	protected val server: VRServer,
+ 	threadName: String,
+ 	bridgeName: String,
+ 	protected val bridgeSettingsKey: String,
+@@ -53,7 +53,9 @@ abstract class SteamVRBridge(
+ 	}
+ 
+ 	override fun updateShareSettingsAutomatically(): Boolean {
+-		if (!config.automaticSharedTrackersToggling) return false
++		// Return false if automatic trackers is disabled or if tracking is paused
++		if (!config.automaticSharedTrackersToggling || server.getPauseTracking()) return false
++
+ 		val skeleton = instance.humanPoseManager.skeleton
+ 		val isWaistSteamVr = skeleton.hipTracker?.device?.isOpenVrDevice == true ||
+ 			skeleton.waistTracker?.device?.isOpenVrDevice == true
+@@ -110,6 +112,7 @@ abstract class SteamVRBridge(
+ 		changeShareSettings(TrackerRole.RIGHT_ELBOW, hasRightElbow && !isRightElbowSteamVr)
+ 
+ 		// Hands aren't touched as they will override the controller's tracking
++		// Return true to say that trackers were successfully toggled automatically
+ 		return true
+ 	}
+ "
+SlimeVR/SlimeVR-Server,1014,7ef0d59,server/desktop/src/main/java/dev/slimevr/desktop/tracking/trackers/hid/TrackersHID.kt,modified,4,7,11,"@@ -1,14 +1,13 @@
+ package dev.slimevr.desktop.tracking.trackers.hid
+ 
+-import com.jme3.math.FastMath
+ import dev.slimevr.VRServer
+ import dev.slimevr.tracking.trackers.Device
+ import dev.slimevr.tracking.trackers.Tracker
++import dev.slimevr.tracking.trackers.Tracker.Companion.axisOffet
+ import dev.slimevr.tracking.trackers.TrackerStatus
+ import dev.slimevr.tracking.trackers.udp.IMUType
+ import io.eiren.util.logging.LogManager
+ import io.github.axisangles.ktmath.Quaternion
+-import io.github.axisangles.ktmath.Quaternion.Companion.fromRotationVector
+ import io.github.axisangles.ktmath.Vector3
+ import org.hid4java.HidDevice
+ import org.hid4java.HidManager
+@@ -236,13 +235,15 @@ class TrackersHID(name: String, private val trackersConsumer: Consumer<Tracker>)
+ 						// x y z w -> w x y z
+ 						var rot = Quaternion(q[3].toFloat(), q[0].toFloat(), q[1].toFloat(), q[2].toFloat())
+ 						val scaleRot = 1 / (1 shl 15).toFloat() // compile time evaluation
+-						rot = AXES_OFFSET.times(scaleRot).times(rot) // no division
++						rot = rot.times(scaleRot) // no division
++						rot = axisOffet(rot)
+ 						tracker.setRotation(rot)
+ 						// TODO: I think the acceleration is wrong???
+ 						// Yes it was. And rotation was wrong too.
+ 						// At lease we have fixed the fixed point decoding.
+ 						val scaleAccel = 1 / (1 shl 7).toFloat() // compile time evaluation
+ 						var acceleration = Vector3(a[0].toFloat(), a[1].toFloat(), a[2].toFloat()).times(scaleAccel) // no division
++						acceleration = axisOffet(acceleration)
+ 						tracker.setAcceleration(acceleration)
+ 						tracker.dataTick()
+ 						i += 20
+@@ -305,10 +306,6 @@ class TrackersHID(name: String, private val trackersConsumer: Consumer<Tracker>)
+ 	}
+ 
+ 	companion object {
+-		/**
+-		 * Change between IMU axes and OpenGL/SteamVR axes
+-		 */
+-		private val AXES_OFFSET = fromRotationVector(-FastMath.HALF_PI, 0f, 0f)
+ 		private const val resetSourceName = ""TrackerServer""
+ 	}
+ }"
+SlimeVR/SlimeVR-Server,1014,9f6ff6a,server/core/src/main/java/dev/slimevr/tracking/trackers/Tracker.kt,modified,9,0,9,"@@ -4,6 +4,7 @@ import dev.slimevr.VRServer
+ import dev.slimevr.config.TrackerConfig
+ import dev.slimevr.tracking.trackers.TrackerPosition.Companion.getByDesignation
+ import dev.slimevr.tracking.trackers.udp.IMUType
++import io.eiren.math.FloatMath.INV_SQRT_TWO
+ import io.eiren.util.BufferedTimer
+ import io.github.axisangles.ktmath.Quaternion
+ import io.github.axisangles.ktmath.Vector3
+@@ -382,4 +383,12 @@ class Tracker @JvmOverloads constructor(
+ 	 */
+ 	val tps: Float
+ 		get() = timer.averageFPS
++
++	companion object {
++		/**
++		 * Changes from IMU axis to OpenGL/SteamVR axis
++		 */
++		fun axisOffet(v: Vector3): Vector3 = Vector3(v.x, v.z, -v.y)
++		fun axisOffet(q: Quaternion): Quaternion = Quaternion(INV_SQRT_TWO, -INV_SQRT_TWO, 0f, 0f) * q
++	}
+ }"
+SlimeVR/SlimeVR-Server,1014,9f6ff6a,server/core/src/main/java/dev/slimevr/tracking/trackers/udp/TrackersUDPServer.kt,modified,5,13,18,"@@ -1,15 +1,13 @@
+ package dev.slimevr.tracking.trackers.udp
+ 
+-import com.jme3.math.FastMath
+ import dev.slimevr.NetworkProtocol
+ import dev.slimevr.VRServer
+ import dev.slimevr.tracking.trackers.Tracker
++import dev.slimevr.tracking.trackers.Tracker.Companion.axisOffet
+ import dev.slimevr.tracking.trackers.TrackerStatus
+ import io.eiren.util.Util
+ import io.eiren.util.collections.FastList
+ import io.eiren.util.logging.LogManager
+-import io.github.axisangles.ktmath.Quaternion.Companion.fromRotationVector
+-import io.github.axisangles.ktmath.Vector3
+ import org.apache.commons.lang3.ArrayUtils
+ import solarxr_protocol.rpc.ResetType
+ import java.net.DatagramPacket
+@@ -317,13 +315,12 @@ class TrackersUDPServer(private val port: Int, name: String, private val tracker
+ 
+ 			is RotationPacket -> {
+ 				var rot = packet.rotation
+-				rot = AXES_OFFSET.times(rot)
++				rot = axisOffet(rot)
+ 				tracker = connection?.getTracker(packet.sensorId)
+ 				if (tracker == null) return
+ 				tracker.setRotation(rot)
+ 				if (packet is UDPPacket23RotationAndAcceleration) {
+-					// Switch x and y around to adjust for different axes
+-					tracker.setAcceleration(Vector3(packet.acceleration.y, packet.acceleration.x, packet.acceleration.z))
++					tracker.setAcceleration(axisOffet(packet.acceleration))
+ 				}
+ 				tracker.dataTick()
+ 			}
+@@ -332,7 +329,7 @@ class TrackersUDPServer(private val port: Int, name: String, private val tracker
+ 				tracker = connection?.getTracker(packet.sensorId)
+ 				if (tracker == null) return
+ 				var rot17 = packet.rotation
+-				rot17 = AXES_OFFSET * rot17
++				rot17 = axisOffet(rot17)
+ 				when (packet.dataType) {
+ 					UDPPacket17RotationData.DATA_TYPE_NORMAL -> {
+ 						tracker.setRotation(rot17)
+@@ -355,8 +352,7 @@ class TrackersUDPServer(private val port: Int, name: String, private val tracker
+ 			is UDPPacket4Acceleration -> {
+ 				tracker = connection?.getTracker(packet.sensorId)
+ 				if (tracker == null) return
+-				// Switch x and y around to adjust for different axes
+-				tracker.setAcceleration(Vector3(packet.acceleration.y, packet.acceleration.x, packet.acceleration.z))
++				tracker.setAcceleration(axisOffet(packet.acceleration))
+ 			}
+ 
+ 			is UDPPacket10PingPong -> {
+@@ -495,10 +491,6 @@ class TrackersUDPServer(private val port: Int, name: String, private val tracker
+ 	}
+ 
+ 	companion object {
+-		/**
+-		 * Change between IMU axes and OpenGL/SteamVR axes
+-		 */
+-		private val AXES_OFFSET = fromRotationVector(-FastMath.HALF_PI, 0f, 0f)
+ 		private const val RESET_SOURCE_NAME = ""TrackerServer""
+ 		private fun packetToString(packet: DatagramPacket?): String {
+ 			val sb = StringBuilder()"
+SlimeVR/SlimeVR-Server,1014,9f6ff6a,server/core/src/main/java/io/eiren/math/FloatMath.kt,modified,1,1,2,"@@ -17,7 +17,7 @@ object FloatMath {
+ 	const val ZERO_TOLERANCE_D: Double = 0.0001
+ 
+ 	val SQRT_TWO: Float = kotlin.math.sqrt(2.0).toFloat()
+-	val INV_SQRT_TWO: Float = 1f / SQRT_TWO
++	val INV_SQRT_TWO: Float = (1.0 / kotlin.math.sqrt(2.0)).toFloat()
+ 	val SQRT_THREE: Float = kotlin.math.sqrt(3.0).toFloat()
+ 	val INV_SQRT_THREE: Float = 1f / SQRT_THREE
+ 	const val TWO_FPI: Float = PI * 2"
+SlimeVR/SlimeVR-Server,1014,9f6ff6a,server/desktop/src/main/java/dev/slimevr/desktop/tracking/trackers/hid/TrackersHID.kt,modified,4,7,11,"@@ -1,14 +1,13 @@
+ package dev.slimevr.desktop.tracking.trackers.hid
+ 
+-import com.jme3.math.FastMath
+ import dev.slimevr.VRServer
+ import dev.slimevr.tracking.trackers.Device
+ import dev.slimevr.tracking.trackers.Tracker
++import dev.slimevr.tracking.trackers.Tracker.Companion.axisOffet
+ import dev.slimevr.tracking.trackers.TrackerStatus
+ import dev.slimevr.tracking.trackers.udp.IMUType
+ import io.eiren.util.logging.LogManager
+ import io.github.axisangles.ktmath.Quaternion
+-import io.github.axisangles.ktmath.Quaternion.Companion.fromRotationVector
+ import io.github.axisangles.ktmath.Vector3
+ import org.hid4java.HidDevice
+ import org.hid4java.HidManager
+@@ -236,13 +235,15 @@ class TrackersHID(name: String, private val trackersConsumer: Consumer<Tracker>)
+ 						// x y z w -> w x y z
+ 						var rot = Quaternion(q[3].toFloat(), q[0].toFloat(), q[1].toFloat(), q[2].toFloat())
+ 						val scaleRot = 1 / (1 shl 15).toFloat() // compile time evaluation
+-						rot = AXES_OFFSET.times(scaleRot).times(rot) // no division
++						rot = rot.times(scaleRot) // no division
++						rot = axisOffet(rot)
+ 						tracker.setRotation(rot)
+ 						// TODO: I think the acceleration is wrong???
+ 						// Yes it was. And rotation was wrong too.
+ 						// At lease we have fixed the fixed point decoding.
+ 						val scaleAccel = 1 / (1 shl 7).toFloat() // compile time evaluation
+ 						var acceleration = Vector3(a[0].toFloat(), a[1].toFloat(), a[2].toFloat()).times(scaleAccel) // no division
++						acceleration = axisOffet(acceleration)
+ 						tracker.setAcceleration(acceleration)
+ 						tracker.dataTick()
+ 						i += 20
+@@ -305,10 +306,6 @@ class TrackersHID(name: String, private val trackersConsumer: Consumer<Tracker>)
+ 	}
+ 
+ 	companion object {
+-		/**
+-		 * Change between IMU axes and OpenGL/SteamVR axes
+-		 */
+-		private val AXES_OFFSET = fromRotationVector(-FastMath.HALF_PI, 0f, 0f)
+ 		private const val resetSourceName = ""TrackerServer""
+ 	}
+ }"
+SlimeVR/SlimeVR-Server,1014,5816289,server/core/src/main/java/dev/slimevr/tracking/trackers/Tracker.kt,modified,9,0,9,"@@ -4,6 +4,7 @@ import dev.slimevr.VRServer
+ import dev.slimevr.config.TrackerConfig
+ import dev.slimevr.tracking.trackers.TrackerPosition.Companion.getByDesignation
+ import dev.slimevr.tracking.trackers.udp.IMUType
++import io.eiren.math.FloatMath.INV_SQRT_TWO
+ import io.eiren.util.BufferedTimer
+ import io.github.axisangles.ktmath.Quaternion
+ import io.github.axisangles.ktmath.Vector3
+@@ -382,4 +383,12 @@ class Tracker @JvmOverloads constructor(
+ 	 */
+ 	val tps: Float
+ 		get() = timer.averageFPS
++
++	companion object {
++		/**
++		 * Changes from IMU axis to OpenGL/SteamVR axis
++		 */
++		fun axisOffset(v: Vector3): Vector3 = Vector3(v.x, v.z, -v.y)
++		fun axisOffset(q: Quaternion): Quaternion = Quaternion(INV_SQRT_TWO, -INV_SQRT_TWO, 0f, 0f) * q
++	}
+ }"
+SlimeVR/SlimeVR-Server,1014,5816289,server/core/src/main/java/dev/slimevr/tracking/trackers/udp/TrackersUDPServer.kt,modified,5,13,18,"@@ -1,15 +1,13 @@
+ package dev.slimevr.tracking.trackers.udp
+ 
+-import com.jme3.math.FastMath
+ import dev.slimevr.NetworkProtocol
+ import dev.slimevr.VRServer
+ import dev.slimevr.tracking.trackers.Tracker
++import dev.slimevr.tracking.trackers.Tracker.Companion.axisOffset
+ import dev.slimevr.tracking.trackers.TrackerStatus
+ import io.eiren.util.Util
+ import io.eiren.util.collections.FastList
+ import io.eiren.util.logging.LogManager
+-import io.github.axisangles.ktmath.Quaternion.Companion.fromRotationVector
+-import io.github.axisangles.ktmath.Vector3
+ import org.apache.commons.lang3.ArrayUtils
+ import solarxr_protocol.rpc.ResetType
+ import java.net.DatagramPacket
+@@ -317,13 +315,12 @@ class TrackersUDPServer(private val port: Int, name: String, private val tracker
+ 
+ 			is RotationPacket -> {
+ 				var rot = packet.rotation
+-				rot = AXES_OFFSET.times(rot)
++				rot = axisOffset(rot)
+ 				tracker = connection?.getTracker(packet.sensorId)
+ 				if (tracker == null) return
+ 				tracker.setRotation(rot)
+ 				if (packet is UDPPacket23RotationAndAcceleration) {
+-					// Switch x and y around to adjust for different axes
+-					tracker.setAcceleration(Vector3(packet.acceleration.y, packet.acceleration.x, packet.acceleration.z))
++					tracker.setAcceleration(axisOffset(packet.acceleration))
+ 				}
+ 				tracker.dataTick()
+ 			}
+@@ -332,7 +329,7 @@ class TrackersUDPServer(private val port: Int, name: String, private val tracker
+ 				tracker = connection?.getTracker(packet.sensorId)
+ 				if (tracker == null) return
+ 				var rot17 = packet.rotation
+-				rot17 = AXES_OFFSET * rot17
++				rot17 = axisOffset(rot17)
+ 				when (packet.dataType) {
+ 					UDPPacket17RotationData.DATA_TYPE_NORMAL -> {
+ 						tracker.setRotation(rot17)
+@@ -355,8 +352,7 @@ class TrackersUDPServer(private val port: Int, name: String, private val tracker
+ 			is UDPPacket4Acceleration -> {
+ 				tracker = connection?.getTracker(packet.sensorId)
+ 				if (tracker == null) return
+-				// Switch x and y around to adjust for different axes
+-				tracker.setAcceleration(Vector3(packet.acceleration.y, packet.acceleration.x, packet.acceleration.z))
++				tracker.setAcceleration(axisOffset(packet.acceleration))
+ 			}
+ 
+ 			is UDPPacket10PingPong -> {
+@@ -495,10 +491,6 @@ class TrackersUDPServer(private val port: Int, name: String, private val tracker
+ 	}
+ 
+ 	companion object {
+-		/**
+-		 * Change between IMU axes and OpenGL/SteamVR axes
+-		 */
+-		private val AXES_OFFSET = fromRotationVector(-FastMath.HALF_PI, 0f, 0f)
+ 		private const val RESET_SOURCE_NAME = ""TrackerServer""
+ 		private fun packetToString(packet: DatagramPacket?): String {
+ 			val sb = StringBuilder()"
+SlimeVR/SlimeVR-Server,1014,5816289,server/core/src/main/java/io/eiren/math/FloatMath.kt,modified,1,1,2,"@@ -17,7 +17,7 @@ object FloatMath {
+ 	const val ZERO_TOLERANCE_D: Double = 0.0001
+ 
+ 	val SQRT_TWO: Float = kotlin.math.sqrt(2.0).toFloat()
+-	val INV_SQRT_TWO: Float = 1f / SQRT_TWO
++	val INV_SQRT_TWO: Float = (1.0 / kotlin.math.sqrt(2.0)).toFloat()
+ 	val SQRT_THREE: Float = kotlin.math.sqrt(3.0).toFloat()
+ 	val INV_SQRT_THREE: Float = 1f / SQRT_THREE
+ 	const val TWO_FPI: Float = PI * 2"
+SlimeVR/SlimeVR-Server,1014,5816289,server/desktop/src/main/java/dev/slimevr/desktop/tracking/trackers/hid/TrackersHID.kt,modified,4,7,11,"@@ -1,14 +1,13 @@
+ package dev.slimevr.desktop.tracking.trackers.hid
+ 
+-import com.jme3.math.FastMath
+ import dev.slimevr.VRServer
+ import dev.slimevr.tracking.trackers.Device
+ import dev.slimevr.tracking.trackers.Tracker
++import dev.slimevr.tracking.trackers.Tracker.Companion.axisOffset
+ import dev.slimevr.tracking.trackers.TrackerStatus
+ import dev.slimevr.tracking.trackers.udp.IMUType
+ import io.eiren.util.logging.LogManager
+ import io.github.axisangles.ktmath.Quaternion
+-import io.github.axisangles.ktmath.Quaternion.Companion.fromRotationVector
+ import io.github.axisangles.ktmath.Vector3
+ import org.hid4java.HidDevice
+ import org.hid4java.HidManager
+@@ -236,13 +235,15 @@ class TrackersHID(name: String, private val trackersConsumer: Consumer<Tracker>)
+ 						// x y z w -> w x y z
+ 						var rot = Quaternion(q[3].toFloat(), q[0].toFloat(), q[1].toFloat(), q[2].toFloat())
+ 						val scaleRot = 1 / (1 shl 15).toFloat() // compile time evaluation
+-						rot = AXES_OFFSET.times(scaleRot).times(rot) // no division
++						rot = rot.times(scaleRot) // no division
++						rot = axisOffset(rot)
+ 						tracker.setRotation(rot)
+ 						// TODO: I think the acceleration is wrong???
+ 						// Yes it was. And rotation was wrong too.
+ 						// At lease we have fixed the fixed point decoding.
+ 						val scaleAccel = 1 / (1 shl 7).toFloat() // compile time evaluation
+ 						var acceleration = Vector3(a[0].toFloat(), a[1].toFloat(), a[2].toFloat()).times(scaleAccel) // no division
++						acceleration = axisOffset(acceleration)
+ 						tracker.setAcceleration(acceleration)
+ 						tracker.dataTick()
+ 						i += 20
+@@ -305,10 +306,6 @@ class TrackersHID(name: String, private val trackersConsumer: Consumer<Tracker>)
+ 	}
+ 
+ 	companion object {
+-		/**
+-		 * Change between IMU axes and OpenGL/SteamVR axes
+-		 */
+-		private val AXES_OFFSET = fromRotationVector(-FastMath.HALF_PI, 0f, 0f)
+ 		private const val resetSourceName = ""TrackerServer""
+ 	}
+ }"
+SlimeVR/SlimeVR-Server,1014,6d2f0de,.gitignore,modified,1,0,1,"@@ -46,3 +46,4 @@ local.properties
+ 
+ # Ignore temporary config
+ vrconfig.yml.tmp
++*.DS_Store"
+SlimeVR/SlimeVR-Server,1014,6d2f0de,server/core/src/main/java/dev/slimevr/tracking/trackers/Tracker.kt,modified,10,0,10,"@@ -6,6 +6,7 @@ import dev.slimevr.tracking.trackers.TrackerPosition.Companion.getByDesignation
+ import dev.slimevr.tracking.trackers.udp.IMUType
+ import dev.slimevr.tracking.trackers.udp.MagnetometerStatus
+ import dev.slimevr.tracking.trackers.udp.TrackerDataType
++import io.eiren.math.FloatMath.INV_SQRT_TWO
+ import io.eiren.util.BufferedTimer
+ import io.github.axisangles.ktmath.Quaternion
+ import io.github.axisangles.ktmath.Vector3
+@@ -437,4 +438,13 @@ class Tracker @JvmOverloads constructor(
+ 	fun resetFilteringQuats() {
+ 		filteringHandler.resetMovingAverage(_rotation)
+ 	}
++
++	companion object {
++		/**
++		 * Changes from IMU axis to OpenGL/SteamVR axis
++		 */
++		fun axisOffset(v: Vector3): Vector3 = Vector3(v.x, v.z, -v.y)
++		private val rotationOffset = Quaternion(INV_SQRT_TWO, -INV_SQRT_TWO, 0f, 0f)
++		fun axisOffset(q: Quaternion): Quaternion = rotationOffset * q
++	}
+ }"
+SlimeVR/SlimeVR-Server,1014,6d2f0de,server/core/src/main/java/dev/slimevr/tracking/trackers/udp/TrackersUDPServer.kt,modified,5,11,16,"@@ -1,6 +1,5 @@
+ package dev.slimevr.tracking.trackers.udp
+ 
+-import com.jme3.math.FastMath
+ import dev.slimevr.NetworkProtocol
+ import dev.slimevr.VRServer
+ import dev.slimevr.config.config
+@@ -12,6 +11,7 @@ import io.eiren.util.logging.LogManager
+ import io.github.axisangles.ktmath.Quaternion.Companion.fromRotationVector
+ import io.github.axisangles.ktmath.Vector3
+ import kotlinx.coroutines.*
++import dev.slimevr.tracking.trackers.Tracker.Companion.axisOffset
+ import org.apache.commons.lang3.ArrayUtils
+ import solarxr_protocol.rpc.ResetType
+ import java.net.DatagramPacket
+@@ -387,13 +387,12 @@ class TrackersUDPServer(private val port: Int, name: String, private val tracker
+ 
+ 			is RotationPacket -> {
+ 				var rot = packet.rotation
+-				rot = AXES_OFFSET.times(rot)
++				rot = axisOffset(rot)
+ 				tracker = connection?.getTracker(packet.sensorId)
+ 				if (tracker == null) return
+ 				tracker.setRotation(rot)
+ 				if (packet is UDPPacket23RotationAndAcceleration) {
+-					// Switch x and y around to adjust for different axes
+-					tracker.setAcceleration(Vector3(packet.acceleration.y, packet.acceleration.x, packet.acceleration.z))
++					tracker.setAcceleration(axisOffset(packet.acceleration))
+ 				}
+ 				tracker.dataTick()
+ 			}
+@@ -402,7 +401,7 @@ class TrackersUDPServer(private val port: Int, name: String, private val tracker
+ 				tracker = connection?.getTracker(packet.sensorId)
+ 				if (tracker == null) return
+ 				var rot17 = packet.rotation
+-				rot17 = AXES_OFFSET * rot17
++				rot17 = axisOffset(rot17)
+ 				when (packet.dataType) {
+ 					UDPPacket17RotationData.DATA_TYPE_NORMAL -> {
+ 						tracker.setRotation(rot17)
+@@ -425,8 +424,7 @@ class TrackersUDPServer(private val port: Int, name: String, private val tracker
+ 			is UDPPacket4Acceleration -> {
+ 				tracker = connection?.getTracker(packet.sensorId)
+ 				if (tracker == null) return
+-				// Switch x and y around to adjust for different axes
+-				tracker.setAcceleration(Vector3(packet.acceleration.y, packet.acceleration.x, packet.acceleration.z))
++				tracker.setAcceleration(axisOffset(packet.acceleration))
+ 			}
+ 
+ 			is UDPPacket10PingPong -> {
+@@ -600,10 +598,6 @@ class TrackersUDPServer(private val port: Int, name: String, private val tracker
+ 	}
+ 
+ 	companion object {
+-		/**
+-		 * Change between IMU axes and OpenGL/SteamVR axes
+-		 */
+-		private val AXES_OFFSET = fromRotationVector(-FastMath.HALF_PI, 0f, 0f)
+ 		private const val RESET_SOURCE_NAME = ""TrackerServer""
+ 		private fun packetToString(packet: DatagramPacket?): String {
+ 			val sb = StringBuilder()"
+SlimeVR/SlimeVR-Server,1014,6d2f0de,server/core/src/main/java/io/eiren/math/FloatMath.kt,modified,1,1,2,"@@ -17,7 +17,7 @@ object FloatMath {
+ 	const val ZERO_TOLERANCE_D: Double = 0.0001
+ 
+ 	val SQRT_TWO: Float = kotlin.math.sqrt(2.0).toFloat()
+-	val INV_SQRT_TWO: Float = 1f / SQRT_TWO
++	val INV_SQRT_TWO: Float = (1.0 / kotlin.math.sqrt(2.0)).toFloat()
+ 	val SQRT_THREE: Float = kotlin.math.sqrt(3.0).toFloat()
+ 	val INV_SQRT_THREE: Float = 1f / SQRT_THREE
+ 	const val TWO_FPI: Float = PI * 2"
+SlimeVR/SlimeVR-Server,1014,6d2f0de,server/desktop/src/main/java/dev/slimevr/desktop/tracking/trackers/hid/TrackersHID.kt,modified,4,8,12,"@@ -1,16 +1,15 @@
+ package dev.slimevr.desktop.tracking.trackers.hid
+ 
+-import com.jme3.math.FastMath
+ import dev.slimevr.VRServer
+ import dev.slimevr.tracking.trackers.Device
+ import dev.slimevr.tracking.trackers.Tracker
++import dev.slimevr.tracking.trackers.Tracker.Companion.axisOffset
+ import dev.slimevr.tracking.trackers.TrackerStatus
+ import dev.slimevr.tracking.trackers.udp.BoardType
+ import dev.slimevr.tracking.trackers.udp.IMUType
+ import dev.slimevr.tracking.trackers.udp.MCUType
+ import io.eiren.util.logging.LogManager
+ import io.github.axisangles.ktmath.Quaternion
+-import io.github.axisangles.ktmath.Quaternion.Companion.fromRotationVector
+ import io.github.axisangles.ktmath.Vector3
+ import org.hid4java.HidDevice
+ import org.hid4java.HidException
+@@ -389,7 +388,7 @@ class TrackersHID(name: String, private val trackersConsumer: Consumer<Tracker>)
+ 							// x y z w -> w x y z
+ 							var rot = Quaternion(q[3].toFloat(), q[0].toFloat(), q[1].toFloat(), q[2].toFloat())
+ 							val scaleRot = 1 / (1 shl 15).toFloat() // compile time evaluation
+-							rot = AXES_OFFSET.times(scaleRot).times(rot) // no division
++							rot = axisOffset(rot * scaleRot) // no division
+ 							tracker.setRotation(rot)
+ 						}
+ 						if (packetType == 2) {
+@@ -408,13 +407,14 @@ class TrackersHID(name: String, private val trackersConsumer: Consumer<Tracker>)
+ 							val s = sin(a)
+ 							val k = s * invSqrtD
+ 							var rot = Quaternion(cos(a), k * v[0], k * v[1], k * v[2])
+-							rot = AXES_OFFSET.times(rot) // no division
++							rot = axisOffset(rot) // no division
+ 							tracker.setRotation(rot)
+ 						}
+ 						if (packetType == 1 || packetType == 2) {
+ 							// TODO: Acceleration ""was"" wrong
+ 							val scaleAccel = 1 / (1 shl 7).toFloat() // compile time evaluation
+ 							var acceleration = Vector3(a[0].toFloat(), a[1].toFloat(), a[2].toFloat()).times(scaleAccel) // no division
++							acceleration = axisOffset(acceleration)
+ 							tracker.setAcceleration(acceleration)
+ 							tracker.dataTick() // only data tick if there is rotation data
+ 						}
+@@ -481,10 +481,6 @@ class TrackersHID(name: String, private val trackersConsumer: Consumer<Tracker>)
+ 	}
+ 
+ 	companion object {
+-		/**
+-		 * Change between IMU axes and OpenGL/SteamVR axes
+-		 */
+-		private val AXES_OFFSET = fromRotationVector(-FastMath.HALF_PI, 0f, 0f)
+ 		private const val resetSourceName = ""TrackerServer""
+ 	}
+ }"
+SlimeVR/SlimeVR-Server,1014,67e5fe1,.gitignore,modified,1,0,1,"@@ -46,3 +46,4 @@ local.properties
+ 
+ # Ignore temporary config
+ vrconfig.yml.tmp
++*.DS_Store"
+SlimeVR/SlimeVR-Server,1014,67e5fe1,server/core/src/main/java/dev/slimevr/tracking/trackers/Tracker.kt,modified,10,0,10,"@@ -6,6 +6,7 @@ import dev.slimevr.tracking.trackers.TrackerPosition.Companion.getByDesignation
+ import dev.slimevr.tracking.trackers.udp.IMUType
+ import dev.slimevr.tracking.trackers.udp.MagnetometerStatus
+ import dev.slimevr.tracking.trackers.udp.TrackerDataType
++import io.eiren.math.FloatMath.INV_SQRT_TWO
+ import io.eiren.util.BufferedTimer
+ import io.github.axisangles.ktmath.Quaternion
+ import io.github.axisangles.ktmath.Vector3
+@@ -437,4 +438,13 @@ class Tracker @JvmOverloads constructor(
+ 	fun resetFilteringQuats() {
+ 		filteringHandler.resetMovingAverage(_rotation)
+ 	}
++
++	companion object {
++		/**
++		 * Changes from IMU axis to OpenGL/SteamVR axis
++		 */
++		fun axisOffset(v: Vector3): Vector3 = Vector3(v.x, v.z, -v.y)
++		private val rotationOffset = Quaternion(INV_SQRT_TWO, -INV_SQRT_TWO, 0f, 0f)
++		fun axisOffset(q: Quaternion): Quaternion = rotationOffset * q
++	}
+ }"
+SlimeVR/SlimeVR-Server,1014,67e5fe1,server/core/src/main/java/dev/slimevr/tracking/trackers/udp/TrackersUDPServer.kt,modified,5,13,18,"@@ -1,16 +1,14 @@
+ package dev.slimevr.tracking.trackers.udp
+ 
+-import com.jme3.math.FastMath
+ import dev.slimevr.NetworkProtocol
+ import dev.slimevr.VRServer
+ import dev.slimevr.config.config
+ import dev.slimevr.protocol.rpc.MAG_TIMEOUT
+ import dev.slimevr.tracking.trackers.*
++import dev.slimevr.tracking.trackers.Tracker.Companion.axisOffset
+ import io.eiren.util.Util
+ import io.eiren.util.collections.FastList
+ import io.eiren.util.logging.LogManager
+-import io.github.axisangles.ktmath.Quaternion.Companion.fromRotationVector
+-import io.github.axisangles.ktmath.Vector3
+ import kotlinx.coroutines.*
+ import org.apache.commons.lang3.ArrayUtils
+ import solarxr_protocol.rpc.ResetType
+@@ -387,13 +385,12 @@ class TrackersUDPServer(private val port: Int, name: String, private val tracker
+ 
+ 			is RotationPacket -> {
+ 				var rot = packet.rotation
+-				rot = AXES_OFFSET.times(rot)
++				rot = axisOffset(rot)
+ 				tracker = connection?.getTracker(packet.sensorId)
+ 				if (tracker == null) return
+ 				tracker.setRotation(rot)
+ 				if (packet is UDPPacket23RotationAndAcceleration) {
+-					// Switch x and y around to adjust for different axes
+-					tracker.setAcceleration(Vector3(packet.acceleration.y, packet.acceleration.x, packet.acceleration.z))
++					tracker.setAcceleration(axisOffset(packet.acceleration))
+ 				}
+ 				tracker.dataTick()
+ 			}
+@@ -402,7 +399,7 @@ class TrackersUDPServer(private val port: Int, name: String, private val tracker
+ 				tracker = connection?.getTracker(packet.sensorId)
+ 				if (tracker == null) return
+ 				var rot17 = packet.rotation
+-				rot17 = AXES_OFFSET * rot17
++				rot17 = axisOffset(rot17)
+ 				when (packet.dataType) {
+ 					UDPPacket17RotationData.DATA_TYPE_NORMAL -> {
+ 						tracker.setRotation(rot17)
+@@ -425,8 +422,7 @@ class TrackersUDPServer(private val port: Int, name: String, private val tracker
+ 			is UDPPacket4Acceleration -> {
+ 				tracker = connection?.getTracker(packet.sensorId)
+ 				if (tracker == null) return
+-				// Switch x and y around to adjust for different axes
+-				tracker.setAcceleration(Vector3(packet.acceleration.y, packet.acceleration.x, packet.acceleration.z))
++				tracker.setAcceleration(axisOffset(packet.acceleration))
+ 			}
+ 
+ 			is UDPPacket10PingPong -> {
+@@ -600,10 +596,6 @@ class TrackersUDPServer(private val port: Int, name: String, private val tracker
+ 	}
+ 
+ 	companion object {
+-		/**
+-		 * Change between IMU axes and OpenGL/SteamVR axes
+-		 */
+-		private val AXES_OFFSET = fromRotationVector(-FastMath.HALF_PI, 0f, 0f)
+ 		private const val RESET_SOURCE_NAME = ""TrackerServer""
+ 		private fun packetToString(packet: DatagramPacket?): String {
+ 			val sb = StringBuilder()"
+SlimeVR/SlimeVR-Server,1014,67e5fe1,server/core/src/main/java/io/eiren/math/FloatMath.kt,modified,1,1,2,"@@ -17,7 +17,7 @@ object FloatMath {
+ 	const val ZERO_TOLERANCE_D: Double = 0.0001
+ 
+ 	val SQRT_TWO: Float = kotlin.math.sqrt(2.0).toFloat()
+-	val INV_SQRT_TWO: Float = 1f / SQRT_TWO
++	val INV_SQRT_TWO: Float = (1.0 / kotlin.math.sqrt(2.0)).toFloat()
+ 	val SQRT_THREE: Float = kotlin.math.sqrt(3.0).toFloat()
+ 	val INV_SQRT_THREE: Float = 1f / SQRT_THREE
+ 	const val TWO_FPI: Float = PI * 2"
+SlimeVR/SlimeVR-Server,1014,67e5fe1,server/desktop/src/main/java/dev/slimevr/desktop/tracking/trackers/hid/TrackersHID.kt,modified,4,8,12,"@@ -1,16 +1,15 @@
+ package dev.slimevr.desktop.tracking.trackers.hid
+ 
+-import com.jme3.math.FastMath
+ import dev.slimevr.VRServer
+ import dev.slimevr.tracking.trackers.Device
+ import dev.slimevr.tracking.trackers.Tracker
++import dev.slimevr.tracking.trackers.Tracker.Companion.axisOffset
+ import dev.slimevr.tracking.trackers.TrackerStatus
+ import dev.slimevr.tracking.trackers.udp.BoardType
+ import dev.slimevr.tracking.trackers.udp.IMUType
+ import dev.slimevr.tracking.trackers.udp.MCUType
+ import io.eiren.util.logging.LogManager
+ import io.github.axisangles.ktmath.Quaternion
+-import io.github.axisangles.ktmath.Quaternion.Companion.fromRotationVector
+ import io.github.axisangles.ktmath.Vector3
+ import org.hid4java.HidDevice
+ import org.hid4java.HidException
+@@ -389,7 +388,7 @@ class TrackersHID(name: String, private val trackersConsumer: Consumer<Tracker>)
+ 							// x y z w -> w x y z
+ 							var rot = Quaternion(q[3].toFloat(), q[0].toFloat(), q[1].toFloat(), q[2].toFloat())
+ 							val scaleRot = 1 / (1 shl 15).toFloat() // compile time evaluation
+-							rot = AXES_OFFSET.times(scaleRot).times(rot) // no division
++							rot = axisOffset(rot * scaleRot) // no division
+ 							tracker.setRotation(rot)
+ 						}
+ 						if (packetType == 2) {
+@@ -408,13 +407,14 @@ class TrackersHID(name: String, private val trackersConsumer: Consumer<Tracker>)
+ 							val s = sin(a)
+ 							val k = s * invSqrtD
+ 							var rot = Quaternion(cos(a), k * v[0], k * v[1], k * v[2])
+-							rot = AXES_OFFSET.times(rot) // no division
++							rot = axisOffset(rot) // no division
+ 							tracker.setRotation(rot)
+ 						}
+ 						if (packetType == 1 || packetType == 2) {
+ 							// TODO: Acceleration ""was"" wrong
+ 							val scaleAccel = 1 / (1 shl 7).toFloat() // compile time evaluation
+ 							var acceleration = Vector3(a[0].toFloat(), a[1].toFloat(), a[2].toFloat()).times(scaleAccel) // no division
++							acceleration = axisOffset(acceleration)
+ 							tracker.setAcceleration(acceleration)
+ 							tracker.dataTick() // only data tick if there is rotation data
+ 						}
+@@ -481,10 +481,6 @@ class TrackersHID(name: String, private val trackersConsumer: Consumer<Tracker>)
+ 	}
+ 
+ 	companion object {
+-		/**
+-		 * Change between IMU axes and OpenGL/SteamVR axes
+-		 */
+-		private val AXES_OFFSET = fromRotationVector(-FastMath.HALF_PI, 0f, 0f)
+ 		private const val resetSourceName = ""TrackerServer""
+ 	}
+ }"
+SlimeVR/SlimeVR-Server,1014,db68d80,.gitignore,modified,1,0,1,"@@ -46,3 +46,4 @@ local.properties
+ 
+ # Ignore temporary config
+ vrconfig.yml.tmp
++*.DS_Store"
+SlimeVR/SlimeVR-Server,1014,db68d80,server/core/src/main/java/dev/slimevr/tracking/trackers/Tracker.kt,modified,10,0,10,"@@ -6,6 +6,7 @@ import dev.slimevr.tracking.trackers.TrackerPosition.Companion.getByDesignation
+ import dev.slimevr.tracking.trackers.udp.IMUType
+ import dev.slimevr.tracking.trackers.udp.MagnetometerStatus
+ import dev.slimevr.tracking.trackers.udp.TrackerDataType
++import io.eiren.math.FloatMath.INV_SQRT_TWO
+ import io.eiren.util.BufferedTimer
+ import io.github.axisangles.ktmath.Quaternion
+ import io.github.axisangles.ktmath.Vector3
+@@ -436,4 +437,13 @@ class Tracker @JvmOverloads constructor(
+ 	fun resetFilteringQuats(reference: Quaternion) {
+ 		filteringHandler.resetMovingAverage(getAdjustedRotation(), reference)
+ 	}
++
++	companion object {
++		/**
++		 * Changes from IMU axis to OpenGL/SteamVR axis
++		 */
++		fun axisOffset(v: Vector3): Vector3 = Vector3(v.x, v.z, -v.y)
++		private val rotationOffset = Quaternion(INV_SQRT_TWO, -INV_SQRT_TWO, 0f, 0f)
++		fun axisOffset(q: Quaternion): Quaternion = rotationOffset * q
++	}
+ }"
+SlimeVR/SlimeVR-Server,1014,db68d80,server/core/src/main/java/dev/slimevr/tracking/trackers/udp/TrackersUDPServer.kt,modified,5,13,18,"@@ -1,16 +1,14 @@
+ package dev.slimevr.tracking.trackers.udp
+ 
+-import com.jme3.math.FastMath
+ import dev.slimevr.NetworkProtocol
+ import dev.slimevr.VRServer
+ import dev.slimevr.config.config
+ import dev.slimevr.protocol.rpc.MAG_TIMEOUT
+ import dev.slimevr.tracking.trackers.*
++import dev.slimevr.tracking.trackers.Tracker.Companion.axisOffset
+ import io.eiren.util.Util
+ import io.eiren.util.collections.FastList
+ import io.eiren.util.logging.LogManager
+-import io.github.axisangles.ktmath.Quaternion.Companion.fromRotationVector
+-import io.github.axisangles.ktmath.Vector3
+ import kotlinx.coroutines.*
+ import solarxr_protocol.rpc.ResetType
+ import java.net.DatagramPacket
+@@ -389,13 +387,12 @@ class TrackersUDPServer(private val port: Int, name: String, private val tracker
+ 
+ 			is RotationPacket -> {
+ 				var rot = packet.rotation
+-				rot = AXES_OFFSET.times(rot)
++				rot = axisOffset(rot)
+ 				tracker = connection?.getTracker(packet.sensorId)
+ 				if (tracker == null) return
+ 				tracker.setRotation(rot)
+ 				if (packet is UDPPacket23RotationAndAcceleration) {
+-					// Switch x and y around to adjust for different axes
+-					tracker.setAcceleration(Vector3(packet.acceleration.y, packet.acceleration.x, packet.acceleration.z))
++					tracker.setAcceleration(axisOffset(packet.acceleration))
+ 				}
+ 				tracker.dataTick()
+ 			}
+@@ -404,7 +401,7 @@ class TrackersUDPServer(private val port: Int, name: String, private val tracker
+ 				tracker = connection?.getTracker(packet.sensorId)
+ 				if (tracker == null) return
+ 				var rot17 = packet.rotation
+-				rot17 = AXES_OFFSET * rot17
++				rot17 = axisOffset(rot17)
+ 				when (packet.dataType) {
+ 					UDPPacket17RotationData.DATA_TYPE_NORMAL -> {
+ 						tracker.setRotation(rot17)
+@@ -427,8 +424,7 @@ class TrackersUDPServer(private val port: Int, name: String, private val tracker
+ 			is UDPPacket4Acceleration -> {
+ 				tracker = connection?.getTracker(packet.sensorId)
+ 				if (tracker == null) return
+-				// Switch x and y around to adjust for different axes
+-				tracker.setAcceleration(Vector3(packet.acceleration.y, packet.acceleration.x, packet.acceleration.z))
++				tracker.setAcceleration(axisOffset(packet.acceleration))
+ 			}
+ 
+ 			is UDPPacket10PingPong -> {
+@@ -602,10 +598,6 @@ class TrackersUDPServer(private val port: Int, name: String, private val tracker
+ 	}
+ 
+ 	companion object {
+-		/**
+-		 * Change between IMU axes and OpenGL/SteamVR axes
+-		 */
+-		private val AXES_OFFSET = fromRotationVector(-FastMath.HALF_PI, 0f, 0f)
+ 		private const val RESET_SOURCE_NAME = ""TrackerServer""
+ 		private fun packetToString(packet: DatagramPacket?): String {
+ 			val sb = StringBuilder()"
+SlimeVR/SlimeVR-Server,1014,db68d80,server/core/src/main/java/io/eiren/math/FloatMath.kt,modified,1,1,2,"@@ -17,7 +17,7 @@ object FloatMath {
+ 	const val ZERO_TOLERANCE_D: Double = 0.0001
+ 
+ 	val SQRT_TWO: Float = kotlin.math.sqrt(2.0).toFloat()
+-	val INV_SQRT_TWO: Float = 1f / SQRT_TWO
++	val INV_SQRT_TWO: Float = (1.0 / kotlin.math.sqrt(2.0)).toFloat()
+ 	val SQRT_THREE: Float = kotlin.math.sqrt(3.0).toFloat()
+ 	val INV_SQRT_THREE: Float = 1f / SQRT_THREE
+ 	const val TWO_FPI: Float = PI * 2"
+SlimeVR/SlimeVR-Server,1014,db68d80,server/desktop/src/main/java/dev/slimevr/desktop/tracking/trackers/hid/TrackersHID.kt,modified,4,8,12,"@@ -1,17 +1,16 @@
+ package dev.slimevr.desktop.tracking.trackers.hid
+ 
+-import com.jme3.math.FastMath
+ import dev.slimevr.VRServer
+ import dev.slimevr.tracking.trackers.Device
+ import dev.slimevr.tracking.trackers.Tracker
++import dev.slimevr.tracking.trackers.Tracker.Companion.axisOffset
+ import dev.slimevr.tracking.trackers.TrackerStatus
+ import dev.slimevr.tracking.trackers.udp.BoardType
+ import dev.slimevr.tracking.trackers.udp.IMUType
+ import dev.slimevr.tracking.trackers.udp.MCUType
+ import dev.slimevr.tracking.trackers.udp.MagnetometerStatus
+ import io.eiren.util.logging.LogManager
+ import io.github.axisangles.ktmath.Quaternion
+-import io.github.axisangles.ktmath.Quaternion.Companion.fromRotationVector
+ import io.github.axisangles.ktmath.Vector3
+ import org.hid4java.HidDevice
+ import org.hid4java.HidException
+@@ -400,7 +399,7 @@ class TrackersHID(name: String, private val trackersConsumer: Consumer<Tracker>)
+ 							// x y z w -> w x y z
+ 							var rot = Quaternion(q[3].toFloat(), q[0].toFloat(), q[1].toFloat(), q[2].toFloat())
+ 							val scaleRot = 1 / (1 shl 15).toFloat() // compile time evaluation
+-							rot = AXES_OFFSET.times(scaleRot).times(rot) // no division
++							rot = axisOffset(rot * scaleRot) // no division
+ 							tracker.setRotation(rot)
+ 						}
+ 						if (packetType == 2) {
+@@ -419,13 +418,14 @@ class TrackersHID(name: String, private val trackersConsumer: Consumer<Tracker>)
+ 							val s = sin(a)
+ 							val k = s * invSqrtD
+ 							var rot = Quaternion(cos(a), k * v[0], k * v[1], k * v[2])
+-							rot = AXES_OFFSET.times(rot) // no division
++							rot = axisOffset(rot) // no division
+ 							tracker.setRotation(rot)
+ 						}
+ 						if (packetType == 1 || packetType == 2) {
+ 							// TODO: Acceleration ""was"" wrong
+ 							val scaleAccel = 1 / (1 shl 7).toFloat() // compile time evaluation
+ 							var acceleration = Vector3(a[0].toFloat(), a[1].toFloat(), a[2].toFloat()).times(scaleAccel) // no division
++							acceleration = axisOffset(acceleration)
+ 							tracker.setAcceleration(acceleration)
+ 							tracker.dataTick() // only data tick if there is rotation data
+ 						}
+@@ -492,10 +492,6 @@ class TrackersHID(name: String, private val trackersConsumer: Consumer<Tracker>)
+ 	}
+ 
+ 	companion object {
+-		/**
+-		 * Change between IMU axes and OpenGL/SteamVR axes
+-		 */
+-		private val AXES_OFFSET = fromRotationVector(-FastMath.HALF_PI, 0f, 0f)
+ 		private const val resetSourceName = ""TrackerServer""
+ 	}
+ }"

@@ -1,0 +1,292 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+scenerygraphics/scenery,287,fd51a139bba7ad5ef9f5adda5a8e539ddf971758,src/main/kotlin/graphics/scenery/backends/RenderConfigReader.kt,modified,11,6,17,"@@ -10,6 +10,7 @@ import graphics.scenery.utils.JsonDeserialisers
+ import java.nio.file.Files
+ import java.nio.file.Paths
+ import java.util.*
++import kotlin.collections.LinkedHashMap
+ 
+ 
+ /**
+@@ -44,14 +45,18 @@ fun RenderConfigReader.RenderConfig.createRenderpassFlow(): List<String> {
+     dag.add(start.key)
+ 
+     while(inputs != null) {
+-        passes.filter { inputs!!.map { input -> input.substringBefore(""."") }.contains(it.value.output) }.entries.forEach {
+-            inputs = it.value.inputs
+-
+-            dag.add(it.key.substringBefore("".""))
++        passes.filter {
++            inputs!!
++                .map { input -> input.substringBefore(""."") }
++                .contains(it.value.output)
++        }.forEach {
++                inputs = it.value.inputs
++
++                dag.add(it.key.substringBefore("".""))
+         }
+     }
+ 
+-    return dag.reversed().toSet().toList()
++    return dag.reversed().distinct().toList()
+ }
+ 
+ /**
+@@ -71,7 +76,7 @@ class RenderConfigReader {
+         var description: String?,
+         var stereoEnabled: Boolean = false,
+         var rendertargets: Map<String, RendertargetConfig> = emptyMap(),
+-        var renderpasses: Map<String, RenderpassConfig>,
++        var renderpasses: LinkedHashMap<String, RenderpassConfig>,
+         var qualitySettings: Map<RenderingQuality, Map<String, Any>> = emptyMap())
+ 
+     /**"
+scenerygraphics/scenery,287,fd51a139bba7ad5ef9f5adda5a8e539ddf971758,src/main/kotlin/graphics/scenery/backends/vulkan/VulkanBuffer.kt,modified,3,1,4,"@@ -115,6 +115,8 @@ open class VulkanBuffer(val device: VulkanDevice, var size: Long,
+         MemoryUtil.memFree(memTypeIndex)
+         MemoryUtil.memFree(memory)
+ 
++        logger.debug(""Created Vulkan Buffer ${buffer.toHexString()} with memory ${r.memory.toHexString()}"")
++
+         return r
+     }
+ 
+@@ -321,7 +323,7 @@ open class VulkanBuffer(val device: VulkanDevice, var size: Long,
+             return
+         }
+ 
+-        logger.trace(""Closing buffer $this ..."")
++        logger.trace(""Closing buffer $this (${vulkanBuffer.toHexString()}, mem=${memory.toHexString()}..."")
+ 
+         if(mapped) {
+             unmap()"
+scenerygraphics/scenery,287,fd51a139bba7ad5ef9f5adda5a8e539ddf971758,src/main/kotlin/graphics/scenery/backends/vulkan/VulkanBufferPool.kt,modified,9,0,9,"@@ -71,5 +71,14 @@ class VulkanBufferPool(val device: VulkanDevice,
+             ""Backing store buffer $i: $it""
+         }.joinToString(""\n"")
+     }
++
++    /**
++     * Closes this buffer pool.
++     */
++    fun close() {
++        backingStore.forEach { store ->
++            store.buffer.close()
++        }
++    }
+ }
+ "
+scenerygraphics/scenery,287,fd51a139bba7ad5ef9f5adda5a8e539ddf971758,src/main/kotlin/graphics/scenery/backends/vulkan/VulkanDevice.kt,modified,1,0,1,"@@ -234,6 +234,7 @@ open class VulkanDevice(val instance: VkInstance, val physicalDevice: VkPhysical
+                 throw IllegalStateException(""Failed to create command pool: "" + VU.translate(err))
+             }
+ 
++            logger.debug(""Created command pool ${commandPool.toHexString()}"")
+             commandPool
+         }
+     }"
+scenerygraphics/scenery,287,fd51a139bba7ad5ef9f5adda5a8e539ddf971758,src/main/kotlin/graphics/scenery/backends/vulkan/VulkanFramebuffer.kt,modified,2,2,4,"@@ -203,7 +203,7 @@ open class VulkanFramebuffer(protected val device: VulkanDevice,
+             VK_ATTACHMENT_LOAD_OP_CLEAR to VK_ATTACHMENT_LOAD_OP_CLEAR
+         }
+ 
+-        val initialImageLayout = VK_IMAGE_LAYOUT_UNDEFINED
++        val initialImageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+ 
+         att.desc.samples(VK_SAMPLE_COUNT_1_BIT)
+             .loadOp(loadOp)
+@@ -235,7 +235,7 @@ open class VulkanFramebuffer(protected val device: VulkanDevice,
+         val initialImageLayout = if(!shouldClear) {
+             VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+         } else {
+-            VK_IMAGE_LAYOUT_UNDEFINED
++            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+         }
+ 
+         att.desc.samples(VK_SAMPLE_COUNT_1_BIT)"
+scenerygraphics/scenery,287,fd51a139bba7ad5ef9f5adda5a8e539ddf971758,src/main/kotlin/graphics/scenery/backends/vulkan/VulkanObjectState.kt,modified,6,1,7,"@@ -4,6 +4,7 @@ import graphics.scenery.GenericTexture
+ import org.lwjgl.system.MemoryUtil.*
+ import org.lwjgl.vulkan.*
+ import graphics.scenery.NodeMetadata
++import graphics.scenery.backends.RenderConfigReader
+ import graphics.scenery.utils.LazyLogger
+ import java.util.*
+ import java.util.concurrent.ConcurrentHashMap
+@@ -88,7 +89,11 @@ open class VulkanObjectState : NodeMetadata {
+                     device,
+                     descriptorPool)
+             } else {
+-                logger.warn(""$this: DSL for ObjectTextures not found for pass $passName"")
++                if(pass.passConfig.type == RenderConfigReader.RenderpassType.geometry) {
++                    logger.warn(""$this: DSL for ObjectTextures not found for pass $passName"")
++                } else {
++                    logger.debug(""$this: DSL for ObjectTextures not found for pass $passName"")
++                }
+             }
+ 
+             others?.forEach { texture ->"
+scenerygraphics/scenery,287,fd51a139bba7ad5ef9f5adda5a8e539ddf971758,src/main/kotlin/graphics/scenery/backends/vulkan/VulkanRenderer.kt,modified,16,1,17,"@@ -2608,7 +2608,7 @@ open class VulkanRenderer(hub: Hub,
+ 
+                             val outputAspectDstType = when(outputAttachment.type) {
+                                 VulkanFramebuffer.VulkanFramebufferType.COLOR_ATTACHMENT -> VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+-                                VulkanFramebuffer.VulkanFramebufferType.DEPTH_ATTACHMENT -> VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
++                                VulkanFramebuffer.VulkanFramebufferType.DEPTH_ATTACHMENT -> VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+                             }
+ 
+                             val inputAspectType = when(inputAttachment.type) {
+@@ -2704,6 +2704,7 @@ open class VulkanRenderer(hub: Hub,
+             pass.vulkanMetadata.uboOffsets.limit(16)
+             (0 until pass.vulkanMetadata.uboOffsets.limit()).forEach { pass.vulkanMetadata.uboOffsets.put(it, 0) }
+ 
++            var previousPipeline: Pipeline? = null
+             renderOrderList.forEach drawLoop@ { node ->
+                 val s = node.rendererMetadata() ?: return@drawLoop
+ 
+@@ -2739,6 +2740,11 @@ open class VulkanRenderer(hub: Hub,
+                 val pipeline = p.getPipelineForGeometryType((node as HasGeometry).geometryType)
+                 val specs = p.orderedDescriptorSpecs()
+ 
++                if(pipeline != previousPipeline) {
++                    vkCmdBindPipeline(this, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline.pipeline)
++                    previousPipeline = pipeline
++                }
++
+                 if(logger.isTraceEnabled) {
+                     logger.trace(""node {} has: {} / pipeline needs: {}"", node.name, s.UBOs.keys.joinToString("", ""), specs.joinToString { it.key })
+                 }
+@@ -3190,6 +3196,14 @@ open class VulkanRenderer(hub: Hub,
+         buffers.UBOs.close()
+         buffers.VRParameters.close()
+ 
++        logger.debug(""Closing default UBOs..."")
++        defaultUBOs.forEach { ubo ->
++            ubo.value.close()
++        }
++
++        logger.debug(""Closing memory pools ..."")
++        geometryPool.close()
++
+         logger.debug(""Closing vertex descriptors ..."")
+         vertexDescriptors.forEach {
+             logger.debug(""Closing vertex descriptor ${it.key}..."")
+@@ -3235,6 +3249,7 @@ open class VulkanRenderer(hub: Hub,
+             device.destroyCommandPool(Render)
+             device.destroyCommandPool(Compute)
+             device.destroyCommandPool(Standard)
++            device.destroyCommandPool(Transfer)
+         }
+ 
+         vkDestroyPipelineCache(device.vulkanDevice, pipelineCache, null)"
+scenerygraphics/scenery,287,fd51a139bba7ad5ef9f5adda5a8e539ddf971758,src/main/kotlin/graphics/scenery/backends/vulkan/VulkanRenderpass.kt,modified,16,33,49,"@@ -52,7 +52,7 @@ open class VulkanRenderpass(val name: String, var config: RenderConfigReader.Ren
+     /** Descriptor set layouts needed */
+     var descriptorSetLayouts = LinkedHashMap<String, Long>()
+         protected set
+-    protected var oldDescriptorSetLayouts = LinkedHashMap<String, Long>()
++    protected var oldDescriptorSetLayouts = ArrayList<Pair<String, Long>>()
+ 
+     /** Semaphores this renderpass is going to wait on when executed */
+     var waitSemaphores = memAllocLong(1)
+@@ -161,34 +161,6 @@ open class VulkanRenderpass(val name: String, var config: RenderConfigReader.Ren
+         semaphore = VU.getLong(""vkCreateSemaphore"",
+             { vkCreateSemaphore(device.vulkanDevice, semaphoreCreateInfo, null, this) }, {})
+ 
+-        val default = VU.createDescriptorSetLayout(device,
+-            descriptorNum = 3,
+-            descriptorCount = 1)
+-
+-        descriptorSetLayouts.put(""default"", default)
+-
+-        val lightParameters = VU.createDescriptorSetLayout(
+-            device,
+-            listOf(Pair(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1)),
+-            binding = 0, shaderStages = VK_SHADER_STAGE_ALL)
+-
+-        descriptorSetLayouts.put(""LightParameters"", lightParameters)
+-
+-        val dslObjectTextures = VU.createDescriptorSetLayout(
+-            device,
+-            listOf(Pair(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 6),
+-                Pair(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1)),
+-            binding = 0, shaderStages = VK_SHADER_STAGE_ALL)
+-
+-        descriptorSetLayouts.put(""ObjectTextures"", dslObjectTextures)
+-
+-        val dslVRParameters = VU.createDescriptorSetLayout(
+-            device,
+-            listOf(Pair(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1)),
+-            binding = 0, shaderStages = VK_SHADER_STAGE_ALL)
+-
+-        descriptorSetLayouts.put(""VRParameters"", dslVRParameters)
+-
+         recreated = System.nanoTime()
+     }
+ 
+@@ -245,10 +217,15 @@ open class VulkanRenderpass(val name: String, var config: RenderConfigReader.Ren
+                 val inputKey = ""input-${this.name}-${spec.value.set}""
+ 
+                 logger.debug(""${this.name}: Creating input descriptor set for ${inputFramebuffer.key}, $inputKey"")
+-                descriptorSetLayouts.put(inputKey, dsl)?.let { oldDSL -> vkDestroyDescriptorSetLayout(device.vulkanDevice, oldDSL, null) }
++                descriptorSetLayouts.put(inputKey, dsl)?.let {
++                    oldDSL ->
++                    logger.debug(""Removing old DSL for $inputKey, $oldDSL."")
++                    vkDestroyDescriptorSetLayout(device.vulkanDevice, oldDSL, null)
++                }
+                 descriptorSets.put(inputKey, ds)
+                 input++
+             } else {
++                vkDestroyDescriptorSetLayout(device.vulkanDevice, dsl, null)
+                 logger.debug(""$name: Shader does not use input of ${inputFramebuffer.key}. Check if your shader should be doing that."")
+             }
+         }
+@@ -509,7 +486,7 @@ open class VulkanRenderpass(val name: String, var config: RenderConfigReader.Ren
+         // and add the new one
+         descriptorSetLayouts.put(specs.first().value.name, dsl)?.let { dslOld ->
+             // TODO: Figure out whether they should actually be deleted, or just marked for garbage collection
+-            oldDescriptorSetLayouts.put(specs.first().value.name, dslOld)
++            oldDescriptorSetLayouts.add(specs.first().value.name to dslOld)
+         }
+ 
+         return dsl
+@@ -567,9 +544,15 @@ open class VulkanRenderpass(val name: String, var config: RenderConfigReader.Ren
+         output.forEach { it.value.close() }
+         pipelines.forEach { it.value.close() }
+         UBOs.forEach { it.value.close() }
+-        descriptorSetLayouts.forEach { vkDestroyDescriptorSetLayout(device.vulkanDevice, it.value, null) }
++        descriptorSetLayouts.forEach {
++            logger.trace(""Destroying DSL ${it.value.toHexString()}"")
++            vkDestroyDescriptorSetLayout(device.vulkanDevice, it.value, null)
++        }
+         descriptorSetLayouts.clear()
+-        oldDescriptorSetLayouts.forEach { vkDestroyDescriptorSetLayout(device.vulkanDevice, it.value, null) }
++        oldDescriptorSetLayouts.forEach {
++            logger.trace(""Destroying GC'd DSL ${it.first} ${it.second.toHexString()}"")
++            vkDestroyDescriptorSetLayout(device.vulkanDevice, it.second, null)
++        }
+         oldDescriptorSetLayouts.clear()
+ 
+         vulkanMetadata.close()"
+scenerygraphics/scenery,287,fd51a139bba7ad5ef9f5adda5a8e539ddf971758,src/main/kotlin/graphics/scenery/backends/vulkan/VulkanSwapchain.kt,modified,3,0,3,"@@ -12,6 +12,8 @@ import org.lwjgl.system.MemoryStack.stackPush
+ import org.lwjgl.system.MemoryUtil
+ import org.lwjgl.system.MemoryUtil.memFree
+ import org.lwjgl.vulkan.*
++import org.lwjgl.vulkan.KHRGetSurfaceCapabilities2.*
++import org.lwjgl.vulkan.KHRSurface.vkDestroySurfaceKHR
+ import org.lwjgl.vulkan.KHRSwapchain.VK_ERROR_OUT_OF_DATE_KHR
+ import org.lwjgl.vulkan.KHRSwapchain.vkAcquireNextImageKHR
+ import java.nio.IntBuffer
+@@ -538,6 +540,7 @@ open class VulkanSwapchain(open val device: VulkanDevice,
+     override fun close() {
+         logger.debug(""Closing swapchain $this"")
+         KHRSwapchain.vkDestroySwapchainKHR(device.vulkanDevice, handle, null)
++        vkDestroySurfaceKHR(device.instance, surface, null)
+ 
+         presentInfo.free()
+         MemoryUtil.memFree(swapchainImage)"
+scenerygraphics/scenery,287,fd51a139bba7ad5ef9f5adda5a8e539ddf971758,src/main/kotlin/graphics/scenery/backends/vulkan/VulkanTexture.kt,modified,5,1,6,"@@ -911,7 +911,11 @@ open class VulkanTexture(val device: VulkanDevice,
+                 } else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+                     barrier
+                         .srcAccessMask(VK_ACCESS_TRANSFER_WRITE_BIT)
+-                        .dstAccessMask(VK_ACCESS_SHADER_READ_BIT)
++                    if(dstStage == VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT) {
++                        barrier.dstAccessMask(VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT)
++                    } else {
++                        barrier.dstAccessMask(VK_ACCESS_SHADER_READ_BIT)
++                    }
+                 } else if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+                     barrier
+                         .srcAccessMask(0)"

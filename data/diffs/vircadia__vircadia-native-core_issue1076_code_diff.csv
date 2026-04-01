@@ -1,0 +1,1368 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vircadia/vircadia-native-core,1076,f062d64,libraries/entities-renderer/src/RenderableEntityItem.cpp,modified,176,2,178,"@@ -29,6 +29,8 @@
+ #include ""RenderableZoneEntityItem.h""
+ #include ""RenderableMaterialEntityItem.h""
+ 
++#include ""RenderPipelines.h""
++
+ using namespace render;
+ using namespace render::entities;
+ 
+@@ -149,10 +151,11 @@ Item::Bound EntityRenderer::getBound(RenderArgs* args) {
+ }
+ 
+ ShapeKey EntityRenderer::getShapeKey() {
++    ShapeKey::Builder builder = ShapeKey::Builder().withOwnPipeline();
+     if (_primitiveMode == PrimitiveMode::LINES) {
+-        return ShapeKey::Builder().withOwnPipeline().withWireframe();
++        builder.withWireframe();
+     }
+-    return ShapeKey::Builder().withOwnPipeline();
++    return builder.build();
+ }
+ 
+ render::hifi::Tag EntityRenderer::getTagMask() const {
+@@ -365,6 +368,7 @@ bool EntityRenderer::needsRenderUpdate() const {
+     if (_prevIsTransparent != isTransparent()) {
+         return true;
+     }
++
+     return needsRenderUpdateFromEntity(_entity);
+ }
+ 
+@@ -491,6 +495,176 @@ void EntityRenderer::removeMaterial(graphics::MaterialPointer material, const st
+     emit requestRenderUpdate();
+ }
+ 
++EntityRenderer::Pipeline EntityRenderer::getPipelineType(const graphics::MultiMaterial& materials) {
++    if (materials.top().material && materials.top().material->isProcedural() && materials.top().material->isReady()) {
++        return Pipeline::PROCEDURAL;
++    }
++
++    graphics::MaterialKey drawMaterialKey = materials.getMaterialKey();
++    if (drawMaterialKey.isEmissive() || drawMaterialKey.isMetallic() || drawMaterialKey.isScattering()) {
++        return Pipeline::MATERIAL;
++    }
++
++    // If the material is using any map, we need to use a material ShapeKey
++    for (int i = 0; i < graphics::Material::MapChannel::NUM_MAP_CHANNELS; i++) {
++        if (drawMaterialKey.isMapChannel(graphics::Material::MapChannel(i))) {
++            return Pipeline::MATERIAL;
++        }
++    }
++    return Pipeline::SIMPLE;
++}
++
++bool EntityRenderer::needsRenderUpdateFromMaterials() const {
++    MaterialMap::const_iterator materials;
++    {
++        std::lock_guard<std::mutex> lock(_materialsLock);
++        materials = _materials.find(""0"");
++
++        if (materials == _materials.cend()) {
++            return false;
++        }
++    }
++
++    if (materials->second.shouldUpdate()) {
++        return true;
++    }
++
++    if (materials->second.top().material && materials->second.top().material->isProcedural() && materials->second.top().material->isReady()) {
++        auto procedural = std::static_pointer_cast<graphics::ProceduralMaterial>(materials->second.top().material);
++        if (procedural->isFading()) {
++            return true;
++        }
++    }
++
++    return false;
++}
++
++void EntityRenderer::updateMaterials(bool baseMaterialChanged) {
++    MaterialMap::iterator materials;
++    {
++        std::lock_guard<std::mutex> lock(_materialsLock);
++        materials = _materials.find(""0"");
++
++        if (materials == _materials.end()) {
++            return;
++        }
++    }
++
++    if (baseMaterialChanged) {
++        materials->second.setNeedsUpdate(true);
++    }
++
++    bool requestUpdate = false;
++    if (materials->second.top().material && materials->second.top().material->isProcedural() && materials->second.top().material->isReady()) {
++        auto procedural = std::static_pointer_cast<graphics::ProceduralMaterial>(materials->second.top().material);
++        if (procedural->isFading()) {
++            procedural->setIsFading(Interpolate::calculateFadeRatio(procedural->getFadeStartTime()) < 1.0f);
++            requestUpdate = true;
++        }
++    }
++
++    if (materials->second.shouldUpdate()) {
++        RenderPipelines::updateMultiMaterial(materials->second);
++        requestUpdate = true;
++    }
++
++    if (requestUpdate) {
++        emit requestRenderUpdate();
++    }
++}
++
++bool EntityRenderer::materialsTransparent() const {
++    MaterialMap::const_iterator materials;
++    {
++        std::lock_guard<std::mutex> lock(_materialsLock);
++        materials = _materials.find(""0"");
++
++        if (materials == _materials.cend()) {
++            return false;
++        }
++    }
++
++    if (materials->second.top().material) {
++        if (materials->second.top().material->isProcedural() && materials->second.top().material->isReady()) {
++            auto procedural = std::static_pointer_cast<graphics::ProceduralMaterial>(materials->second.top().material);
++            if (procedural->isFading()) {
++                return true;
++            }
++        }
++
++        if (materials->second.getMaterialKey().isTranslucent()) {
++            return true;
++        }
++    }
++
++    return false;
++}
++
++Item::Bound EntityRenderer::getMaterialBound(RenderArgs* args) {
++    MaterialMap::iterator materials;
++    {
++        std::lock_guard<std::mutex> lock(_materialsLock);
++        materials = _materials.find(""0"");
++
++        if (materials == _materials.end()) {
++            return EntityRenderer::getBound(args);
++        }
++    }
++
++    if (materials->second.top().material && materials->second.top().material->isProcedural() && materials->second.top().material->isReady()) {
++        auto procedural = std::static_pointer_cast<graphics::ProceduralMaterial>(materials->second.top().material);
++        if (procedural->hasVertexShader() && procedural->hasBoundOperator()) {
++            return procedural->getBound(args);
++        }
++    }
++
++    return EntityRenderer::getBound(args);
++}
++
++void EntityRenderer::updateShapeKeyBuilderFromMaterials(ShapeKey::Builder& builder) {
++    MaterialMap::iterator materials;
++    {
++        std::lock_guard<std::mutex> lock(_materialsLock);
++        materials = _materials.find(""0"");
++        if (materials != _materials.end()) {
++            if (materials->second.shouldUpdate()) {
++                RenderPipelines::updateMultiMaterial(materials->second);
++            }
++        } else {
++            return;
++        }
++    }
++
++    if (isTransparent()) {
++        builder.withTranslucent();
++    }
++
++    if (_primitiveMode == PrimitiveMode::LINES) {
++        builder.withWireframe();
++    }
++
++    builder.withCullFaceMode(materials->second.getCullFaceMode());
++
++    graphics::MaterialKey drawMaterialKey = materials->second.getMaterialKey();
++    if (drawMaterialKey.isUnlit()) {
++        builder.withUnlit();
++    }
++
++    auto pipelineType = getPipelineType(materials->second);
++    if (pipelineType == Pipeline::MATERIAL) {
++        builder.withMaterial();
++
++        if (drawMaterialKey.isNormalMap()) {
++            builder.withTangents();
++        }
++        if (drawMaterialKey.isLightMap()) {
++            builder.withLightMap();
++        }
++    } else if (pipelineType == Pipeline::PROCEDURAL) {
++        builder.withOwnPipeline();
++    }
++}
++
+ glm::vec4 EntityRenderer::calculatePulseColor(const glm::vec4& color, const PulsePropertyGroup& pulseProperties, quint64 start) {
+     if (pulseProperties.getPeriod() == 0.0f || (pulseProperties.getColorMode() == PulseMode::NONE && pulseProperties.getAlphaMode() == PulseMode::NONE)) {
+         return color;"
+vircadia/vircadia-native-core,1076,f062d64,libraries/entities-renderer/src/RenderableEntityItem.h,modified,16,2,18,"@@ -55,8 +55,14 @@ class EntityRenderer : public QObject, public std::enable_shared_from_this<Entit
+ 
+     const uint64_t& getUpdateTime() const { return _updateTime; }
+ 
++    enum class Pipeline {
++        SIMPLE,
++        MATERIAL,
++        PROCEDURAL
++    };
+     virtual void addMaterial(graphics::MaterialLayer material, const std::string& parentMaterialName);
+     virtual void removeMaterial(graphics::MaterialPointer material, const std::string& parentMaterialName);
++    static Pipeline getPipelineType(const graphics::MultiMaterial& materials);
+ 
+     virtual scriptable::ScriptableModelBase getScriptableModel() override { return scriptable::ScriptableModelBase(); }
+ 
+@@ -117,6 +123,14 @@ class EntityRenderer : public QObject, public std::enable_shared_from_this<Entit
+ 
+     Transform getTransformToCenterWithMaybeOnlyLocalRotation(const EntityItemPointer& entity, bool& success) const;
+ 
++    // Shared methods for entities that support materials
++    using MaterialMap = std::unordered_map<std::string, graphics::MultiMaterial>;
++    bool needsRenderUpdateFromMaterials() const;
++    void updateMaterials(bool baseMaterialChanged = false);
++    bool materialsTransparent() const;
++    Item::Bound getMaterialBound(RenderArgs* args);
++    void updateShapeKeyBuilderFromMaterials(ShapeKey::Builder& builder);
++
+     Item::Bound _bound;
+     SharedSoundPointer _collisionSound;
+     QUuid _changeHandlerId;
+@@ -137,8 +151,8 @@ class EntityRenderer : public QObject, public std::enable_shared_from_this<Entit
+     bool _moving { false };
+     Transform _renderTransform;
+ 
+-    std::unordered_map<std::string, graphics::MultiMaterial> _materials;
+-    std::mutex _materialsLock;
++    MaterialMap _materials;
++    mutable std::mutex _materialsLock;
+ 
+     quint64 _created;
+ "
+vircadia/vircadia-native-core,1076,f062d64,libraries/entities-renderer/src/RenderableGizmoEntityItem.cpp,modified,38,17,55,"@@ -11,10 +11,15 @@
+ #include <DependencyManager.h>
+ #include <GeometryCache.h>
+ 
++#include ""RenderPipelines.h""
++
+ using namespace render;
+ using namespace render::entities;
+ 
+-GizmoEntityRenderer::GizmoEntityRenderer(const EntityItemPointer& entity) : Parent(entity) {}
++GizmoEntityRenderer::GizmoEntityRenderer(const EntityItemPointer& entity) : Parent(entity) {
++    _material->setCullFaceMode(graphics::MaterialKey::CullFaceMode::CULL_NONE);
++    addMaterial(graphics::MaterialLayer(_material, 0), ""0"");
++}
+ 
+ GizmoEntityRenderer::~GizmoEntityRenderer() {
+     auto geometryCache = DependencyManager::get<GeometryCache>();
+@@ -31,12 +36,8 @@ GizmoEntityRenderer::~GizmoEntityRenderer() {
+     }
+ }
+ 
+-bool GizmoEntityRenderer::isTransparent() const {
+-    bool ringTransparent = _gizmoType == GizmoType::RING && (_ringProperties.getInnerStartAlpha() < 1.0f ||
+-        _ringProperties.getInnerEndAlpha() < 1.0f || _ringProperties.getOuterStartAlpha() < 1.0f ||
+-        _ringProperties.getOuterEndAlpha() < 1.0f);
+-
+-    return Parent::isTransparent() || ringTransparent;
++bool GizmoEntityRenderer::needsRenderUpdate() const {
++    return needsRenderUpdateFromMaterials() || Parent::needsRenderUpdate();
+ }
+ 
+ void GizmoEntityRenderer::doRenderUpdateSynchronousTyped(const ScenePointer& scene, Transaction& transaction, const TypedEntityPointer& entity) {
+@@ -193,10 +194,20 @@ void GizmoEntityRenderer::doRenderUpdateAsynchronousTyped(const TypedEntityPoint
+             }
+         }
+     }
++
++    updateMaterials();
++}
++
++bool GizmoEntityRenderer::isTransparent() const {
++    bool ringTransparent = _gizmoType == GizmoType::RING && (_ringProperties.getInnerStartAlpha() < 1.0f ||
++        _ringProperties.getInnerEndAlpha() < 1.0f || _ringProperties.getOuterStartAlpha() < 1.0f ||
++        _ringProperties.getOuterEndAlpha() < 1.0f);
++
++    return ringTransparent || Parent::isTransparent() || materialsTransparent();
+ }
+ 
+ Item::Bound GizmoEntityRenderer::getBound(RenderArgs* args) {
+-    auto bound = Parent::getBound(args);
++    auto bound = Parent::getMaterialBound(args);
+     if (_ringProperties.getHasTickMarks()) {
+         glm::vec3 scale = bound.getScale();
+         for (int i = 0; i < 3; i += 2) {
+@@ -220,13 +231,8 @@ Item::Bound GizmoEntityRenderer::getBound(RenderArgs* args) {
+ }
+ 
+ ShapeKey GizmoEntityRenderer::getShapeKey() {
+-    auto builder = render::ShapeKey::Builder().withoutCullFace();
+-    if (isTransparent()) {
+-        builder.withTranslucent();
+-    }
+-    if (_primitiveMode == PrimitiveMode::LINES) {
+-        builder.withUnlit().withDepthBias();
+-    }
++    auto builder = render::ShapeKey::Builder().withDepthBias();
++    updateShapeKeyBuilderFromMaterials(builder);
+     return builder.build();
+ }
+ 
+@@ -249,15 +255,30 @@ void GizmoEntityRenderer::doRender(RenderArgs* args) {
+             transparent = isTransparent();
+         });
+ 
++        graphics::MultiMaterial materials;
++        {
++            std::lock_guard<std::mutex> lock(_materialsLock);
++            materials = _materials[""0""];
++        }
++
+         bool wireframe = render::ShapeKey(args->_globalShapeKey).isWireframe() || _primitiveMode == PrimitiveMode::LINES;
+         bool forward = _renderLayer != RenderLayer::WORLD || args->_renderMethod == Args::RenderMethod::FORWARD;
+ 
+-        geometryCache->bindSimpleProgram(batch, false, transparent, wireframe, true, true, forward, graphics::MaterialKey::CULL_NONE);
+-
+         transform.setRotation(BillboardModeHelpers::getBillboardRotation(transform.getTranslation(), transform.getRotation(), _billboardMode,
+             args->_renderMode == RenderArgs::RenderMode::SHADOW_RENDER_MODE ? BillboardModeHelpers::getPrimaryViewFrustumPosition() : args->getViewFrustum().getPosition(), true));
+         batch.setModelTransform(transform);
+ 
++        Pipeline pipelineType = getPipelineType(materials);
++        if (pipelineType == Pipeline::PROCEDURAL) {
++            auto procedural = std::static_pointer_cast<graphics::ProceduralMaterial>(materials.top().material);
++            transparent |= procedural->isFading();
++            procedural->prepare(batch, transform.getTranslation(), transform.getScale(), transform.getRotation(), _created, ProceduralProgramKey(transparent));
++        } else if (pipelineType == Pipeline::MATERIAL) {
++            if (RenderPipelines::bindMaterials(materials, batch, args->_renderMode, args->_enableTexturing)) {
++                args->_details._materialSwitches++;
++            }
++        }
++
+         // Background circle
+         geometryCache->renderVertices(batch, wireframe ? gpu::LINE_STRIP : _solidPrimitive, _ringGeometryID);
+ "
+vircadia/vircadia-native-core,1076,f062d64,libraries/entities-renderer/src/RenderableGizmoEntityItem.h,modified,4,0,4,"@@ -13,6 +13,8 @@
+ 
+ #include <GizmoEntityItem.h>
+ 
++#include <procedural/Procedural.h>
++
+ namespace render { namespace entities {
+ 
+ class GizmoEntityRenderer : public TypedEntityRenderer<GizmoEntityItem> {
+@@ -29,10 +31,12 @@ class GizmoEntityRenderer : public TypedEntityRenderer<GizmoEntityItem> {
+     bool isTransparent() const override;
+ 
+ private:
++    virtual bool needsRenderUpdate() const override;
+     virtual void doRenderUpdateSynchronousTyped(const ScenePointer& scene, Transaction& transaction, const TypedEntityPointer& entity) override;
+     virtual void doRenderUpdateAsynchronousTyped(const TypedEntityPointer& entity) override;
+     virtual void doRender(RenderArgs* args) override;
+ 
++    std::shared_ptr<graphics::ProceduralMaterial> _material { std::make_shared<graphics::ProceduralMaterial>() };
+     GizmoType _gizmoType { UNSET_GIZMO_TYPE };
+     RingGizmoPropertyGroup _ringProperties;
+     PrimitiveMode _prevPrimitiveMode;"
+vircadia/vircadia-native-core,1076,f062d64,libraries/entities-renderer/src/RenderableImageEntityItem.cpp,modified,77,27,104,"@@ -10,12 +10,17 @@
+ 
+ #include <DependencyManager.h>
+ #include <GeometryCache.h>
++#include <graphics/ShaderConstants.h>
++
++#include ""RenderPipelines.h""
+ 
+ using namespace render;
+ using namespace render::entities;
+ 
+ ImageEntityRenderer::ImageEntityRenderer(const EntityItemPointer& entity) : Parent(entity) {
+     _geometryId = DependencyManager::get<GeometryCache>()->allocateID();
++    _material->setCullFaceMode(graphics::MaterialKey::CullFaceMode::CULL_NONE);
++    addMaterial(graphics::MaterialLayer(_material, 0), ""0"");
+ }
+ 
+ ImageEntityRenderer::~ImageEntityRenderer() {
+@@ -25,8 +30,8 @@ ImageEntityRenderer::~ImageEntityRenderer() {
+     }
+ }
+ 
+-bool ImageEntityRenderer::isTransparent() const {
+-    return Parent::isTransparent() || (_textureIsLoaded && _texture->getGPUTexture() && _texture->getGPUTexture()->getUsage().isAlpha()) || _alpha < 1.0f || _pulseProperties.getAlphaMode() != PulseMode::NONE;
++bool ImageEntityRenderer::needsRenderUpdate() const {
++    return needsRenderUpdateFromMaterials() || Parent::needsRenderUpdate();
+ }
+ 
+ void ImageEntityRenderer::doRenderUpdateSynchronousTyped(const ScenePointer& scene, Transaction& transaction, const TypedEntityPointer& entity) {
+@@ -51,14 +56,34 @@ void ImageEntityRenderer::doRenderUpdateAsynchronousTyped(const TypedEntityPoint
+         _textureIsLoaded = false;
+     }
+ 
+-    _emissive = entity->getEmissive();
+     _keepAspectRatio = entity->getKeepAspectRatio();
+     _subImage = entity->getSubImage();
+-
+-    _color = entity->getColor();
+-    _alpha = entity->getAlpha();
+     _pulseProperties = entity->getPulseProperties();
+ 
++    bool materialChanged = false;
++    glm::vec3 color = toGlm(entity->getColor());
++    if (_color != color) {
++        _color = color;
++        _material->setAlbedo(color);
++        materialChanged = true;
++    }
++
++    float alpha = entity->getAlpha();
++    if (_alpha != alpha) {
++        _alpha = alpha;
++        _material->setOpacity(alpha);
++        materialChanged = true;
++    }
++
++    auto emissive = entity->getEmissive();
++    if (_emissive != emissive) {
++        _emissive = emissive;
++        _material->setUnlit(_emissive);
++        materialChanged = true;
++    }
++
++    updateMaterials(materialChanged);
++
+     bool nextTextureLoaded = _texture && (_texture->isLoaded() || _texture->isFailed());
+     if (!_textureIsLoaded) {
+         emit requestRenderUpdate();
+@@ -79,43 +104,52 @@ void ImageEntityRenderer::doRenderUpdateAsynchronousTyped(const TypedEntityPoint
+     _textureIsLoaded = nextTextureLoaded;
+ }
+ 
+-ShapeKey ImageEntityRenderer::getShapeKey() {
+-    auto builder = render::ShapeKey::Builder().withoutCullFace().withDepthBias();
+-    if (isTransparent()) {
+-        builder.withTranslucent();
+-    }
+-
+-    if (_emissive) {
+-        builder.withUnlit();
+-    }
++bool ImageEntityRenderer::isTransparent() const {
++    bool imageTransparent = _alpha < 1.0f || _pulseProperties.getAlphaMode() != PulseMode::NONE ||
++        (_textureIsLoaded && _texture->getGPUTexture() && _texture->getGPUTexture()->getUsage().isAlpha());
++    return imageTransparent || Parent::isTransparent() || materialsTransparent();
++}
+ 
+-    if (_primitiveMode == PrimitiveMode::LINES) {
+-        builder.withWireframe();
+-    }
++Item::Bound ImageEntityRenderer::getBound(RenderArgs* args) {
++    return Parent::getMaterialBound(args);
++}
+ 
++ShapeKey ImageEntityRenderer::getShapeKey() {
++    auto builder = render::ShapeKey::Builder().withDepthBias();
++    updateShapeKeyBuilderFromMaterials(builder);
+     return builder.build();
+ }
+ 
+ void ImageEntityRenderer::doRender(RenderArgs* args) {
+-    glm::vec4 color = glm::vec4(toGlm(_color), _alpha);
++    PerformanceTimer perfTimer(""RenderableImageEntityItem::render"");
++    Q_ASSERT(args->_batch);
++
++    graphics::MultiMaterial materials;
++    {
++        std::lock_guard<std::mutex> lock(_materialsLock);
++        materials = _materials[""0""];
++    }
++
++    auto& schema = materials.getSchemaBuffer().get<graphics::MultiMaterial::Schema>();
++    glm::vec4 color = glm::vec4(ColorUtils::tosRGBVec3(schema._albedo), schema._opacity);
+     color = EntityRenderer::calculatePulseColor(color, _pulseProperties, _created);
++
++    if (!_texture || !_texture->isLoaded() || color.a == 0.0f) {
++        return;
++    }
++
+     Transform transform;
++    bool transparent;
+     withReadLock([&] {
+         transform = _renderTransform;
++        transparent = isTransparent();
+     });
+ 
+-    if (!_visible || !_texture || !_texture->isLoaded() || color.a == 0.0f) {
+-        return;
+-    }
+-
+-    Q_ASSERT(args->_batch);
+     gpu::Batch* batch = args->_batch;
+ 
+     transform.setRotation(BillboardModeHelpers::getBillboardRotation(transform.getTranslation(), transform.getRotation(), _billboardMode,
+         args->_renderMode == RenderArgs::RenderMode::SHADOW_RENDER_MODE ? BillboardModeHelpers::getPrimaryViewFrustumPosition() : args->getViewFrustum().getPosition()));
+ 
+-    batch->setResourceTexture(0, _texture->getGPUTexture());
+-
+     float imageWidth = _texture->getWidth();
+     float imageHeight = _texture->getHeight();
+     float originalWidth = _texture->getOriginalWidth();
+@@ -157,10 +191,26 @@ void ImageEntityRenderer::doRender(RenderArgs* args) {
+     }
+     batch->setModelTransform(transform);
+ 
++    Pipeline pipelineType = getPipelineType(materials);
++    if (pipelineType == Pipeline::PROCEDURAL) {
++        auto procedural = std::static_pointer_cast<graphics::ProceduralMaterial>(materials.top().material);
++        transparent |= procedural->isFading();
++        procedural->prepare(*batch, transform.getTranslation(), transform.getScale(), transform.getRotation(), _created, ProceduralProgramKey(transparent));
++    } else if (pipelineType == Pipeline::SIMPLE) {
++        batch->setResourceTexture(0, _texture->getGPUTexture());
++    } else {
++        if (RenderPipelines::bindMaterials(materials, *batch, args->_renderMode, args->_enableTexturing)) {
++            args->_details._materialSwitches++;
++        }
++    }
++
+     DependencyManager::get<GeometryCache>()->renderQuad(
+         *batch, glm::vec2(-0.5f), glm::vec2(0.5f), texCoordBottomLeft, texCoordTopRight,
+         color, _geometryId
+     );
+ 
+-    batch->setResourceTexture(0, nullptr);
++    if (pipelineType == Pipeline::SIMPLE) {
++        // we have to reset this to white for other simple shapes
++        batch->setResourceTexture(graphics::slot::texture::Texture::MaterialAlbedo, DependencyManager::get<TextureCache>()->getWhiteTexture());
++    }
+ }"
+vircadia/vircadia-native-core,1076,f062d64,libraries/entities-renderer/src/RenderableImageEntityItem.h,modified,7,2,9,"@@ -13,6 +13,8 @@
+ 
+ #include <ImageEntityItem.h>
+ 
++#include <procedural/Procedural.h>
++
+ namespace render { namespace entities {
+ 
+ class ImageEntityRenderer : public TypedEntityRenderer<ImageEntityItem> {
+@@ -23,11 +25,13 @@ class ImageEntityRenderer : public TypedEntityRenderer<ImageEntityItem> {
+     ~ImageEntityRenderer();
+ 
+ protected:
++    Item::Bound getBound(RenderArgs* args) override;
+     ShapeKey getShapeKey() override;
+ 
+     bool isTransparent() const override;
+ 
+ private:
++    virtual bool needsRenderUpdate() const override;
+     virtual void doRenderUpdateSynchronousTyped(const ScenePointer& scene, Transaction& transaction, const TypedEntityPointer& entity) override;
+     virtual void doRenderUpdateAsynchronousTyped(const TypedEntityPointer& entity) override;
+     virtual void doRender(RenderArgs* args) override;
+@@ -40,8 +44,9 @@ class ImageEntityRenderer : public TypedEntityRenderer<ImageEntityItem> {
+     bool _keepAspectRatio;
+     QRect _subImage;
+ 
+-    glm::u8vec3 _color;
+-    float _alpha;
++    std::shared_ptr<graphics::ProceduralMaterial> _material { std::make_shared<graphics::ProceduralMaterial>() };
++    glm::vec3 _color { NAN };
++    float _alpha { NAN };
+     PulsePropertyGroup _pulseProperties;
+ 
+     int _geometryId { 0 };"
+vircadia/vircadia-native-core,1076,f062d64,libraries/entities-renderer/src/RenderableMaterialEntityItem.cpp,modified,4,0,4,"@@ -219,6 +219,10 @@ ShapeKey MaterialEntityRenderer::getShapeKey() {
+         builder.withTranslucent();
+     }
+ 
++    if (drawMaterial) {
++        builder.withCullFaceMode(drawMaterial->getCullFaceMode());
++    }
++
+     if (drawMaterial && drawMaterial->isProcedural() && drawMaterial->isReady()) {
+         builder.withOwnPipeline();
+     } else {"
+vircadia/vircadia-native-core,1076,f062d64,libraries/entities-renderer/src/RenderableShapeEntityItem.cpp,modified,37,144,181,"@@ -29,26 +29,7 @@ ShapeEntityRenderer::ShapeEntityRenderer(const EntityItemPointer& entity) : Pare
+ }
+ 
+ bool ShapeEntityRenderer::needsRenderUpdate() const {
+-    if (resultWithReadLock<bool>([&] {
+-        auto mat = _materials.find(""0"");
+-        if (mat != _materials.end() && mat->second.top().material && mat->second.top().material->isProcedural() &&
+-            mat->second.top().material->isReady()) {
+-            auto procedural = std::static_pointer_cast<graphics::ProceduralMaterial>(mat->second.top().material);
+-            if (procedural->isFading()) {
+-                return true;
+-            }
+-        }
+-
+-        if (mat != _materials.end() && mat->second.shouldUpdate()) {
+-            return true;
+-        }
+-
+-        return false;
+-    })) {
+-        return true;
+-    }
+-
+-    return Parent::needsRenderUpdate();
++    return needsRenderUpdateFromMaterials() || Parent::needsRenderUpdate();
+ }
+ 
+ void ShapeEntityRenderer::doRenderUpdateSynchronousTyped(const ScenePointer& scene, Transaction& transaction, const TypedEntityPointer& entity) {
+@@ -91,155 +72,58 @@ void ShapeEntityRenderer::doRenderUpdateAsynchronousTyped(const TypedEntityPoint
+         materialChanged = true;
+     }
+ 
+-    withReadLock([&] {
+-        auto materials = _materials.find(""0"");
+-        if (materials != _materials.end()) {
+-            if (materialChanged) {
+-                materials->second.setNeedsUpdate(true);
+-            }
+-
+-            bool requestUpdate = false;
+-            if (materials->second.top().material && materials->second.top().material->isProcedural() && materials->second.top().material->isReady()) {
+-                auto procedural = std::static_pointer_cast<graphics::ProceduralMaterial>(materials->second.top().material);
+-                if (procedural->isFading()) {
+-                    procedural->setIsFading(Interpolate::calculateFadeRatio(procedural->getFadeStartTime()) < 1.0f);
+-                    requestUpdate = true;
+-                }
+-            }
+-
+-            if (materials->second.shouldUpdate()) {
+-                RenderPipelines::updateMultiMaterial(materials->second);
+-                requestUpdate = true;
+-            }
+-
+-            if (requestUpdate) {
+-                emit requestRenderUpdate();
+-            }
+-        }
+-    });
++    updateMaterials(materialChanged);
+ }
+ 
+ bool ShapeEntityRenderer::isTransparent() const {
+-    if (_pulseProperties.getAlphaMode() != PulseMode::NONE) {
+-        return true;
+-    }
+-
+-    auto mat = _materials.find(""0"");
+-    if (mat != _materials.end() && mat->second.top().material) {
+-        if (mat->second.top().material->isProcedural() && mat->second.top().material->isReady()) {
+-            auto procedural = std::static_pointer_cast<graphics::ProceduralMaterial>(mat->second.top().material);
+-            if (procedural->isFading()) {
+-                return true;
+-            }
+-        }
+-
+-        if (mat->second.getMaterialKey().isTranslucent()) {
+-            return true;
+-        }
+-    }
+-
+-    return Parent::isTransparent();
++    return _pulseProperties.getAlphaMode() != PulseMode::NONE || Parent::isTransparent() || materialsTransparent();
+ }
+ 
+-ShapeEntityRenderer::Pipeline ShapeEntityRenderer::getPipelineType(const graphics::MultiMaterial& materials) const {
+-    if (materials.top().material && materials.top().material->isProcedural() && materials.top().material->isReady()) {
+-        return Pipeline::PROCEDURAL;
+-    }
+-
+-    graphics::MaterialKey drawMaterialKey = materials.getMaterialKey();
+-    if (drawMaterialKey.isEmissive() || drawMaterialKey.isUnlit() || drawMaterialKey.isMetallic() || drawMaterialKey.isScattering()) {
+-        return Pipeline::MATERIAL;
+-    }
+-
+-    // If the material is using any map, we need to use a material ShapeKey
+-    for (int i = 0; i < graphics::Material::MapChannel::NUM_MAP_CHANNELS; i++) {
+-        if (drawMaterialKey.isMapChannel(graphics::Material::MapChannel(i))) {
+-            return Pipeline::MATERIAL;
+-        }
+-    }
+-    return Pipeline::SIMPLE;
++Item::Bound ShapeEntityRenderer::getBound(RenderArgs* args) {
++    return Parent::getMaterialBound(args);
+ }
+ 
+ ShapeKey ShapeEntityRenderer::getShapeKey() {
+     ShapeKey::Builder builder;
+-    auto mat = _materials.find(""0"");
+-    if (mat != _materials.end() && mat->second.shouldUpdate()) {
+-        RenderPipelines::updateMultiMaterial(mat->second);
+-    }
+-
+-    if (isTransparent()) {
+-        builder.withTranslucent();
+-    }
+-
+-    if (_primitiveMode == PrimitiveMode::LINES) {
+-        builder.withWireframe();
+-    }
+-
+-    auto pipelineType = getPipelineType(mat->second);
+-    if (pipelineType == Pipeline::MATERIAL) {
+-        builder.withMaterial();
+-
+-        graphics::MaterialKey drawMaterialKey = mat->second.getMaterialKey();
+-        if (drawMaterialKey.isNormalMap()) {
+-            builder.withTangents();
+-        }
+-        if (drawMaterialKey.isLightMap()) {
+-            builder.withLightMap();
+-        }
+-        if (drawMaterialKey.isUnlit()) {
+-            builder.withUnlit();
+-        }
+-        builder.withCullFaceMode(mat->second.getCullFaceMode());
+-    } else if (pipelineType == Pipeline::PROCEDURAL) {
+-        builder.withOwnPipeline();
+-    }
+-
++    updateShapeKeyBuilderFromMaterials(builder);
+     return builder.build();
+ }
+ 
+-Item::Bound ShapeEntityRenderer::getBound(RenderArgs* args) {
+-    auto mat = _materials.find(""0"");
+-    if (mat != _materials.end() && mat->second.top().material && mat->second.top().material->isProcedural() &&
+-        mat->second.top().material->isReady()) {
+-        auto procedural = std::static_pointer_cast<graphics::ProceduralMaterial>(mat->second.top().material);
+-        if (procedural->hasVertexShader() && procedural->hasBoundOperator()) {
+-           return procedural->getBound(args);
+-        }
+-    }
+-    return Parent::getBound(args);
+-}
+-
+ void ShapeEntityRenderer::doRender(RenderArgs* args) {
+     PerformanceTimer perfTimer(""RenderableShapeEntityItem::render"");
+     Q_ASSERT(args->_batch);
+ 
++    graphics::MultiMaterial materials;
++    {
++        std::lock_guard<std::mutex> lock(_materialsLock);
++        materials = _materials[""0""];
++    }
++
++    auto& schema = materials.getSchemaBuffer().get<graphics::MultiMaterial::Schema>();
++    glm::vec4 outColor = glm::vec4(ColorUtils::tosRGBVec3(schema._albedo), schema._opacity);
++    outColor = EntityRenderer::calculatePulseColor(outColor, _pulseProperties, _created);
++
++    if (outColor.a == 0.0f) {
++        return;
++    }
++
+     gpu::Batch& batch = *args->_batch;
+ 
+-    graphics::MultiMaterial materials;
+     auto geometryCache = DependencyManager::get<GeometryCache>();
+     GeometryCache::Shape geometryShape = geometryCache->getShapeForEntityShape(_shape);
+-    glm::vec4 outColor;
+-    Pipeline pipelineType;
+     Transform transform;
+     withReadLock([&] {
+         transform = _renderTransform;
+-        materials = _materials[""0""];
+-        pipelineType = getPipelineType(materials);
+-        auto& schema = materials.getSchemaBuffer().get<graphics::MultiMaterial::Schema>();
+-        outColor = glm::vec4(ColorUtils::tosRGBVec3(schema._albedo), schema._opacity);
+     });
+ 
+-    outColor = EntityRenderer::calculatePulseColor(outColor, _pulseProperties, _created);
+-
+-    if (outColor.a == 0.0f) {
+-        return;
+-    }
++    bool wireframe = render::ShapeKey(args->_globalShapeKey).isWireframe() || _primitiveMode == PrimitiveMode::LINES;
+ 
+     transform.setRotation(BillboardModeHelpers::getBillboardRotation(transform.getTranslation(), transform.getRotation(), _billboardMode,
+         args->_renderMode == RenderArgs::RenderMode::SHADOW_RENDER_MODE ? BillboardModeHelpers::getPrimaryViewFrustumPosition() : args->getViewFrustum().getPosition(),
+         _shape < entity::Shape::Cube || _shape > entity::Shape::Icosahedron));
+     batch.setModelTransform(transform);
+ 
++    Pipeline pipelineType = getPipelineType(materials);
+     if (pipelineType == Pipeline::PROCEDURAL) {
+         auto procedural = std::static_pointer_cast<graphics::ProceduralMaterial>(materials.top().material);
+         outColor = procedural->getColor(outColor);
+@@ -248,20 +132,29 @@ void ShapeEntityRenderer::doRender(RenderArgs* args) {
+             procedural->prepare(batch, transform.getTranslation(), transform.getScale(), transform.getRotation(), _created, ProceduralProgramKey(outColor.a < 1.0f));
+         });
+ 
+-        if (render::ShapeKey(args->_globalShapeKey).isWireframe() || _primitiveMode == PrimitiveMode::LINES) {
++        if (wireframe) {
+             geometryCache->renderWireShape(batch, geometryShape, outColor);
+         } else {
+             geometryCache->renderShape(batch, geometryShape, outColor);
+         }
+     } else if (pipelineType == Pipeline::SIMPLE) {
+         // FIXME, support instanced multi-shape rendering using multidraw indirect
+         outColor.a *= _isFading ? Interpolate::calculateFadeRatio(_fadeStartTime) : 1.0f;
+-        render::ShapePipelinePointer pipeline = geometryCache->getShapePipelinePointer(outColor.a < 1.0f, false,
+-            _renderLayer != RenderLayer::WORLD || args->_renderMethod == Args::RenderMethod::FORWARD, materials.top().material->getCullFaceMode());
+-        if (render::ShapeKey(args->_globalShapeKey).isWireframe() || _primitiveMode == PrimitiveMode::LINES) {
+-            geometryCache->renderWireShapeInstance(args, batch, geometryShape, outColor, pipeline);
++        bool forward = _renderLayer != RenderLayer::WORLD || args->_renderMethod == Args::RenderMethod::FORWARD;
++        if (outColor.a >= 1.0f) {
++            render::ShapePipelinePointer pipeline = geometryCache->getShapePipelinePointer(false, wireframe || materials.top().material->isUnlit(),
++                forward, materials.top().material->getCullFaceMode());
++            if (wireframe) {
++                geometryCache->renderWireShapeInstance(args, batch, geometryShape, outColor, pipeline);
++            } else {
++                geometryCache->renderSolidShapeInstance(args, batch, geometryShape, outColor, pipeline);
++            }
+         } else {
+-            geometryCache->renderSolidShapeInstance(args, batch, geometryShape, outColor, pipeline);
++            if (wireframe) {
++                geometryCache->renderWireShape(batch, geometryShape, outColor);
++            } else {
++                geometryCache->renderShape(batch, geometryShape, outColor);
++            }
+         }
+     } else {
+         if (RenderPipelines::bindMaterials(materials, batch, args->_renderMode, args->_enableTexturing)) {"
+vircadia/vircadia-native-core,1076,f062d64,libraries/entities-renderer/src/RenderableShapeEntityItem.h,modified,0,3,3,"@@ -35,9 +35,6 @@ class ShapeEntityRenderer : public TypedEntityRenderer<ShapeEntityItem> {
+     virtual void doRender(RenderArgs* args) override;
+     virtual bool isTransparent() const override;
+ 
+-    enum Pipeline { SIMPLE, MATERIAL, PROCEDURAL };
+-    Pipeline getPipelineType(const graphics::MultiMaterial& materials) const;
+-
+     QString _proceduralData;
+     entity::Shape _shape { entity::Sphere };
+ "
+vircadia/vircadia-native-core,1076,f062d64,libraries/entities-renderer/src/RenderableTextEntityItem.cpp,modified,97,59,156,"@@ -20,6 +20,7 @@
+ #include ""GLMHelpers.h""
+ 
+ #include ""DeferredLightingEffect.h""
++#include ""RenderPipelines.h""
+ 
+ using namespace render;
+ using namespace render::entities;
+@@ -35,6 +36,8 @@ TextEntityRenderer::TextEntityRenderer(const EntityItemPointer& entity) :
+     if (geometryCache) {
+         _geometryID = geometryCache->allocateID();
+     }
++    _material->setCullFaceMode(graphics::MaterialKey::CullFaceMode::CULL_NONE);
++    addMaterial(graphics::MaterialLayer(_material, 0), ""0"");
+ }
+ 
+ TextEntityRenderer::~TextEntityRenderer() {
+@@ -44,41 +47,8 @@ TextEntityRenderer::~TextEntityRenderer() {
+     }
+ }
+ 
+-bool TextEntityRenderer::isTransparent() const {
+-    return Parent::isTransparent() || _backgroundAlpha < 1.0f || _pulseProperties.getAlphaMode() != PulseMode::NONE;
+-}
+-
+-bool TextEntityRenderer::isTextTransparent() const {
+-    return resultWithReadLock<bool>([&] {
+-        return Parent::isTransparent() || _textAlpha < 1.0f || _pulseProperties.getAlphaMode() != PulseMode::NONE;
+-    });
+-}
+-
+-ItemKey TextEntityRenderer::getKey() {
+-    return ItemKey::Builder(Parent::getKey()).withMetaCullGroup();
+-}
+-
+-ShapeKey TextEntityRenderer::getShapeKey() {
+-    auto builder = render::ShapeKey::Builder().withoutCullFace();
+-    if (isTransparent()) {
+-        builder.withTranslucent();
+-    }
+-    if (_unlit) {
+-        builder.withUnlit();
+-    }
+-    if (_primitiveMode == PrimitiveMode::LINES) {
+-        builder.withWireframe();
+-    }
+-    return builder.build();
+-}
+-
+-uint32_t TextEntityRenderer::metaFetchMetaSubItems(ItemIDs& subItems) const {
+-    auto parentSubs = Parent::metaFetchMetaSubItems(subItems);
+-    if (Item::isValidID(_textRenderID)) {
+-        subItems.emplace_back(_textRenderID);
+-        return parentSubs + 1;
+-    }
+-    return parentSubs;
++bool TextEntityRenderer::needsRenderUpdate() const {
++    return needsRenderUpdateFromMaterials() || Parent::needsRenderUpdate();
+ }
+ 
+ void TextEntityRenderer::doRenderUpdateSynchronousTyped(const ScenePointer& scene, Transaction& transaction, const TypedEntityPointer& entity) {
+@@ -98,58 +68,126 @@ void TextEntityRenderer::doRenderUpdateAsynchronousTyped(const TypedEntityPointe
+     _lineHeight = entity->getLineHeight();
+     _textColor = toGlm(entity->getTextColor());
+     _textAlpha = entity->getTextAlpha();
+-    _backgroundColor = toGlm(entity->getBackgroundColor());
+-    _backgroundAlpha = entity->getBackgroundAlpha();
+     _leftMargin = entity->getLeftMargin();
+     _rightMargin = entity->getRightMargin();
+     _topMargin = entity->getTopMargin();
+     _bottomMargin = entity->getBottomMargin();
+-    _unlit = entity->getUnlit();
+     _font = entity->getFont();
+     _effect = entity->getTextEffect();
+     _effectColor = toGlm(entity->getTextEffectColor());
+     _effectThickness = entity->getTextEffectThickness();
+     _alignment = entity->getAlignment();
++
++    bool materialChanged = false;
++    glm::vec3 color = toGlm(entity->getBackgroundColor());
++    if (_backgroundColor != color) {
++        _backgroundColor = color;
++        _material->setAlbedo(color);
++        materialChanged = true;
++    }
++
++    float alpha = entity->getBackgroundAlpha();
++    if (_backgroundAlpha != alpha) {
++        _backgroundAlpha = alpha;
++        _material->setOpacity(alpha);
++        materialChanged = true;
++    }
++
++    auto unlit = entity->getUnlit();
++    if (_unlit != unlit) {
++        _unlit = unlit;
++        _material->setUnlit(_unlit);
++        materialChanged = true;
++    }
++
++    updateMaterials(materialChanged);
++
+     updateTextRenderItem();
+ }
+ 
++bool TextEntityRenderer::isTransparent() const {
++    bool backgroundTransparent = _backgroundAlpha < 1.0f || _pulseProperties.getAlphaMode() != PulseMode::NONE;
++    return backgroundTransparent || Parent::isTransparent() || materialsTransparent();
++}
++
++bool TextEntityRenderer::isTextTransparent() const {
++    return Parent::isTransparent() || _textAlpha < 1.0f || _pulseProperties.getAlphaMode() != PulseMode::NONE;
++}
++
++Item::Bound TextEntityRenderer::getBound(RenderArgs* args) {
++    return Parent::getMaterialBound(args);
++}
++
++ItemKey TextEntityRenderer::getKey() {
++    return ItemKey::Builder(Parent::getKey()).withMetaCullGroup();
++}
++
++ShapeKey TextEntityRenderer::getShapeKey() {
++    auto builder = render::ShapeKey::Builder().withDepthBias();
++    updateShapeKeyBuilderFromMaterials(builder);
++    return builder.build();
++}
++
++uint32_t TextEntityRenderer::metaFetchMetaSubItems(ItemIDs& subItems) const {
++    auto parentSubs = Parent::metaFetchMetaSubItems(subItems);
++    if (Item::isValidID(_textRenderID)) {
++        subItems.emplace_back(_textRenderID);
++        return parentSubs + 1;
++    }
++    return parentSubs;
++}
++
+ void TextEntityRenderer::doRender(RenderArgs* args) {
+     PerformanceTimer perfTimer(""RenderableTextEntityItem::render"");
+     Q_ASSERT(args->_batch);
+-    gpu::Batch& batch = *args->_batch;
+ 
+-    glm::vec4 backgroundColor;
+-    Transform transform;
+-    withReadLock([&] {
+-        transform = _renderTransform;
++    graphics::MultiMaterial materials;
++    {
++        std::lock_guard<std::mutex> lock(_materialsLock);
++        materials = _materials[""0""];
++    }
+ 
+-        float fadeRatio = _isFading ? Interpolate::calculateFadeRatio(_fadeStartTime) : 1.0f;
+-        backgroundColor = glm::vec4(_backgroundColor, fadeRatio * _backgroundAlpha);
+-    });
++    auto& schema = materials.getSchemaBuffer().get<graphics::MultiMaterial::Schema>();
++    glm::vec4 backgroundColor = glm::vec4(ColorUtils::tosRGBVec3(schema._albedo), schema._opacity);
+     backgroundColor = EntityRenderer::calculatePulseColor(backgroundColor, _pulseProperties, _created);
+ 
+     if (backgroundColor.a <= 0.0f) {
+         return;
+     }
+ 
++    gpu::Batch& batch = *args->_batch;
++
++    bool transparent;
++    Transform transform;
++    withReadLock([&] {
++        transparent = isTransparent();
++        transform = _renderTransform;
++    });
++
+     transform.setRotation(BillboardModeHelpers::getBillboardRotation(transform.getTranslation(), transform.getRotation(), _billboardMode,
+         args->_renderMode == RenderArgs::RenderMode::SHADOW_RENDER_MODE ? BillboardModeHelpers::getPrimaryViewFrustumPosition() : args->getViewFrustum().getPosition()));
+     batch.setModelTransform(transform);
+ 
++    Pipeline pipelineType = getPipelineType(materials);
++    if (pipelineType == Pipeline::PROCEDURAL) {
++        auto procedural = std::static_pointer_cast<graphics::ProceduralMaterial>(materials.top().material);
++        transparent |= procedural->isFading();
++        procedural->prepare(batch, transform.getTranslation(), transform.getScale(), transform.getRotation(), _created, ProceduralProgramKey(transparent));
++    } else if (pipelineType == Pipeline::MATERIAL) {
++        if (RenderPipelines::bindMaterials(materials, batch, args->_renderMode, args->_enableTexturing)) {
++            args->_details._materialSwitches++;
++        }
++    }
++
+     auto geometryCache = DependencyManager::get<GeometryCache>();
+-    // FIXME: we want to use instanced rendering here, but if textAlpha < 1 and backgroundAlpha < 1, the transparency sorting will be wrong
+-    //render::ShapePipelinePointer pipeline = geometryCache->getShapePipelinePointer(backgroundColor.a < 1.0f, _unlit,
+-    //    _renderLayer != RenderLayer::WORLD || args->_renderMethod == Args::RenderMethod::FORWARD);
+-    //if (render::ShapeKey(args->_globalShapeKey).isWireframe() || _primitiveMode == PrimitiveMode::LINES) {
+-    //    geometryCache->renderWireShapeInstance(args, batch, GeometryCache::Quad, backgroundColor, pipeline);
+-    //} else {
+-    //    geometryCache->renderSolidShapeInstance(args, batch, GeometryCache::Quad, backgroundColor, pipeline);
+-    //}
+-
+-    geometryCache->renderQuad(batch, glm::vec2(-0.5), glm::vec2(0.5), backgroundColor, _geometryID);
+-
+-    const int TRIANBLES_PER_QUAD = 2;
+-    args->_details._trianglesRendered += TRIANBLES_PER_QUAD;
++    if (pipelineType == Pipeline::SIMPLE) {
++        geometryCache->renderQuad(batch, glm::vec2(-0.5f), glm::vec2(0.5f), backgroundColor, _geometryID);
++    } else {
++        geometryCache->renderQuad(batch, glm::vec2(-0.5f), glm::vec2(0.5f), glm::vec2(0.0f), glm::vec2(1.0f), backgroundColor, _geometryID);
++    }
++
++    const int TRIANGLES_PER_QUAD = 2;
++    args->_details._trianglesRendered += TRIANGLES_PER_QUAD;
+ }
+ 
+ QSizeF TextEntityRenderer::textSize(const QString& text) const {"
+vircadia/vircadia-native-core,1076,f062d64,libraries/entities-renderer/src/RenderableTextEntityItem.h,modified,8,2,10,"@@ -14,6 +14,8 @@
+ 
+ #include ""RenderableEntityItem.h""
+ 
++#include <procedural/Procedural.h>
++
+ class TextEntityItem;
+ class TextRenderer3D;
+ 
+@@ -33,6 +35,7 @@ class TextEntityRenderer : public TypedEntityRenderer<TextEntityItem> {
+ protected:
+     bool isTransparent() const override;
+     bool isTextTransparent() const;
++    Item::Bound getBound(RenderArgs* args) override;
+     ShapeKey getShapeKey() override;
+     ItemKey getKey() override;
+     virtual uint32_t metaFetchMetaSubItems(ItemIDs& subItems) const override;
+@@ -41,6 +44,7 @@ class TextEntityRenderer : public TypedEntityRenderer<TextEntityItem> {
+     void onRemoveFromSceneTyped(const TypedEntityPointer& entity) override;
+ 
+ private:
++    virtual bool needsRenderUpdate() const;
+     virtual void doRenderUpdateSynchronousTyped(const ScenePointer& scene, Transaction& transaction, const TypedEntityPointer& entity) override;
+     virtual void doRenderUpdateAsynchronousTyped(const TypedEntityPointer& entity) override;
+     virtual void doRender(RenderArgs* args) override;
+@@ -53,10 +57,12 @@ class TextEntityRenderer : public TypedEntityRenderer<TextEntityItem> {
+     float _lineHeight;
+     glm::vec3 _textColor;
+     float _textAlpha;
+-    glm::vec3 _backgroundColor;
+-    float _backgroundAlpha;
+     bool _unlit;
+ 
++    std::shared_ptr<graphics::ProceduralMaterial> _material { std::make_shared<graphics::ProceduralMaterial>() };
++    glm::vec3 _backgroundColor { NAN };
++    float _backgroundAlpha { NAN };
++
+     float _leftMargin;
+     float _rightMargin;
+     float _topMargin;"
+vircadia/vircadia-native-core,1076,f062d64,libraries/gpu-gl-common/src/gpu/gl/GLBackend.cpp,modified,1,4,5,"@@ -840,10 +840,7 @@ void GLBackend::do_glColor4f(const Batch& batch, size_t paramOffset) {
+     if (_input._colorAttribute != newColor) {
+         _input._colorAttribute = newColor;
+         glVertexAttrib4fv(gpu::Stream::COLOR, &_input._colorAttribute.r);
+-        // Color has been changed and is not white. To prevent colors from bleeding
+-        // between different objects, we need to set the _hadColorAttribute flag
+-        // as if a previous render call had potential colors
+-        _input._hadColorAttribute = (newColor != glm::vec4(1.0f, 1.0f, 1.0f, 1.0f));
++        _input._hasColorAttribute = true;
+     }
+     (void)CHECK_GL_ERROR();
+ }"
+vircadia/vircadia-native-core,1076,f062d64,libraries/gpu-gl-common/src/gpu/gl/GLBackend.h,modified,20,19,39,"@@ -348,36 +348,37 @@ class GLBackend : public Backend, public std::enable_shared_from_this<GLBackend>
+     virtual void updateInput() = 0;
+ 
+     struct InputStageState {
+-        bool _invalidFormat{ true };
+-        bool _lastUpdateStereoState{ false };
+-        bool _hadColorAttribute{ true };
+-        FormatReference _format{ GPU_REFERENCE_INIT_VALUE };
++        bool _invalidFormat { true };
++        bool _lastUpdateStereoState { false };
++        bool _hasColorAttribute { false };
++        bool _hadColorAttribute { false };
++        FormatReference _format { GPU_REFERENCE_INIT_VALUE };
+         std::string _formatKey;
+ 
+         typedef std::bitset<MAX_NUM_ATTRIBUTES> ActivationCache;
+-        ActivationCache _attributeActivation{ 0 };
++        ActivationCache _attributeActivation { 0 };
+ 
+         typedef std::bitset<MAX_NUM_INPUT_BUFFERS> BuffersState;
+ 
+-        BuffersState _invalidBuffers{ 0 };
+-        BuffersState _attribBindingBuffers{ 0 };
++        BuffersState _invalidBuffers { 0 };
++        BuffersState _attribBindingBuffers { 0 };
+ 
+-        std::array<BufferReference, MAX_NUM_INPUT_BUFFERS> _buffers{};
+-        std::array<Offset, MAX_NUM_INPUT_BUFFERS> _bufferOffsets{};
+-        std::array<Offset, MAX_NUM_INPUT_BUFFERS> _bufferStrides{};
+-        std::array<GLuint, MAX_NUM_INPUT_BUFFERS> _bufferVBOs{};
++        std::array<BufferReference, MAX_NUM_INPUT_BUFFERS> _buffers;
++        std::array<Offset, MAX_NUM_INPUT_BUFFERS> _bufferOffsets;
++        std::array<Offset, MAX_NUM_INPUT_BUFFERS> _bufferStrides;
++        std::array<GLuint, MAX_NUM_INPUT_BUFFERS> _bufferVBOs;
+ 
+-        glm::vec4 _colorAttribute{ 0.0f };
++        glm::vec4 _colorAttribute { 1.0f };
+ 
+-        BufferReference _indexBuffer{};
+-        Offset _indexBufferOffset{ 0 };
+-        Type _indexBufferType{ UINT32 };
++        BufferReference _indexBuffer;
++        Offset _indexBufferOffset { 0 };
++        Type _indexBufferType { UINT32 };
+ 
+-        BufferReference _indirectBuffer{};
+-        Offset _indirectBufferOffset{ 0 };
+-        Offset _indirectBufferStride{ 0 };
++        BufferReference _indirectBuffer;
++        Offset _indirectBufferOffset { 0 };
++        Offset _indirectBufferStride { 0 };
+ 
+-        GLuint _defaultVAO{ 0 };
++        GLuint _defaultVAO { 0 };
+     } _input;
+ 
+     virtual void initTransform() = 0;"
+vircadia/vircadia-native-core,1076,f062d64,libraries/gpu-gl-common/src/gpu/gl/GLBackendInput.cpp,modified,15,13,28,"@@ -103,6 +103,9 @@ void GLBackend::resetInputStage() {
+     reset(_input._format);
+     _input._formatKey.clear();
+     _input._invalidFormat = false;
++    _input._hasColorAttribute = false;
++    _input._hadColorAttribute = false;
++    _input._colorAttribute = vec4(1.0f);
+     _input._attributeActivation.reset();
+ 
+     for (uint32_t i = 0; i < _input._buffers.size(); i++) {
+@@ -159,15 +162,15 @@ void GLBackend::updateInput() {
+     _input._invalidFormat |= (isStereoNow != _input._lastUpdateStereoState);
+ #endif
+     _input._lastUpdateStereoState = isStereoNow;
+- 
++
++    bool hasColorAttribute = _input._hasColorAttribute;
++
+     if (_input._invalidFormat) {
+         InputStageState::ActivationCache newActivation;
+ 
+         // Assign the vertex format required
+         auto format = acquire(_input._format);
+         if (format) {
+-            bool hasColorAttribute{ false };
+-
+             _input._attribBindingBuffers.reset();
+ 
+             const auto& attributes = format->getAttributes();
+@@ -186,12 +189,12 @@ void GLBackend::updateInput() {
+                     uint8_t locationCount = attrib._element.getLocationCount();
+                     GLenum type = gl::ELEMENT_TYPE_TO_GL[attrib._element.getType()];
+ 
+-                    GLuint offset = (GLuint)attrib._offset;;
++                    GLuint offset = (GLuint)attrib._offset;
+                     GLboolean isNormalized = attrib._element.isNormalized();
+ 
+                     GLenum perLocationSize = attrib._element.getLocationSize();
+ 
+-                    hasColorAttribute = hasColorAttribute || (slot == Stream::COLOR);
++                    hasColorAttribute |= slot == Stream::COLOR;
+ 
+                     for (GLuint locNum = 0; locNum < locationCount; ++locNum) {
+                         GLuint attriNum = (GLuint)(slot + locNum);
+@@ -224,14 +227,11 @@ void GLBackend::updateInput() {
+ #endif
+             }
+ 
+-            if (_input._hadColorAttribute && !hasColorAttribute) {
+-                // The previous input stage had a color attribute but this one doesn't so reset
+-                // color to pure white.
+-                const auto white = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
+-                glVertexAttrib4fv(Stream::COLOR, &white.r);
+-                _input._colorAttribute = white;
++            if (!hasColorAttribute && _input._hadColorAttribute) {
++                // The previous input stage had a color attribute but this one doesn't, so reset the color to pure white.
++                _input._colorAttribute = glm::vec4(1.0f);
++                glVertexAttrib4fv(Stream::COLOR, &_input._colorAttribute.r);
+             }
+-            _input._hadColorAttribute = hasColorAttribute;
+         }
+ 
+         // Manage Activation what was and what is expected now
+@@ -253,6 +253,9 @@ void GLBackend::updateInput() {
+         _stats._ISNumFormatChanges++;
+     }
+ 
++    _input._hadColorAttribute = hasColorAttribute;
++    _input._hasColorAttribute = false;
++
+     if (_input._invalidBuffers.any()) {
+         auto vbo = _input._bufferVBOs.data();
+         auto offset = _input._bufferOffsets.data();
+@@ -276,4 +279,3 @@ void GLBackend::updateInput() {
+         (void)CHECK_GL_ERROR();
+     }
+ }
+-"
+vircadia/vircadia-native-core,1076,f062d64,libraries/gpu-gl/src/gpu/gl41/GL41BackendInput.cpp,modified,10,11,21,"@@ -33,6 +33,8 @@ void GL41Backend::updateInput() {
+ #endif
+     _input._lastUpdateStereoState = isStereoNow;
+ 
++    bool hasColorAttribute = _input._hasColorAttribute;
++
+     if (_input._invalidFormat || _input._invalidBuffers.any()) {
+ 
+         auto format = acquire(_input._format);
+@@ -71,8 +73,6 @@ void GL41Backend::updateInput() {
+ 
+         // now we need to bind the buffers and assign the attrib pointers
+         if (format) {
+-            bool hasColorAttribute{ false };
+-
+             const auto& buffers = _input._buffers;
+             const auto& offsets = _input._bufferOffsets;
+             const auto& strides = _input._bufferStrides;
+@@ -110,7 +110,7 @@ void GL41Backend::updateInput() {
+                             uintptr_t pointer = (uintptr_t)(attrib._offset + offsets[bufferNum]);
+                             GLboolean isNormalized = attrib._element.isNormalized();
+ 
+-                            hasColorAttribute = hasColorAttribute || (slot == Stream::COLOR);
++                            hasColorAttribute |= slot == Stream::COLOR;
+ 
+                             for (size_t locNum = 0; locNum < locationCount; ++locNum) {
+                                 if (attrib._element.isInteger()) {
+@@ -132,17 +132,16 @@ void GL41Backend::updateInput() {
+                 }
+             }
+ 
+-            if (_input._hadColorAttribute && !hasColorAttribute) {
+-                // The previous input stage had a color attribute but this one doesn't so reset
+-                // color to pure white.
+-                const auto white = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
+-                glVertexAttrib4fv(Stream::COLOR, &white.r);
+-                _input._colorAttribute = white;
++            if (!hasColorAttribute && _input._hadColorAttribute) {
++                // The previous input stage had a color attribute but this one doesn't, so reset the color to pure white.
++                _input._colorAttribute = glm::vec4(1.0f);
++                glVertexAttrib4fv(Stream::COLOR, &_input._colorAttribute.r);
+             }
+-            _input._hadColorAttribute = hasColorAttribute;
+         }
+         // everything format related should be in sync now
+         _input._invalidFormat = false;
+     }
+-}
+ 
++    _input._hadColorAttribute = hasColorAttribute;
++    _input._hasColorAttribute = false;
++}"
+vircadia/vircadia-native-core,1076,f062d64,libraries/gpu-gl/src/gpu/gl45/GL45BackendInput.cpp,modified,11,11,22,"@@ -35,14 +35,14 @@ void GL45Backend::updateInput() {
+ #endif
+     _input._lastUpdateStereoState = isStereoNow;
+ 
++    bool hasColorAttribute = _input._hasColorAttribute;
++
+     if (_input._invalidFormat) {
+         InputStageState::ActivationCache newActivation;
+ 
+         // Assign the vertex format required
+         auto format = acquire(_input._format);
+         if (format) {
+-            bool hasColorAttribute{ false };
+-
+             _input._attribBindingBuffers.reset();
+ 
+             const auto& attributes = format->getAttributes();
+@@ -61,12 +61,12 @@ void GL45Backend::updateInput() {
+                     uint8_t locationCount = attrib._element.getLocationCount();
+                     GLenum type = gl::ELEMENT_TYPE_TO_GL[attrib._element.getType()];
+ 
+-                    GLuint offset = (GLuint)attrib._offset;;
++                    GLuint offset = (GLuint)attrib._offset;
+                     GLboolean isNormalized = attrib._element.isNormalized();
+ 
+                     GLenum perLocationSize = attrib._element.getLocationSize();
+ 
+-                    hasColorAttribute = hasColorAttribute || (slot == Stream::COLOR);
++                    hasColorAttribute |= slot == Stream::COLOR;
+ 
+                     for (GLuint locNum = 0; locNum < locationCount; ++locNum) {
+                         GLuint attriNum = (GLuint)(slot + locNum);
+@@ -99,14 +99,11 @@ void GL45Backend::updateInput() {
+ #endif
+             }
+ 
+-            if (_input._hadColorAttribute && !hasColorAttribute) {
+-                // The previous input stage had a color attribute but this one doesn't so reset
+-                // color to pure white.
+-                const auto white = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
+-                glVertexAttrib4fv(Stream::COLOR, &white.r);
+-                _input._colorAttribute = white;
++            if (!hasColorAttribute && _input._hadColorAttribute) {
++                // The previous input stage had a color attribute but this one doesn't, so reset the color to pure white.
++                _input._colorAttribute = glm::vec4(1.0f);
++                glVertexAttrib4fv(Stream::COLOR, &_input._colorAttribute.r);
+             }
+-            _input._hadColorAttribute = hasColorAttribute;
+         }
+ 
+         // Manage Activation what was and what is expected now
+@@ -128,6 +125,9 @@ void GL45Backend::updateInput() {
+         _stats._ISNumFormatChanges++;
+     }
+ 
++    _input._hadColorAttribute = hasColorAttribute;
++    _input._hasColorAttribute = false;
++
+     if (_input._invalidBuffers.any()) {
+         auto vbo = _input._bufferVBOs.data();
+         auto offset = _input._bufferOffsets.data();"
+vircadia/vircadia-native-core,1076,f062d64,libraries/render-utils/src/GeometryCache.cpp,modified,0,2,2,"@@ -821,14 +821,12 @@ void GeometryCache::renderWireShape(gpu::Batch& batch, Shape shape) {
+ 
+ void GeometryCache::renderShape(gpu::Batch& batch, Shape shape, const glm::vec4& color) {
+     batch.setInputFormat(getSolidStreamFormat());
+-    // Color must be set after input format
+     batch._glColor4f(color.r, color.g, color.b, color.a);
+     _shapes[shape].draw(batch);
+ }
+ 
+ void GeometryCache::renderWireShape(gpu::Batch& batch, Shape shape, const glm::vec4& color) {
+     batch.setInputFormat(getWireStreamFormat());
+-    // Color must be set after input format
+     batch._glColor4f(color.r, color.g, color.b, color.a);
+     _shapes[shape].drawWire(batch);
+ }"

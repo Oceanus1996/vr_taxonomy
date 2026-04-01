@@ -1,0 +1,211 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+bjornbytes/lovr,644,ffd7716,src/modules/math/math.c,modified,37,34,71,"@@ -257,14 +257,14 @@ void lovrLightProbeEvaluate(LightProbe* probe, float normal[4], float color[4])
+   for (uint32_t i = 0; i < 3; i++) {
+     color[i] += .88622692545276f * probe->coefficients[0][i];
+ 
+-    color[i] += 1.0233267079465f * probe->coefficients[1][i] * n[1];
++    color[i] += -1.0233267079465f * probe->coefficients[1][i] * n[1];
+     color[i] += 1.0233267079465f * probe->coefficients[2][i] * n[2];
+-    color[i] += 1.0233267079465f * probe->coefficients[3][i] * n[0];
++    color[i] += -1.0233267079465f * probe->coefficients[3][i] * n[0];
+ 
+     color[i] += .85808553080978f * probe->coefficients[4][i] * n[0] * n[1];
+-    color[i] += .85808553080978f * probe->coefficients[5][i] * n[1] * n[2];
++    color[i] += -.85808553080978f * probe->coefficients[5][i] * n[1] * n[2];
+     color[i] += .24770795610038f * probe->coefficients[6][i] * (3.f * n[2] * n[2] - 1.f);
+-    color[i] += .85808553080978f * probe->coefficients[7][i] * n[0] * n[2];
++    color[i] += -.85808553080978f * probe->coefficients[7][i] * n[0] * n[2];
+     color[i] += .42904276540489f * probe->coefficients[8][i] * (n[0] * n[0] - n[1] * n[1]);
+   }
+ }
+@@ -284,15 +284,15 @@ void lovrLightProbeAddDirectionalLight(LightProbe* probe, float direction[4], fl
+   float scale = 2.9567930857316f; // 16 * math.pi / 17
+ 
+   for (uint32_t i = 0; i < 3; i++) {
+-    probe->coefficients[0][i] += scale * .28209479177388f * color[i];
+-    probe->coefficients[1][i] += scale * .48860251190292f * color[i] * dir[1];
+-    probe->coefficients[2][i] += scale * .48860251190292f * color[i] * dir[2];
+-    probe->coefficients[3][i] += scale * .48860251190292f * color[i] * dir[0];
+-    probe->coefficients[4][i] += scale * 1.0925484305921f * color[i] * dir[0] * dir[1];
+-    probe->coefficients[5][i] += scale * 1.0925484305921f * color[i] * dir[1] * dir[2];
+-    probe->coefficients[6][i] += scale * .31539156525252f * color[i] * (3.f * dir[2] * dir[2] - 1.f);
+-    probe->coefficients[7][i] += scale * 1.0925484305921f * color[i] * dir[0] * dir[2];
+-    probe->coefficients[8][i] += scale * .54627421529604f * color[i] * (dir[0] * dir[0] - dir[1] * dir[1]);
++    probe->coefficients[0][i] += scale *  .28209479177388f * color[i];
++    probe->coefficients[1][i] += scale * -.48860251190292f * color[i] * dir[1];
++    probe->coefficients[2][i] += scale *  .48860251190292f * color[i] * dir[2];
++    probe->coefficients[3][i] += scale * -.48860251190292f * color[i] * dir[0];
++    probe->coefficients[4][i] += scale *  1.0925484305921f * color[i] * dir[0] * dir[1];
++    probe->coefficients[5][i] += scale * -1.0925484305921f * color[i] * dir[1] * dir[2];
++    probe->coefficients[6][i] += scale *  .31539156525252f * color[i] * (3.f * dir[2] * dir[2] - 1.f);
++    probe->coefficients[7][i] += scale * -1.0925484305921f * color[i] * dir[0] * dir[2];
++    probe->coefficients[8][i] += scale *  .54627421529604f * color[i] * (dir[0] * dir[0] - dir[1] * dir[1]);
+   }
+ }
+ 
+@@ -304,17 +304,17 @@ void lovrLightProbeAddCubemap(LightProbe* probe, uint32_t size, fn_pixel* getPix
+   for (uint32_t face = 0; face < 6; face++) {
+     for (uint32_t y = 0; y < size; y++) {
+       for (uint32_t x = 0; x < size; x++) {
+-        float u = 2.f * x / (float) size - 1.f;
+-        float v = 2.f * y / (float) size - 1.f;
++        float u = 2.f * ((float) x + 0.5f) / (float) size - 1.f;
++        float v = 2.f * ((float) y + 0.5f) / (float) size - 1.f;
+         float dx, dy, dz;
+ 
+         switch (face) {
+-          case 0: dx = 1.f; dy = v; dz = -u; break;
+-          case 1: dx = -1.f; dy = v; dz = u; break;
+-          case 2: dx = u; dy = 1.f; dz = -v; break;
+-          case 3: dx = u; dy = -1.f; dz = v; break;
+-          case 4: dx = u; dy = v; dz = 1.f; break;
+-          case 5: dx = -u; dy = v; dz = -1.f; break;
++          case 0: dx = -1.f; dy =   -v; dz =   -u; break;
++          case 1: dx =  1.f; dy =   -v; dz =    u; break;
++          case 2: dx =   -u; dy =  1.f; dz =    v; break;
++          case 3: dx =   -u; dy = -1.f; dz =   -v; break;
++          case 4: dx =   -u; dy =   -v; dz =  1.f; break;
++          case 5: dx =    u; dy =   -v; dz = -1.f; break;
+         }
+ 
+         float dot = dx * dx + dy * dy + dz * dz;
+@@ -329,21 +329,24 @@ void lovrLightProbeAddCubemap(LightProbe* probe, uint32_t size, fn_pixel* getPix
+ 
+         float color[4];
+         getPixel(context, x, y, face, color);
++        color[0] = lovrMathGammaToLinear(color[0]);
++        color[1] = lovrMathGammaToLinear(color[1]);
++        color[2] = lovrMathGammaToLinear(color[2]);
+ 
+         color[0] *= solidAngle;
+         color[1] *= solidAngle;
+         color[2] *= solidAngle;
+ 
+         for (uint32_t c = 0; c < 3; c++) {
+-          coefficients[0][c] += .28209479177388f * color[c];
+-          coefficients[1][c] += .48860251190292f * color[c] * dy;
+-          coefficients[2][c] += .48860251190292f * color[c] * dz;
+-          coefficients[3][c] += .48860251190292f * color[c] * dx;
+-          coefficients[4][c] += 1.0925484305921f * color[c] * dx * dy;
+-          coefficients[5][c] += 1.0925484305921f * color[c] * dy * dz;
+-          coefficients[6][c] += .31539156525252f * color[c] * (3.f * dz * dz - 1.f);
+-          coefficients[7][c] += 1.0925484305921f * color[c] * dx * dz;
+-          coefficients[8][c] += .54627421529604f * color[c] * (dx * dx - dy * dy);
++          coefficients[0][c] +=  .28209479177388f * color[c];
++          coefficients[1][c] += -.48860251190292f * color[c] * dy;
++          coefficients[2][c] +=  .48860251190292f * color[c] * dz;
++          coefficients[3][c] += -.48860251190292f * color[c] * dx;
++          coefficients[4][c] +=  1.0925484305921f * color[c] * dx * dy;
++          coefficients[5][c] += -1.0925484305921f * color[c] * dy * dz;
++          coefficients[6][c] +=  .31539156525252f * color[c] * (3.f * dz * dz - 1.f);
++          coefficients[7][c] += -1.0925484305921f * color[c] * dx * dz;
++          coefficients[8][c] +=  .54627421529604f * color[c] * (dx * dx - dy * dy);
+         }
+       }
+     }
+@@ -384,13 +387,13 @@ void lovrLightProbeAddEquirect(LightProbe* probe, uint32_t width, uint32_t heigh
+ 
+       for (uint32_t c = 0; c < 3; c++) {
+         coefficients[0][c] += .28209479177388f * color[c];
+-        coefficients[1][c] += .48860251190292f * color[c] * dy;
++        coefficients[1][c] += -.48860251190292f * color[c] * dy;
+         coefficients[2][c] += .48860251190292f * color[c] * dz;
+-        coefficients[3][c] += .48860251190292f * color[c] * dx;
++        coefficients[3][c] += -.48860251190292f * color[c] * dx;
+         coefficients[4][c] += 1.0925484305921f * color[c] * dx * dy;
+-        coefficients[5][c] += 1.0925484305921f * color[c] * dy * dz;
++        coefficients[5][c] += -1.0925484305921f * color[c] * dy * dz;
+         coefficients[6][c] += .31539156525252f * color[c] * (3.f * dz * dz - 1.f);
+-        coefficients[7][c] += 1.0925484305921f * color[c] * dx * dz;
++        coefficients[7][c] += -1.0925484305921f * color[c] * dx * dz;
+         coefficients[8][c] += .54627421529604f * color[c] * (dx * dx - dy * dy);
+       }
+     }"
+bjornbytes/lovr,644,68f724f,src/api/l_math.c,modified,15,0,15,"@@ -132,15 +132,30 @@ static int l_lovrMathNewCurve(lua_State* L) {
+ 
+ static void getPixelEquirect(void* image, uint32_t x, uint32_t y, uint32_t z, float color[4]) {
+   lovrImageGetPixel(image, x, y, z, color);
++  if (lovrImageIsSRGB(image)) {
++    color[0] = lovrMathGammaToLinear(color[0]);
++    color[1] = lovrMathGammaToLinear(color[1]);
++    color[2] = lovrMathGammaToLinear(color[2]);
++  }
+ }
+ 
+ static void getPixelCubemap(void* image, uint32_t x, uint32_t y, uint32_t z, float color[4]) {
+   lovrImageGetPixel(image, x, y, z, color);
++  if (lovrImageIsSRGB(image)) {
++    color[0] = lovrMathGammaToLinear(color[0]);
++    color[1] = lovrMathGammaToLinear(color[1]);
++    color[2] = lovrMathGammaToLinear(color[2]);
++  }
+ }
+ 
+ static void getPixelCubemapLayers(void* context, uint32_t x, uint32_t y, uint32_t z, float color[4]) {
+   Image** images = context;
+   lovrImageGetPixel(images[z], x, y, 0, color);
++  if (lovrImageIsSRGB(images[z])) {
++    color[0] = lovrMathGammaToLinear(color[0]);
++    color[1] = lovrMathGammaToLinear(color[1]);
++    color[2] = lovrMathGammaToLinear(color[2]);
++  }
+ }
+ 
+ static int l_lovrMathNewLightProbe(lua_State* L) {"
+bjornbytes/lovr,644,ed409f5,src/api/l_math.c,modified,15,0,15,"@@ -132,15 +132,30 @@ static int l_lovrMathNewCurve(lua_State* L) {
+ 
+ static void getPixelEquirect(void* image, uint32_t x, uint32_t y, uint32_t z, float color[4]) {
+   lovrImageGetPixel(image, x, y, z, color);
++  if (lovrImageIsSRGB(image)) {
++    color[0] = lovrMathGammaToLinear(color[0]);
++    color[1] = lovrMathGammaToLinear(color[1]);
++    color[2] = lovrMathGammaToLinear(color[2]);
++  }
+ }
+ 
+ static void getPixelCubemap(void* image, uint32_t x, uint32_t y, uint32_t z, float color[4]) {
+   lovrImageGetPixel(image, x, y, z, color);
++  if (lovrImageIsSRGB(image)) {
++    color[0] = lovrMathGammaToLinear(color[0]);
++    color[1] = lovrMathGammaToLinear(color[1]);
++    color[2] = lovrMathGammaToLinear(color[2]);
++  }
+ }
+ 
+ static void getPixelCubemapLayers(void* context, uint32_t x, uint32_t y, uint32_t z, float color[4]) {
+   Image** images = context;
+   lovrImageGetPixel(images[z], x, y, 0, color);
++  if (lovrImageIsSRGB(images[z])) {
++    color[0] = lovrMathGammaToLinear(color[0]);
++    color[1] = lovrMathGammaToLinear(color[1]);
++    color[2] = lovrMathGammaToLinear(color[2]);
++  }
+ }
+ 
+ static int l_lovrMathNewLightProbe(lua_State* L) {"
+bjornbytes/lovr,644,ed409f5,src/modules/math/math.c,modified,8,8,16,"@@ -304,17 +304,17 @@ void lovrLightProbeAddCubemap(LightProbe* probe, uint32_t size, fn_pixel* getPix
+   for (uint32_t face = 0; face < 6; face++) {
+     for (uint32_t y = 0; y < size; y++) {
+       for (uint32_t x = 0; x < size; x++) {
+-        float u = 2.f * x / (float) size - 1.f;
+-        float v = 2.f * y / (float) size - 1.f;
++        float u = 2.f * ((float) x + 0.5f) / (float) size - 1.f;
++        float v = 2.f * ((float) y + 0.5f) / (float) size - 1.f;
+         float dx, dy, dz;
+ 
+         switch (face) {
+-          case 0: dx = 1.f; dy = v; dz = -u; break;
+-          case 1: dx = -1.f; dy = v; dz = u; break;
+-          case 2: dx = u; dy = 1.f; dz = -v; break;
+-          case 3: dx = u; dy = -1.f; dz = v; break;
+-          case 4: dx = u; dy = v; dz = 1.f; break;
+-          case 5: dx = -u; dy = v; dz = -1.f; break;
++          case 0: dx = -1.f; dy = -v; dz = -u; break;
++          case 1: dx = 1.f; dy = -v; dz = u; break;
++          case 2: dx = -u; dy = 1.f; dz = v; break;
++          case 3: dx = -u; dy = -1.f; dz = -v; break;
++          case 4: dx = -u; dy = -v; dz = 1.f; break;
++          case 5: dx = u; dy = -v; dz = -1.f; break;
+         }
+ 
+         float dot = dx * dx + dy * dy + dz * dz;"

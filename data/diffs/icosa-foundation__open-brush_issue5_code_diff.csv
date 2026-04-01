@@ -1,0 +1,187 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+icosa-foundation/open-brush,5,4836cf1,.gitignore,modified,4,1,5,"@@ -73,4 +73,7 @@
+ /Assets/TextMesh\ Pro.meta
+ 
+ # Google process
+-.gitbugtraq
+\ No newline at end of file
++.gitbugtraq
++
++# Oculus Integration
++/Assets/Oculus"
+icosa-foundation/open-brush,5,4836cf1,Assets/Plugins/Android/mainTemplate.gradle,modified,4,13,17,"@@ -19,7 +19,7 @@ allprojects {
+   }
+ }
+ 
+-apply plugin: 'com.android.application'
++apply plugin: 'com.android.library'
+ 
+ dependencies {
+   compile fileTree(dir: 'libs', include: ['*.jar'])
+@@ -31,11 +31,12 @@ android {
+     buildToolsVersion '**BUILDTOOLS**'
+ 
+   defaultConfig {
++consumerProguardFiles 'proguard-unity.txt'**USER_PROGUARD**
+     minSdkVersion **MINSDKVERSION**
+     versionCode **VERSIONCODE**
+     versionName '**VERSIONNAME**'
+     targetSdkVersion **TARGETSDKVERSION**
+-    applicationId '**APPLICATIONID**'
++    
+     ndk {
+       abiFilters **ABIFILTERS**
+     }
+@@ -76,17 +77,7 @@ android {
+   }
+   **PACKAGING_OPTIONS**
+ 
+-  bundle {
+-    language {
+-      enableSplit = false
+-    }
+-    density {
+-      enableSplit = false
+-    }
+-    abi {
+-      enableSplit = true
+-    }
+-  }
++  
+ }
+ 
+ "
+icosa-foundation/open-brush,5,4836cf1,Assets/QualityLevels Mobile.asset,modified,2,2,4,"@@ -88,7 +88,7 @@ MonoBehaviour:
+     m_MaxSimplificationUserStrokes: 2
+     m_GpuLevel: 3
+     m_FixedFoveationLevel: 0
+-  - m_Bloom: 3
++  - m_Bloom: 0
+     m_Hdr: 0
+     m_Fxaa: 0
+     m_MsaaLevel: 2
+@@ -103,7 +103,7 @@ MonoBehaviour:
+     m_MaxSimplificationUserStrokes: 2
+     m_GpuLevel: 5
+     m_FixedFoveationLevel: 0
+-  - m_Bloom: 3
++  - m_Bloom: 0
+     m_Hdr: 0
+     m_Fxaa: 0
+     m_MsaaLevel: 2"
+icosa-foundation/open-brush,5,4836cf1,Packages/manifest.json,modified,2,1,3,"@@ -12,7 +12,8 @@
+     ""com.unity.textmeshpro"": ""2.0.1"",
+     ""com.unity.timeline"": ""1.2.6"",
+     ""com.unity.ugui"": ""1.0.0"",
+-    ""com.unity.xr.legacyinputhelpers"": ""2.1.7"",
++    ""com.unity.xr.oculus.android"": ""2.38.6"",
++    ""com.unity.xr.oculus.standalone"": ""2.38.4"",
+     ""com.unity.xr.openvr.standalone"": ""2.0.5"",
+     ""com.unity.modules.ai"": ""1.0.0"",
+     ""com.unity.modules.androidjni"": ""1.0.0"","
+icosa-foundation/open-brush,5,4836cf1,Packages/packages-lock.json,modified,10,6,16,"@@ -101,14 +101,18 @@
+         ""com.unity.modules.imgui"": ""1.0.0""
+       }
+     },
+-    ""com.unity.xr.legacyinputhelpers"": {
+-      ""version"": ""2.1.7"",
++    ""com.unity.xr.oculus.android"": {
++      ""version"": ""2.38.6"",
+       ""depth"": 0,
+       ""source"": ""registry"",
+-      ""dependencies"": {
+-        ""com.unity.modules.vr"": ""1.0.0"",
+-        ""com.unity.modules.xr"": ""1.0.0""
+-      },
++      ""dependencies"": {},
++      ""url"": ""https://packages.unity.com""
++    },
++    ""com.unity.xr.oculus.standalone"": {
++      ""version"": ""2.38.4"",
++      ""depth"": 0,
++      ""source"": ""registry"",
++      ""dependencies"": {},
+       ""url"": ""https://packages.unity.com""
+     },
+     ""com.unity.xr.openvr.standalone"": {"
+icosa-foundation/open-brush,5,4836cf1,ProjectSettings/EditorBuildSettings.asset,modified,3,1,4,"@@ -11,4 +11,6 @@ EditorBuildSettings:
+   - enabled: 1
+     path: Assets/Scenes/Main.unity
+     guid: 07df4d63df340f74ca58824df3cab9ea
+-  m_configObjects: {}
++  m_configObjects:
++    Unity.XR.Oculus.Settings: {fileID: 11400000, guid: 7c1388e94a5af4f79aab3cc7537411cf,
++      type: 2}"
+icosa-foundation/open-brush,5,4836cf1,ProjectSettings/ProjectSettings.asset,modified,7,6,13,"@@ -154,9 +154,9 @@ PlayerSettings:
+     oculus:
+       sharedDepthBuffer: 0
+       dashSupport: 0
+-      lowOverheadMode: 0
++      lowOverheadMode: 1
+       protectedContext: 0
+-      v2Signing: 0
++      v2Signing: 1
+     enable360StereoCapture: 0
+   isWsaHolographicRemotingEnabled: 0
+   enableFrameTimingStats: 0
+@@ -421,6 +421,7 @@ PlayerSettings:
+   - m_BuildTarget: Android
+     m_Enabled: 1
+     m_Devices:
++    - OpenVR
+     - Oculus
+   - m_BuildTarget: Windows Store Apps
+     m_Enabled: 1
+@@ -446,14 +447,14 @@ PlayerSettings:
+     m_Enabled: 0
+     m_Devices: []
+   - m_BuildTarget: Standalone
+-    m_Enabled: 1
++    m_Enabled: 0
+     m_Devices:
+-    - OpenVR
++    - Oculus
+   - m_BuildTarget: Tizen
+     m_Enabled: 0
+     m_Devices: []
+   - m_BuildTarget: WebGL
+-    m_Enabled: 1
++    m_Enabled: 0
+     m_Devices: []
+   - m_BuildTarget: WebPlayer
+     m_Enabled: 0
+@@ -723,7 +724,7 @@ PlayerSettings:
+   webGLWasmStreaming: 0
+   scriptingDefineSymbols:
+     1: USD_SUPPORTED;UNITY_HAS_GOOGLEVR;TILT_BRUSH
+-    7: TILT_BRUSH
++    7: TILT_BRUSH;OCULUS_SUPPORTED
+     14: USD_SUPPORTED;UNITY_HAS_GOOGLEVR;TILT_BRUSH
+   platformArchitecture:
+     iPhone: 0"
+icosa-foundation/open-brush,5,4836cf1,ProjectSettings/XRPackageSettings.asset,added,6,0,6,"@@ -0,0 +1,6 @@
++{
++    ""m_Settings"": [
++        ""RemoveLegacyInputHelpersForReload"",
++        ""ShouldQueryLegacyPackageRemoval""
++    ]
++}
+\ No newline at end of file"
+icosa-foundation/open-brush,5,34f5989,Assets/QualityLevels Mobile.asset,modified,2,2,4,"@@ -88,7 +88,7 @@ MonoBehaviour:
+     m_MaxSimplificationUserStrokes: 2
+     m_GpuLevel: 3
+     m_FixedFoveationLevel: 0
+-  - m_Bloom: 0
++  - m_Bloom: 3
+     m_Hdr: 0
+     m_Fxaa: 0
+     m_MsaaLevel: 2
+@@ -103,7 +103,7 @@ MonoBehaviour:
+     m_MaxSimplificationUserStrokes: 2
+     m_GpuLevel: 5
+     m_FixedFoveationLevel: 0
+-  - m_Bloom: 0
++  - m_Bloom: 3
+     m_Hdr: 0
+     m_Fxaa: 0
+     m_MsaaLevel: 2"

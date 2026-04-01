@@ -1,0 +1,47 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+Unity-Technologies/EditorXR,524,67378f6de9cb00103daa092877014934f20089ac,Menus/SpatialUI/SpatialMenu/Scripts/SpatialMenuSectionTitleElement.cs,modified,9,1,10,"@@ -75,7 +75,15 @@ void OnDestroy()
+ 
+         void Select()
+         {
+-            var selectionNode = hoveringNode != Node.None ? hoveringNode : spatialMenuActiveControllerNode;
++            var beingHoveredByRay = hoveringNode != Node.None;
++            var selectionNode = beingHoveredByRay ? hoveringNode : spatialMenuActiveControllerNode;
++
++            // Force this element to be selected again when switching menu levels
++            // due to the ray taking precedence over a non-ray-based highlighted item
++            // The button will be cleaned up regardless on menu level change or close
++            if (beingHoveredByRay)
++                highlighted = true;
++
+             if (selected != null)
+                 selected(selectionNode);
+         }"
+Unity-Technologies/EditorXR,524,67378f6de9cb00103daa092877014934f20089ac,Menus/SpatialUI/SpatialMenu/Scripts/SpatialMenuUI.cs,modified,19,1,20,"@@ -419,9 +419,27 @@ void DisplayHighlightedSubMenuContents()
+         {
+             m_BackButton.allowInteraction = true;
+             ForceClearHomeMenuElements();
++
++            // Find any element hovered by a ray, for later comparison and selection override
++            // of menu elements highlighted via other input modes
++            SpatialMenu.SpatialMenuData rayHoveredElementMenuData = null;
++            if (spatialInterfaceInputMode == SpatialInterfaceInputMode.Ray)
++            {
++                foreach (var menuElement in m_CurrentlyDisplayedMenuElements)
++                {
++                    if (menuElement.hoveringNode != Node.None && menuElement.parentMenuData != null)
++                    {
++                        rayHoveredElementMenuData = menuElement.parentMenuData;
++                        break;
++                    }
++                }
++            }
++
+             foreach (var menuData in spatialMenuData)
+             {
+-                if (menuData.highlighted)
++                // Ray-based elements that are highlighted should take precedence over elements highlighted by other means
++                // (neutral, BCI, etc) when changing menu levels
++                if (menuData.highlighted && (rayHoveredElementMenuData == null || rayHoveredElementMenuData == menuData))
+                 {
+                     m_CurrentlyDisplayedMenuElements.Clear();
+                     var deleteOldChildren = m_SubMenuContainer.GetComponentsInChildren<Transform>().Where( x => x != m_SubMenuContainer);"

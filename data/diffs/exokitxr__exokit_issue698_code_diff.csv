@@ -1,0 +1,380 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+exokitxr/exokit,698,99bb916,deps/exokit-bindings/magicleap/include/magicleap.h,modified,1,1,2,"@@ -294,7 +294,7 @@ class MLContext : public ObjectWrap {
+   static NAN_METHOD(Poll);
+ 
+   void TickFloor();
+-  static MLVec3f &&OffsetFloor(const MLVec3f &position);
++  static MLVec3f OffsetFloor(const MLVec3f &position);
+ 
+ // protected:
+   // EGL"
+exokitxr/exokit,698,99bb916,deps/exokit-bindings/magicleap/src/magicleap.cc,modified,1,1,2,"@@ -3607,7 +3607,7 @@ void MLContext::TickFloor() {
+   }
+ }
+ 
+-MLVec3f &&MLContext::OffsetFloor(const MLVec3f &position) {
++MLVec3f MLContext::OffsetFloor(const MLVec3f &position) {
+   return MLVec3f{position.x, position.y + largestFloorY, position.z};
+ }
+ "
+exokitxr/exokit,698,15e56d0,deps/exokit-bindings/magicleap/src/magicleap.cc,modified,7,4,11,"@@ -3588,11 +3588,14 @@ void MLContext::TickFloor() {
+     if (result == MLResult_Ok) {
+       for (uint32_t i = 0; i < numFloorResults; i++) {
+         const MLPlane &plane = floorResults[i];
+-        const float floorSizeSq = plane.width*plane.width + plane.height*plane.height;
++        const MLVec3f &normal = applyVectorQuaternion(MLVec3f{0, 0, 1}, plane.rotation);
++        if (normal.y > 0) {
++          const float floorSizeSq = plane.width*plane.width + plane.height*plane.height;
+ 
+-        if (floorSizeSq > largestFloorSizeSq) {
+-          largestFloorY = plane.position.y;
+-          largestFloorSizeSq = floorSizeSq;
++          if (floorSizeSq > largestFloorSizeSq) {
++            largestFloorY = plane.position.y;
++            largestFloorSizeSq = floorSizeSq;
++          }
+         }
+       }
+ "
+exokitxr/exokit,698,173a559,deps/exokit-bindings/magicleap/src/ml-math.cc,modified,4,4,8,"@@ -416,10 +416,10 @@ void decomposeMatrix(
+ MLMat4f makeTranslationMatrix(const MLVec3f &translation) {
+   return MLMat4f{
+     {
+-      1, 0, 0, translation.x,
+-      0, 1, 0, translation.y,
+-      0, 0, 1, translation.z,
+-      0, 0, 0, 1
++      1, 0, 0, 0,
++      0, 1, 0, 0,
++      0, 0, 1, 0,
++      translation.x, translation.y, translation.z, 1
+     }
+   };
+ }"
+exokitxr/exokit,698,f75a1b9,deps/exokit-bindings/magicleap/include/magicleap.h,modified,3,0,3,"@@ -293,6 +293,9 @@ class MLContext : public ObjectWrap {
+   static NAN_METHOD(Update);
+   static NAN_METHOD(Poll);
+ 
++  void TickFloor();
++  static MLVec3f OffsetFloor(const MLVec3f &position);
++
+ // protected:
+   // EGL
+   NATIVEwindow *window;"
+exokitxr/exokit,698,f75a1b9,deps/exokit-bindings/magicleap/include/ml-math.h,modified,2,0,2,"@@ -17,6 +17,7 @@ MLVec3f crossVectors(const MLVec3f &a, const MLVec3f &b);
+ float vectorLengthSq(const MLVec3f &v);
+ float vectorLength(const MLVec3f &v);
+ MLVec3f normalizeVector(const MLVec3f &v);
++MLVec3f applyVectorQuaternion(const MLVec3f &v, const MLQuaternionf &q);
+ MLVec3f applyVectorMatrix(const MLVec3f &v, const MLMat4f &m);
+ float quaternionLength(const MLQuaternionf &q);
+ MLQuaternionf normalizeQuaternion(const MLQuaternionf &q);
+@@ -39,6 +40,7 @@ void decomposeMatrix(
+   MLQuaternionf &quaternion,
+   MLVec3f &scale
+ );
++MLMat4f makeTranslationMatrix(const MLVec3f &translation);
+ MLMat4f invertMatrix(const MLMat4f &matrix);
+ MLMat4f multiplyMatrices(const MLMat4f &a, const MLMat4f &b);
+ bool isIdentityMatrix(const MLMat4f &m);"
+exokitxr/exokit,698,f75a1b9,deps/exokit-bindings/magicleap/src/magicleap.cc,modified,118,20,138,"@@ -15,6 +15,8 @@ namespace ml {
+ 
+ const char application_name[] = ""com.exokit.app"";
+ constexpr int CAMERA_SIZE[] = {960, 540};
++constexpr float meshingRange = 3.0f;
++constexpr float planeRange = 10.0f;
+ 
+ application_context_t application_context;
+ MLResult lifecycle_status = MLResult_Pending;
+@@ -72,6 +74,15 @@ MLHandle raycastTracker;
+ MLRaycastQuery raycastQuery;
+ std::vector<MLRaycaster *> raycasters;
+ 
++MLHandle floorTracker;
++MLPlanesQuery floorRequest;
++MLHandle floorRequestHandle;
++MLPlane floorResults[MAX_NUM_PLANES];
++uint32_t numFloorResults;
++bool floorRequestPending = false;
++float largestFloorY = 0;
++float largestFloorSizeSq = 0;
++
+ MLHandle meshTracker;
+ std::vector<MLMesher *> meshers;
+ MLMeshingExtents meshExtents;
+@@ -294,17 +305,26 @@ static void onUnloadResources(void* application_context) {
+ MLMat4f getWindowTransformMatrix(Local<Object> windowObj) {
+   Local<Object> localDocumentObj = Local<Object>::Cast(windowObj->Get(JS_STR(""document"")));
+   Local<Value> xrOffsetValue = localDocumentObj->Get(JS_STR(""xrOffset""));
++
++  MLMat4f result;
+   if (xrOffsetValue->IsObject()) {
+     Local<Object> xrOffsetObj = Local<Object>::Cast(xrOffsetValue);
+-    Local<Float32Array> matrixInverseFloat32Array = Local<Float32Array>::Cast(xrOffsetObj->Get(JS_STR(""matrixInverse"")));
++    Local<Float32Array> positionFloat32Array = Local<Float32Array>::Cast(xrOffsetObj->Get(JS_STR(""position"")));
++    MLVec3f position;
++    memcpy(position.values, (char *)positionFloat32Array->Buffer()->GetContents().Data() + positionFloat32Array->ByteOffset(), sizeof(position.values));
++    position.y += largestFloorY;
++    
++    Local<Float32Array> orientationFloat32Array = Local<Float32Array>::Cast(xrOffsetObj->Get(JS_STR(""orientation"")));
++    MLQuaternionf orientation;
++    memcpy(orientation.values, (char *)orientationFloat32Array->Buffer()->GetContents().Data() + orientationFloat32Array->ByteOffset(), sizeof(orientation.values));
+     
+-    MLMat4f transformMatrix;
+-    memcpy(transformMatrix.matrix_colmajor, (char *)matrixInverseFloat32Array->Buffer()->GetContents().Data() + matrixInverseFloat32Array->ByteOffset(), sizeof(transformMatrix.matrix_colmajor));
+-    return transformMatrix;
++    Local<Float32Array> scaleFloat32Array = Local<Float32Array>::Cast(xrOffsetObj->Get(JS_STR(""scale"")));
++    MLVec3f scale;
++    memcpy(scale.values, (char *)scaleFloat32Array->Buffer()->GetContents().Data() + scaleFloat32Array->ByteOffset(), sizeof(scale.values));
++
++    return invertMatrix(composeMatrix(position, orientation, scale));
+   } else {
+-    return MLMat4f{
+-      {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1},
+-    };
++    return makeTranslationMatrix(MLVec3f{0, -largestFloorY, 0});
+   }
+ }
+ 
+@@ -2620,6 +2640,12 @@ NAN_METHOD(MLContext::Present) {
+     }
+   }
+ 
++  if (MLPlanesCreate(&floorTracker) != MLResult_Ok) {
++    ML_LOG(Error, ""%s: failed to create floor handle"", application_name);
++    info.GetReturnValue().Set(Nan::Null());
++    return;
++  }
++
+   MLMeshingSettings meshingSettings;
+   if (MLMeshingInitSettings(&meshingSettings) != MLResult_Ok) {
+     ML_LOG(Error, ""%s: failed to initialize meshing settings"", application_name);
+@@ -2647,6 +2673,8 @@ NAN_METHOD(MLContext::Present) {
+     return;
+   }
+ 
++  mlContext->TickFloor();
++
+   // HACK: force the app to be ""running""
+   application_context.dummy_value = DummyValue::RUNNING;
+ 
+@@ -2699,6 +2727,12 @@ NAN_METHOD(MLContext::Exit) {
+     return;
+   }
+ 
++  if (MLPlanesDestroy(floorTracker) != MLResult_Ok) {
++    ML_LOG(Error, ""%s: failed to destroy floor handle"", application_name);
++    info.GetReturnValue().Set(Nan::Null());
++    return;
++  }
++
+   if (MLMeshingDestroyClient(&meshTracker) != MLResult_Ok) {
+     ML_LOG(Error, ""%s: failed to destroy mesh handle"", application_name);
+     return;
+@@ -2757,13 +2791,16 @@ NAN_METHOD(MLContext::WaitGetPoses) {
+       result = MLGraphicsBeginFrame(mlContext->graphics_client, &frame_params, &mlContext->frame_handle, &mlContext->virtual_camera_array);
+ 
+       if (result == MLResult_Ok) {
++        mlContext->TickFloor();
++
+         // transform
+         for (int i = 0; i < 2; i++) {
+           const MLGraphicsVirtualCameraInfo &cameraInfo = mlContext->virtual_camera_array.virtual_cameras[i];
+           const MLTransform &transform = cameraInfo.transform;
+-          transformArray->Set(i*7 + 0, JS_NUM(transform.position.x));
+-          transformArray->Set(i*7 + 1, JS_NUM(transform.position.y));
+-          transformArray->Set(i*7 + 2, JS_NUM(transform.position.z));
++          const MLVec3f &position = OffsetFloor(transform.position);
++          transformArray->Set(i*7 + 0, JS_NUM(position.x));
++          transformArray->Set(i*7 + 1, JS_NUM(position.y));
++          transformArray->Set(i*7 + 2, JS_NUM(position.z));
+           transformArray->Set(i*7 + 3, JS_NUM(transform.rotation.x));
+           transformArray->Set(i*7 + 4, JS_NUM(transform.rotation.y));
+           transformArray->Set(i*7 + 5, JS_NUM(transform.rotation.z));
+@@ -2780,7 +2817,7 @@ NAN_METHOD(MLContext::WaitGetPoses) {
+           // std::unique_lock<std::mutex> lock(mlContext->positionMutex);
+ 
+           const MLTransform &leftCameraTransform = mlContext->virtual_camera_array.virtual_cameras[0].transform;
+-          mlContext->position = leftCameraTransform.position;
++          mlContext->position = OffsetFloor(leftCameraTransform.position);
+           mlContext->rotation = leftCameraTransform.rotation;
+         }
+ 
+@@ -2790,7 +2827,7 @@ NAN_METHOD(MLContext::WaitGetPoses) {
+         if (result == MLResult_Ok) {
+           for (int i = 0; i < 2 && i < MLInput_MaxControllers; i++) {
+             const MLInputControllerState &controllerState = controllerStates[i];
+-            const MLVec3f &position = controllerState.position;
++            const MLVec3f &position = OffsetFloor(controllerState.position);
+             const MLQuaternionf &orientation = controllerState.orientation;
+             const float trigger = controllerState.trigger_normalized;
+             const float bumper = controllerState.button_state[MLInputControllerButton_Bumper] ? 1.0f : 0.0f;
+@@ -3232,6 +3269,8 @@ NAN_METHOD(MLContext::Update) {
+ 
+   MLSnapshot *snapshot = nullptr;
+ 
++  // requests
++
+   if (raycasters.size() > 0) {
+     raycasters.erase(std::remove_if(raycasters.begin(), raycasters.end(), [&](MLRaycaster *r) -> bool {
+       if (r->Update()) {
+@@ -3319,9 +3358,9 @@ NAN_METHOD(MLContext::Update) {
+       // meshExtents.rotation =  mlContext->rotation;
+       meshExtents.rotation = {0, 0, 0, 1};
+     }
+-    meshExtents.extents.x = 3;
+-    meshExtents.extents.y = 3;
+-    meshExtents.extents.z = 3;
++    meshExtents.extents.x = meshingRange;
++    meshExtents.extents.y = meshingRange;
++    meshExtents.extents.z = meshingRange;
+ 
+     MLResult result = MLMeshingRequestMeshInfo(meshTracker, &meshExtents, &meshInfoRequestHandle);
+     if (result == MLResult_Ok) {
+@@ -3339,12 +3378,12 @@ NAN_METHOD(MLContext::Update) {
+       // planesRequest.bounds_rotation = mlContext->rotation;
+       planesRequest.bounds_rotation = {0, 0, 0, 1};
+     }
+-    planesRequest.bounds_extents.x = 3;
+-    planesRequest.bounds_extents.y = 3;
+-    planesRequest.bounds_extents.z = 3;
++    planesRequest.bounds_extents.x = planeRange;
++    planesRequest.bounds_extents.y = planeRange;
++    planesRequest.bounds_extents.z = planeRange;
+ 
+-    planesRequest.flags = MLPlanesQueryFlag_Arbitrary | MLPlanesQueryFlag_AllOrientations | MLPlanesQueryFlag_Semantic_All;
+-    planesRequest.min_hole_length = 0.5;
++    planesRequest.flags = MLPlanesQueryFlag_Arbitrary | MLPlanesQueryFlag_AllOrientations | MLPlanesQueryFlag_Semantic_All | MLPlanesQueryFlag_OrientToGravity;
++    // planesRequest.min_hole_length = 0.5;
+     planesRequest.min_plane_area = 0.25;
+     planesRequest.max_results = MAX_NUM_PLANES;
+ 
+@@ -3364,6 +3403,8 @@ NAN_METHOD(MLContext::Update) {
+     }
+   }
+ 
++  // responses
++
+   if (meshInfoRequestPending) {
+     MLResult result = MLMeshingGetMeshInfoResult(meshTracker, meshInfoRequestHandle, &meshInfo);
+     if (result == MLResult_Ok) {
+@@ -3519,6 +3560,63 @@ NAN_METHOD(MLContext::Poll) {
+   polls.clear();
+ }
+ 
++void MLContext::TickFloor() {
++  if (!floorRequestPending) {
++    {
++      // std::unique_lock<std::mutex> lock(mlContext->positionMutex);
++
++      floorRequest.bounds_center = this->position;
++      // floorRequest.bounds_rotation = mlContext->rotation;
++      floorRequest.bounds_rotation = {0, 0, 0, 1};
++    }
++    floorRequest.bounds_extents.x = planeRange;
++    floorRequest.bounds_extents.y = planeRange;
++    floorRequest.bounds_extents.z = planeRange;
++
++    floorRequest.flags = MLPlanesQueryFlag_Horizontal | MLPlanesQueryFlag_Semantic_Floor;
++    // floorRequest.min_hole_length = 0.5;
++    floorRequest.min_plane_area = 0.25;
++    floorRequest.max_results = MAX_NUM_PLANES;
++
++    MLResult result = MLPlanesQueryBegin(floorTracker, &floorRequest, &floorRequestHandle);
++    if (result == MLResult_Ok) {
++      floorRequestPending = true;
++    } else {
++      ML_LOG(Error, ""%s: Floor request failed! %x"", application_name, result);
++    }
++  }
++
++  if (floorRequestPending) {
++    MLResult result = MLPlanesQueryGetResults(floorTracker, floorRequestHandle, floorResults, &numFloorResults);
++    if (result == MLResult_Ok) {
++      for (uint32_t i = 0; i < numFloorResults; i++) {
++        const MLPlane &plane = floorResults[i];
++        const MLVec3f &normal = applyVectorQuaternion(MLVec3f{0, 0, 1}, plane.rotation);
++        if (normal.y > 0) {
++          const float floorSizeSq = plane.width*plane.width + plane.height*plane.height;
++
++          if (floorSizeSq > largestFloorSizeSq) {
++            largestFloorY = plane.position.y;
++            largestFloorSizeSq = floorSizeSq;
++          }
++        }
++      }
++
++      floorRequestPending = false;
++    } else if (result == MLResult_Pending) {
++      // nothing
++    } else {
++      ML_LOG(Error, ""%s: Floor request failed! %x"", application_name, result);
++
++      floorRequestPending = false;
++    }
++  }
++}
++
++MLVec3f MLContext::OffsetFloor(const MLVec3f &position) {
++  return MLVec3f{position.x, position.y - largestFloorY, position.z};
++}
++
+ }
+ 
+ Handle<Object> makeMl() {"
+exokitxr/exokit,698,f75a1b9,deps/exokit-bindings/magicleap/src/ml-math.cc,modified,32,0,32,"@@ -54,6 +54,27 @@ MLVec3f normalizeVector(const MLVec3f &v) {
+   return divideVector(v, vectorLength(v));
+ }
+ 
++
++MLVec3f applyVectorQuaternion(const MLVec3f &v, const MLQuaternionf &q) {
++  const float x = v.x, y = v.y, z = v.z;
++  const float qx = q.x, qy = q.y, qz = q.z, qw = q.w;
++
++  // calculate quat * vector
++
++  const float ix = qw * x + qy * z - qz * y;
++  const float iy = qw * y + qz * x - qx * z;
++  const float iz = qw * z + qx * y - qy * x;
++  const float iw = - qx * x - qy * y - qz * z;
++
++  // calculate result * inverse quat
++
++  return MLVec3f{
++    ix * qw + iw * - qx + iy * - qz - iz * - qy,
++    iy * qw + iw * - qy + iz * - qx - ix * - qz,
++    iz * qw + iw * - qz + ix * - qy - iy * - qx
++  };
++}
++
+ MLVec3f applyVectorMatrix(const MLVec3f &v, const MLMat4f &m) {
+   const float x = v.x, y = v.y, z = v.z;
+   const float *e = m.matrix_colmajor;
+@@ -392,6 +413,17 @@ void decomposeMatrix(
+   scale.z = sz;
+ }
+ 
++MLMat4f makeTranslationMatrix(const MLVec3f &translation) {
++  return MLMat4f{
++    {
++      1, 0, 0, 0,
++      0, 1, 0, 0,
++      0, 0, 1, 0,
++      translation.x, translation.y, translation.z, 1
++    }
++  };
++}
++
+ MLMat4f invertMatrix(const MLMat4f &matrix) {
+   MLMat4f result;
+ "
+exokitxr/exokit,698,f75a1b9,src/XR.js,modified,1,2,3,"@@ -387,8 +387,7 @@ class XRPresentationFrame {
+       if (xrOffset) {
+         localMatrix
+           .premultiply(
+-            localMatrix2.fromArray(xrOffset.matrix)
+-            .getInverse(localMatrix2)
++            localMatrix2.fromArray(xrOffset.matrixInverse)
+           );
+       }
+     }"

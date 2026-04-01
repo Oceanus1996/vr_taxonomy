@@ -1,0 +1,1181 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+secondlife/viewer,1348,fdfae4a,indra/llui/llmenugl.cpp,modified,2,0,2,"@@ -46,6 +46,7 @@
+ #include ""llfocusmgr.h""
+ #include ""llcoord.h""
+ #include ""llwindow.h""
++#include ""llemojihelper.h""
+ #include ""llcriticaldamp.h""
+ #include ""lluictrlfactory.h""
+ 
+@@ -1411,6 +1412,7 @@ void LLMenuItemBranchDownGL::openMenu( void )
+ 	}
+ 	else
+ 	{
++		LLEmojiHelper::instance().hideHelper(nullptr, true);
+ 		if (branch->getTornOff())
+ 		{
+ 			LLFloater * branch_parent = dynamic_cast<LLFloater *>(branch->getParent());"
+secondlife/viewer,1348,fdfae4a,indra/llui/llmodaldialog.cpp,modified,4,1,5,"@@ -96,7 +96,10 @@ void LLModalDialog::onOpen(const LLSD& key)
+ {
+ 	if (mModal)
+ 	{
+-		// If Modal, Hide the active modal dialog
++		// If Modal, hide all menus currently shown
++		LLMenuGL::sMenuContainer->hideMenus();
++
++		// If Modal, hide the active modal dialog
+ 		if (!sModalStack.empty())
+ 		{
+ 			LLModalDialog* front = sModalStack.front();"
+secondlife/viewer,1348,fdfae4a,indra/newview/llscreenchannel.cpp,modified,14,13,27,"@@ -271,9 +271,9 @@ void LLScreenChannel::addToast(const LLToast::Params& p)
+ 	}
+ 	store_toast = !show_toast && p.can_be_stored && mCanStoreToasts;
+ 
+-	if(!show_toast && !store_toast)
++	if (!show_toast && !store_toast)
+ 	{
+-	    if(gAgent.isDoNotDisturb())
++	    if (gAgent.isDoNotDisturb())
+         {
+ 	        return;
+         }
+@@ -301,24 +301,25 @@ void LLScreenChannel::addToast(const LLToast::Params& p)
+ 
+ 	toast->setOnFadeCallback(boost::bind(&LLScreenChannel::onToastFade, this, _1));
+ 	toast->setOnToastDestroyedCallback(boost::bind(&LLScreenChannel::onToastDestroyed, this, _1));
+-	if(mControlHovering)
++	if (mControlHovering)
+ 	{
+ 		toast->setOnToastHoverCallback(boost::bind(&LLScreenChannel::onToastHover, this, _1, _2));
+ 		toast->setMouseEnterCallback(boost::bind(&LLScreenChannel::stopToastTimer, this, toast));
+ 		toast->setMouseLeaveCallback(boost::bind(&LLScreenChannel::startToastTimer, this, toast));
+ 	}
+-	
+-	if(show_toast)
++
++	if (show_toast)
+ 	{
+ 		mToastList.push_back(new_toast_elem);
+-		if(p.can_be_stored)
++		toast->openFloater(LLSD());
++		if (p.can_be_stored)
+ 		{
+ 			// store toasts immediately - EXT-3762
+ 			storeToast(new_toast_elem);
+ 		}
+ 		updateShowToastsState();
+ 		redrawToasts();
+-	}	
++	}
+ 	else // store_toast
+ 	{
+ 		mHiddenToastsNum++;
+@@ -353,13 +354,13 @@ void LLScreenChannel::onToastDestroyed(LLToast* toast)
+ 
+ //--------------------------------------------------------------------------
+ void LLScreenChannel::onToastFade(LLToast* toast)
+-{	
++{
+ 	std::vector<ToastElem>::iterator it = find(mToastList.begin(), mToastList.end(), static_cast<LLPanel*>(toast));
+-		
+-	if(it != mToastList.end())
++
++	if (it != mToastList.end())
+ 	{
+ 		bool delete_toast = !mCanStoreToasts || !toast->getCanBeStored();
+-		if(delete_toast)
++		if (delete_toast)
+ 		{
+ 			mToastList.erase(it);
+ 			deleteToast(toast);
+@@ -368,7 +369,7 @@ void LLScreenChannel::onToastFade(LLToast* toast)
+ 		{
+ 			storeToast((*it));
+ 			mToastList.erase(it);
+-		}	
++		}
+ 
+ 		redrawToasts();
+ 	}
+@@ -384,7 +385,7 @@ void LLScreenChannel::deleteToast(LLToast* toast)
+ 
+ 	// send signal to observers about destroying of a toast
+ 	toast->closeToast();
+-	
++
+ 	// update channel's Hovering state
+ 	// turning hovering off manually because onMouseLeave won't happen if a toast was closed using a keyboard
+ 	if(mHoveredToast == toast)"
+secondlife/viewer,1348,d1da7fe,indra/llui/llmenugl.cpp,modified,2,0,2,"@@ -46,6 +46,7 @@
+ #include ""llfocusmgr.h""
+ #include ""llcoord.h""
+ #include ""llwindow.h""
++#include ""llemojihelper.h""
+ #include ""llcriticaldamp.h""
+ #include ""lluictrlfactory.h""
+ 
+@@ -1411,6 +1412,7 @@ void LLMenuItemBranchDownGL::openMenu( void )
+ 	}
+ 	else
+ 	{
++		LLEmojiHelper::instance().hideHelper(nullptr, true);
+ 		if (branch->getTornOff())
+ 		{
+ 			LLFloater * branch_parent = dynamic_cast<LLFloater *>(branch->getParent());"
+secondlife/viewer,1348,d1da7fe,indra/llui/llmodaldialog.cpp,modified,4,1,5,"@@ -96,7 +96,10 @@ void LLModalDialog::onOpen(const LLSD& key)
+ {
+ 	if (mModal)
+ 	{
+-		// If Modal, Hide the active modal dialog
++		// If Modal, hide all menus currently shown
++		LLMenuGL::sMenuContainer->hideMenus();
++
++		// If Modal, hide the active modal dialog
+ 		if (!sModalStack.empty())
+ 		{
+ 			LLModalDialog* front = sModalStack.front();"
+secondlife/viewer,1348,d1da7fe,indra/newview/llscreenchannel.cpp,modified,17,13,30,"@@ -271,9 +271,9 @@ void LLScreenChannel::addToast(const LLToast::Params& p)
+ 	}
+ 	store_toast = !show_toast && p.can_be_stored && mCanStoreToasts;
+ 
+-	if(!show_toast && !store_toast)
++	if (!show_toast && !store_toast)
+ 	{
+-	    if(gAgent.isDoNotDisturb())
++	    if (gAgent.isDoNotDisturb())
+         {
+ 	        return;
+         }
+@@ -301,24 +301,28 @@ void LLScreenChannel::addToast(const LLToast::Params& p)
+ 
+ 	toast->setOnFadeCallback(boost::bind(&LLScreenChannel::onToastFade, this, _1));
+ 	toast->setOnToastDestroyedCallback(boost::bind(&LLScreenChannel::onToastDestroyed, this, _1));
+-	if(mControlHovering)
++	if (mControlHovering)
+ 	{
+ 		toast->setOnToastHoverCallback(boost::bind(&LLScreenChannel::onToastHover, this, _1, _2));
+ 		toast->setMouseEnterCallback(boost::bind(&LLScreenChannel::stopToastTimer, this, toast));
+ 		toast->setMouseLeaveCallback(boost::bind(&LLScreenChannel::startToastTimer, this, toast));
+ 	}
+-	
+-	if(show_toast)
++
++	if (show_toast)
+ 	{
+ 		mToastList.push_back(new_toast_elem);
+-		if(p.can_be_stored)
++		if (toast->isModal())
++		{
++			toast->openFloater(LLSD());
++		}
++		if (p.can_be_stored)
+ 		{
+ 			// store toasts immediately - EXT-3762
+ 			storeToast(new_toast_elem);
+ 		}
+ 		updateShowToastsState();
+ 		redrawToasts();
+-	}	
++	}
+ 	else // store_toast
+ 	{
+ 		mHiddenToastsNum++;
+@@ -353,13 +357,13 @@ void LLScreenChannel::onToastDestroyed(LLToast* toast)
+ 
+ //--------------------------------------------------------------------------
+ void LLScreenChannel::onToastFade(LLToast* toast)
+-{	
++{
+ 	std::vector<ToastElem>::iterator it = find(mToastList.begin(), mToastList.end(), static_cast<LLPanel*>(toast));
+-		
+-	if(it != mToastList.end())
++
++	if (it != mToastList.end())
+ 	{
+ 		bool delete_toast = !mCanStoreToasts || !toast->getCanBeStored();
+-		if(delete_toast)
++		if (delete_toast)
+ 		{
+ 			mToastList.erase(it);
+ 			deleteToast(toast);
+@@ -368,7 +372,7 @@ void LLScreenChannel::onToastFade(LLToast* toast)
+ 		{
+ 			storeToast((*it));
+ 			mToastList.erase(it);
+-		}	
++		}
+ 
+ 		redrawToasts();
+ 	}
+@@ -384,7 +388,7 @@ void LLScreenChannel::deleteToast(LLToast* toast)
+ 
+ 	// send signal to observers about destroying of a toast
+ 	toast->closeToast();
+-	
++
+ 	// update channel's Hovering state
+ 	// turning hovering off manually because onMouseLeave won't happen if a toast was closed using a keyboard
+ 	if(mHoveredToast == toast)"
+secondlife/viewer,1348,dca08c0,indra/llui/llmenugl.cpp,modified,2,0,2,"@@ -46,6 +46,7 @@
+ #include ""llfocusmgr.h""
+ #include ""llcoord.h""
+ #include ""llwindow.h""
++#include ""llemojihelper.h""
+ #include ""llcriticaldamp.h""
+ #include ""lluictrlfactory.h""
+ 
+@@ -1411,6 +1412,7 @@ void LLMenuItemBranchDownGL::openMenu( void )
+ 	}
+ 	else
+ 	{
++		LLEmojiHelper::instance().hideHelper(nullptr, true);
+ 		if (branch->getTornOff())
+ 		{
+ 			LLFloater * branch_parent = dynamic_cast<LLFloater *>(branch->getParent());"
+secondlife/viewer,1348,dca08c0,indra/llui/llmodaldialog.cpp,modified,9,1,10,"@@ -28,13 +28,15 @@
+ 
+ #include ""llmodaldialog.h""
+ 
++#include ""llemojihelper.h""
+ #include ""llfocusmgr.h""
+ #include ""v4color.h""
+ #include ""v2math.h""
+ #include ""llui.h""
+ #include ""llwindow.h""
+ #include ""llkeyboard.h""
+ #include ""llmenugl.h""
++
+ // static
+ std::list<LLModalDialog*> LLModalDialog::sModalStack;
+ 
+@@ -96,7 +98,13 @@ void LLModalDialog::onOpen(const LLSD& key)
+ {
+ 	if (mModal)
+ 	{
+-		// If Modal, Hide the active modal dialog
++		// If Modal, hide all menus currently shown
++		LLMenuGL::sMenuContainer->hideMenus();
++
++		// If Modal, hide EmojiPicker if it is shown
++		LLEmojiHelper::instance().hideHelper(nullptr, true);
++
++		// If Modal, hide the active modal dialog
+ 		if (!sModalStack.empty())
+ 		{
+ 			LLModalDialog* front = sModalStack.front();"
+secondlife/viewer,1348,dca08c0,indra/newview/llscreenchannel.cpp,modified,23,13,36,"@@ -41,7 +41,9 @@
+ #include ""llsyswellwindow.h""
+ #include ""llfloaterimsession.h""
+ #include ""llscriptfloater.h""
++#include ""llemojihelper.h""
+ #include ""llrootview.h""
++#include ""llmenugl.h""
+ 
+ #include <algorithm>
+ 
+@@ -271,9 +273,9 @@ void LLScreenChannel::addToast(const LLToast::Params& p)
+ 	}
+ 	store_toast = !show_toast && p.can_be_stored && mCanStoreToasts;
+ 
+-	if(!show_toast && !store_toast)
++	if (!show_toast && !store_toast)
+ 	{
+-	    if(gAgent.isDoNotDisturb())
++	    if (gAgent.isDoNotDisturb())
+         {
+ 	        return;
+         }
+@@ -301,24 +303,32 @@ void LLScreenChannel::addToast(const LLToast::Params& p)
+ 
+ 	toast->setOnFadeCallback(boost::bind(&LLScreenChannel::onToastFade, this, _1));
+ 	toast->setOnToastDestroyedCallback(boost::bind(&LLScreenChannel::onToastDestroyed, this, _1));
+-	if(mControlHovering)
++	if (mControlHovering)
+ 	{
+ 		toast->setOnToastHoverCallback(boost::bind(&LLScreenChannel::onToastHover, this, _1, _2));
+ 		toast->setMouseEnterCallback(boost::bind(&LLScreenChannel::stopToastTimer, this, toast));
+ 		toast->setMouseLeaveCallback(boost::bind(&LLScreenChannel::startToastTimer, this, toast));
+ 	}
+-	
+-	if(show_toast)
++
++	if (show_toast)
+ 	{
+ 		mToastList.push_back(new_toast_elem);
+-		if(p.can_be_stored)
++		if (toast->isModal())
++		{
++			// If Modal, hide all menus currently shown
++			LLMenuGL::sMenuContainer->hideMenus();
++
++			// If Modal, hide EmojiPicker if it is shown
++			LLEmojiHelper::instance().hideHelper(nullptr, true);
++		}
++		if (p.can_be_stored)
+ 		{
+ 			// store toasts immediately - EXT-3762
+ 			storeToast(new_toast_elem);
+ 		}
+ 		updateShowToastsState();
+ 		redrawToasts();
+-	}	
++	}
+ 	else // store_toast
+ 	{
+ 		mHiddenToastsNum++;
+@@ -353,13 +363,13 @@ void LLScreenChannel::onToastDestroyed(LLToast* toast)
+ 
+ //--------------------------------------------------------------------------
+ void LLScreenChannel::onToastFade(LLToast* toast)
+-{	
++{
+ 	std::vector<ToastElem>::iterator it = find(mToastList.begin(), mToastList.end(), static_cast<LLPanel*>(toast));
+-		
+-	if(it != mToastList.end())
++
++	if (it != mToastList.end())
+ 	{
+ 		bool delete_toast = !mCanStoreToasts || !toast->getCanBeStored();
+-		if(delete_toast)
++		if (delete_toast)
+ 		{
+ 			mToastList.erase(it);
+ 			deleteToast(toast);
+@@ -368,7 +378,7 @@ void LLScreenChannel::onToastFade(LLToast* toast)
+ 		{
+ 			storeToast((*it));
+ 			mToastList.erase(it);
+-		}	
++		}
+ 
+ 		redrawToasts();
+ 	}
+@@ -384,7 +394,7 @@ void LLScreenChannel::deleteToast(LLToast* toast)
+ 
+ 	// send signal to observers about destroying of a toast
+ 	toast->closeToast();
+-	
++
+ 	// update channel's Hovering state
+ 	// turning hovering off manually because onMouseLeave won't happen if a toast was closed using a keyboard
+ 	if(mHoveredToast == toast)"
+secondlife/viewer,1348,649dd8c,indra/llui/llmenugl.cpp,modified,2,0,2,"@@ -46,6 +46,7 @@
+ #include ""llfocusmgr.h""
+ #include ""llcoord.h""
+ #include ""llwindow.h""
++#include ""llemojihelper.h""
+ #include ""llcriticaldamp.h""
+ #include ""lluictrlfactory.h""
+ 
+@@ -1411,6 +1412,7 @@ void LLMenuItemBranchDownGL::openMenu( void )
+ 	}
+ 	else
+ 	{
++		LLEmojiHelper::instance().hideHelper(nullptr, true);
+ 		if (branch->getTornOff())
+ 		{
+ 			LLFloater * branch_parent = dynamic_cast<LLFloater *>(branch->getParent());"
+secondlife/viewer,1348,649dd8c,indra/llui/llmodaldialog.cpp,modified,22,9,31,"@@ -28,26 +28,28 @@
+ 
+ #include ""llmodaldialog.h""
+ 
++#include ""llemojihelper.h""
+ #include ""llfocusmgr.h""
+ #include ""v4color.h""
+ #include ""v2math.h""
+ #include ""llui.h""
+ #include ""llwindow.h""
+ #include ""llkeyboard.h""
+ #include ""llmenugl.h""
++
+ // static
+ std::list<LLModalDialog*> LLModalDialog::sModalStack;
+ 
+-LLModalDialog::LLModalDialog( const LLSD& key, BOOL modal )
++LLModalDialog::LLModalDialog(const LLSD& key, BOOL modal)
+ 	: LLFloater(key),
+-	  mModal( modal )
++	  mModal(modal)
+ {
+ 	if (modal)
+ 	{
+ 		setCanMinimize(FALSE);
+ 		setCanClose(FALSE);
+ 	}
+-	setVisible( FALSE );
++	setVisible(FALSE);
+ 	setBackgroundVisible(TRUE);
+ 	setBackgroundOpaque(TRUE);
+ 	centerOnScreen(); // default position
+@@ -96,7 +98,10 @@ void LLModalDialog::onOpen(const LLSD& key)
+ {
+ 	if (mModal)
+ 	{
+-		// If Modal, Hide the active modal dialog
++		// If Modal, hide other UI areas temporally shown
++		hideOtherViews();
++
++		// If Modal, hide the active modal dialog
+ 		if (!sModalStack.empty())
+ 		{
+ 			LLModalDialog* front = sModalStack.front();
+@@ -146,7 +151,6 @@ void LLModalDialog::stopModal()
+ 	}
+ }
+ 
+-
+ void LLModalDialog::setVisible( BOOL visible )
+ {
+ 	if (mModal)
+@@ -255,7 +259,6 @@ BOOL LLModalDialog::handleRightMouseDown(S32 x, S32 y, MASK mask)
+ 	return TRUE;
+ }
+ 
+-
+ BOOL LLModalDialog::handleKeyHere(KEY key, MASK mask )
+ {
+ 	LLFloater::handleKeyHere(key, mask );
+@@ -300,8 +303,7 @@ void LLModalDialog::centerOnScreen()
+ 	centerWithin(LLRect(0, 0, ll_round(window_size.mV[VX]), ll_round(window_size.mV[VY])));
+ }
+ 
+-
+-// static 
++// static
+ void LLModalDialog::onAppFocusLost()
+ {
+ 	if( !sModalStack.empty() )
+@@ -316,7 +318,7 @@ void LLModalDialog::onAppFocusLost()
+ 	}
+ }
+ 
+-// static 
++// static
+ void LLModalDialog::onAppFocusGained()
+ {
+ 	if( !sModalStack.empty() )
+@@ -332,6 +334,7 @@ void LLModalDialog::onAppFocusGained()
+ 	}
+ }
+ 
++// static
+ void LLModalDialog::shutdownModals()
+ {
+ 	// This method is only for use during app shutdown. ~LLModalDialog()
+@@ -345,3 +348,13 @@ void LLModalDialog::shutdownModals()
+ 	// simply makes our software look unreliable.
+ 	sModalStack.clear();
+ }
++
++// static
++void LLModalDialog::hideOtherViews()
++{
++    // Hide all menus currently shown
++    LLMenuGL::sMenuContainer->hideMenus();
++
++    // Hide EmojiPicker if it is shown
++    LLEmojiHelper::instance().hideHelper(nullptr, true);
++}"
+secondlife/viewer,1348,649dd8c,indra/llui/llmodaldialog.h,modified,2,1,3,"@@ -39,7 +39,7 @@ class LLModalDialog;
+ class LLModalDialog : public LLFloater
+ {
+ public:
+-	LLModalDialog( const LLSD& key, BOOL modal = true );
++	LLModalDialog(const LLSD& key, BOOL modal = true);
+ 	virtual		~LLModalDialog();
+ 	
+ 	/*virtual*/ BOOL 	postBuild();
+@@ -68,6 +68,7 @@ class LLModalDialog : public LLFloater
+ 
+ 	static S32		activeCount() { return sModalStack.size(); }
+ 	static void		shutdownModals();
++	static void		hideOtherViews();
+ 
+ protected:
+ 	void			centerOnScreen();"
+secondlife/viewer,1348,649dd8c,indra/newview/llscreenchannel.cpp,modified,20,13,33,"@@ -41,7 +41,9 @@
+ #include ""llsyswellwindow.h""
+ #include ""llfloaterimsession.h""
+ #include ""llscriptfloater.h""
++#include ""llemojihelper.h""
+ #include ""llrootview.h""
++#include ""llmenugl.h""
+ 
+ #include <algorithm>
+ 
+@@ -271,9 +273,9 @@ void LLScreenChannel::addToast(const LLToast::Params& p)
+ 	}
+ 	store_toast = !show_toast && p.can_be_stored && mCanStoreToasts;
+ 
+-	if(!show_toast && !store_toast)
++	if (!show_toast && !store_toast)
+ 	{
+-	    if(gAgent.isDoNotDisturb())
++	    if (gAgent.isDoNotDisturb())
+         {
+ 	        return;
+         }
+@@ -301,24 +303,29 @@ void LLScreenChannel::addToast(const LLToast::Params& p)
+ 
+ 	toast->setOnFadeCallback(boost::bind(&LLScreenChannel::onToastFade, this, _1));
+ 	toast->setOnToastDestroyedCallback(boost::bind(&LLScreenChannel::onToastDestroyed, this, _1));
+-	if(mControlHovering)
++	if (mControlHovering)
+ 	{
+ 		toast->setOnToastHoverCallback(boost::bind(&LLScreenChannel::onToastHover, this, _1, _2));
+ 		toast->setMouseEnterCallback(boost::bind(&LLScreenChannel::stopToastTimer, this, toast));
+ 		toast->setMouseLeaveCallback(boost::bind(&LLScreenChannel::startToastTimer, this, toast));
+ 	}
+-	
+-	if(show_toast)
++
++	if (show_toast)
+ 	{
+ 		mToastList.push_back(new_toast_elem);
+-		if(p.can_be_stored)
++		if (toast->isModal())
++		{
++			// If Modal, hide other UI areas temporally shown
++			toast->hideOtherViews();
++		}
++		if (p.can_be_stored)
+ 		{
+ 			// store toasts immediately - EXT-3762
+ 			storeToast(new_toast_elem);
+ 		}
+ 		updateShowToastsState();
+ 		redrawToasts();
+-	}	
++	}
+ 	else // store_toast
+ 	{
+ 		mHiddenToastsNum++;
+@@ -353,13 +360,13 @@ void LLScreenChannel::onToastDestroyed(LLToast* toast)
+ 
+ //--------------------------------------------------------------------------
+ void LLScreenChannel::onToastFade(LLToast* toast)
+-{	
++{
+ 	std::vector<ToastElem>::iterator it = find(mToastList.begin(), mToastList.end(), static_cast<LLPanel*>(toast));
+-		
+-	if(it != mToastList.end())
++
++	if (it != mToastList.end())
+ 	{
+ 		bool delete_toast = !mCanStoreToasts || !toast->getCanBeStored();
+-		if(delete_toast)
++		if (delete_toast)
+ 		{
+ 			mToastList.erase(it);
+ 			deleteToast(toast);
+@@ -368,7 +375,7 @@ void LLScreenChannel::onToastFade(LLToast* toast)
+ 		{
+ 			storeToast((*it));
+ 			mToastList.erase(it);
+-		}	
++		}
+ 
+ 		redrawToasts();
+ 	}
+@@ -384,7 +391,7 @@ void LLScreenChannel::deleteToast(LLToast* toast)
+ 
+ 	// send signal to observers about destroying of a toast
+ 	toast->closeToast();
+-	
++
+ 	// update channel's Hovering state
+ 	// turning hovering off manually because onMouseLeave won't happen if a toast was closed using a keyboard
+ 	if(mHoveredToast == toast)"
+secondlife/viewer,1348,56cf54f,indra/llui/llmenugl.cpp,modified,2,0,2,"@@ -46,6 +46,7 @@
+ #include ""llfocusmgr.h""
+ #include ""llcoord.h""
+ #include ""llwindow.h""
++#include ""llemojihelper.h""
+ #include ""llcriticaldamp.h""
+ #include ""lluictrlfactory.h""
+ 
+@@ -1411,6 +1412,7 @@ void LLMenuItemBranchDownGL::openMenu( void )
+ 	}
+ 	else
+ 	{
++		LLEmojiHelper::instance().hideHelper(nullptr, true);
+ 		if (branch->getTornOff())
+ 		{
+ 			LLFloater * branch_parent = dynamic_cast<LLFloater *>(branch->getParent());"
+secondlife/viewer,1348,56cf54f,indra/llui/llmodaldialog.cpp,modified,22,9,31,"@@ -28,26 +28,28 @@
+ 
+ #include ""llmodaldialog.h""
+ 
++#include ""llemojihelper.h""
+ #include ""llfocusmgr.h""
+ #include ""v4color.h""
+ #include ""v2math.h""
+ #include ""llui.h""
+ #include ""llwindow.h""
+ #include ""llkeyboard.h""
+ #include ""llmenugl.h""
++
+ // static
+ std::list<LLModalDialog*> LLModalDialog::sModalStack;
+ 
+-LLModalDialog::LLModalDialog( const LLSD& key, BOOL modal )
++LLModalDialog::LLModalDialog(const LLSD& key, BOOL modal)
+ 	: LLFloater(key),
+-	  mModal( modal )
++	  mModal(modal)
+ {
+ 	if (modal)
+ 	{
+ 		setCanMinimize(FALSE);
+ 		setCanClose(FALSE);
+ 	}
+-	setVisible( FALSE );
++	setVisible(FALSE);
+ 	setBackgroundVisible(TRUE);
+ 	setBackgroundOpaque(TRUE);
+ 	centerOnScreen(); // default position
+@@ -96,7 +98,10 @@ void LLModalDialog::onOpen(const LLSD& key)
+ {
+ 	if (mModal)
+ 	{
+-		// If Modal, Hide the active modal dialog
++		// If Modal, hide other UI areas temporally shown
++		hideOtherViews();
++
++		// If Modal, hide the active modal dialog
+ 		if (!sModalStack.empty())
+ 		{
+ 			LLModalDialog* front = sModalStack.front();
+@@ -146,7 +151,6 @@ void LLModalDialog::stopModal()
+ 	}
+ }
+ 
+-
+ void LLModalDialog::setVisible( BOOL visible )
+ {
+ 	if (mModal)
+@@ -255,7 +259,6 @@ BOOL LLModalDialog::handleRightMouseDown(S32 x, S32 y, MASK mask)
+ 	return TRUE;
+ }
+ 
+-
+ BOOL LLModalDialog::handleKeyHere(KEY key, MASK mask )
+ {
+ 	LLFloater::handleKeyHere(key, mask );
+@@ -300,8 +303,7 @@ void LLModalDialog::centerOnScreen()
+ 	centerWithin(LLRect(0, 0, ll_round(window_size.mV[VX]), ll_round(window_size.mV[VY])));
+ }
+ 
+-
+-// static 
++// static
+ void LLModalDialog::onAppFocusLost()
+ {
+ 	if( !sModalStack.empty() )
+@@ -316,7 +318,7 @@ void LLModalDialog::onAppFocusLost()
+ 	}
+ }
+ 
+-// static 
++// static
+ void LLModalDialog::onAppFocusGained()
+ {
+ 	if( !sModalStack.empty() )
+@@ -332,6 +334,7 @@ void LLModalDialog::onAppFocusGained()
+ 	}
+ }
+ 
++// static
+ void LLModalDialog::shutdownModals()
+ {
+ 	// This method is only for use during app shutdown. ~LLModalDialog()
+@@ -345,3 +348,13 @@ void LLModalDialog::shutdownModals()
+ 	// simply makes our software look unreliable.
+ 	sModalStack.clear();
+ }
++
++// static
++void LLModalDialog::hideOtherViews()
++{
++    // Hide all menus currently shown
++    LLMenuGL::sMenuContainer->hideMenus();
++
++    // Hide EmojiPicker if it is shown
++    LLEmojiHelper::instance().hideHelper(nullptr, true);
++}"
+secondlife/viewer,1348,56cf54f,indra/llui/llmodaldialog.h,modified,2,1,3,"@@ -39,7 +39,7 @@ class LLModalDialog;
+ class LLModalDialog : public LLFloater
+ {
+ public:
+-	LLModalDialog( const LLSD& key, BOOL modal = true );
++	LLModalDialog(const LLSD& key, BOOL modal = true);
+ 	virtual		~LLModalDialog();
+ 	
+ 	/*virtual*/ BOOL 	postBuild();
+@@ -68,6 +68,7 @@ class LLModalDialog : public LLFloater
+ 
+ 	static S32		activeCount() { return sModalStack.size(); }
+ 	static void		shutdownModals();
++	static void		hideOtherViews();
+ 
+ protected:
+ 	void			centerOnScreen();"
+secondlife/viewer,1348,56cf54f,indra/newview/llscreenchannel.cpp,modified,20,13,33,"@@ -41,7 +41,9 @@
+ #include ""llsyswellwindow.h""
+ #include ""llfloaterimsession.h""
+ #include ""llscriptfloater.h""
++#include ""llemojihelper.h""
+ #include ""llrootview.h""
++#include ""llmenugl.h""
+ 
+ #include <algorithm>
+ 
+@@ -271,9 +273,9 @@ void LLScreenChannel::addToast(const LLToast::Params& p)
+ 	}
+ 	store_toast = !show_toast && p.can_be_stored && mCanStoreToasts;
+ 
+-	if(!show_toast && !store_toast)
++	if (!show_toast && !store_toast)
+ 	{
+-	    if(gAgent.isDoNotDisturb())
++	    if (gAgent.isDoNotDisturb())
+         {
+ 	        return;
+         }
+@@ -301,24 +303,29 @@ void LLScreenChannel::addToast(const LLToast::Params& p)
+ 
+ 	toast->setOnFadeCallback(boost::bind(&LLScreenChannel::onToastFade, this, _1));
+ 	toast->setOnToastDestroyedCallback(boost::bind(&LLScreenChannel::onToastDestroyed, this, _1));
+-	if(mControlHovering)
++	if (mControlHovering)
+ 	{
+ 		toast->setOnToastHoverCallback(boost::bind(&LLScreenChannel::onToastHover, this, _1, _2));
+ 		toast->setMouseEnterCallback(boost::bind(&LLScreenChannel::stopToastTimer, this, toast));
+ 		toast->setMouseLeaveCallback(boost::bind(&LLScreenChannel::startToastTimer, this, toast));
+ 	}
+-	
+-	if(show_toast)
++
++	if (show_toast)
+ 	{
+ 		mToastList.push_back(new_toast_elem);
+-		if(p.can_be_stored)
++		if (toast->isModal())
++		{
++			// If Modal, hide other UI areas temporally shown
++			toast->hideOtherViews();
++		}
++		if (p.can_be_stored)
+ 		{
+ 			// store toasts immediately - EXT-3762
+ 			storeToast(new_toast_elem);
+ 		}
+ 		updateShowToastsState();
+ 		redrawToasts();
+-	}	
++	}
+ 	else // store_toast
+ 	{
+ 		mHiddenToastsNum++;
+@@ -353,13 +360,13 @@ void LLScreenChannel::onToastDestroyed(LLToast* toast)
+ 
+ //--------------------------------------------------------------------------
+ void LLScreenChannel::onToastFade(LLToast* toast)
+-{	
++{
+ 	std::vector<ToastElem>::iterator it = find(mToastList.begin(), mToastList.end(), static_cast<LLPanel*>(toast));
+-		
+-	if(it != mToastList.end())
++
++	if (it != mToastList.end())
+ 	{
+ 		bool delete_toast = !mCanStoreToasts || !toast->getCanBeStored();
+-		if(delete_toast)
++		if (delete_toast)
+ 		{
+ 			mToastList.erase(it);
+ 			deleteToast(toast);
+@@ -368,7 +375,7 @@ void LLScreenChannel::onToastFade(LLToast* toast)
+ 		{
+ 			storeToast((*it));
+ 			mToastList.erase(it);
+-		}	
++		}
+ 
+ 		redrawToasts();
+ 	}
+@@ -384,7 +391,7 @@ void LLScreenChannel::deleteToast(LLToast* toast)
+ 
+ 	// send signal to observers about destroying of a toast
+ 	toast->closeToast();
+-	
++
+ 	// update channel's Hovering state
+ 	// turning hovering off manually because onMouseLeave won't happen if a toast was closed using a keyboard
+ 	if(mHoveredToast == toast)"
+secondlife/viewer,1348,e4e0bdd,indra/llui/llmenugl.cpp,modified,2,0,2,"@@ -46,6 +46,7 @@
+ #include ""llfocusmgr.h""
+ #include ""llcoord.h""
+ #include ""llwindow.h""
++#include ""llemojihelper.h""
+ #include ""llcriticaldamp.h""
+ #include ""lluictrlfactory.h""
+ 
+@@ -1411,6 +1412,7 @@ void LLMenuItemBranchDownGL::openMenu( void )
+ 	}
+ 	else
+ 	{
++		LLEmojiHelper::instance().hideHelper(nullptr, true);
+ 		if (branch->getTornOff())
+ 		{
+ 			LLFloater * branch_parent = dynamic_cast<LLFloater *>(branch->getParent());"
+secondlife/viewer,1348,e4e0bdd,indra/llui/llmodaldialog.cpp,modified,16,10,26,"@@ -28,26 +28,28 @@
+ 
+ #include ""llmodaldialog.h""
+ 
++#include ""llemojihelper.h""
+ #include ""llfocusmgr.h""
+ #include ""v4color.h""
+ #include ""v2math.h""
+ #include ""llui.h""
+ #include ""llwindow.h""
+ #include ""llkeyboard.h""
+ #include ""llmenugl.h""
++
+ // static
+ std::list<LLModalDialog*> LLModalDialog::sModalStack;
+ 
+-LLModalDialog::LLModalDialog( const LLSD& key, BOOL modal )
++LLModalDialog::LLModalDialog(const LLSD& key, BOOL modal)
+ 	: LLFloater(key),
+-	  mModal( modal )
++	  mModal(modal)
+ {
+ 	if (modal)
+ 	{
+ 		setCanMinimize(FALSE);
+ 		setCanClose(FALSE);
+ 	}
+-	setVisible( FALSE );
++	setVisible(FALSE);
+ 	setBackgroundVisible(TRUE);
+ 	setBackgroundOpaque(TRUE);
+ 	centerOnScreen(); // default position
+@@ -96,7 +98,7 @@ void LLModalDialog::onOpen(const LLSD& key)
+ {
+ 	if (mModal)
+ 	{
+-		// If Modal, Hide the active modal dialog
++		// If Modal, hide the active modal dialog
+ 		if (!sModalStack.empty())
+ 		{
+ 			LLModalDialog* front = sModalStack.front();
+@@ -146,13 +148,18 @@ void LLModalDialog::stopModal()
+ 	}
+ }
+ 
+-
+ void LLModalDialog::setVisible( BOOL visible )
+ {
+ 	if (mModal)
+ 	{
+-		if( visible )
++		if (visible)
+ 		{
++			// Hide all menus currently shown
++			LLMenuGL::sMenuContainer->hideMenus();
++
++			// Hide EmojiPicker if it is shown
++			LLEmojiHelper::instance().hideHelper(nullptr, true);
++
+ 			// This is a modal dialog.  It sucks up all mouse and keyboard operations.
+ 			gFocusMgr.setMouseCapture( this );
+ 
+@@ -255,7 +262,6 @@ BOOL LLModalDialog::handleRightMouseDown(S32 x, S32 y, MASK mask)
+ 	return TRUE;
+ }
+ 
+-
+ BOOL LLModalDialog::handleKeyHere(KEY key, MASK mask )
+ {
+ 	LLFloater::handleKeyHere(key, mask );
+@@ -300,8 +306,7 @@ void LLModalDialog::centerOnScreen()
+ 	centerWithin(LLRect(0, 0, ll_round(window_size.mV[VX]), ll_round(window_size.mV[VY])));
+ }
+ 
+-
+-// static 
++// static
+ void LLModalDialog::onAppFocusLost()
+ {
+ 	if( !sModalStack.empty() )
+@@ -316,7 +321,7 @@ void LLModalDialog::onAppFocusLost()
+ 	}
+ }
+ 
+-// static 
++// static
+ void LLModalDialog::onAppFocusGained()
+ {
+ 	if( !sModalStack.empty() )
+@@ -332,6 +337,7 @@ void LLModalDialog::onAppFocusGained()
+ 	}
+ }
+ 
++// static
+ void LLModalDialog::shutdownModals()
+ {
+ 	// This method is only for use during app shutdown. ~LLModalDialog()"
+secondlife/viewer,1348,e4e0bdd,indra/newview/lltoast.cpp,modified,1,1,2,"@@ -421,7 +421,7 @@ void LLToast::setVisible(BOOL show)
+ 		if(mHideBtn)
+ 			mHideBtn->setVisible(show);
+     }
+-    LLFloater::setVisible(show);
++    LLModalDialog::setVisible(show);
+     if (mPanel
+         && !mPanel->isDead()
+         && mWrapperPanel"
+secondlife/viewer,1348,bf26be1,indra/llui/llmenugl.cpp,modified,2,0,2,"@@ -46,6 +46,7 @@
+ #include ""llfocusmgr.h""
+ #include ""llcoord.h""
+ #include ""llwindow.h""
++#include ""llemojihelper.h""
+ #include ""llcriticaldamp.h""
+ #include ""lluictrlfactory.h""
+ 
+@@ -1411,6 +1412,7 @@ void LLMenuItemBranchDownGL::openMenu( void )
+ 	}
+ 	else
+ 	{
++		LLEmojiHelper::instance().hideHelper(nullptr, true);
+ 		if (branch->getTornOff())
+ 		{
+ 			LLFloater * branch_parent = dynamic_cast<LLFloater *>(branch->getParent());"
+secondlife/viewer,1348,bf26be1,indra/llui/llmodaldialog.cpp,modified,16,10,26,"@@ -28,26 +28,28 @@
+ 
+ #include ""llmodaldialog.h""
+ 
++#include ""llemojihelper.h""
+ #include ""llfocusmgr.h""
+ #include ""v4color.h""
+ #include ""v2math.h""
+ #include ""llui.h""
+ #include ""llwindow.h""
+ #include ""llkeyboard.h""
+ #include ""llmenugl.h""
++
+ // static
+ std::list<LLModalDialog*> LLModalDialog::sModalStack;
+ 
+-LLModalDialog::LLModalDialog( const LLSD& key, BOOL modal )
++LLModalDialog::LLModalDialog(const LLSD& key, BOOL modal)
+ 	: LLFloater(key),
+-	  mModal( modal )
++	  mModal(modal)
+ {
+ 	if (modal)
+ 	{
+ 		setCanMinimize(FALSE);
+ 		setCanClose(FALSE);
+ 	}
+-	setVisible( FALSE );
++	setVisible(FALSE);
+ 	setBackgroundVisible(TRUE);
+ 	setBackgroundOpaque(TRUE);
+ 	centerOnScreen(); // default position
+@@ -96,7 +98,7 @@ void LLModalDialog::onOpen(const LLSD& key)
+ {
+ 	if (mModal)
+ 	{
+-		// If Modal, Hide the active modal dialog
++		// If Modal, hide the active modal dialog
+ 		if (!sModalStack.empty())
+ 		{
+ 			LLModalDialog* front = sModalStack.front();
+@@ -146,13 +148,18 @@ void LLModalDialog::stopModal()
+ 	}
+ }
+ 
+-
+ void LLModalDialog::setVisible( BOOL visible )
+ {
+ 	if (mModal)
+ 	{
+-		if( visible )
++		if (visible)
+ 		{
++			// Hide all menus currently shown
++			LLMenuGL::sMenuContainer->hideMenus();
++
++			// Hide EmojiPicker if it is shown
++			LLEmojiHelper::instance().hideHelper(nullptr, true);
++
+ 			// This is a modal dialog.  It sucks up all mouse and keyboard operations.
+ 			gFocusMgr.setMouseCapture( this );
+ 
+@@ -255,7 +262,6 @@ BOOL LLModalDialog::handleRightMouseDown(S32 x, S32 y, MASK mask)
+ 	return TRUE;
+ }
+ 
+-
+ BOOL LLModalDialog::handleKeyHere(KEY key, MASK mask )
+ {
+ 	LLFloater::handleKeyHere(key, mask );
+@@ -300,8 +306,7 @@ void LLModalDialog::centerOnScreen()
+ 	centerWithin(LLRect(0, 0, ll_round(window_size.mV[VX]), ll_round(window_size.mV[VY])));
+ }
+ 
+-
+-// static 
++// static
+ void LLModalDialog::onAppFocusLost()
+ {
+ 	if( !sModalStack.empty() )
+@@ -316,7 +321,7 @@ void LLModalDialog::onAppFocusLost()
+ 	}
+ }
+ 
+-// static 
++// static
+ void LLModalDialog::onAppFocusGained()
+ {
+ 	if( !sModalStack.empty() )
+@@ -332,6 +337,7 @@ void LLModalDialog::onAppFocusGained()
+ 	}
+ }
+ 
++// static
+ void LLModalDialog::shutdownModals()
+ {
+ 	// This method is only for use during app shutdown. ~LLModalDialog()"
+secondlife/viewer,1348,bf26be1,indra/newview/lltoast.cpp,modified,1,1,2,"@@ -421,7 +421,7 @@ void LLToast::setVisible(BOOL show)
+ 		if(mHideBtn)
+ 			mHideBtn->setVisible(show);
+     }
+-    LLFloater::setVisible(show);
++    LLModalDialog::setVisible(show);
+     if (mPanel
+         && !mPanel->isDead()
+         && mWrapperPanel"
+secondlife/viewer,1348,faefd35,indra/llui/llmenugl.cpp,modified,2,0,2,"@@ -46,6 +46,7 @@
+ #include ""llfocusmgr.h""
+ #include ""llcoord.h""
+ #include ""llwindow.h""
++#include ""llemojihelper.h""
+ #include ""llcriticaldamp.h""
+ #include ""lluictrlfactory.h""
+ 
+@@ -1411,6 +1412,7 @@ void LLMenuItemBranchDownGL::openMenu( void )
+ 	}
+ 	else
+ 	{
++		LLEmojiHelper::instance().hideHelper(nullptr, true);
+ 		if (branch->getTornOff())
+ 		{
+ 			LLFloater * branch_parent = dynamic_cast<LLFloater *>(branch->getParent());"
+secondlife/viewer,1348,faefd35,indra/llui/llmodaldialog.cpp,modified,16,10,26,"@@ -28,26 +28,28 @@
+ 
+ #include ""llmodaldialog.h""
+ 
++#include ""llemojihelper.h""
+ #include ""llfocusmgr.h""
+ #include ""v4color.h""
+ #include ""v2math.h""
+ #include ""llui.h""
+ #include ""llwindow.h""
+ #include ""llkeyboard.h""
+ #include ""llmenugl.h""
++
+ // static
+ std::list<LLModalDialog*> LLModalDialog::sModalStack;
+ 
+-LLModalDialog::LLModalDialog( const LLSD& key, BOOL modal )
++LLModalDialog::LLModalDialog(const LLSD& key, BOOL modal)
+ 	: LLFloater(key),
+-	  mModal( modal )
++	  mModal(modal)
+ {
+ 	if (modal)
+ 	{
+ 		setCanMinimize(FALSE);
+ 		setCanClose(FALSE);
+ 	}
+-	setVisible( FALSE );
++	setVisible(FALSE);
+ 	setBackgroundVisible(TRUE);
+ 	setBackgroundOpaque(TRUE);
+ 	centerOnScreen(); // default position
+@@ -96,7 +98,7 @@ void LLModalDialog::onOpen(const LLSD& key)
+ {
+ 	if (mModal)
+ 	{
+-		// If Modal, Hide the active modal dialog
++		// If Modal, hide the active modal dialog
+ 		if (!sModalStack.empty())
+ 		{
+ 			LLModalDialog* front = sModalStack.front();
+@@ -146,13 +148,18 @@ void LLModalDialog::stopModal()
+ 	}
+ }
+ 
+-
+ void LLModalDialog::setVisible( BOOL visible )
+ {
+ 	if (mModal)
+ 	{
+-		if( visible )
++		if (visible)
+ 		{
++			// Hide all menus currently shown
++			LLMenuGL::sMenuContainer->hideMenus();
++
++			// Hide EmojiPicker if it is shown
++			LLEmojiHelper::instance().hideHelper(nullptr, true);
++
+ 			// This is a modal dialog.  It sucks up all mouse and keyboard operations.
+ 			gFocusMgr.setMouseCapture( this );
+ 
+@@ -255,7 +262,6 @@ BOOL LLModalDialog::handleRightMouseDown(S32 x, S32 y, MASK mask)
+ 	return TRUE;
+ }
+ 
+-
+ BOOL LLModalDialog::handleKeyHere(KEY key, MASK mask )
+ {
+ 	LLFloater::handleKeyHere(key, mask );
+@@ -300,8 +306,7 @@ void LLModalDialog::centerOnScreen()
+ 	centerWithin(LLRect(0, 0, ll_round(window_size.mV[VX]), ll_round(window_size.mV[VY])));
+ }
+ 
+-
+-// static 
++// static
+ void LLModalDialog::onAppFocusLost()
+ {
+ 	if( !sModalStack.empty() )
+@@ -316,7 +321,7 @@ void LLModalDialog::onAppFocusLost()
+ 	}
+ }
+ 
+-// static 
++// static
+ void LLModalDialog::onAppFocusGained()
+ {
+ 	if( !sModalStack.empty() )
+@@ -332,6 +337,7 @@ void LLModalDialog::onAppFocusGained()
+ 	}
+ }
+ 
++// static
+ void LLModalDialog::shutdownModals()
+ {
+ 	// This method is only for use during app shutdown. ~LLModalDialog()"
+secondlife/viewer,1348,faefd35,indra/newview/lltoast.cpp,modified,1,1,2,"@@ -421,7 +421,7 @@ void LLToast::setVisible(BOOL show)
+ 		if(mHideBtn)
+ 			mHideBtn->setVisible(show);
+     }
+-    LLFloater::setVisible(show);
++    LLModalDialog::setVisible(show);
+     if (mPanel
+         && !mPanel->isDead()
+         && mWrapperPanel"

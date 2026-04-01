@@ -1,0 +1,112 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vrm-c/UniVRM,1444,3516078eac59e6acca9e4d20e72a64fbce5705ac,Assets/UniGLTF/Runtime/UniGLTF/Format/glTF.cs,modified,0,27,27,"@@ -81,36 +81,9 @@ public string GetUniqueMaterialName(int index)
+             }
+         }
+ 
+-        public bool MaterialHasVertexColor(glTFMaterial material)
+-        {
+-            if (material == null)
+-            {
+-                return false;
+-            }
+-
+-            var materialIndex = materials.IndexOf(material);
+-            if (materialIndex == -1)
+-            {
+-                return false;
+-            }
+-
+-            return MaterialHasVertexColor(materialIndex);
+-        }
+-
+         [JsonSchema(MinItems = 1, ExplicitIgnorableItemLength = 0)]
+         public List<glTFMesh> meshes = new List<glTFMesh>();
+ 
+-        public bool MaterialHasVertexColor(int materialIndex)
+-        {
+-            if (materialIndex < 0 || materialIndex >= materials.Count)
+-            {
+-                return false;
+-            }
+-
+-            var hasVertexColor = meshes.SelectMany(x => x.primitives).Any(x => x.material == materialIndex && x.HasVertexColor);
+-            return hasVertexColor;
+-        }
+-
+         [JsonSchema(MinItems = 1, ExplicitIgnorableItemLength = 0)]
+         public List<glTFNode> nodes = new List<glTFNode>();
+ "
+vrm-c/UniVRM,1444,3516078eac59e6acca9e4d20e72a64fbce5705ac,Assets/UniGLTF/Runtime/UniGLTF/Format/glTFMesh.cs,modified,0,8,8,"@@ -84,14 +84,6 @@ public class glTFPrimitives
+         [JsonSchema(Required = true, SkipSchemaComparison = true)]
+         public glTFAttributes attributes;
+ 
+-        public bool HasVertexColor
+-        {
+-            get
+-            {
+-                return attributes.COLOR_0 != -1;
+-            }
+-        }
+-
+         [JsonSchema(Minimum = 0)]
+         public int material;
+ "
+vrm-c/UniVRM,1444,3516078eac59e6acca9e4d20e72a64fbce5705ac,Assets/UniGLTF/Runtime/UniGLTF/IO/GltfData.cs,modified,44,0,44,"@@ -329,5 +329,49 @@ public float[] FlatternFloatArrayFromAccessor(int accessorIndex)
+                 return (GetBytesFromUri(image.uri), image.mimeType);
+             }
+         }
++
++        // not black(0, 0, 0, 1)
++        static readonly UnityEngine.Color ZERO = new UnityEngine.Color(0, 0, 0, 0);
++
++        public bool HasVertexColor(glTFAttributes attributes)
++        {
++            if (attributes.COLOR_0 == -1)
++            {
++                return false;
++            }
++
++            var colors = GetArrayFromAccessor<UnityEngine.Color>(attributes.COLOR_0);
++            foreach (var color in colors)
++            {
++                if (color != ZERO)
++                {
++                    return true;
++                }
++            }
++            // すべて (0, 0, 0, 0) だった。使っていないと見做す。
++            return false;
++        }
++
++        public bool MaterialHasVertexColor(int materialIndex)
++        {
++            if (materialIndex < 0 || materialIndex >= GLTF.materials.Count)
++            {
++                // index out of range. material not exists
++                return false;
++            }
++
++            foreach (var mesh in GLTF.meshes)
++            {
++                foreach (var prim in mesh.primitives)
++                {
++                    if (prim.material == materialIndex && HasVertexColor(prim.attributes))
++                    {
++                        return true;
++                    }
++                }
++            }
++
++            return false;
++        }
+     }
+ }"
+vrm-c/UniVRM,1444,3516078eac59e6acca9e4d20e72a64fbce5705ac,Assets/UniGLTF/Runtime/UniGLTF/IO/MaterialIO/GltfUnlitMaterialImporter.cs,modified,1,1,2,"@@ -91,7 +91,7 @@ public static bool TryCreateParam(GltfData data, int i, out MaterialDescriptor m
+                         }
+ 
+                         // VColor
+-                        var hasVertexColor = data.GLTF.MaterialHasVertexColor(i);
++                        var hasVertexColor = data.MaterialHasVertexColor(i);
+                         if (hasVertexColor)
+                         {
+                             UniUnlitUtil.SetVColBlendMode(material, UniUnlitVertexColorBlendOp.Multiply);"

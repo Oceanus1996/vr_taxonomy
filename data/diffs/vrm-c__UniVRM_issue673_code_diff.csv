@@ -1,0 +1,77 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch,gpt_bug_detection
+vrm-c/UniVRM,673,ef8d929e06541cd78e03ed049884758cd17d8d17,Assets/VRM/Editor/SpringBone/VRMSpringBoneColliderGroupEditor.cs,modified,30,8,38,"@@ -1,4 +1,6 @@
+-﻿using System.Linq;
++using System.Collections.Generic;
++using System.Linq;
++using MeshUtility;
+ using UnityEditor;
+ using UnityEngine;
+ 
+@@ -39,40 +41,60 @@ private void OnSceneGUI()
+                 EditorUtility.SetDirty(m_target);
+             }
+         }
+-        
++
++        public IEnumerable<MeshUtility.Validation> Validate()
++        {
++            if (m_target.transform.lossyScale != Vector3.one)
++            {
++                yield return Validation.Warning(""this or parent GameObject has none 1 scaling"");
++            }
++        }
++
++
++        override public void OnInspectorGUI()
++        {
++            // show validate information
++            foreach (var v in Validate())
++            {
++                v.DrawGUI();
++            }
++
++            base.OnInspectorGUI();
++        }
++
+         [MenuItem(""CONTEXT/VRMSpringBoneColliderGroup/X Mirror"")]
+         private static void InvertOffsetX(MenuCommand command)
+         {
+             var target = command.context as VRMSpringBoneColliderGroup;
+             if (target == null) return;
+-            
++
+             Undo.RecordObject(target, ""X Mirror"");
+-            
++
+             foreach (var sphereCollider in target.Colliders)
+             {
+                 var offset = sphereCollider.Offset;
+                 offset.x *= -1f;
+                 sphereCollider.Offset = offset;
+             }
+         }
+-        
++
+         [MenuItem(""CONTEXT/VRMSpringBoneColliderGroup/Sort Colliders by Radius"")]
+         private static void SortByRadius(MenuCommand command)
+         {
+             var target = command.context as VRMSpringBoneColliderGroup;
+             if (target == null) return;
+-            
++
+             Undo.RecordObject(target, ""Sort Colliders by Radius"");
+ 
+             target.Colliders = target.Colliders.OrderBy(x => -x.Radius).ToArray();
+         }
+-        
++
+         [MenuItem(""CONTEXT/VRMSpringBoneColliderGroup/Sort Colliders by Offset Y"")]
+         private static void SortByOffsetY(MenuCommand command)
+         {
+             var target = command.context as VRMSpringBoneColliderGroup;
+             if (target == null) return;
+-            
++
+             Undo.RecordObject(target, ""Sort Colliders by Offset Y"");
+ 
+             target.Colliders = target.Colliders.OrderBy(x => -x.Offset.y).ToArray();","{""has_bug"": true, ""bugs"": [{""line_start"": 47, ""line_end"": 49, ""description"": ""The condition checks if the lossy scale is not equal to Vector3.one, but does not account for the fact that scaling may lead to inconsistent collider behavior. This could lead to incorrect validation messages."", ""buggy_code"": ""if (m_target.transform.lossyScale != Vector3.one)""}, {""line_start"": 31, ""line_end"": 31, ""description"": ""The use of Handles.PositionHandle with Quaternion.identity does not account for the object's rotation, which may lead to incorrect positioning of the colliders when the object is rotated."", ""buggy_code"": ""var offset = Handles.PositionHandle(x.Offset, Quaternion.identity);""}]}"

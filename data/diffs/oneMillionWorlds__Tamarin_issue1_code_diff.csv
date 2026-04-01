@@ -1,0 +1,289 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+oneMillionWorlds/Tamarin,1,e1c261f7a705072d8a3f0548ea3e92c38034580b,src/main/java/com/onemillionworlds/tamarin/compatibility/ActionBasedOpenVrState.java,modified,25,13,38,"@@ -315,20 +315,20 @@ public Quaternion getObserverRotation(){
+      * @return the PoseActionState
+      */
+     public PoseActionState getPose_observerRelative(String actionName){
+-        InputPoseActionData inputPose = InputPoseActionData.create();
++        PoseActionState worldRelative = getPose(actionName);
+ 
+-        VRInput.VRInput_GetPoseActionDataForNextFrame(fetchActionHandle(actionName), environment.isSeatedExperience() ? VR.ETrackingUniverseOrigin_TrackingUniverseSeated : VR.ETrackingUniverseOrigin_TrackingUniverseStanding, inputPose, getOrFetchInputHandle(null));
++        Vector3f observerPosition = getObserverPosition();
++        Quaternion observerRotation = getObserverRotation();
+ 
+-        HmdMatrix34 hmdMatrix34 = inputPose.pose().mDeviceToAbsoluteTracking();
++        Node calculationNode = new Node();
++        calculationNode.setLocalTranslation(observerPosition);
++        calculationNode.setLocalRotation(observerRotation);
++        Vector3f localPosition = calculationNode.worldToLocal(worldRelative.getPosition(), null);
+ 
+-        Matrix4f pose = LWJGLOpenVR.convertSteamVRMatrix3ToMatrix4f(hmdMatrix34, new Matrix4f() );
++        Quaternion localRotation = observerRotation.inverse().mult(worldRelative.getOrientation());
+ 
+-        HmdVector3 velocity = inputPose.pose().vVelocity();
+-        HmdVector3 angularVelocity =inputPose.pose().vAngularVelocity();
+-        Vector3f position = pose.toTranslationVector();
+-        Quaternion rotation = pose.toRotationQuat();
+ 
+-        return new PoseActionState(pose, position, rotation,  new Vector3f(velocity.v(0), velocity.v(1), velocity.v(2)), new Vector3f(angularVelocity.v(0), angularVelocity.v(1), angularVelocity.v(2)));
++        return new PoseActionState(worldRelative.getRawPose(), localPosition, localRotation, worldRelative.getVelocity(), worldRelative.getAngularVelocity() );
+     }
+ 
+ 
+@@ -344,7 +344,19 @@ public PoseActionState getPose_observerRelative(String actionName){
+      * @return the PoseActionState
+      */
+     public PoseActionState getPose(String actionName){
+-        PoseActionState observerRelativePose = getPose_observerRelative(actionName);
++
++        InputPoseActionData inputPose = InputPoseActionData.create();
++
++        VRInput.VRInput_GetPoseActionDataForNextFrame(fetchActionHandle(actionName), environment.isSeatedExperience() ? VR.ETrackingUniverseOrigin_TrackingUniverseSeated : VR.ETrackingUniverseOrigin_TrackingUniverseStanding, inputPose, getOrFetchInputHandle(null));
++
++        HmdMatrix34 hmdMatrix34 = inputPose.pose().mDeviceToAbsoluteTracking();
++
++        Matrix4f pose = LWJGLOpenVR.convertSteamVRMatrix3ToMatrix4f(hmdMatrix34, new Matrix4f() );
++
++        HmdVector3 velocity = inputPose.pose().vVelocity();
++        HmdVector3 angularVelocity =inputPose.pose().vAngularVelocity();
++        Vector3f position = pose.toTranslationVector();
++        Quaternion rotation = pose.toRotationQuat();
+ 
+         Vector3f observerPosition = getObserverPosition();
+         Quaternion observerRotation = getObserverRotation();
+@@ -354,11 +366,11 @@ public PoseActionState getPose(String actionName){
+         calculationNode.setLocalRotation(HALF_ROTATION_ABOUT_Y.mult(observerRotation));
+         calculationNode.setLocalTranslation(observerPosition);
+ 
+-        Vector3f worldRelativePosition = calculationNode.localToWorld(observerRelativePose.getPosition(), null);
+-        Quaternion worldRelativeRotation = HALF_ROTATION_ABOUT_Y.mult(observerRotation).mult(observerRelativePose.getOrientation());
++        Vector3f worldRelativePosition = calculationNode.localToWorld(position, null);
++        Quaternion worldRelativeRotation = HALF_ROTATION_ABOUT_Y.mult(observerRotation).mult(rotation);
+ 
+         //the velocity and rotational velocity are in the wrong coordinate systems. This is wrong and a bug
+-        return new PoseActionState(observerRelativePose.getRawPose(), worldRelativePosition, worldRelativeRotation, observerRelativePose.getVelocity(), observerRelativePose.getAngularVelocity());
++        return new PoseActionState(pose, worldRelativePosition, worldRelativeRotation, new Vector3f(velocity.v(0), velocity.v(1), velocity.v(2)), new Vector3f(angularVelocity.v(0), angularVelocity.v(1), angularVelocity.v(2)));
+     }
+ 
+     /**"
+oneMillionWorlds/Tamarin,1,e1c261f7a705072d8a3f0548ea3e92c38034580b,src/main/java/com/onemillionworlds/tamarin/vrhands/VRHandsAppState.java,modified,22,2,24,"@@ -4,9 +4,11 @@
+ import com.jme3.anim.SkinningControl;
+ import com.jme3.app.Application;
+ import com.jme3.app.SimpleApplication;
++import com.jme3.app.VRAppState;
+ import com.jme3.app.state.BaseAppState;
+ import com.jme3.asset.AssetManager;
+ import com.jme3.material.Material;
++import com.jme3.renderer.RenderManager;
+ import com.jme3.scene.Node;
+ import com.jme3.scene.Spatial;
+ import com.onemillionworlds.tamarin.compatibility.ActionBasedOpenVrState;
+@@ -26,8 +28,12 @@
+  */
+ public class VRHandsAppState extends BaseAppState{
+ 
++    private boolean haveRunValidation = true;
++
+     ActionBasedOpenVrState openVr;
+ 
++    VRAppState vrAppState;
++
+     Node rootNodeDelegate = new Node();
+ 
+     List<BoundHand> handControls = new ArrayList<>();
+@@ -51,12 +57,19 @@ public VRHandsAppState(){
+ 
+     @Override
+     protected void initialize(Application app){
++        if (!haveRunValidation){
++            haveRunValidation = true;
++            validateState();
++        }
++
+         this.assetManager = app.getAssetManager();
+         openVr = app.getStateManager().getState(ActionBasedOpenVrState.class);
++        vrAppState = app.getStateManager().getState(VRAppState.class);
+         if (openVr == null){
+             throw new IllegalStateException(""VRHandsAppState requires ActionBasedOpenVr to have already been bound"");
+         }
+-        ((SimpleApplication)app).getRootNode().attachChild(rootNodeDelegate);
++
++        ((Node)vrAppState.getObserver()).attachChild(rootNodeDelegate);
+ 
+         if (pendingHandSpec!=null){
+             updateHandsForHandSpec(pendingHandSpec);
+@@ -91,8 +104,9 @@ public void update(float tpf){
+         super.update(tpf);
+ 
+         if (isEnabled()){
++
+             for(BoundHand boundHand : handControls){
+-                PoseActionState pose = openVr.getPose(boundHand.getPostActionName());
++                PoseActionState pose = openVr.getPose_observerRelative(boundHand.getPostActionName());
+                 boundHand.getRawOpenVrNode().setLocalRotation(pose.getOrientation());
+                 boundHand.getRawOpenVrNode().setLocalTranslation(pose.getPosition());
+                 Map<String, BoneStance> boneStances = openVr.getModelRelativeSkeletonPositions(boundHand.getSkeletonActionName());
+@@ -171,6 +185,12 @@ public void unbindHand(){
+         return boundHand;
+     }
+ 
++    private void validateState(){
++        if (!(vrAppState.getObserver() instanceof Node)){
++            throw new IllegalStateException(""Tamarin 1.2 onwards requires that the observer be a Node. Please call vrAppState#setObserver and give it a node that is connected to the root node"");
++        }
++    }
++
+     private static Spatial searchForArmatured(Spatial spatial){
+         if (spatial.getControl(SkinningControl.class) !=null){
+             spatial.removeFromParent();"
+oneMillionWorlds/Tamarin,1,6de1ce576f2a2e9868f03adabd86a19b2da1d1d5,build.gradle,modified,1,1,2,"@@ -17,7 +17,7 @@ java {
+ }
+ 
+ group = 'com.onemillionworlds'
+-version = '1.0.2-SNAPSHOT'
++version = '1.2-SNAPSHOT'
+ 
+ def jme3 = [v:'3.4.0-stable', g:'org.jmonkeyengine']
+ "
+oneMillionWorlds/Tamarin,1,6de1ce576f2a2e9868f03adabd86a19b2da1d1d5,src/main/java/com/onemillionworlds/tamarin/compatibility/ActionBasedOpenVrState.java,modified,56,25,81,"@@ -284,50 +284,81 @@ public DigitalActionState getDigitalActionState(String actionName, String restri
+         return new DigitalActionState(actionDataObjects.actionData.bState(), actionDataObjects.actionData.bChanged());
+     }
+ 
++    public Vector3f getObserverPosition(){
++        Object obs = environment.getObserver();
++        if (obs instanceof Camera){
++            Camera camera = ((Camera) obs);
++            return camera.getLocation();
++        }else{
++            Spatial spatial = (Spatial)obs;
++            return spatial.getWorldTranslation();
++        }
++    }
++
++    public Quaternion getObserverRotation(){
++        Object obs = environment.getObserver();
++        if (obs instanceof Camera){
++            Camera camera = ((Camera) obs);
++            return camera.getRotation();
++        }else{
++            Spatial spatial = (Spatial)obs;
++            return spatial.getWorldRotation();
++        }
++    }
++
+     /**
+      * A pose is where a hand is, and what its rotation is.
+      *
++     * This returns the pose in the observers coordinate system
++     *
+      * @param actionName the action name that has been bound to a pose in the action manifest
+      * @return the PoseActionState
+      */
+-    public PoseActionState getPose(String actionName){
+-
++    public PoseActionState getPose_observerRelative(String actionName){
+         InputPoseActionData inputPose = InputPoseActionData.create();
+ 
+-        VRInput.VRInput_GetPoseActionDataForNextFrame(fetchActionHandle(actionName), VR.ETrackingUniverseOrigin_TrackingUniverseSeated, inputPose, getOrFetchInputHandle(null));
++        VRInput.VRInput_GetPoseActionDataForNextFrame(fetchActionHandle(actionName), environment.isSeatedExperience() ? VR.ETrackingUniverseOrigin_TrackingUniverseSeated : VR.ETrackingUniverseOrigin_TrackingUniverseStanding, inputPose, getOrFetchInputHandle(null));
+ 
+         HmdMatrix34 hmdMatrix34 = inputPose.pose().mDeviceToAbsoluteTracking();
+ 
+         Matrix4f pose = LWJGLOpenVR.convertSteamVRMatrix3ToMatrix4f(hmdMatrix34, new Matrix4f() );
++
+         HmdVector3 velocity = inputPose.pose().vVelocity();
+         HmdVector3 angularVelocity =inputPose.pose().vAngularVelocity();
+-
+-        Object obs = environment.getObserver();
+         Vector3f position = pose.toTranslationVector();
+         Quaternion rotation = pose.toRotationQuat();
+-        if (obs instanceof Camera) {
+-            Camera camera = ((Camera)obs);
+-            Node calculationNode = new Node();
+-            //the openVR and JMonkey define ""not rotated"" to be a different rotation, the HALF_ROTATION_ABOUT_Y corrects that
+-            calculationNode.setLocalRotation(HALF_ROTATION_ABOUT_Y.mult(camera.getRotation()));
+-            calculationNode.setLocalTranslation(camera.getLocation());
+-
+-            position = calculationNode.localToWorld(position, position);
+-            rotation = HALF_ROTATION_ABOUT_Y.mult(camera.getRotation()).mult(rotation);
+-        } else {
+-            Spatial spatial = (Spatial)obs;
+-            position.addLocal(((Spatial) obs).getWorldTranslation());
+ 
+-            Node calculationNode = new Node();
+-            //the openVR and JMonkey define ""not rotated"" to be a different rotation, the HALF_ROTATION_ABOUT_Y corrects that
+-            calculationNode.setLocalRotation(HALF_ROTATION_ABOUT_Y.mult(spatial.getWorldRotation()));
+-            calculationNode.setLocalTranslation(spatial.getWorldTranslation());
++        return new PoseActionState(pose, position, rotation,  new Vector3f(velocity.v(0), velocity.v(1), velocity.v(2)), new Vector3f(angularVelocity.v(0), angularVelocity.v(1), angularVelocity.v(2)));
++    }
++
++
++    /**
++     * A pose is where a hand is, and what its rotation is.
++     *
++     * This returns the post in world coordinate system
++     *
++     * (Note there is a known bug that velocity and angular velocity are in the wrng coordinate system, if anyone cares
++     * about that raise a bug, and I'll fix it)
++     *
++     * @param actionName the action name that has been bound to a pose in the action manifest
++     * @return the PoseActionState
++     */
++    public PoseActionState getPose(String actionName){
++        PoseActionState observerRelativePose = getPose_observerRelative(actionName);
++
++        Vector3f observerPosition = getObserverPosition();
++        Quaternion observerRotation = getObserverRotation();
++
++        Node calculationNode = new Node();
++        //the openVR and JMonkey define ""not rotated"" to be a different rotation, the HALF_ROTATION_ABOUT_Y corrects that
++        calculationNode.setLocalRotation(HALF_ROTATION_ABOUT_Y.mult(observerRotation));
++        calculationNode.setLocalTranslation(observerPosition);
++
++        Vector3f worldRelativePosition = calculationNode.localToWorld(observerRelativePose.getPosition(), null);
++        Quaternion worldRelativeRotation = HALF_ROTATION_ABOUT_Y.mult(observerRotation).mult(observerRelativePose.getOrientation());
+ 
+-            position = calculationNode.localToWorld(position, position);
+-            rotation = HALF_ROTATION_ABOUT_Y.mult(spatial.getWorldRotation()).mult(rotation);
+-        }
+         //the velocity and rotational velocity are in the wrong coordinate systems. This is wrong and a bug
+-        return new PoseActionState(pose, position, rotation, new Vector3f(velocity.v(0), velocity.v(1), velocity.v(2)), new Vector3f(angularVelocity.v(0), angularVelocity.v(1), angularVelocity.v(2)));
++        return new PoseActionState(observerRelativePose.getRawPose(), worldRelativePosition, worldRelativeRotation, observerRelativePose.getVelocity(), observerRelativePose.getAngularVelocity());
+     }
+ 
+     /**"
+oneMillionWorlds/Tamarin,1,6de1ce576f2a2e9868f03adabd86a19b2da1d1d5,src/main/java/com/onemillionworlds/tamarin/compatibility/PoseActionState.java,modified,12,0,12,"@@ -42,4 +42,16 @@ public Vector3f getPosition(){
+     public Quaternion getOrientation(){
+         return orientation;
+     }
++
++    public Matrix4f getRawPose(){
++        return rawPose;
++    }
++
++    public Vector3f getVelocity(){
++        return velocity;
++    }
++
++    public Vector3f getAngularVelocity(){
++        return angularVelocity;
++    }
+ }"
+oneMillionWorlds/Tamarin,1,6de1ce576f2a2e9868f03adabd86a19b2da1d1d5,src/main/java/com/onemillionworlds/tamarin/vrhands/BoundHand.java,modified,1,1,2,"@@ -293,7 +293,7 @@ public CollisionResults pickBulkHand(Node nodeToPickAgainst){
+     }
+ 
+     /**
+-     * This will set the hand to do a pick in the same direction as {@link BoundHand#pickBulkHand}/{@link BoundHand#click_lemurSupport}
++     * This will set the hand to do a pick in the same direction as {@link BoundHand#pickBulkHand}/lemur clicks
+      * and place a marker (by default a white sphere) at the point where the pick hits a geometry. This gives the
+      * player an indication what they would pick it they clicked now; think of it like a mouse pointer in 3d space
+      */"
+oneMillionWorlds/Tamarin,1,6de1ce576f2a2e9868f03adabd86a19b2da1d1d5,src/main/java/com/onemillionworlds/tamarin/vrhands/functions/PickMarkerFunction.java,modified,1,1,2,"@@ -25,7 +25,7 @@ public class PickMarkerFunction implements BoundHandFunction{
+     Spatial pickMarker;
+ 
+     /**
+-     * This will set the hand to do a pick in the same direction as {@link BoundHand#pickBulkHand}/{@link BoundHand#click_lemurSupport}
++     * This will set the hand to do a pick in the same direction as {@link BoundHand#pickBulkHand}/lemur clicks
+      * and place a marker (by default a white sphere) at the point where the pick hits a geometry. This gives the
+      * player an indication what they would pick it they clicked now; think of it like a mouse pointer in 3d space
+      * @param nodeToPickAgainst"
+oneMillionWorlds/Tamarin,1,6de1ce576f2a2e9868f03adabd86a19b2da1d1d5,src/main/lombok.config,renamed,0,0,0,

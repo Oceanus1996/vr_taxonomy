@@ -1,0 +1,103 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+secondlife/viewer,3663,51f2504,indra/newview/app_settings/shaders/class1/deferred/deferredUtil.glsl,modified,11,0,11,"@@ -80,6 +80,17 @@ vec3 atmosFragLightingLinear(vec3 light, vec3 additive, vec3 atten);
+ 
+ vec4 decodeNormal(vec4 norm);
+ 
++vec3 clampHDRRange(vec3 color)
++{
++    // Why do this?
++    // There are situations where the color range will go to something insane - potentially producing infs and NaNs even.
++    // This is a safety measure to prevent that.
++    // As to the specific number there - allegedly some HDR displays expect values to be in the 0-11.2 range. Citation needed.
++    // -Geenz 2025-03-05
++    color = mix(color, vec3(0.0), isnan(color));
++    return clamp(color, vec3(0.0), vec3(11.2));
++}
++
+ float calcLegacyDistanceAttenuation(float distance, float falloff)
+ {
+     float dist_atten = 1.0 - clamp((distance + falloff)/(1.0 + falloff), 0.0, 1.0);"
+secondlife/viewer,3663,51f2504,indra/newview/app_settings/shaders/class1/deferred/postDeferredF.glsl,modified,3,0,3,"@@ -69,6 +69,8 @@ void dofSampleNear(inout vec4 diff, inout float w, float min_sc, vec2 tc)
+     w += wg;
+ }
+ 
++vec3 clampHDRRange(vec3 color);
++
+ void main()
+ {
+     vec2 tc = vary_fragcoord.xy;
+@@ -120,5 +122,6 @@ void main()
+         diff /= w;
+     }
+ 
++    diff.rgb = clampHDRRange(diff.rgb);
+     frag_color = diff;
+ }"
+secondlife/viewer,3663,51f2504,indra/newview/app_settings/shaders/class1/deferred/postDeferredGammaCorrect.glsl,modified,4,1,5,"@@ -43,6 +43,8 @@ vec3 legacyGamma(vec3 color)
+     return c;
+ }
+ 
++vec3 clampHDRRange(vec3 color);
++
+ void main()
+ {
+     //this is the one of the rare spots where diffuseRect contains linear color values (not sRGB)
+@@ -53,6 +55,7 @@ void main()
+     diff.rgb = legacyGamma(diff.rgb);
+ #endif
+ 
+-    frag_color = max(diff, vec4(0));
++    diff.rgb = clampHDRRange(diff.rgb);
++    frag_color = diff;
+ }
+ "
+secondlife/viewer,3663,51f2504,indra/newview/app_settings/shaders/class1/deferred/postDeferredNoDoFF.glsl,modified,2,0,2,"@@ -71,6 +71,7 @@ float noise(vec2 x) {
+ 
+ //=============================
+ 
++vec3 clampHDRRange(vec3 color);
+ 
+ 
+ void main()
+@@ -84,6 +85,7 @@ void main()
+     diff.rgb += nz*0.003;
+ #endif
+ 
++    diff.rgb = clampHDRRange(diff.rgb);
+     frag_color = diff;
+ 
+     gl_FragDepth = texture(depthMap, vary_fragcoord.xy).r;"
+secondlife/viewer,3663,51f2504,indra/newview/app_settings/shaders/class1/deferred/postDeferredTonemap.glsl,modified,3,0,3,"@@ -34,6 +34,8 @@ in vec2 vary_fragcoord;
+ vec3 linear_to_srgb(vec3 cl);
+ vec3 toneMap(vec3 color);
+ 
++vec3 clampHDRRange(vec3 color);
++
+ void main()
+ {
+     //this is the one of the rare spots where diffuseRect contains linear color values (not sRGB)
+@@ -45,6 +47,7 @@ void main()
+     diff.rgb = clamp(diff.rgb, vec3(0.0), vec3(1.0));
+ #endif
+ 
++    diff.rgb = clampHDRRange(diff.rgb);
+     //debugExposure(diff.rgb);
+     frag_color = max(diff, vec4(0));
+ }"
+secondlife/viewer,3663,51f2504,indra/newview/app_settings/shaders/class3/deferred/softenLightF.glsl,modified,3,1,4,"@@ -104,6 +104,7 @@ vec3 pbrBaseLight(vec3 diffuseColor,
+                   vec3 atten);
+ 
+ GBufferInfo getGBuffer(vec2 screenpos);
++vec3 clampHDRRange(vec3 color);
+ 
+ void adjustIrradiance(inout vec3 irradiance, float ambocc)
+ {
+@@ -278,6 +279,7 @@ void main()
+     float final_scale = 1;
+     if (classic_mode > 0)
+         final_scale = 1.1;
+-    frag_color.rgb = max(color.rgb * final_scale, vec3(0)); //output linear since local lights will be added to this shader's results
++
++    frag_color.rgb = clampHDRRange(color.rgb * final_scale); //output linear since local lights will be added to this shader's results
+     frag_color.a = 0.0;
+ }"

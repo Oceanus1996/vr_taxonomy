@@ -1,0 +1,1398 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+Supreeeme/xrizer,105,ea5c2a0,fakexr/src/lib.rs,modified,63,15,78,"@@ -14,7 +14,8 @@ use std::sync::{
+ #[derive(Clone, Copy, PartialEq)]
+ pub enum ActionState {
+     Bool(bool),
+-    Pose,
++    /// True if locatable (action set was synced this frame).
++    Pose(bool),
+     Float(f32),
+     Vector2(f32, f32),
+     Haptic,
+@@ -547,6 +548,19 @@ impl Space {
+             return Ok(default());
+         };
+ 
++        // Check if this action has been synced
++        let state = match hand {
++            UserPath::LeftHand => &action.state.left,
++            UserPath::RightHand => &action.state.right,
++        };
++
++        let ActionState::Pose(state) = state.load().state else {
++            unreachable!();
++        };
++        if !state {
++            return Ok(default());
++        }
++
+         // Find what it's bound to
+         let instance = session
+             .instance
+@@ -838,7 +852,7 @@ extern ""system"" fn create_action(
+ 
+     let state = match info.action_type {
+         xr::ActionType::BOOLEAN_INPUT => ActionState::Bool(false),
+-        xr::ActionType::POSE_INPUT => ActionState::Pose,
++        xr::ActionType::POSE_INPUT => ActionState::Pose(false),
+         xr::ActionType::FLOAT_INPUT => ActionState::Float(0.0),
+         xr::ActionType::VECTOR2F_INPUT => ActionState::Vector2(0.0, 0.0),
+         xr::ActionType::VIBRATION_OUTPUT => ActionState::Haptic,
+@@ -887,7 +901,7 @@ extern ""system"" fn create_action_space(
+     let session = get_handle!(session);
+     let info = unsafe { info.as_ref() }.unwrap();
+     let action = get_handle!(info.action);
+-    if !matches!(action.state.left.load().state, ActionState::Pose) {
++    if !matches!(action.state.left.load().state, ActionState::Pose(_)) {
+         return xr::Result::ERROR_ACTION_TYPE_MISMATCH;
+     }
+ 
+@@ -1157,20 +1171,54 @@ extern ""system"" fn sync_actions(
+         set.active.store(true, Ordering::Relaxed);
+ 
+         for action in actions {
+-            let data = action.pending_state.take();
+-            for (new, state) in [
+-                (data.left, &action.state.left),
+-                (data.right, &action.state.right),
+-            ] {
+-                let mut d = state.load();
+-                d.changed = false;
+-                if let Some(new_state) = new {
+-                    if d.state != new_state {
+-                        d.changed = true;
+-                        d.state = new_state;
++            // activate pose actions
++            if matches!(action.state.left.load().state, ActionState::Pose(_)) {
++                for state in [&action.state.left, &action.state.right] {
++                    let mut d = state.load();
++                    d.state = ActionState::Pose(true);
++                    state.store(d);
++                }
++            } else {
++                // other actions
++                let data = action.pending_state.take();
++                for (new, state) in [
++                    (data.left, &action.state.left),
++                    (data.right, &action.state.right),
++                ] {
++                    let mut d = state.load();
++                    d.changed = false;
++                    if let Some(new_state) = new {
++                        if d.state != new_state {
++                            d.changed = true;
++                            d.state = new_state;
++                        }
+                     }
++                    state.store(d);
++                }
++            }
++        }
++    }
++
++    let instance = session.instance.upgrade().unwrap();
++    for inactive_set in instance
++        .action_sets
++        .lock()
++        .unwrap()
++        .iter()
++        .copied()
++        .filter(|set| !sets.iter().any(|active_set| *set == active_set.action_set))
++    {
++        let inactive_set = get_handle!(inactive_set);
++        let Some(actions) = inactive_set.actions.get() else {
++            continue;
++        };
++        for action in actions {
++            if matches!(action.state.left.load().state, ActionState::Pose(_)) {
++                for state in [&action.state.left, &action.state.right] {
++                    let mut d = state.load();
++                    d.state = ActionState::Pose(false);
++                    state.store(d);
+                 }
+-                state.store(d);
+             }
+         }
+     }"
+Supreeeme/xrizer,105,ea5c2a0,src/input.rs,modified,195,59,254,"@@ -17,7 +17,8 @@ use crate::{
+     tracy_span, AtomicF32,
+ };
+ use custom_bindings::{BindingData, GrabActions};
+-use legacy::{setup_legacy_bindings, LegacyActionData};
++use glam::Quat;
++use legacy::LegacyActionData;
+ use log::{debug, info, trace, warn};
+ use openvr::{self as vr, space_relation_to_openvr_pose};
+ use openxr as xr;
+@@ -26,8 +27,9 @@ use std::collections::HashMap;
+ use std::collections::VecDeque;
+ use std::ffi::{c_char, CStr, CString};
+ use std::mem::ManuallyDrop;
++use std::ops::Deref;
+ use std::path::PathBuf;
+-use std::sync::{Arc, Mutex, OnceLock, RwLock};
++use std::sync::{Arc, Mutex, OnceLock, RwLock, RwLockReadGuard};
+ 
+ new_key_type! {
+     struct InputSourceKey;
+@@ -106,6 +108,18 @@ impl<C: openxr_data::Compositor> Input<C> {
+                 )
+             })
+             .collect();
++        let pose_data = PoseData::new(
++            &openxr.instance,
++            openxr.left_hand.subaction_path,
++            openxr.right_hand.subaction_path,
++        );
++        openxr
++            .session_data
++            .get()
++            .input_data
++            .pose_data
++            .set(pose_data)
++            .unwrap_or_else(|_| panic!(""PoseData already setup""));
+ 
+         Self {
+             openxr,
+@@ -182,7 +196,7 @@ impl<C: openxr_data::Compositor> Input<C> {
+         }
+ 
+         let session = self.openxr.session_data.get();
+-        let Ok(loaded_actions) = session.input_data.loaded_actions.get()?.read() else {
++        let LoadedActions::Manifest(loaded_actions) = session.input_data.actions.get()? else {
+             return None;
+         };
+ 
+@@ -219,23 +233,32 @@ impl<C: openxr_data::Compositor> Input<C> {
+ 
+ #[derive(Default)]
+ pub struct InputSessionData {
+-    loaded_actions: OnceLock<RwLock<LoadedActions>>,
+-    legacy_actions: OnceLock<LegacyActionData>,
++    actions: OnceLock<LoadedActions>,
+     estimated_skeleton_actions: OnceLock<SkeletalInputActionData>,
++    pose_data: OnceLock<PoseData>,
+ }
+ 
+ impl InputSessionData {
+     #[inline]
+-    fn get_loaded_actions(&self) -> Option<std::sync::RwLockReadGuard<'_, LoadedActions>> {
+-        self.loaded_actions.get().map(|l| l.read().unwrap())
++    fn get_loaded_actions(&self) -> Option<&ManifestLoadedActions> {
++        match self.actions.get()? {
++            LoadedActions::Manifest(m) => Some(m),
++            _ => None,
++        }
++    }
++    #[inline]
++    fn get_legacy_actions(&self) -> Option<&LegacyActionData> {
++        match self.actions.get()? {
++            LoadedActions::Legacy(l) => Some(l),
++            _ => None,
++        }
+     }
+ 
+     pub(crate) fn interaction_profile_changed(&self) {
+-        if let Some(legacy) = self.legacy_actions.get() {
++        if let Some(data) = self.pose_data.get() {
+             // If the interaction profile changes the offsets must be updated too
+             // Delete the current raw spaces so they can be recreated later
+-            legacy.left_spaces.reset_raw();
+-            legacy.right_spaces.reset_raw();
++            data.reset_spaces();
+         }
+     }
+ }
+@@ -660,12 +683,11 @@ impl<C: openxr_data::Compositor> vr::IVRInput010_Interface for Input<C> {
+             Ok(_) => return vr::EVRInputError::WrongType,
+             Err(e) => return e,
+         };
+-        let legacy = data.input_data.legacy_actions.get().unwrap();
++        let pose_data = data.input_data.pose_data.get().unwrap();
+         unsafe {
+             std::ptr::addr_of_mut!((*action_data).bActive).write(
+-                legacy
+-                    .actions
+-                    .grip_pose
++                pose_data
++                    .grip
+                     .is_active(&data.session, xr::Path::NULL)
+                     .unwrap(),
+             );
+@@ -795,13 +817,12 @@ impl<C: openxr_data::Compositor> vr::IVRInput010_Interface for Input<C> {
+             Err(e) => return e,
+         };
+ 
+-        drop(loaded);
+         drop(data);
+         unsafe {
+             action_data.write(vr::InputPoseActionData_t {
+                 bActive: true,
+                 activeOrigin: active_origin,
+-                pose: self.get_controller_pose(hand, Some(origin)).expect(""wtf""),
++                pose: self.get_controller_pose(hand, Some(origin)),
+             })
+         }
+ 
+@@ -1001,9 +1022,10 @@ impl<C: openxr_data::Compositor> vr::IVRInput010_Interface for Input<C> {
+                 sync_sets.push(set.into());
+             }
+ 
+-            let legacy = data.input_data.legacy_actions.get().unwrap();
+             let skeletal_input = data.input_data.estimated_skeleton_actions.get().unwrap();
+-            sync_sets.push(xr::ActiveActionSet::new(&legacy.set));
++            sync_sets.push(xr::ActiveActionSet::new(
++                &data.input_data.pose_data.get().unwrap().set,
++            ));
+             sync_sets.push(xr::ActiveActionSet::new(&skeletal_input.set));
+             self.legacy_state.on_action_sync();
+         }
+@@ -1108,7 +1130,7 @@ impl<C: openxr_data::Compositor> vr::IVRInput010_Interface for Input<C> {
+ 
+         // We need to restart the session if the legacy actions have already been attached.
+         let mut data = self.openxr.session_data.get();
+-        if data.input_data.legacy_actions.get().is_some() {
++        if data.input_data.get_legacy_actions().is_some() {
+             drop(data);
+             self.openxr.restart_session();
+             data = self.openxr.session_data.get();
+@@ -1167,38 +1189,31 @@ impl<C: openxr_data::Compositor> Input<C> {
+         poses[0] = self.get_hmd_pose(origin);
+ 
+         if poses.len() > Hand::Left as usize {
+-            poses[Hand::Left as usize] = self
+-                .get_controller_pose(Hand::Left, origin)
+-                .unwrap_or_default();
++            poses[Hand::Left as usize] = self.get_controller_pose(Hand::Left, origin);
+         }
+         if poses.len() > Hand::Right as usize {
+-            poses[Hand::Right as usize] = self
+-                .get_controller_pose(Hand::Right, origin)
+-                .unwrap_or_default();
++            poses[Hand::Right as usize] = self.get_controller_pose(Hand::Right, origin);
+         }
+     }
+ 
+     fn get_hmd_pose(&self, origin: Option<vr::ETrackingUniverseOrigin>) -> vr::TrackedDevicePose_t {
+         tracy_span!();
+         let mut spaces = self.cached_poses.lock().unwrap();
+         let data = self.openxr.session_data.get();
+-        spaces
+-            .get_pose_impl(
+-                &self.openxr,
+-                &data,
+-                self.openxr.display_time.get(),
+-                None,
+-                origin.unwrap_or(data.current_origin),
+-            )
+-            .unwrap()
++        spaces.get_pose_impl(
++            &self.openxr,
++            &data,
++            self.openxr.display_time.get(),
++            None,
++            origin.unwrap_or(data.current_origin),
++        )
+     }
+ 
+-    /// Returns None if legacy actions haven't been set up yet.
+     pub fn get_controller_pose(
+         &self,
+         hand: Hand,
+         origin: Option<vr::ETrackingUniverseOrigin>,
+-    ) -> Option<vr::TrackedDevicePose_t> {
++    ) -> vr::TrackedDevicePose_t {
+         tracy_span!();
+         let mut spaces = self.cached_poses.lock().unwrap();
+         let data = self.openxr.session_data.get();
+@@ -1215,13 +1230,13 @@ impl<C: openxr_data::Compositor> Input<C> {
+         tracy_span!();
+         std::mem::take(&mut *self.cached_poses.lock().unwrap());
+         let data = self.openxr.session_data.get();
+-        if let Some(loaded) = data.input_data.loaded_actions.get() {
++        let input_data = &data.input_data;
++        if let Some(loaded) = input_data.get_loaded_actions() {
+             // If the game has loaded actions, we shouldn't need to sync the state because the game
+             // should be doing it itself with UpdateActionState. However, some games (Tea for God)
+             // don't actually call UpdateActionState if no controllers are reported as connected,
+             // and interaction profiles are only updated after xrSyncActions is called. So here, we
+             // do an action sync to try and get the runtime to update the interaction profile.
+-            let loaded = loaded.read().unwrap();
+             if !self.openxr.left_hand.connected() || !self.openxr.right_hand.connected() {
+                 debug!(""no controllers connected - syncing info set"");
+                 data.session
+@@ -1231,10 +1246,13 @@ impl<C: openxr_data::Compositor> Input<C> {
+             return;
+         }
+ 
+-        match data.input_data.legacy_actions.get() {
++        match input_data.get_legacy_actions() {
+             Some(actions) => {
+                 data.session
+-                    .sync_actions(&[xr::ActiveActionSet::new(&actions.set)])
++                    .sync_actions(&[
++                        xr::ActiveActionSet::new(&actions.set),
++                        xr::ActiveActionSet::new(&input_data.pose_data.get().unwrap().set),
++                    ])
+                     .unwrap();
+ 
+                 self.legacy_state.on_action_sync();
+@@ -1259,16 +1277,7 @@ impl<C: openxr_data::Compositor> Input<C> {
+                     );
+                     return;
+                 }
+-                let legacy = LegacyActionData::new(
+-                    &self.openxr.instance,
+-                    self.openxr.left_hand.subaction_path,
+-                    self.openxr.right_hand.subaction_path,
+-                );
+-                setup_legacy_bindings(&self.openxr.instance, &data.session, &legacy);
+-                data.input_data
+-                    .legacy_actions
+-                    .set(legacy)
+-                    .unwrap_or_else(|_| unreachable!());
++                self.setup_legacy_actions();
+             }
+         }
+     }
+@@ -1357,6 +1366,14 @@ impl<C: openxr_data::Compositor> Input<C> {
+     pub fn post_session_restart(&self, data: &SessionData) {
+         // This function is called while a write lock is called on the session, and as such should
+         // not use self.openxr.session_data.get().
++        data.input_data
++            .pose_data
++            .set(PoseData::new(
++                &self.openxr.instance,
++                self.openxr.left_hand.subaction_path,
++                self.openxr.right_hand.subaction_path,
++            ))
++            .unwrap_or_else(|_| panic!(""PoseData already setup""));
+         if let Some(path) = self.loaded_actions_path.get() {
+             let _ = self.load_action_manifest(data, path);
+         }
+@@ -1413,7 +1430,7 @@ impl CachedSpaces {
+         display_time: xr::Time,
+         hand: Option<Hand>,
+         origin: vr::ETrackingUniverseOrigin,
+-    ) -> Option<vr::TrackedDevicePose_t> {
++    ) -> vr::TrackedDevicePose_t {
+         tracy_span!();
+         let space = match origin {
+             vr::ETrackingUniverseOrigin::Seated => &mut self.seated,
+@@ -1428,17 +1445,17 @@ impl CachedSpaces {
+         };
+ 
+         if let Some(pose) = pose {
+-            return Some(*pose);
++            return *pose;
+         }
+ 
+         let (loc, velo) = if let Some(hand) = hand {
+-            let legacy = session_data.input_data.legacy_actions.get()?;
++            let pose_data = session_data.input_data.pose_data.get().unwrap();
+             let spaces = match hand {
+-                Hand::Left => &legacy.left_spaces,
+-                Hand::Right => &legacy.right_spaces,
++                Hand::Left => &pose_data.left_space,
++                Hand::Right => &pose_data.right_space,
+             };
+ 
+-            if let Some(raw) = spaces.try_get_or_init_raw(xr_data, session_data, &legacy.actions) {
++            if let Some(raw) = spaces.try_get_or_init_raw(xr_data, session_data, pose_data) {
+                 raw.relate(session_data.get_space_for_origin(origin), display_time)
+                     .unwrap()
+             } else {
+@@ -1453,11 +1470,16 @@ impl CachedSpaces {
+         };
+ 
+         let ret = space_relation_to_openvr_pose(loc, velo);
+-        Some(*pose.insert(ret))
++        *pose.insert(ret)
+     }
+ }
+ 
+-struct LoadedActions {
++enum LoadedActions {
++    Legacy(LegacyActionData),
++    Manifest(ManifestLoadedActions),
++}
++
++struct ManifestLoadedActions {
+     sets: SecondaryMap<ActionSetKey, xr::ActionSet>,
+     actions: SecondaryMap<ActionKey, ActionData>,
+     extra_actions: SecondaryMap<ActionKey, ExtraActionData>,
+@@ -1467,7 +1489,7 @@ struct LoadedActions {
+     _info_action: xr::Action<bool>,
+ }
+ 
+-impl LoadedActions {
++impl ManifestLoadedActions {
+     fn try_get_bindings(
+         &self,
+         handle: vr::VRActionHandle_t,
+@@ -1489,6 +1511,7 @@ impl LoadedActions {
+         self.actions
+             .get(key)
+             .ok_or(vr::EVRInputError::InvalidHandle)
++            .inspect_err(|_| trace!(""didn't find action for {key:?}""))
+     }
+ 
+     fn try_get_extra(
+@@ -1514,3 +1537,116 @@ impl LoadedActions {
+             .ok_or(vr::EVRInputError::InvalidHandle)
+     }
+ }
++
++struct PoseData {
++    set: xr::ActionSet,
++    grip: xr::Action<xr::Posef>,
++    left_space: HandSpace,
++    right_space: HandSpace,
++}
++
++impl PoseData {
++    fn new(instance: &xr::Instance, left_path: xr::Path, right_path: xr::Path) -> Self {
++        let set = instance
++            .create_action_set(""xrizer-pose-data"", ""xrizer pose data"", 0)
++            .unwrap();
++        let grip = set
++            .create_action(""grip-pose"", ""Grip Pose"", &[left_path, right_path])
++            .unwrap();
++        Self {
++            set,
++            grip,
++            left_space: HandSpace {
++                hand: Hand::Left,
++                hand_path: left_path,
++                raw: RwLock::default(),
++            },
++            right_space: HandSpace {
++                hand: Hand::Right,
++                hand_path: right_path,
++                raw: RwLock::default(),
++            },
++        }
++    }
++    fn reset_spaces(&self) {
++        self.left_space.reset_raw();
++        self.right_space.reset_raw();
++    }
++}
++
++struct HandSpace {
++    hand: Hand,
++    hand_path: xr::Path,
++
++    /// Based on the controller jsons in SteamVR, the ""raw"" pose
++    /// This is stored as a space so we can locate hand joints relative to it for skeletal data.
++    raw: RwLock<Option<xr::Space>>,
++}
++
++struct SpaceReadGuard<'a>(RwLockReadGuard<'a, Option<xr::Space>>);
++impl Deref for SpaceReadGuard<'_> {
++    type Target = xr::Space;
++    fn deref(&self) -> &Self::Target {
++        self.0.as_ref().unwrap()
++    }
++}
++
++impl HandSpace {
++    pub fn try_get_or_init_raw(
++        &self,
++        xr_data: &OpenXrData<impl crate::openxr_data::Compositor>,
++        session_data: &SessionData,
++        pose_data: &PoseData,
++    ) -> Option<SpaceReadGuard> {
++        {
++            let raw = self.raw.read().unwrap();
++            if raw.is_some() {
++                return Some(SpaceReadGuard(raw));
++            }
++        }
++
++        {
++            let hand_profile = match self.hand {
++                Hand::Right => &xr_data.right_hand.profile,
++                Hand::Left => &xr_data.left_hand.profile,
++            };
++
++            let hand_profile = hand_profile.lock().unwrap();
++            let Some(profile) = hand_profile.as_ref() else {
++                trace!(""no hand profile, no raw space will be created"");
++                return None;
++            };
++
++            let offset = profile.offset_grip_pose(self.hand);
++            let translation = offset.w_axis.truncate();
++            let rotation = Quat::from_mat4(&offset);
++
++            let offset_pose = xr::Posef {
++                orientation: xr::Quaternionf {
++                    x: rotation.x,
++                    y: rotation.y,
++                    z: rotation.z,
++                    w: rotation.w,
++                },
++                position: xr::Vector3f {
++                    x: translation.x,
++                    y: translation.y,
++                    z: translation.z,
++                },
++            };
++
++            *self.raw.write().unwrap() = Some(
++                pose_data
++                    .grip
++                    .create_space(&session_data.session, self.hand_path, offset_pose)
++                    .unwrap(),
++            );
++        }
++
++        Some(SpaceReadGuard(self.raw.read().unwrap()))
++    }
++
++    pub fn reset_raw(&self) {
++        *self.raw.write().unwrap() = None;
++    }
++}"
+Supreeeme/xrizer,105,ea5c2a0,src/input/action_manifest.rs,modified,38,32,70,"@@ -1,6 +1,5 @@
+ use super::{
+     custom_bindings::DpadDirection,
+-    legacy::LegacyActionData,
+     profiles::{PathTranslation, Profiles},
+     skeletal::SkeletalInputActionData,
+     ActionData, ActionKey, BoundPoseType, Input,
+@@ -18,7 +17,6 @@ use slotmap::{SecondaryMap, SlotMap};
+ use std::collections::HashMap;
+ use std::path::{Path, PathBuf};
+ use std::str::FromStr;
+-use std::sync::RwLock;
+ use std::{cell::LazyCell, env::current_dir};
+ 
+ mod helpers;
+@@ -48,11 +46,26 @@ impl<C: openxr_data::Compositor> Input<C> {
+         match self.loaded_actions_path.get() {
+             Some(p) => {
+                 assert_eq!(p, manifest_path);
++                if session_data.input_data.actions.get().is_some() {
++                    return Ok(());
++                }
++            }
++            None => {
++                if let Some(loaded) = session_data.input_data.actions.get() {
++                    error!(
++                        ""{} actions are already loaded!"",
++                        if matches!(loaded, super::LoadedActions::Legacy(_)) {
++                            ""Legacy""
++                        } else {
++                            ""Manifest""
++                        }
++                    );
++                    return Err(vr::EVRInputError::MismatchedActionManifest);
++                }
++                self.loaded_actions_path
++                    .set(manifest_path.to_path_buf())
++                    .unwrap();
+             }
+-            None => self
+-                .loaded_actions_path
+-                .set(manifest_path.to_path_buf())
+-                .unwrap(),
+         }
+ 
+         let data = std::fs::read(manifest_path).map_err(|e| {
+@@ -88,16 +101,6 @@ impl<C: openxr_data::Compositor> Input<C> {
+         )?;
+         debug!(""Loaded {} actions."", actions.len());
+ 
+-        // Games can mix legacy and normal input, and the legacy bindings are used for
+-        // WaitGetPoses, so attach the legacy set here as well.
+-        let legacy = session_data.input_data.legacy_actions.get_or_init(|| {
+-            LegacyActionData::new(
+-                &self.openxr.instance,
+-                self.openxr.left_hand.subaction_path,
+-                self.openxr.right_hand.subaction_path,
+-            )
+-        });
+-
+         let skeletal_input = session_data
+             .input_data
+             .estimated_skeleton_actions
+@@ -122,7 +125,7 @@ impl<C: openxr_data::Compositor> Input<C> {
+         let mut binding_context = BindingsLoadContext::new(
+             &sets,
+             actions,
+-            &legacy.actions,
++            &session_data.input_data.pose_data.get().unwrap().grip,
+             &info_action,
+             skeletal_input,
+         );
+@@ -143,7 +146,11 @@ impl<C: openxr_data::Compositor> Input<C> {
+ 
+         let xr_sets: Vec<_> = sets
+             .values()
+-            .chain([&legacy.set, &info_set, &skeletal_input.set])
++            .chain([
++                &session_data.input_data.pose_data.get().unwrap().set,
++                &info_set,
++                &skeletal_input.set,
++            ])
+             .collect();
+         session_data.session.attach_action_sets(&xr_sets).unwrap();
+ 
+@@ -184,7 +191,7 @@ impl<C: openxr_data::Compositor> Input<C> {
+             .map(|(k, v)| (k, action_map_to_secondary(&mut act_guard, v)))
+             .collect();
+ 
+-        let loaded = super::LoadedActions {
++        let loaded = super::ManifestLoadedActions {
+             sets,
+             actions,
+             extra_actions,
+@@ -194,18 +201,11 @@ impl<C: openxr_data::Compositor> Input<C> {
+             info_set,
+         };
+ 
+-        match session_data.input_data.loaded_actions.get() {
+-            Some(lock) => {
+-                *lock.write().unwrap() = loaded;
+-            }
+-            None => {
+-                session_data
+-                    .input_data
+-                    .loaded_actions
+-                    .set(RwLock::new(loaded))
+-                    .unwrap_or_else(|_| unreachable!());
+-            }
+-        }
++        session_data
++            .input_data
++            .actions
++            .set(super::LoadedActions::Manifest(loaded))
++            .unwrap_or_else(|_| unreachable!());
+         Ok(())
+     }
+ }
+@@ -950,7 +950,13 @@ impl<C: openxr_data::Compositor> Input<C> {
+                     Skeleton { .. } | Pose => unreachable!(),
+                 }
+             })
+-            .chain(legacy_bindings.binding_iter(context.legacy_actions))
++            .chain(
++                legacy_bindings
++                    .extra
++                    .grip_pose
++                    .into_iter()
++                    .map(|path| xr::Binding::new(context.grip_action, path)),
++            )
+             .chain(std::iter::once(xr::Binding::new(
+                 context.info_action,
+                 info_action_binding,"
+Supreeeme/xrizer,105,ea5c2a0,src/input/action_manifest/helpers.rs,modified,5,6,11,"@@ -5,7 +5,6 @@ use crate::input::custom_bindings::{
+     BindingData, DpadActions, DpadData, DpadDirection, GrabActions, GrabBindingData,
+     ThresholdBindingData,
+ };
+-use crate::input::legacy::LegacyActions;
+ use crate::input::skeletal::SkeletalInputActionData;
+ use crate::input::ActionData::{Bool, Vector1, Vector2};
+ use crate::input::{ActionData, BoundPose, ExtraActionData, InteractionProfile};
+@@ -21,7 +20,7 @@ pub(super) struct BindingsLoadContext<'a> {
+     pub extra_actions: HashMap<String, ExtraActionData>,
+     pub per_profile_bindings: HashMap<xr::Path, HashMap<String, Vec<BindingData>>>,
+     pub per_profile_pose_bindings: HashMap<xr::Path, HashMap<String, BoundPose>>,
+-    pub legacy_actions: &'a LegacyActions,
++    pub grip_action: &'a xr::Action<xr::Posef>,
+     pub info_action: &'a xr::Action<bool>,
+     pub skeletal_input: &'a SkeletalInputActionData,
+ }
+@@ -30,7 +29,7 @@ impl<'a> BindingsLoadContext<'a> {
+     pub fn new(
+         action_sets: &'a HashMap<String, xr::ActionSet>,
+         actions: LoadedActionDataMap,
+-        legacy_actions: &'a LegacyActions,
++        grip_action: &'a xr::Action<xr::Posef>,
+         info_action: &'a xr::Action<bool>,
+         skeletal_input: &'a SkeletalInputActionData,
+     ) -> Self {
+@@ -40,7 +39,7 @@ impl<'a> BindingsLoadContext<'a> {
+             extra_actions: Default::default(),
+             per_profile_bindings: Default::default(),
+             per_profile_pose_bindings: Default::default(),
+-            legacy_actions,
++            grip_action,
+             info_action,
+             skeletal_input,
+         }
+@@ -81,7 +80,7 @@ impl BindingsLoadContext<'_> {
+             extra_actions: &mut self.extra_actions,
+             bindings_parsed,
+             pose_bindings,
+-            legacy_actions: self.legacy_actions,
++            grip_action: self.grip_action,
+             info_action: self.info_action,
+             skeletal_input: self.skeletal_input,
+             instance,
+@@ -99,7 +98,7 @@ pub(super) struct BindingsProfileLoadContext<'a> {
+     extra_actions: &'a mut HashMap<String, ExtraActionData>,
+     bindings_parsed: &'a mut HashMap<String, Vec<BindingData>>,
+     pub pose_bindings: &'a mut HashMap<String, BoundPose>,
+-    pub legacy_actions: &'a LegacyActions,
++    pub grip_action: &'a xr::Action<xr::Posef>,
+     pub info_action: &'a xr::Action<bool>,
+     pub skeletal_input: &'a SkeletalInputActionData,
+     pub instance: &'a xr::Instance,"
+Supreeeme/xrizer,105,ea5c2a0,src/input/legacy.rs,modified,230,183,413,"@@ -1,16 +1,12 @@
+-use super::{Input, Profiles};
+-use crate::openxr_data::{self, Hand, OpenXrData, SessionData};
+-use glam::Quat;
+-use log::{debug, trace, warn};
++use super::{Input, PoseData, Profiles};
++use crate::{
++    input::LoadedActions,
++    openxr_data::{self, Hand},
++};
++use log::{debug, warn};
+ use openvr as vr;
+ use openxr as xr;
+-use std::{
+-    ops::Deref,
+-    sync::{
+-        atomic::{AtomicBool, AtomicU32, Ordering},
+-        RwLock, RwLockReadGuard,
+-    },
+-};
++use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+ 
+ #[derive(Default)]
+ pub(super) struct LegacyState {
+@@ -39,12 +35,69 @@ macro_rules! button_mask_from_ids {
+ }
+ 
+ impl<C: openxr_data::Compositor> Input<C> {
++    pub fn setup_legacy_actions(&self) {
++        debug!(""setting up legacy actions"");
++
++        let session_data = self.openxr.session_data.get();
++        let session = &session_data.session;
++        let legacy = LegacyActionData::new(
++            &self.openxr.instance,
++            self.openxr.left_hand.subaction_path,
++            self.openxr.right_hand.subaction_path,
++        );
++        let input_data = &session_data.input_data;
++
++        for profile in Profiles::get().profiles_iter() {
++            const fn constrain<F>(f: F) -> F
++            where
++                F: for<'a> Fn(&'a str) -> xr::Path,
++            {
++                f
++            }
++            let stp = constrain(|s| self.openxr.instance.string_to_path(s).unwrap());
++            let bindings = profile.legacy_bindings(&stp);
++            let profile = stp(profile.profile_path());
++            self.openxr
++                .instance
++                .suggest_interaction_profile_bindings(
++                    profile,
++                    &bindings
++                        .into_iter(&legacy.actions, input_data.pose_data.get().unwrap())
++                        .collect::<Vec<_>>(),
++                )
++                .unwrap();
++        }
++
++        let pose_set = &input_data.pose_data.get().unwrap().set;
++
++        session
++            .attach_action_sets(&[&legacy.set, pose_set])
++            .unwrap();
++        session
++            .sync_actions(&[
++                xr::ActiveActionSet::new(&legacy.set),
++                xr::ActiveActionSet::new(pose_set),
++            ])
++            .unwrap();
++
++        input_data
++            .actions
++            .set(LoadedActions::Legacy(legacy))
++            .unwrap_or_else(|_| panic!(""Actions unexpectedly set up""));
++    }
++
+     pub fn get_legacy_controller_state(
+         &self,
+         device_index: vr::TrackedDeviceIndex_t,
+         state: *mut vr::VRControllerState_t,
+         state_size: u32,
+     ) -> bool {
++        let data = self.openxr.session_data.get();
++        if data.input_data.get_loaded_actions().is_some() {
++            debug!(""not returning legacy controller state due to loaded actions"");
++            return false;
++        }
++
+         if state_size as usize != std::mem::size_of::<vr::VRControllerState_t>() {
+             warn!(
+                 ""Got an unexpected size for VRControllerState_t (expected {}, got {state_size})"",
+@@ -53,8 +106,7 @@ impl<C: openxr_data::Compositor> Input<C> {
+             return false;
+         }
+ 
+-        let data = self.openxr.session_data.get();
+-        let Some(legacy) = data.input_data.legacy_actions.get() else {
++        let Some(legacy) = data.input_data.get_legacy_actions() else {
+             debug!(""tried getting controller state, but legacy actions aren't ready"");
+             return false;
+         };
+@@ -157,79 +209,106 @@ impl<C: openxr_data::Compositor> Input<C> {
+     }
+ }
+ 
+-macro_rules! legacy_actions_and_bindings {
+-    ($($field:ident: $ty:ty),+$(,)?) => {
+-        pub(super) struct LegacyActions {
+-            $(pub $field: $ty),+
+-        }
+-        pub(super) struct LegacyBindings {
+-            $(pub $field: Vec<xr::Path>),+
+-        }
+-        impl LegacyBindings {
+-            pub fn binding_iter(self, actions: &LegacyActions) -> impl Iterator<Item = xr::Binding<'_>> {
+-                std::iter::empty()
+-                $(
++// Some type magic to parameterize our legacy actions to act as actions or bindings
++trait ActionOrBindingMarker {}
++struct Actions;
++pub(super) struct Bindings {
++    // This pose is handled separately, in the PoseData struct,
++    // so we don't use an action for it, but we still need the binding.
++    pub grip_pose: Vec<xr::Path>,
++}
++impl ActionOrBindingMarker for Actions {}
++impl ActionOrBindingMarker for Bindings {}
++
++trait ActionT<M: ActionOrBindingMarker>: xr::ActionTy {
++    type T;
++}
++
++impl<T: xr::ActionTy> ActionT<Actions> for T {
++    type T = xr::Action<T>;
++}
++impl<T: xr::ActionTy> ActionT<Bindings> for T {
++    type T = Vec<xr::Path>;
++}
++
++type Action<T, M> = <T as ActionT<M>>::T;
++
++////////////////////////
++// Whenever a field is added to this struct, it also needs to be added to LegacyBindings::into_iter below
++///////////////////////
++#[allow(private_interfaces, private_bounds)]
++pub(super) struct Legacy<M: ActionOrBindingMarker>
++where
++    bool: ActionT<M>,
++    f32: ActionT<M>,
++    xr::Vector2f: ActionT<M>,
++{
++    pub app_menu: Action<bool, M>,
++    pub a: Action<bool, M>,
++    pub trigger_click: Action<bool, M>,
++    pub squeeze_click: Action<bool, M>,
++    pub trigger: Action<f32, M>,
++    pub squeeze: Action<f32, M>,
++    // This can be a stick or a trackpad, so we'll just call it ""xy""
++    pub main_xy: Action<xr::Vector2f, M>,
++    pub main_xy_touch: Action<bool, M>,
++    pub main_xy_click: Action<bool, M>,
++    pub extra: M,
++}
++
++#[allow(private_interfaces)]
++pub(super) type LegacyActions = Legacy<Actions>;
++pub(super) type LegacyBindings = Legacy<Bindings>;
++
++impl LegacyBindings {
++    fn into_iter<'a>(
++        self,
++        actions: &'a LegacyActions,
++        pose_data: &'a PoseData,
++    ) -> impl Iterator<Item = xr::Binding<'a>> {
++        macro_rules! bindings {
++            ($begin:expr, $($field:ident),+$(,)?) => {
++                $begin $(
+                     .chain(
+-                        self.$field.into_iter().map(|binding| xr::Binding::new(&actions.$field, binding))
++                        self.$field.into_iter().map(|path| xr::Binding::new(&actions.$field, path))
+                     )
+                 )+
+             }
+         }
+-    }
+-}
+ 
+-legacy_actions_and_bindings! {
+-    grip_pose: xr::Action<xr::Posef>,
+-    aim_pose: xr::Action<xr::Posef>,
+-    app_menu: xr::Action<bool>,
+-    a: xr::Action<bool>,
+-    trigger_click: xr::Action<bool>,
+-    squeeze_click: xr::Action<bool>,
+-    trigger: xr::Action<f32>,
+-    squeeze: xr::Action<f32>,
+-    // This can be a stick or a trackpad, so we'll just call it ""xy""
+-    main_xy: xr::Action<xr::Vector2f>,
+-    main_xy_touch: xr::Action<bool>,
+-    main_xy_click: xr::Action<bool>,
++        bindings![
++            self.extra
++                .grip_pose
++                .into_iter()
++                .map(|path| xr::Binding::new(&pose_data.grip, path)),
++            app_menu,
++            a,
++            trigger_click,
++            squeeze_click,
++            trigger,
++            squeeze,
++            main_xy,
++            main_xy_touch,
++            main_xy_click
++        ]
++    }
+ }
+ 
+ pub(super) struct LegacyActionData {
+     pub set: xr::ActionSet,
+-    pub left_spaces: HandSpaces,
+-    pub right_spaces: HandSpaces,
+-    pub actions: LegacyActions,
++    actions: LegacyActions,
+ }
+ 
+ impl LegacyActionData {
+     pub fn new(instance: &xr::Instance, left_hand: xr::Path, right_hand: xr::Path) -> Self {
+         debug!(""creating legacy actions"");
+         let leftright = [left_hand, right_hand];
+-        let create_spaces = |hand| {
+-            let hand_path = match hand {
+-                Hand::Left => left_hand,
+-                Hand::Right => right_hand,
+-            };
+-            HandSpaces {
+-                hand,
+-                hand_path,
+-                raw: RwLock::new(None),
+-            }
+-        };
+-
+-        let left_spaces = create_spaces(Hand::Left);
+-        let right_spaces = create_spaces(Hand::Right);
+ 
+         let set = instance
+             .create_action_set(""xrizer-legacy-set"", ""XRizer Legacy Set"", 0)
+             .unwrap();
+ 
+         let actions = LegacyActions {
+-            grip_pose: set
+-                .create_action(""grip-pose"", ""Grip Pose"", &leftright)
+-                .unwrap(),
+-            aim_pose: set
+-                .create_action(""aim-pose"", ""Aim Pose"", &leftright)
+-                .unwrap(),
+             trigger_click: set
+                 .create_action(""trigger-click"", ""Trigger Click"", &leftright)
+                 .unwrap(),
+@@ -251,131 +330,19 @@ impl LegacyActionData {
+             main_xy_touch: set
+                 .create_action(""main-joystick-touch"", ""Main Joystick Touch"", &leftright)
+                 .unwrap(),
++            extra: Actions,
+         };
+ 
+-        Self {
+-            set,
+-            left_spaces,
+-            right_spaces,
+-            actions,
+-        }
+-    }
+-}
+-
+-pub fn setup_legacy_bindings(
+-    instance: &xr::Instance,
+-    session: &xr::Session<xr::AnyGraphics>,
+-    legacy: &LegacyActionData,
+-) {
+-    debug!(""setting up legacy bindings"");
+-
+-    let actions = &legacy.actions;
+-    for profile in Profiles::get().profiles_iter() {
+-        const fn constrain<F>(f: F) -> F
+-        where
+-            F: for<'a> Fn(&'a str) -> xr::Path,
+-        {
+-            f
+-        }
+-        let stp = constrain(|s| instance.string_to_path(s).unwrap());
+-        let bindings = profile.legacy_bindings(&stp);
+-        let profile = stp(profile.profile_path());
+-        instance
+-            .suggest_interaction_profile_bindings(
+-                profile,
+-                &bindings.binding_iter(actions).collect::<Vec<_>>(),
+-            )
+-            .unwrap();
+-    }
+-
+-    session.attach_action_sets(&[&legacy.set]).unwrap();
+-    session
+-        .sync_actions(&[xr::ActiveActionSet::new(&legacy.set)])
+-        .unwrap();
+-}
+-
+-pub(super) struct HandSpaces {
+-    hand: Hand,
+-    hand_path: xr::Path,
+-
+-    /// Based on the controller jsons in SteamVR, the ""raw"" pose
+-    /// This is stored as a space so we can locate hand joints relative to it for skeletal data.
+-    raw: RwLock<Option<xr::Space>>,
+-}
+-
+-pub(super) struct SpaceReadGuard<'a>(RwLockReadGuard<'a, Option<xr::Space>>);
+-impl Deref for SpaceReadGuard<'_> {
+-    type Target = xr::Space;
+-    fn deref(&self) -> &Self::Target {
+-        self.0.as_ref().unwrap()
+-    }
+-}
+-
+-impl HandSpaces {
+-    pub fn try_get_or_init_raw(
+-        &self,
+-        xr_data: &OpenXrData<impl crate::openxr_data::Compositor>,
+-        session_data: &SessionData,
+-        actions: &LegacyActions,
+-    ) -> Option<SpaceReadGuard> {
+-        {
+-            let raw = self.raw.read().unwrap();
+-            if raw.is_some() {
+-                return Some(SpaceReadGuard(raw));
+-            }
+-        }
+-
+-        {
+-            let hand_profile = match self.hand {
+-                Hand::Right => &xr_data.right_hand.profile,
+-                Hand::Left => &xr_data.left_hand.profile,
+-            };
+-
+-            let hand_profile = hand_profile.lock().unwrap();
+-            let Some(profile) = hand_profile.as_ref() else {
+-                trace!(""no hand profile, no raw space will be created"");
+-                return None;
+-            };
+-
+-            let offset = profile.offset_grip_pose(self.hand);
+-            let translation = offset.w_axis.truncate();
+-            let rotation = Quat::from_mat4(&offset);
+-
+-            let offset_pose = xr::Posef {
+-                orientation: xr::Quaternionf {
+-                    x: rotation.x,
+-                    y: rotation.y,
+-                    z: rotation.z,
+-                    w: rotation.w,
+-                },
+-                position: xr::Vector3f {
+-                    x: translation.x,
+-                    y: translation.y,
+-                    z: translation.z,
+-                },
+-            };
+-
+-            *self.raw.write().unwrap() = Some(
+-                actions
+-                    .grip_pose
+-                    .create_space(&session_data.session, self.hand_path, offset_pose)
+-                    .unwrap(),
+-            );
+-        }
+-
+-        Some(SpaceReadGuard(self.raw.read().unwrap()))
+-    }
+-
+-    pub fn reset_raw(&self) {
+-        *self.raw.write().unwrap() = None;
++        Self { set, actions }
+     }
+ }
+ 
+ #[cfg(test)]
+ mod tests {
+-    use crate::input::profiles::knuckles::Knuckles;
+-    use crate::input::tests::Fixture;
++    use crate::input::profiles::{knuckles::Knuckles, simple_controller::SimpleController};
++    use crate::input::tests::{compare_pose, Fixture};
+     use openvr as vr;
++    use openxr as xr;
+ 
+     #[repr(C)]
+     #[derive(Default)]
+@@ -453,8 +420,7 @@ mod tests {
+                 .session_data
+                 .get()
+                 .input_data
+-                .legacy_actions
+-                .get()
++                .get_legacy_actions()
+                 .unwrap()
+                 .actions,
+         );
+@@ -655,4 +621,85 @@ mod tests {
+         vr::EVRButtonId::Grip | vr::EVRButtonId::Axis2
+     );
+     test_button!(a, vr::EVRButtonId::A);
++
++    #[test]
++    fn no_legacy_input_with_manifest() {
++        let f = Fixture::new();
++
++        f.input.openxr.restart_session();
++        f.input.frame_start_update();
++
++        let mut state = vr::VRControllerState_t::default();
++        assert!(f.input.get_legacy_controller_state(
++            1,
++            &mut state,
++            std::mem::size_of_val(&state) as u32
++        ));
++
++        f.load_actions(c""actions.json"");
++        f.input.frame_start_update();
++        assert!(!f.input.get_legacy_controller_state(
++            1,
++            &mut state,
++            std::mem::size_of_val(&state) as u32
++        ));
++    }
++
++    #[test]
++    fn poses_updated() {
++        use fakexr::UserPath::*;
++        let f = Fixture::new();
++        f.input.openxr.restart_session();
++        f.set_interaction_profile(&SimpleController, LeftHand);
++        f.set_interaction_profile(&SimpleController, RightHand);
++        f.input.frame_start_update();
++        f.input.openxr.poll_events();
++
++        fakexr::set_grip(f.raw_session(), LeftHand, xr::Posef::IDENTITY);
++        fakexr::set_grip(f.raw_session(), RightHand, xr::Posef::IDENTITY);
++        f.input.frame_start_update();
++
++        let seated_origin = vr::ETrackingUniverseOrigin::Seated;
++        let left_pose = f
++            .input
++            .get_controller_pose(super::Hand::Left, Some(seated_origin));
++        compare_pose(
++            xr::Posef::IDENTITY,
++            left_pose.mDeviceToAbsoluteTracking.into(),
++        );
++        compare_pose(
++            xr::Posef::IDENTITY,
++            f.input
++                .get_controller_pose(super::Hand::Right, Some(seated_origin))
++                .mDeviceToAbsoluteTracking
++                .into(),
++        );
++
++        let new_pose = xr::Posef {
++            position: xr::Vector3f {
++                x: 0.5,
++                y: 0.5,
++                z: 0.5,
++            },
++            orientation: xr::Quaternionf::IDENTITY,
++        };
++
++        fakexr::set_grip(f.raw_session(), LeftHand, new_pose);
++        fakexr::set_grip(f.raw_session(), RightHand, new_pose);
++        f.input.frame_start_update();
++        compare_pose(
++            new_pose,
++            f.input
++                .get_controller_pose(super::Hand::Left, Some(seated_origin))
++                .mDeviceToAbsoluteTracking
++                .into(),
++        );
++        compare_pose(
++            new_pose,
++            f.input
++                .get_controller_pose(super::Hand::Right, Some(seated_origin))
++                .mDeviceToAbsoluteTracking
++                .into(),
++        );
++    }
+ }"
+Supreeeme/xrizer,105,ea5c2a0,src/input/profiles/knuckles.rs,modified,4,3,7,"@@ -3,7 +3,7 @@ use super::{
+     SkeletalInputBindings, StringToPath,
+ };
+ use crate::button_mask_from_ids;
+-use crate::input::legacy::{button_mask_from_id, LegacyBindings};
++use crate::input::legacy::{self, button_mask_from_id, LegacyBindings};
+ use crate::openxr_data::Hand;
+ use glam::{EulerRot, Mat4, Quat, Vec3};
+ use openvr::EVRButtonId;
+@@ -119,8 +119,9 @@ impl InteractionProfile for Knuckles {
+ 
+     fn legacy_bindings(&self, stp: &dyn StringToPath) -> LegacyBindings {
+         LegacyBindings {
+-            grip_pose: stp.leftright(""input/grip/pose""),
+-            aim_pose: stp.leftright(""input/aim/pose""),
++            extra: legacy::Bindings {
++                grip_pose: stp.leftright(""input/grip/pose""),
++            },
+             app_menu: stp.leftright(""input/b/click""),
+             a: stp.leftright(""input/a/click""),
+             trigger: stp.leftright(""input/trigger/value""),"
+Supreeeme/xrizer,105,ea5c2a0,src/input/profiles/oculus_touch.rs,modified,4,4,8,"@@ -3,8 +3,7 @@ use super::{
+     SkeletalInputBindings, StringToPath,
+ };
+ use crate::button_mask_from_ids;
+-use crate::input::legacy::button_mask_from_id;
+-use crate::input::legacy::LegacyBindings;
++use crate::input::legacy::{self, button_mask_from_id, LegacyBindings};
+ use crate::openxr_data::Hand;
+ use glam::{EulerRot, Mat4, Quat, Vec3};
+ use openvr::EVRButtonId::{ApplicationMenu, Axis0, Axis1, Axis2, Grip, System, A};
+@@ -91,8 +90,9 @@ impl InteractionProfile for Touch {
+ 
+     fn legacy_bindings(&self, stp: &dyn StringToPath) -> LegacyBindings {
+         LegacyBindings {
+-            grip_pose: stp.leftright(""input/grip/pose""),
+-            aim_pose: stp.leftright(""input/aim/pose""),
++            extra: legacy::Bindings {
++                grip_pose: stp.leftright(""input/grip/pose""),
++            },
+             trigger: stp.leftright(""input/trigger/value""),
+             trigger_click: stp.leftright(""input/trigger/value""),
+             app_menu: vec!["
+Supreeeme/xrizer,105,ea5c2a0,src/input/profiles/simple_controller.rs,modified,4,4,8,"@@ -3,8 +3,7 @@ use super::{
+     SkeletalInputBindings, StringToPath,
+ };
+ use crate::button_mask_from_ids;
+-use crate::input::legacy::button_mask_from_id;
+-use crate::input::legacy::LegacyBindings;
++use crate::input::legacy::{button_mask_from_id, Bindings, LegacyBindings};
+ use crate::openxr_data::Hand;
+ use glam::Mat4;
+ use openvr::EVRButtonId::{ApplicationMenu, Axis0, Axis1, Grip, System};
+@@ -53,8 +52,9 @@ impl InteractionProfile for SimpleController {
+ 
+     fn legacy_bindings(&self, stp: &dyn StringToPath) -> LegacyBindings {
+         LegacyBindings {
+-            grip_pose: stp.leftright(""input/grip/pose""),
+-            aim_pose: stp.leftright(""input/aim/pose""),
++            extra: Bindings {
++                grip_pose: stp.leftright(""input/grip/pose""),
++            },
+             trigger: stp.leftright(""input/select/click""),
+             trigger_click: stp.leftright(""input/select/click""),
+             app_menu: stp.leftright(""input/menu/click""),"
+Supreeeme/xrizer,105,ea5c2a0,src/input/profiles/vive_controller.rs,modified,4,4,8,"@@ -3,8 +3,7 @@ use super::{
+     SkeletalInputBindings, StringToPath,
+ };
+ use crate::button_mask_from_ids;
+-use crate::input::legacy::button_mask_from_id;
+-use crate::input::legacy::LegacyBindings;
++use crate::input::legacy::{self, button_mask_from_id, LegacyBindings};
+ use crate::openxr_data::Hand;
+ use glam::Mat4;
+ use openvr::EVRButtonId::{ApplicationMenu, Axis0, Axis1, Grip, System};
+@@ -87,8 +86,9 @@ impl InteractionProfile for ViveWands {
+ 
+     fn legacy_bindings(&self, stp: &dyn StringToPath) -> LegacyBindings {
+         LegacyBindings {
+-            grip_pose: stp.leftright(""input/grip/pose""),
+-            aim_pose: stp.leftright(""input/aim/pose""),
++            extra: legacy::Bindings {
++                grip_pose: stp.leftright(""input/grip/pose""),
++            },
+             trigger: stp.leftright(""input/trigger/value""),
+             trigger_click: stp.leftright(""input/trigger/click""),
+             app_menu: stp.leftright(""input/menu/click""),"
+Supreeeme/xrizer,105,ea5c2a0,src/input/skeletal.rs,modified,4,4,8,"@@ -26,13 +26,13 @@ impl<C: openxr_data::Compositor> Input<C> {
+     ) {
+         use HandSkeletonBone::*;
+ 
+-        let legacy = session_data.input_data.legacy_actions.get().unwrap();
++        let pose_data = session_data.input_data.pose_data.get().unwrap();
+         let display_time = self.openxr.display_time.get();
+         let Some(raw) = match hand {
+-            Hand::Left => &legacy.left_spaces,
+-            Hand::Right => &legacy.right_spaces,
++            Hand::Left => &pose_data.left_space,
++            Hand::Right => &pose_data.right_space,
+         }
+-        .try_get_or_init_raw(xr_data, session_data, &legacy.actions) else {
++        .try_get_or_init_raw(xr_data, session_data, pose_data) else {
+             self.get_estimated_bones(session_data, space, hand, transforms);
+             return;
+         };"
+Supreeeme/xrizer,105,ea5c2a0,src/input/tests.rs,modified,3,5,8,"@@ -338,9 +338,8 @@ fn input_state_flow() {
+         .session_data
+         .get()
+         .input_data
+-        .legacy_actions
+-        .get()
+-        .is_some());
++        .get_legacy_actions()
++        .is_none());
+ 
+     f.sync(vr::VRActiveActionSet_t {
+         ulActionSet: set1,
+@@ -451,8 +450,7 @@ fn raw_pose_waitgetposes_and_skeletal_pose_identical() {
+     let seated_origin = vr::ETrackingUniverseOrigin::Seated;
+     let waitgetposes_pose = f
+         .input
+-        .get_controller_pose(super::Hand::Left, Some(seated_origin))
+-        .expect(""WaitGetPoses should succeed"");
++        .get_controller_pose(super::Hand::Left, Some(seated_origin));
+ 
+     let mut raw_pose = vr::InputPoseActionData_t {
+         pose: vr::TrackedDevicePose_t {"
+Supreeeme/xrizer,105,ea5c2a0,src/system.rs,modified,3,9,12,"@@ -269,8 +269,7 @@ impl vr::IVRSystem022_Interface for System {
+                     .input
+                     .get()
+                     .unwrap()
+-                    .get_controller_pose(Hand::try_from(device_index).unwrap(), Some(origin))
+-                    .unwrap_or_default();
++                    .get_controller_pose(Hand::try_from(device_index).unwrap(), Some(origin));
+             }
+             true
+         } else {
+@@ -399,8 +398,7 @@ impl vr::IVRSystem022_Interface for System {
+                         pose.write(
+                             self.input
+                                 .force(|_| Input::new(self.openxr.clone()))
+-                                .get_controller_pose(hand, Some(origin))
+-                                .unwrap_or_default(),
++                                .get_controller_pose(hand, Some(origin)),
+                         );
+                     }
+                 }
+@@ -413,11 +411,7 @@ impl vr::IVRSystem022_Interface for System {
+             if got_event && !pose.is_null() {
+                 unsafe {
+                     let index = (&raw const (*event).trackedDeviceIndex).read();
+-                    pose.write(
+-                        input
+-                            .get_controller_pose(Hand::try_from(index).unwrap(), None)
+-                            .unwrap(),
+-                    );
++                    pose.write(input.get_controller_pose(Hand::try_from(index).unwrap(), None));
+                 }
+             }
+             got_event"

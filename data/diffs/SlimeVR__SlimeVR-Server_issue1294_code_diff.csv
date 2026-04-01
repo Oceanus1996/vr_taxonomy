@@ -1,0 +1,150 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+SlimeVR/SlimeVR-Server,1294,f701075,gui/src/components/home/ResetButton.tsx,modified,14,5,19,"@@ -9,7 +9,10 @@ import {
+ import { useConfig } from '@/hooks/config';
+ import { useCountdown } from '@/hooks/countdown';
+ import { useWebsocketAPI } from '@/hooks/websocket-api';
+-import { playSoundOnResetStarted } from '@/sounds/sounds';
++import {
++  playSoundOnResetEnded,
++  playSoundOnResetStarted,
++} from '@/sounds/sounds';
+ import { BigButton } from '@/components/commons/BigButton';
+ import { Button } from '@/components/commons/Button';
+ import {
+@@ -51,6 +54,7 @@ export function ResetButton({
+   const { isCounting, startCountdown, timer } = useCountdown({
+     duration: type === ResetType.Yaw ? 0.2 : undefined,
+     onCountdownEnd: () => {
++      maybePlaySoundOnResetEnd(type);
+       reset();
+       if (onReseted) onReseted();
+     },
+@@ -77,17 +81,22 @@ export function ResetButton({
+     return <FullResetIcon width={20} />;
+   };
+ 
+-  const maybePlaySoundOnResetStarted = (type: ResetType) => {
++  const maybePlaySoundOnResetEnd = (type: ResetType) => {
++    if (!config?.feedbackSound) return;
++    playSoundOnResetEnded(type, config?.feedbackSoundVolume);
++  };
++
++  const maybePlaySoundOnResetStart = () => {
+     if (!config?.feedbackSound) return;
+-    playSoundOnResetStarted(type, config?.feedbackSoundVolume);
++    playSoundOnResetStarted(config?.feedbackSoundVolume);
+   };
+ 
+   return variant === 'small' ? (
+     <Button
+       icon={getIcon()}
+       onClick={() => {
+         startCountdown();
+-        maybePlaySoundOnResetStarted(type);
++        maybePlaySoundOnResetStart();
+       }}
+       variant=""primary""
+       disabled={isCounting || needsFullReset}
+@@ -103,7 +112,7 @@ export function ResetButton({
+       icon={getIcon()}
+       onClick={() => {
+         startCountdown();
+-        maybePlaySoundOnResetStarted(type);
++        maybePlaySoundOnResetStart();
+       }}
+       disabled={isCounting || needsFullReset}
+     ></BigButton>"
+SlimeVR/SlimeVR-Server,1294,f701075,gui/src/hooks/app.ts,modified,6,2,8,"@@ -19,7 +19,7 @@ import {
+   StartDataFeedT,
+   TrackerDataT,
+ } from 'solarxr-protocol';
+-import { playSoundOnResetStarted } from '@/sounds/sounds';
++import { playSoundOnResetEnded, playSoundOnResetStarted } from '@/sounds/sounds';
+ import { useConfig } from './config';
+ import { useDataFeedConfig } from './datafeed-config';
+ import { useWebsocketAPI } from './websocket-api';
+@@ -118,7 +118,11 @@ export function useProvideAppContext(): AppContext {
+     try {
+       switch (status) {
+         case ResetStatus.STARTED: {
+-          playSoundOnResetStarted(resetType, config?.feedbackSoundVolume);
++          playSoundOnResetStarted(config?.feedbackSoundVolume);
++          break;
++        }
++        case ResetStatus.FINISHED: {
++          playSoundOnResetEnded(resetType, config?.feedbackSoundVolume);
+           break;
+         }
+       }"
+SlimeVR/SlimeVR-Server,1294,f701075,gui/src/sounds/sounds.ts,renamed,14,31,45,"@@ -1,33 +1,12 @@
+ import { fetchResourceUrl } from '@/utils/tauri';
+ import { ResetType } from 'solarxr-protocol';
+ 
+-const quickResetStartedSound = new Audio(
+-  await fetchResourceUrl('/sounds/quick-reset-started-sound.mp3')
+-);
+-const fullResetStartedSound = new Audio(
+-  await fetchResourceUrl('/sounds/full-reset-started-sound.mp3')
+-);
+-const mountingResetStartedSound = new Audio(
+-  await fetchResourceUrl('/sounds/mounting-reset-started-sound.mp3')
+-);
+-const tapSetupSound1 = new Audio(
+-  await fetchResourceUrl('/sounds/first-tap.mp3')
+-);
+-const tapSetupSound2 = new Audio(
+-  await fetchResourceUrl('/sounds/second-tap.mp3')
+-);
+-const tapSetupSound3 = new Audio(
+-  await fetchResourceUrl('/sounds/third-tap.mp3')
+-);
+-const tapSetupSound4 = new Audio(
+-  await fetchResourceUrl('/sounds/fourth-tap.mp3')
+-);
+-const tapSetupSound5 = new Audio(
+-  await fetchResourceUrl('/sounds/fifth-tap.mp3')
+-);
+-const tapSetupSoundEnd = new Audio(
+-  await fetchResourceUrl('/sounds/end-tap.mp3')
+-);
++const tapSetupSound1 = new Audio(await fetchResourceUrl('/sounds/first-tap.mp3'));
++const tapSetupSound2 = new Audio(await fetchResourceUrl('/sounds/second-tap.mp3'));
++const tapSetupSound3 = new Audio(await fetchResourceUrl('/sounds/third-tap.mp3'));
++const tapSetupSound4 = new Audio(await fetchResourceUrl('/sounds/fourth-tap.mp3'));
++const tapSetupSound5 = new Audio(await fetchResourceUrl('/sounds/fifth-tap.mp3'));
++const tapSetupSoundEnd = new Audio(await fetchResourceUrl('/sounds/end-tap.mp3'));
+ const tapSetupExtraSound = new Audio(
+   await fetchResourceUrl('/sounds/tapextrasetup.mp3')
+ );
+@@ -41,23 +20,27 @@ function restartAndPlay(audio: HTMLAudioElement, volume: number) {
+   }
+ }
+ 
+-export function playSoundOnResetStarted(resetType: ResetType, volume = 1) {
++export function playSoundOnResetEnded(resetType: ResetType, volume = 1) {
+   switch (resetType) {
+     case ResetType.Yaw: {
+-      restartAndPlay(quickResetStartedSound, volume);
++      restartAndPlay(tapSetupSound2, volume);
+       break;
+     }
+     case ResetType.Full: {
+-      restartAndPlay(fullResetStartedSound, volume);
++      restartAndPlay(tapSetupSound3, volume);
+       break;
+     }
+     case ResetType.Mounting: {
+-      restartAndPlay(mountingResetStartedSound, volume);
++      restartAndPlay(tapSetupSound4, volume);
+       break;
+     }
+   }
+ }
+ 
++export function playSoundOnResetStarted(volume = 1) {
++  restartAndPlay(tapSetupSound1, volume);
++}
++
+ let lastKnownVolume = 1;
+ /* Easter egg */
+ tapSetupSoundEnd.onended = () => {"

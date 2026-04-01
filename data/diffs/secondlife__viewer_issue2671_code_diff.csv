@@ -1,0 +1,63 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+secondlife/viewer,2671,a2e9a0c,indra/newview/llhudtext.cpp,modified,15,1,16,"@@ -185,6 +185,15 @@ void LLHUDText::renderText()
+     LLVector3 render_position = mPositionAgent
+             + (x_pixel_vec * screen_offset.mV[VX])
+             + (y_pixel_vec * screen_offset.mV[VY]);
++    bool reset_buffers = false;
++    const F32 treshold = 0.000001f;
++    if (abs(mLastRenderPosition.mV[VX] - render_position.mV[VX]) > treshold
++        || abs(mLastRenderPosition.mV[VY] - render_position.mV[VY]) > treshold
++        || abs(mLastRenderPosition.mV[VZ] - render_position.mV[VZ]) > treshold)
++    {
++        reset_buffers = true;
++        mLastRenderPosition = render_position;
++    }
+ 
+     F32 y_offset = (F32)mOffsetY;
+ 
+@@ -208,6 +217,11 @@ void LLHUDText::renderText()
+         for (std::vector<LLHUDTextSegment>::iterator segment_iter = mTextSegments.begin() + start_segment;
+              segment_iter != mTextSegments.end(); ++segment_iter )
+         {
++            if (reset_buffers)
++            {
++                segment_iter->mFontBufferText.reset();
++            }
++
+             const LLFontGL* fontp = segment_iter->mFont;
+             y_offset -= fontp->getLineHeight() - 1; // correction factor to match legacy font metrics
+ 
+@@ -231,7 +245,7 @@ void LLHUDText::renderText()
+             }
+             text_color.mV[VALPHA] *= alpha_factor;
+ 
+-            hud_render_text(segment_iter->getText(), render_position, &mFontBuffer, *fontp, style, shadow, x_offset, y_offset, text_color, mOnHUDAttachment);
++            hud_render_text(segment_iter->getText(), render_position, &segment_iter->mFontBufferText, *fontp, style, shadow, x_offset, y_offset, text_color, mOnHUDAttachment);
+         }
+     }
+     /// Reset the default color to white.  The renderer expects this to be the default."
+secondlife/viewer,2671,a2e9a0c,indra/newview/llhudtext.h,modified,3,1,4,"@@ -67,6 +67,8 @@ class LLHUDText : public LLHUDObject
+         LLColor4                mColor;
+         LLFontGL::StyleFlags    mStyle;
+         const LLFontGL*         mFont;
++        LLFontVertexBuffer      mFontBuffer;
++        LLFontVertexBuffer      mFontBufferText;
+     private:
+         LLWString               mText;
+         std::map<const LLFontGL*, F32> mFontWidthMap;
+@@ -152,6 +154,7 @@ class LLHUDText : public LLHUDObject
+     const LLFontGL* mBoldFontp;
+     LLRectf         mSoftScreenRect;
+     LLVector3       mPositionAgent;
++    LLVector3       mLastRenderPosition;
+     LLVector2       mPositionOffset;
+     LLVector2       mTargetPositionOffset;
+     F32             mMass;
+@@ -162,7 +165,6 @@ class LLHUDText : public LLHUDObject
+     ETextAlignment  mTextAlignment;
+     EVertAlignment  mVertAlignment;
+     bool            mHidden;
+-    LLFontVertexBuffer   mFontBuffer;
+ 
+     static bool    sDisplayText ;
+     static std::set<LLPointer<LLHUDText> > sTextObjects;"

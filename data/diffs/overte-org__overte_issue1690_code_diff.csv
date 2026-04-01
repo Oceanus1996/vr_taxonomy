@@ -1,0 +1,71 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+overte-org/overte,1690,f678372,scripts/system/settings/qml/SettingComboBox.qml,modified,11,2,13,"@@ -10,6 +10,7 @@ Item {
+     property var _optionText: """";
+     readonly property string optionText: _optionText;
+ 	property var options: [""""];
++    property bool disabled: false;
+ 
+ 	signal valueChanged(int index);
+ 
+@@ -92,7 +93,7 @@ Item {
+ 
+ 				background: Rectangle {
+ 					id: comboBoxBackground;
+-					color: ""#333"";
++					color: disabled ? ""gray"" : ""#333"";
+ 					radius: 10;
+ 					width: parent.width;
+ 				}
+@@ -152,15 +153,18 @@ Item {
+             propagateComposedEvents: true;
+ 
+             onPressed: {
+-                mouse.accepted = false
++                if (disabled) return;
++                mouse.accepted = false;
+             }
+ 
+             onEntered: {
++                if (disabled) return;
+                 backgroundElement.color = ""#333"";
+ 				comboBoxBackground.color = ""#444"";
+             }
+ 
+             onExited: {
++                if (disabled) return;
+                 backgroundElement.color = ""transparent"";
+ 				comboBoxBackground.color = ""#333"";
+             }
+@@ -174,6 +178,11 @@ Item {
+ 		}
+     }
+ 
++    onDisabledChanged: {
++        if (disabled) comboBoxBackground.color = ""gray"";
++        else comboBoxBackground.color = ""#333"";
++    }
++
+ 	// Updates the contents of a combobox.
+ 	// This is only required if the desired contents needs to be gathered from a javascript function and then set after the fact.
+ 	// Ideally, this would not be used, but sometimes you gotta do what you gotta do."
+overte-org/overte,1690,f678372,scripts/system/settings/qml/pages/GraphicsSettings.qml,modified,10,0,10,"@@ -311,10 +311,20 @@ Flickable {
+             settingText: ""Anti-aliasing"";
+             optionIndex: Render.antialiasingMode;
+             options: [""None"", ""TAA"", ""FXAA""];
++            disabled: Render.renderMethod;
+ 
+             onValueChanged: {
+                 Render.antialiasingMode = index;
+             }
++
++            onDisabledChanged: {
++                if (disabled) {
++                    options = [""MSAA""];
++                }
++                else {
++                    options = [""None"", ""TAA"", ""FXAA""];
++                }
++            }
+         }
+     }
+ "

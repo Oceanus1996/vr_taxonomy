@@ -1,0 +1,152 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vircadia/vircadia-web,143,43d519cccc6e79423005610db738da1960b6d80b,src/modules/entity/components/components/model.ts,modified,6,3,9,"@@ -88,7 +88,8 @@ export class ModelComponent extends MeshComponent {
+                         genericModelType.name,
+                         true,
+                         undefined,
+-                        nametagPopDistance
++                        nametagPopDistance,
++                        () => !Store.state.interactions.isInteracting
+                     );
+                 });
+                 result.transformNodes.forEach((childNode) => {
+@@ -102,7 +103,8 @@ export class ModelComponent extends MeshComponent {
+                         genericModelType.name,
+                         true,
+                         undefined,
+-                        nametagPopDistance
++                        nametagPopDistance,
++                        () => !Store.state.interactions.isInteracting
+                     );
+                 });
+ 
+@@ -115,7 +117,8 @@ export class ModelComponent extends MeshComponent {
+                         genericModelType.name,
+                         true,
+                         undefined,
+-                        nametagPopDistance
++                        nametagPopDistance,
++                        () => !Store.state.interactions.isInteracting
+                     );
+                 }
+ "
+vircadia/vircadia-web,143,43d519cccc6e79423005610db738da1960b6d80b,src/modules/entity/entities/NametagEntity.ts,modified,8,2,10,"@@ -100,6 +100,9 @@ export class NametagEntity {
+      * @param icon Display the name as an icon instead of text.
+      * @param color The color of the nametag's background.
+      * @param popDistance The distance from the player's avatar at which the nametag will stop being visible.
++     * @param popOverride A function overriding the visibility of the nametag.
++     * This function receives the distance from the player's avatar to the nametag,
++     * and should return a boolean indicating whether the nametag should be visible (`true`) or not (`false`).
+      * @returns A reference to the new nametag mesh.
+      */
+     public static create(
+@@ -108,7 +111,8 @@ export class NametagEntity {
+         name: string,
+         icon = false,
+         color?: Color3,
+-        popDistance = 20
++        popDistance = 20,
++        popOverride?: ((distance: number) => boolean)
+     ): Mesh | undefined {
+         const scene = object.getScene();
+         const font = icon ? this.iconFont : this.textFont;
+@@ -274,7 +278,9 @@ export class NametagEntity {
+                 // Clamp the opacity between 0 and 0.94.
+                 // Max opacity of 0.94 reduces the chance that the nametag will be affected by bloom.
+                 const opacity = Math.min(Math.max(popDistance + 1 - distance, 0), 0.94);
+-                nametagMergedMesh.visibility = opacity * Number(Store.state.avatar.showNametags);
++                nametagMergedMesh.visibility = opacity * Number(
++                    Store.state.avatar.showNametags && (popOverride?.(distance) ?? true)
++                );
+             }
+         });
+ "
+vircadia/vircadia-web,143,3caadea905f23c8ccaeff1ef617ddd5efc3d70ec,src/modules/avatar/controller/inputController.ts,modified,9,1,10,"@@ -29,7 +29,7 @@ import { InputState, CameraMode } from ""./inputState"";
+ import { IInputHandler } from ""./inputs/inputHandler"";
+ import { KeyboardInput } from ""./inputs/keyboardInput"";
+ import { VirtualJoystickInput } from ""./inputs/virtualJoystickInput"";
+-import { Store } from ""@Store/index"";
++import { Store, Mutations as StoreMutations } from ""@Store/index"";
+ import type { SceneController } from ""@Modules/scene/controllers"";
+ import { MouseSettingsController } from ""@Base/modules/avatar/controller/inputs/mouseSettings"";
+ 
+@@ -422,6 +422,10 @@ export class InputController extends ScriptComponent {
+     }
+ 
+     private _updateAvatar(delta : number) {
++        Store.commit(StoreMutations.MUTATE, {
++            property: ""interactions.isInteracting"",
++            value: false
++        });
+         switch (this._avatarState.state) {
+             case State.Idle:
+                 this._doIdle(delta);
+@@ -484,6 +488,10 @@ export class InputController extends ScriptComponent {
+     }
+ 
+     private _doPose(delta : number) {
++        Store.commit(StoreMutations.MUTATE, {
++            property: ""interactions.isInteracting"",
++            value: true
++        });
+         this._avatarState.duration += delta;
+         if (this._avatarState.duration > 0.5) {
+             if (this._avatarState.moveDir.x === 0 && this._avatarState.moveDir.z === 0) {"
+vircadia/vircadia-web,143,3caadea905f23c8ccaeff1ef617ddd5efc3d70ec,src/modules/avatar/controller/inputs/keyboardInput.ts,modified,1,3,4,"@@ -173,8 +173,6 @@ export class KeyboardInput implements IInputHandler {
+ 
+         // Sit.
+         if (evt.sourceEvent.code === Store.state.controls.keyboard.movement.sit?.keybind) {
+-            const sitDistanceLimit = 1.5;
+-
+             // Get the player's avatar mesh.
+             const avatarMesh = this._scene.meshes.find((mesh) => mesh.name === ""MyAvatar"");
+ 
+@@ -193,7 +191,7 @@ export class KeyboardInput implements IInputHandler {
+                     const distance = object.getAbsolutePosition()
+                         .subtract(avatarAbsolutePosition)
+                         .length();
+-                    if (distance <= sitDistanceLimit) {
++                    if (distance <= Store.state.interactions.interactionDistance) {
+                         distances.push([object, distance]);
+                     }
+                 });"
+vircadia/vircadia-web,143,3caadea905f23c8ccaeff1ef617ddd5efc3d70ec,src/modules/entity/components/components/model.ts,modified,2,1,3,"@@ -19,6 +19,7 @@ import { IModelEntity } from ""../../EntityInterfaces"";
+ import { ShapeType } from ""../../EntityProperties"";
+ import { NametagEntity } from ""@Modules/entity/entities"";
+ import { updateContentLoadingProgress } from ""@Modules/scene/LoadingScreen"";
++import { Store } from ""@Store/index"";
+ import Log from ""@Modules/debugging/log"";
+ 
+ const InteractiveModelTypes = [
+@@ -69,7 +70,7 @@ export class ModelComponent extends MeshComponent {
+                 // Add a nametag to any of the model's children if they match any of the InteractiveModelTypes.
+                 const defaultNametagHeight = 0.6;
+                 const nametagOffset = 0.25;
+-                const nametagPopDistance = 2.5;
++                const nametagPopDistance = Store.state.interactions.interactionDistance;
+                 const childNodes = this.mesh.getChildren(
+                     (node) => ""getBoundingInfo"" in node,
+                     false"
+vircadia/vircadia-web,143,3caadea905f23c8ccaeff1ef617ddd5efc3d70ec,src/store/index.ts,modified,10,0,10,"@@ -404,6 +404,11 @@ export interface IRootState {
+             invert: boolean,
+             sensitivity: number
+         }
++    },
++    // State of interactions with the player's avatar.
++    interactions: {
++        interactionDistance: number,
++        isInteracting: boolean
+     }
+ }
+ 
+@@ -594,6 +599,11 @@ const storeDefaults = {
+             invert: false,
+             sensitivity: 50
+         }
++    },
++    // State of interactions with the player's avatar.
++    interactions: {
++        interactionDistance: 1.5,
++        isInteracting: false
+     }
+ } as IRootState;
+ "

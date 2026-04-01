@@ -1,0 +1,304 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vizorvr/patches,861,9f37921,browser/scripts/application.js,modified,1,4,5,"@@ -2048,9 +2048,6 @@ Application.prototype.start = function() {
+ 			bootbox.hideAll()
+ 	})
+ 
+-	E2.dom.worldEditorButton.click(function() {
+-		E2.app.toggleWorldEditor()
+-	});
+ 
+ 	$('button#fullscreen').click(function() {
+ 		E2.app.toggleFullscreen()
+@@ -2281,7 +2278,7 @@ E2.InitialiseEngi = function(vr_devices, loadGraphUrl) {
+ 	E2.dom.presetsClose = $('#presets-close');
+ 	
+ 	E2.dom.dbg = $('#dbg');
+-	E2.dom.worldEditorButton = $('#worldEditor');
++
+ 	E2.dom.publishButton = $('#btn-publish');
+ 	E2.dom.play = $('#play');
+ 	E2.dom.play_i = $('i', E2.dom.play);"
+vizorvr/patches,861,9f37921,browser/scripts/ui-core-statestore.js,modified,21,6,27,"@@ -20,7 +20,7 @@ var UiState = function(persistentStorageRef, context) {
+ 	EventEmitter.apply(this, arguments)
+ 	var that = this
+ 
+-	var persistentStorageKey = 'uiState101'
++	var persistentStorageKey = 'uiState102'
+ 
+ 	var defineProperty = function(obj, prop, options, callback) {
+ 		options = _.extend({
+@@ -117,7 +117,7 @@ var UiState = function(persistentStorageRef, context) {
+ 			panel_chat : true,
+ 			panel_presets : true,
+ 			panel_assets : true,
+-			patch_editor : true
++			patch_editor : false
+ 		}
+ 	)
+ 
+@@ -130,25 +130,40 @@ var UiState = function(persistentStorageRef, context) {
+ 		}
+ 	})
+ 
++
+ 	defineProperty(this, 'mode', {
+-		get: function() { return this._internal.mode },
++		get: function() {
++			// return this._internal.mode
++			return (this.visibility.patch_editor) ? uiMode.program : uiMode.build
++		},
+ 		set: function(value) {
++			if (!this.visible) {	// nothing is visible, we expect patch editor or world editor
++				this.visible = true;
++				this.visibility.floating_panels = false;
++			}
+ 			if (value === this._internal.mode) return
+ 			this._internal.mode = value
+-			emitMain('mode', this.mode)
++			var cannotBuildFromCamera = this.viewCamera === uiViewCam.vr
++
+ 			switch (value) {
+ 				case uiMode.build:
+-					this.viewCamera = uiViewCam.world_editor
++					if (cannotBuildFromCamera) this.viewCamera = uiViewCam.world_editor
+ 					this.visibility.patch_editor = false
+ 					break
+ 				case uiMode.program:
+-					this.viewCamera = uiViewCam.vr
+ 					this.visibility.patch_editor = true
+ 					break
+ 			}
++			emitMain('mode', this.mode)
+ 		}
+ 	})
+ 
++	var notifyBuildMode = function() {
++		if (that.visibility._internal.patch_editor) this.mode = uiMode.program
++		else that.mode = uiMode.build
++	}
++	this.on('_internal:patch_editor', notifyBuildMode)
++
+ 	defineProperty(this, 'visible', {
+ 		get: function() {
+ 			return this._internal.visible && (this.visibility.floating_panels || this.visibility.patch_editor)"
+vizorvr/patches,861,9f37921,browser/scripts/ui-core.js,modified,31,27,58,"@@ -96,49 +96,55 @@ VizorUI.prototype.setupStateStoreEventListeners = function() {
+ 	var $assets = dom.assetsLib, $presets = dom.presetsLib, $chat = dom.chatWindow;
+ 	var $patch_editor = dom.canvas_parent;
+ 
++
+ 	state
+ 		.on('changed:mode', function(mode) {
+ 			var inBuildMode = mode === uiMode.build
+ 			var inProgramMode = !inBuildMode
++
+ 			dom.btnBuildMode
+ 				.toggleClass('ui_on', inBuildMode)
+ 				.toggleClass('ui_off', inProgramMode);
+ 			dom.btnProgramMode
+ 				.toggleClass('ui_on', inProgramMode)
+ 				.toggleClass('ui_off', inBuildMode);
+ 
+-			if (inProgramMode) {
+-				dom.tabObjects.addClass('inactive ui_off');
+-				dom.tabPresets.removeClass('inactive ui_off');
+-			} else {
+-				dom.tabObjects.removeClass('inactive ui_off');
+-				dom.tabPresets.addClass('inactive ui_off');
+-			}
++			// LIs
++			dom.tabObjects
++				.toggleClass('disabled', inProgramMode)
++				.toggleClass('ui_off', inProgramMode)
++				.toggleClass('ui_on', inBuildMode)
++
++			dom.tabPresets
++				.toggleClass('disabled', inBuildMode)
++				.toggleClass('ui_off', inBuildMode)
++				.toggleClass('ui_on', inProgramMode)
++
++			dom.btnMove.attr('disabled',!inBuildMode);
++			dom.btnScale.attr('disabled',!inBuildMode);
++			dom.btnRotate.attr('disabled',!inBuildMode);
++
++			if (inBuildMode) dom.tabObjects.find('a').trigger('click')
++			else if (inProgramMode) dom.tabPresets.find('a').trigger('click')
++
+ 		})
+ 		.emit('changed:mode', state.mode);
+ 
+ 	state
+ 		.on('changed:viewCamera', function(camera){
+-			var worldEditorActive = camera === uiViewCam.world_editor;
++			var worldEditorActive = (camera === uiViewCam.world_editor);
+ 			dom.btnEditorCam.parent().toggleClass('active', worldEditorActive);
+ 			dom.btnVRCam.parent().toggleClass('active', !worldEditorActive);
+ 			E2.app.toggleWorldEditor(worldEditorActive);
+-
+-			dom.btnMove.attr('disabled',!worldEditorActive);
+-			dom.btnScale.attr('disabled',!worldEditorActive);
+-			dom.btnRotate.attr('disabled',!worldEditorActive);
+-
+ 		})
+ 		.emit('changed:viewCamera', state.viewCamera);
+ 
++	// nothing UI for top-level 'changed:visible' to process
++
+ 	state
+-		.on('changed:visible', function(visible){
++		.on('changed:visibility:floating_panels', function(visible){
+ 			that.dom.btnHideAll.toggleClass('ui_off', visible);	// inverse
+ 		})
+-		.emit('changed:visible', state.visible);
+-
+-	state
+-		.on('changed:visibility:floating_panels', function(){}) // stub, if a button exists
+ 		.emit('changed:visibility:floating_panels', visibility.floating_panels);
+ 
+ 
+@@ -419,15 +425,13 @@ VizorUI.prototype.onKeyDown = function(e) {
+ 		case (uiKeys.focusPresetSearchAlt):	// fallthrough
+ 		case (uiKeys.focusPresetSearch):
+ 			state.visibility.panel_presets = true;
+-			setTimeout(function(){
+-				if (that.isInProgramMode() || that.state.visibility.patch_editor) {
+-					that.dom.tabPresets.find('a').trigger('click')
+-					that.dom.presets_list.find('.searchbox input').focus().select();
+-				} else {
+-					that.dom.tabObjects.find('a').trigger('click')
+-					that.dom.objectsList.find('.searchbox input').focus().select();
+-				}
+-			}, 100);
++			if (that.isInProgramMode()) {
++				that.dom.tabPresets.find('a').trigger('click')
++				that.dom.presets_list.find('.searchbox input').focus().select();
++			} else {
++				that.dom.tabObjects.find('a').trigger('click')
++				that.dom.objectsList.find('.searchbox input').focus().select();
++			}
+ 			e.preventDefault();
+ 			e.stopPropagation();
+ 			break;"
+vizorvr/patches,861,9f37921,browser/scripts/ui.js,modified,18,23,41,"@@ -23,7 +23,12 @@ VizorUI.prototype.setupEventHandlers = function(e2, dom) {
+ 
+ 	var makeTabHandler = function(panelStateKey) {
+ 		return function(e) {
+-			var $li = jQuery(e.currentTarget).parent();
++			if (e) {
++				e.preventDefault();
++			}
++			var $a = jQuery(e.currentTarget);
++			var $li = $a.parent();	// e.g. dom.tabObjects, dom.tabPresets, etc.
++			if ($li.hasClass('disabled')) return true;
+ 			var s = this.state.panelStates[panelStateKey];
+ 			var stateChanged = false;
+ 			if (s.collapsed) {
+@@ -36,16 +41,13 @@ VizorUI.prototype.setupEventHandlers = function(e2, dom) {
+ 			}
+ 			if (stateChanged)
+ 				this.state.panelStates[panelStateKey] = s;
+-			if (e) {
+-				e.preventDefault();
+-			}
+ 			return false;
+ 		}.bind(that);
+ 	};
+ 
+-	jQuery('ul.nav-tabs a', dom.chatWindow).click(makeTabHandler('chat'));
+-	jQuery('ul.nav-tabs a', dom.presetsLib).click(makeTabHandler('presets'));
+-	jQuery('ul.nav-tabs a', dom.assetsLib).click(makeTabHandler('assets'));
++	dom.chatWindow.find('ul.nav-tabs a').click(makeTabHandler('chat'));
++	dom.presetsLib.find('ul.nav-tabs a').click(makeTabHandler('presets'));
++	if (dom.assetsLib) dom.assetsLib.find('ul.nav-tabs a').click(makeTabHandler('assets'));
+ 
+ 	var makeToggleHandler = function(panelStateKey) {
+ 		return function(e) {
+@@ -263,7 +265,7 @@ VizorUI.prototype.onSearchResultsChange = function() {
+ 
+ VizorUI.prototype.onBtnHideAllClicked = function(e) {
+ 	e.preventDefault();
+-	this.toggleUILayer();
++	this.toggleFloatingPanels();
+ 	return false;
+ }
+ 
+@@ -304,15 +306,15 @@ VizorUI.prototype.toggleUILayer = function() {
+ 	this.state.visible = !this.state.visible;
+ }
+ 
+-VizorUI.prototype.enterEditorView = function() {
+-	if ((this.state.viewCamera === uiViewCam.world_editor) && E2.app.worldEditor.isActive()) return false;
+-	E2.app.toggleWorldEditor(true);
+-	return false;
++VizorUI.prototype.enterEditorView = function(e) {
++	this.state.viewCamera = uiViewCam.world_editor
++	if (e) e.preventDefault()
++	return true;
+ }
+-VizorUI.prototype.enterVRView = function() {
+-	if ((this.state.viewCamera === uiViewCam.vr) && !E2.app.worldEditor.isActive()) return false;
+-	E2.app.toggleWorldEditor(false);
+-	return false;
++VizorUI.prototype.enterVRView = function(e) {
++	this.state.viewCamera = uiViewCam.vr
++	if (e) e.preventDefault()
++	return true;
+ }
+ 
+ VizorUI.prototype.onChatResize = function() {
+@@ -488,17 +490,10 @@ VizorUI.prototype.openPresetSaveDialog = function(serializedGraph) {
+ 
+ VizorUI.prototype.setModeBuild = function() {
+ 	this.state.mode = uiMode.build
+-	setTimeout(function(){
+-		this.dom.tabObjects.find('a').trigger('click');
+-	}.bind(this), 100);
+-
+ 	return true;
+ };
+ VizorUI.prototype.setModeProgram = function() {
+ 	this.state.mode = uiMode.program
+-	setTimeout(function(){
+-		this.dom.tabPresets.find('a').trigger('click');
+-	}.bind(this), 100);
+ 	return true;
+ };
+ "
+vizorvr/patches,861,9f37921,views/editor.handlebars,modified,8,8,16,"@@ -91,19 +91,19 @@
+ 			<button class=""toggle-button"" id=""presets-toggle"" type=""button"">
+ 				<svg class=""icon-arrow-vertical""><use xlink:href=""#icon-arrow-vertical""></use></svg>
+ 			</button>
+-			<ul class=""nav nav-tabs"" role=""tablist"">
+-				<li class=""active""><a href=""#objects"" role=""tab"" data-toggle=""tab"">Objects</a></li>
+-				<li><a href=""#presets"" role=""tab"" data-toggle=""tab"">Patches</a></li>
+-				{{!-- <li><a href=""#graph"" role=""tab"" data-toggle=""tab"">Tree</a></li> --}}
++			<ul class=""nav nav-tabs"">
++				<li><a href=""#objects"">Objects</a></li>
++				<li><a href=""#presets"">Patches</a></li>
++				{{!-- <li><a href=""#graph"">Tree</a></li> --}}
+ 			</ul>
+ 			<button class=""close-button"" id=""presets-close"" type=""button"">
+ 				<svg class=""icon-assets-close""><use xlink:href=""#icon-close""></use></svg>
+ 			</button>
+ 		</div>
+ 		<div class=""tab-content"">
+-			<div role=""tabpanel"" class=""tab-pane active"" id=""presets"">
++			<div class=""tab-pane active"" id=""presets"">
+ 			</div>
+-			<div role=""tabpanel"" class=""tab-pane"" id=""objects"">
++			<div class=""tab-pane"" id=""objects"">
+ 			</div>
+ 			{{!-- <div role=""tabpanel"" class=""tab-pane"" id=""graph"">
+ 				<div class=""cell"" id=""structure""></div>
+@@ -120,10 +120,10 @@
+ 		</button>
+ 		<ul class=""nav nav-tabs"" role=""tablist"">
+ 			<li class=""active"">
+-				<a data-toggle=""tab"" role=""tab"" href=""#chatTab"" id=""chatTabBtn"">Chat</a>
++				<a href=""#chatTab"" id=""chatTabBtn"">Chat</a>
+ 			</li>
+ 			<li>
+-				<a data-toggle=""tab"" role=""tab"" href=""#peopleTab"" id=""peopleTabBtn"">Users</a>
++				<a href=""#peopleTab"" id=""peopleTabBtn"">Users</a>
+ 			</li>
+ 		</ul>
+ 		<button class=""close-button"" id=""chat-close"" type=""button"">"

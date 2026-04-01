@@ -1,0 +1,69 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch,gpt_bug_detection
+doodlum/skyrim-community-shaders,162,f52563bbee37af1c7b80f88719cb5531019f4d5c,include/PCH.h,modified,8,0,8,"@@ -45,6 +45,14 @@ namespace stl
+ 		T::func = trampoline.write_call<5>(a_src, T::thunk);
+ 	}
+ 
++	template <class T>
++	void write_thunk_call_6(std::uintptr_t a_src)
++	{
++		SKSE::AllocTrampoline(14);
++		auto& trampoline = SKSE::GetTrampoline();
++		T::func = *(uintptr_t*)trampoline.write_call<6>(a_src, T::thunk);
++	}
++
+ 	template <class F, size_t index, class T>
+ 	void write_vfunc()
+ 	{","{""has_bug"": false, ""bugs"": []}"
+doodlum/skyrim-community-shaders,162,f52563bbee37af1c7b80f88719cb5531019f4d5c,src/Hooks.cpp,modified,30,0,30,"@@ -309,6 +309,33 @@ namespace Hooks
+ 		static inline REL::Relocation<decltype(thunk)> func;
+ 	};
+ 
++	struct WndProcHandler_Hook
++	{
++		static LRESULT thunk(HWND a_hwnd, UINT a_msg, WPARAM a_wParam, LPARAM a_lParam)
++		{
++			if (a_msg == WM_KILLFOCUS) {
++				Menu::GetSingleton()->OnFocusLost();
++				auto& io = ImGui::GetIO();
++				io.ClearInputKeys();
++				io.ClearEventsQueue();
++			}
++			return func(a_hwnd, a_msg, a_wParam, a_lParam);
++		}
++		static inline REL::Relocation<decltype(thunk)> func;
++	};
++
++	struct RegisterClassA_Hook
++	{
++		static ATOM thunk(WNDCLASSA* a_wndClass)
++		{
++			WndProcHandler_Hook::func = reinterpret_cast<uintptr_t>(a_wndClass->lpfnWndProc);
++			a_wndClass->lpfnWndProc = &WndProcHandler_Hook::thunk;
++
++			return func(a_wndClass);
++		}
++		static inline REL::Relocation<decltype(thunk)> func;
++	};
++
+ 	void Install()
+ 	{
+ 		SKSE::AllocTrampoline(14);
+@@ -330,6 +357,9 @@ namespace Hooks
+ 		stl::write_vfunc<0x2, BSImagespaceShaderISSAOCompositeFog_SetupTechnique>(RE::VTABLE_BSImagespaceShaderISSAOCompositeFog[0]);
+ 		stl::write_vfunc<0x2, BSImagespaceShaderISSAOCompositeSAOFog_SetupTechnique>(RE::VTABLE_BSImagespaceShaderISSAOCompositeSAOFog[0]);
+ 
++		logger::info(""Hooking WndProcHandler"");
++		stl::write_thunk_call_6<RegisterClassA_Hook>(REL::VariantID(75591, 77226, 0xDC4B90).address() + REL::VariantOffset(0x8E, 0x15C, 0x99).offset());
++
+ 		//logger::info(""Hooking D3D11CreateDeviceAndSwapChain"");
+ 		//*(FARPROC*)&ptrD3D11CreateDeviceAndSwapChain = GetProcAddress(GetModuleHandleA(""d3d11.dll""), ""D3D11CreateDeviceAndSwapChain"");
+ 		//SKSE::PatchIAT(hk_D3D11CreateDeviceAndSwapChain, ""d3d11.dll"", ""D3D11CreateDeviceAndSwapChain"");","{""has_bug"": true, ""bugs"": [{""line_start"": 30, ""line_end"": 30, ""description"": ""Memory leak: allocated memory for dxbcData is not freed if fwrite fails."", ""buggy_code"": ""uint8_t* dxbcData = new uint8_t[bytecode.second];""}, {""line_start"": 56, ""line_end"": 56, ""description"": ""Memory leak: allocated memory for dxbcData is not freed if fwrite fails."", ""buggy_code"": ""uint8_t* dxbcData = new uint8_t[bytecode.second];""}, {""line_start"": 89, ""line_end"": 89, ""description"": ""Potential null pointer dereference: entry->shader may be null, leading to undefined behavior when calling GetShaderBytecode."", ""buggy_code"": ""auto& bytecode = GetShaderBytecode(entry->shader);""}, {""line_start"": 102, ""line_end"": 102, ""description"": ""Potential null pointer dereference: entry->shader may be null, leading to undefined behavior when calling GetShaderBytecode."", ""buggy_code"": ""auto& bytecode = GetShaderBytecode(entry->shader);""}, {""line_start"": 114, ""line_end"": 114, ""description"": ""Typo in parameter name: 'skipPIxelShader' should be 'skipPixelShader' for consistency."", ""buggy_code"": ""bool hk_BSShader_BeginTechnique(RE::BSShader* shader, int vertexDescriptor, int pixelDescriptor, bool skipPIxelShader);""}]}"
+doodlum/skyrim-community-shaders,162,f52563bbee37af1c7b80f88719cb5531019f4d5c,src/Menu.cpp,modified,1,1,2,"@@ -944,7 +944,7 @@ void Menu::addToEventQueue(KeyEvent e)
+ 	_keyEventQueue.emplace_back(e);
+ }
+ 
+-void Menu::OnFocusLost()  //todo implement wndproc hook to catch WM_KILLFOCUS
++void Menu::OnFocusLost()
+ {
+ 	std::unique_lock<std::shared_mutex> mutex(_inputEventMutex);
+ 	_keyEventQueue.clear();","{""has_bug"": true, ""bugs"": [{""line_start"": 118, ""line_end"": 118, ""description"": ""Potential null reference issue when calling GetDesc on swapchain. If swapchain is null, this will lead to undefined behavior."", ""buggy_code"": ""swapchain->GetDesc(&desc);""}, {""line_start"": 66, ""line_end"": 66, ""description"": ""Global variable IsEnabled is not initialized properly. It should be initialized in the constructor or a dedicated initialization function."", ""buggy_code"": ""bool IsEnabled = false;""}, {""line_start"": 110, ""line_end"": 110, ""description"": ""The io variable is being used without checking if ImGui context is created successfully. If CreateContext fails, this will lead to undefined behavior."", ""buggy_code"": ""auto& imgui_io = ImGui::GetIO();""}, {""line_start"": 124, ""line_end"": 124, ""description"": ""Potential type mismatch if fontScale is not a valid exponent for exp2. This could lead to unexpected scaling behavior."", ""buggy_code"": ""float trueScale = exp2(fontScale);""}, {""line_start"": 199, ""line_end"": 199, ""description"": ""The button for toggling error messages does not handle the case where shaderCache might be null or uninitialized, leading to potential crashes."", ""buggy_code"": ""shaderCache.ToggleErrorMessages();""}]}"

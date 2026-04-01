@@ -1,0 +1,82 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+ExtendRealityLtd/VRTK,985,1dd32c6,Assets/VRTK/Scripts/Internal/VRTK_RoomExtender_PlayAreaGizmo.cs,modified,5,1,6,"@@ -41,8 +41,12 @@ protected virtual void OnDrawGizmosSelected()
+ 
+         private void DrawWireframe()
+         {
+-            Vector3[] vertices = (playArea != null ? VRTK_SDK_Bridge.GetPlayAreaVertices(playArea.gameObject) : new Vector3[0]);
++            if (playArea == null || roomExtender == null)
++            {
++                return;
++            }
+ 
++            var vertices = VRTK_SDK_Bridge.GetPlayAreaVertices(playArea.gameObject);
+             if (vertices == null || vertices.Length == 0)
+             {
+                 return;"
+ExtendRealityLtd/VRTK,985,1dd32c6,Assets/VRTK/Scripts/Utilities/VRTK_SDKManager.cs,modified,20,11,31,"@@ -3,7 +3,6 @@ namespace VRTK
+ {
+     using UnityEngine;
+ #if UNITY_EDITOR
+-    using UnityEngine.SceneManagement;
+     using UnityEditor;
+     using UnityEditor.Callbacks;
+ #endif
+@@ -60,7 +59,23 @@ public class VRTK_SDKManager : MonoBehaviour
+         /// <summary>
+         /// The singleton instance to access the SDK Manager variables from.
+         /// </summary>
+-        public static VRTK_SDKManager instance;
++        public static VRTK_SDKManager instance
++        {
++            get
++            {
++                if (_instance == null)
++                {
++                    var sdkManager = FindObjectOfType<VRTK_SDKManager>();
++                    if (sdkManager)
++                    {
++                        sdkManager.CreateInstance();
++                    }
++                }
++
++                return _instance;
++            }
++        }
++        private static VRTK_SDKManager _instance;
+ 
+         [Tooltip(""If this is true then the instance of the SDK Manager won't be destroyed on every scene load."")]
+         public bool persistOnLoad;
+@@ -594,12 +609,6 @@ private static void AutoManageScriptingDefineSymbolsAndPopulateObjectReferences(
+ 
+             RemoveLegacyScriptingDefineSymbols();
+ 
+-            var sdkManager = FindObjectOfType<VRTK_SDKManager>();
+-            if (sdkManager)
+-            {
+-                sdkManager.CreateInstance();
+-            }
+-
+             if (instance != null && !instance.ManageScriptingDefineSymbols(false, false))
+             {
+                 instance.PopulateObjectReferences(false);
+@@ -664,9 +673,9 @@ private void SetupControllers()
+ 
+         private void CreateInstance()
+         {
+-            if (instance == null)
++            if (_instance == null)
+             {
+-                instance = this;
++                _instance = this;
+ 
+                 string sdkErrorDescriptions = string.Join(""\n- "", GetSimplifiedSDKErrorDescriptions());
+                 if (!string.IsNullOrEmpty(sdkErrorDescriptions))
+@@ -680,7 +689,7 @@ private void CreateInstance()
+                     DontDestroyOnLoad(gameObject);
+                 }
+             }
+-            else if (instance != this)
++            else if (_instance != this)
+             {
+                 Destroy(gameObject);
+             }"

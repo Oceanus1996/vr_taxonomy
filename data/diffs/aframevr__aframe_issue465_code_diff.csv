@@ -1,0 +1,294 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe,465,b6f17deba6279ca3371e2e69eea62d85b6092c45,package.json,modified,2,1,3,"@@ -24,6 +24,7 @@
+     ""karma"": ""^0.13.15"",
+     ""karma-browserify"": ""^4.4.0"",
+     ""karma-chai-shallow-deep-equal"": ""0.0.4"",
++    ""karma-env-preprocessor"": ""^0.1.1"",
+     ""karma-firefox-launcher"": ""^0.1.6"",
+     ""karma-mocha"": ""^0.2.0"",
+     ""karma-mocha-reporter"": ""^1.1.0"",
+@@ -48,7 +49,7 @@
+     ""gh-pages"": ""npm run ghpages"",
+     ""release"": ""npm login && npm version patch --minor && npm publish"",
+     ""test"": ""karma start ./tests/karma.conf.js"",
+-    ""test:ci"": ""karma start ./tests/karma.conf.js --single-run"",
++    ""test:ci"": ""TEST_ENV=ci karma start ./tests/karma.conf.js --single-run"",
+     ""lint"": ""semistandard -v $(git ls-files '*.js') | snazzy"",
+     ""precommit"": ""npm run lint""
+   },"
+aframevr/aframe,465,b6f17deba6279ca3371e2e69eea62d85b6092c45,src/core/vr-object.js,modified,9,1,10,"@@ -14,6 +14,9 @@ var VRUtils = require('../vr-utils');
+  * a position, rotation, and scale.
+  * In the entity-component system, entities are just a container of components.
+  *
++ * For convenience of inheriting components, the scene element inherits from
++ * this prototype. When necessary, it differentiates itself by setting
++ * `this.isScene`.
+  *
+  * @namespace Entity
+  * @member {object} components - entity's currently initialized components.
+@@ -79,9 +82,14 @@ var proto = {
+     writable: window.debug
+   },
+ 
++  /**
++   * Tell parent to remove this element's object3D from its object3D.
++   * Do not call on scene element because that will cause a call to
++   * document.body.remove().
++   */
+   detachedCallback: {
+     value: function () {
+-      if (!this.parentEl) { return; }
++      if (!this.parentEl || this.isScene) { return; }
+       this.parentEl.remove(this);
+     },
+     writable: window.debug"
+aframevr/aframe,465,b6f17deba6279ca3371e2e69eea62d85b6092c45,src/core/vr-scene.js,modified,4,1,5,"@@ -45,6 +45,7 @@ var VRScene = module.exports = registerElement('vr-scene', {
+         this.insideLoader = false;
+         this.isScene = true;
+         this.object3D = VRScene.scene || new THREE.Scene();
++        VRScene.scene = this.object3D;
+         this.vrButton = null;
+       }
+     },
+@@ -88,6 +89,7 @@ var VRScene = module.exports = registerElement('vr-scene', {
+     detachedCallback: {
+       value: function () {
+         window.cancelAnimationFrame(this.animationFrameID);
++        this.animationFrameID = null;
+       }
+     },
+ 
+@@ -448,7 +450,8 @@ var VRScene = module.exports = registerElement('vr-scene', {
+         renderer.sortObjects = false;
+         VRScene.renderer = renderer;
+         this.stereoRenderer = new THREE.VREffect(renderer);
+-      }
++      },
++      writable: window.debug
+     },
+ 
+     /**"
+aframevr/aframe,465,b6f17deba6279ca3371e2e69eea62d85b6092c45,tests/__init.test.js,modified,4,2,6,"@@ -1,25 +1,27 @@
+ /* global sinon, setup, teardown */
+ 
+ /**
+- * __init.test.js is run before every test suite.
++ * __init.test.js is run before every test case.
+  */
+ window.debug = true;
+ 
+ var VRScene = require('core/vr-scene');
+ 
+ setup(function () {
+   this.sinon = sinon.sandbox.create();
++  // Stub to not create a WebGL context since Travis CI runs headless.
+   this.sinon.stub(VRScene.prototype, 'attachedCallback');
+ });
+ 
+ teardown(function () {
+   // Clean up any attached elements.
+-  ['vr-assets', 'vr-scene'].forEach(function (tagName) {
++  ['canvas', 'vr-assets', 'vr-scene'].forEach(function (tagName) {
+     var els = document.querySelectorAll(tagName);
+     for (var i = 0; i < els.length; i++) {
+       els[i].parentNode.removeChild(els[i]);
+     }
+   });
++  VRScene.scene = null;
+ 
+   this.sinon.restore();
+ });"
+aframevr/aframe,465,b6f17deba6279ca3371e2e69eea62d85b6092c45,tests/core/vr-scene.test.js,added,136,0,136,"@@ -0,0 +1,136 @@
++/* global assert, process, setup, suite, test */
++'use strict';
++var helpers = require('../helpers.js');
++var VRScene = require('core/vr-scene');
++
++/**
++ * Tests in this suite should not involve WebGL contexts or renderer.
++ * They operate with the assumption that attachedCallback is stubbed.
++ *
++ * Add tests that involve the renderer to the suite at the bottom that is meant
++ * to only be run locally since WebGL contexts break CI due to the headless
++ * environment.
++ */
++suite('vr-scene (without renderer)', function () {
++  setup(function () {
++    var el = this.el = document.createElement('vr-scene');
++    document.body.appendChild(el);
++  });
++
++  suite('createdCallback', function () {
++    test('initializes scene object', function () {
++      assert.equal(this.el.object3D.type, 'Scene');
++    });
++
++    test('reuses scene object', function () {
++      var anotherEl = document.createElement('vr-scene');
++      document.body.appendChild(anotherEl);
++      assert.equal(anotherEl.object3D.uuid, this.el.object3D.uuid);
++    });
++  });
++
++  suite('attachFullscreenListeners', function (done) {
++    test('does not break', function (done) {
++      this.el.attachFullscreenListeners();
++      process.nextTick(function () {
++        done();
++      });
++    });
++  });
++
++  suite('attachMessageListeners', function () {
++    test('does not break', function (done) {
++      this.el.attachMessageListeners();
++      process.nextTick(function () {
++        done();
++      });
++    });
++  });
++
++  suite('setupCanvas', function () {
++    test('adds canvas', function (done) {
++      assert.notOk(document.querySelector('canvas'));
++      this.el.setupCanvas();
++      process.nextTick(function () {
++        assert.ok(document.querySelector('canvas'));
++        done();
++      });
++    });
++  });
++
++  suite('setupDefaultLights', function () {
++    test('adds lights to scene', function (done) {
++      var el = this.el;
++      assert.notOk(document.querySelectorAll('[light]').length);
++      el.setupDefaultLights();
++      process.nextTick(function () {
++        assert.ok(document.querySelectorAll('[light]').length);
++        done();
++      });
++    });
++
++    test('removes default lights when more lights are added', function (done) {
++      var el = this.el;
++      var light = document.createElement('vr-object');
++      light.setAttribute('light', '');
++
++      el.setupDefaultLights();
++      process.nextTick(function () {
++        el.appendChild(light);
++        setTimeout(function () {
++          assert.notOk(
++            document.querySelectorAll('[data-aframe-default-light]').length);
++          done();
++        });
++      });
++    });
++  });
++});
++
++/**
++ * Skipped on CI using environment variable defined in the npm test script.
++ */
++helpers.getSkipCISuite()('vr-scene (with renderer)', function () {
++  setup(function (done) {
++    var el;
++    var self = this;
++    VRScene.prototype.attachedCallback.restore();
++    process.nextTick(function () {
++      el = self.el = document.createElement('vr-scene');
++      document.body.appendChild(el);
++      el.addEventListener('loaded', function () {
++        done();
++      });
++    });
++  });
++
++  suite('attachedCallback', function () {
++    test('sets up camera', function () {
++      assert.equal(document.querySelectorAll('[camera]').length, 1);
++    });
++
++    test('sets up meta tags', function () {
++      assert.ok(document.querySelector('meta[name=""viewport""]'));
++    });
++
++    test('sets up renderer', function () {
++      assert.ok(this.el.renderer);
++    });
++  });
++
++  suite('detachedCallback', function () {
++    test('cancels request animation frame', function (done) {
++      var el = this.el;
++      var animationFrameID = el.animationFrameID;
++      var cancelSpy = this.sinon.spy(window, 'cancelAnimationFrame');
++
++      assert.ok(el.animationFrameID);
++      el.parentNode.removeChild(el);
++      process.nextTick(function () {
++        assert.notOk(el.animationFrameID);
++        assert.ok(cancelSpy.calledWith(animationFrameID));
++        done();
++      });
++    });
++  });
++});"
+aframevr/aframe,465,b6f17deba6279ca3371e2e69eea62d85b6092c45,tests/helpers.js,modified,12,1,13,"@@ -1,4 +1,4 @@
+-/* Test helpers. */
++/* global suite */
+ 
+ /**
+  * Helper method to create a scene, create an object, add object to scene,
+@@ -37,3 +37,14 @@ module.exports.mixinFactory = function (id, obj) {
+ 
+   return mixinEl;
+ };
++
++/**
++ * Test that is only run locally and is skipped on CI.
++ */
++module.exports.getSkipCISuite = function () {
++  if (window.__env__.TEST_ENV === 'ci') {
++    return suite.skip;
++  } else {
++    return suite;
++  }
++};"
+aframevr/aframe,465,b6f17deba6279ca3371e2e69eea62d85b6092c45,tests/karma.conf.js,modified,9,6,15,"@@ -1,8 +1,7 @@
+ 'use strict';
+ module.exports = function (config) {
+   config.set({
+-    frameworks: ['mocha', 'sinon-chai', 'chai-shallow-deep-equal',
+-                 'browserify'],
++    basePath: '../',
+     browserify: {
+       debug: true,
+       paths: ['src']
+@@ -14,17 +13,21 @@ module.exports = function (config) {
+         prefs: { /* empty */ }
+       }
+     },
+-    reporters: ['mocha'],
+     client: {
+       captureConsole: true,
+       mocha: {'ui': 'tdd'}
+     },
+-    basePath: '../',
++    envPreprocessor: [
++      'TEST_ENV'
++    ],
+     files: [
+       'tests/**/*.test.js'
+     ],
++    frameworks: ['mocha', 'sinon-chai', 'chai-shallow-deep-equal',
++                 'browserify'],
+     preprocessors: {
+-      'tests/**/*.js': ['browserify']
+-    }
++      'tests/**/*.js': ['browserify', 'env']
++    },
++    reporters: ['mocha']
+   });
+ };"

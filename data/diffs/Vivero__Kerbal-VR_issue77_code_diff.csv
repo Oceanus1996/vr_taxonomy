@@ -1,0 +1,1214 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+Vivero/Kerbal-VR,77,1f474b0,KerbalVR/Assets/AssetBundles/kerbalvr.ksp,renamed,0,0,0,
+Vivero/Kerbal-VR,77,1f474b0,KerbalVR/Assets/Configs/KerbalVR.cfg,renamed,0,0,0,
+Vivero/Kerbal-VR,77,1f474b0,KerbalVR/Assets/Props/Misc/Primitives/Primitive_BOX_Beveled_Black.cfg,added,10,0,10,"@@ -0,0 +1,10 @@
++PROP
++{
++    name = Primitive_BOX_Beveled_Black
++
++    MODEL
++    {
++        model = KerbalVR/Assets/Props/Misc/Primitives/Primitive_BOX_Beveled
++        texture = Primitive_Black,KerbalVR/Assets/Props/Misc/Primitives/Primitive_Black
++    }
++}"
+Vivero/Kerbal-VR,77,1f474b0,KerbalVR/Assets/Props/Misc/Primitives/Primitive_BOX_Beveled_BrushedMetal.cfg,removed,0,11,11,"@@ -1,11 +0,0 @@
+-PROP
+-{
+-	
+-    name = Primitive_BOX_Beveled_BrushedMetal
+-    
+-	MODEL
+-	{
+-		model = KerbalVR/Assets/Props/Misc/Primitives/Primitive_BOX_Beveled
+-		texture = Primitive_Black,KerbalVR/Assets/Props/Misc/Primitives/Primitive_BrushedMetal
+-	}
+-}
+\ No newline at end of file"
+Vivero/Kerbal-VR,77,1f474b0,KerbalVR/Assets/Props/Misc/Primitives/Primitive_Black.png,added,0,0,0,
+Vivero/Kerbal-VR,77,1f474b0,KerbalVR/Assets/Props/Misc/Primitives/Primitive_BrushedMetal.png,removed,0,0,0,
+Vivero/Kerbal-VR,77,1f474b0,KerbalVR/Assets/Settings.json,added,4,0,4,"@@ -0,0 +1,4 @@
++{
++    ""initOpenVrAtStartup"": true,
++    ""swapYawRollControls"": false
++}"
+Vivero/Kerbal-VR,77,1f474b0,KerbalVR/Assets/Textures/app_button_logo.png,renamed,0,0,0,
+Vivero/Kerbal-VR,77,1f474b0,KerbalVR/Components/KVR_AvionicsComputer.cs,modified,1,2,3,"@@ -15,8 +15,7 @@ public class KVR_AvionicsComputer : MonoBehaviour
+         private Events.Action precisionModeUpdatedAction;
+ 
+         void Awake() {
+-            Utils.Log(""KVR_AvionicsComputer booting up."");
+-
++            // start emitting signals to components
+             outputSignalsCoroutine = StartCoroutine(OutputSignals());
+ 
+             stageUpdatedAction = KerbalVR.Events.AvionicsIntAction(""stage"", OnStageInput);"
+Vivero/Kerbal-VR,77,1f474b0,KerbalVR/Components/KVR_Cover.cs,modified,1,1,2,"@@ -56,7 +56,7 @@ public KVR_Cover(InternalProp prop, ConfigNode configuration) {
+             try {
+                 SoundEffect = ConfigUtils.SetupAudioClip(prop, configuration, ""sound"");
+             } catch (Exception e) {
+-                Utils.LogWarning(e.ToString());
++                // specifying a sound should be optional, so catch the error but don't print any warnings.
+             }
+ 
+             // set initial state"
+Vivero/Kerbal-VR,77,1f474b0,KerbalVR/KerbalVR.csproj,modified,3,2,5,"@@ -56,6 +56,7 @@
+     <Compile Include=""Components\KVR_Switch.cs"" />
+     <Compile Include=""Components\KVR_SwitchTwoState.cs"" />
+     <Compile Include=""Components\KVR_SwitchThreeState.cs"" />
++    <Compile Include=""KerbalVR_Configuration.cs"" />
+     <Compile Include=""KerbalVR_Core.cs"" />
+     <Compile Include=""KerbalVR_AppGUI.cs"" />
+     <Compile Include=""KerbalVR_AssetLoader.cs"" />
+@@ -119,8 +120,8 @@ robocopy ""$(ProjectDir)lib"" ""$(TargetDir)\rel\GameData\KerbalVR\openvr"" /E
+ robocopy ""$(ProjectDir)Assets"" ""$(TargetDir)\rel\GameData\KerbalVR\Assets"" /E
+ 
+ :: Copy release into KSP directory
+-if EXIST ""C:\KSP_win64\"" (
+-  robocopy ""$(TargetDir)\rel\GameData\KerbalVR"" ""C:\KSP_win64\GameData\KerbalVR"" /E
++if EXIST ""C:\KSP_dev\"" (
++  robocopy ""$(TargetDir)\rel\GameData\KerbalVR"" ""C:\KSP_dev\GameData\KerbalVR"" /E
+ )
+ 
+ :: Do NOT make robocopy the last command here. It gives a ""bad"" return value."
+Vivero/Kerbal-VR,77,1f474b0,KerbalVR/KerbalVR_AppGUI.cs,modified,25,5,30,"@@ -1,7 +1,8 @@
+ using UnityEngine;
+ using KSP.UI.Screens;
+-using System.Text.RegularExpressions;
+ using System;
++using System.IO;
++using System.Text.RegularExpressions;
+ 
+ namespace KerbalVR
+ {
+@@ -23,7 +24,8 @@ public void UpdateGUI() {
+                 GUILayout.Label(parameterName + "":"", HighLogic.Skin.label);
+                 valueStr = GUILayout.TextField(valueStr, HighLogic.Skin.textField);
+                 if (GUI.changed) {
+-                    bool parseSuccess = System.Single.TryParse(valueStr, out float updatedValue);
++                    float updatedValue;
++                    bool parseSuccess = System.Single.TryParse(valueStr, out updatedValue);
+                     if (parseSuccess) {
+                         parameterCallback(updatedValue);
+                     }
+@@ -35,7 +37,8 @@ public void UpdateGUI() {
+         #region Constants
+         public static string AppButtonLogo {
+             get {
+-                return Globals.KERBALVR_ASSETS_DIR + ""app_button_logo"";
++                string path = Path.Combine(Globals.KERBALVR_TEXTURES_DIR, ""app_button_logo"");
++                return path.Replace(""\\"", ""/"");
+             }
+         }
+ 
+@@ -78,7 +81,7 @@ public static bool SceneAllowsAppGUI {
+         private bool appButtonGuiActive = false;
+         private bool appButtonGuiActiveLastState = false;
+ 
+-        private Rect appGuiWindowRect = new Rect(Screen.width / 4, Screen.height / 4, 160, 100);
++        private Rect appGuiWindowRect = new Rect(Screen.width / 4, Screen.height / 4, 200, 100);
+ 
+         // text fields
+         private string worldScaleStr;
+@@ -258,7 +261,8 @@ private void GenerateGUI(int windowId) {
+             GUILayout.Label(""World Scale:"", HighLogic.Skin.label);
+             worldScaleStr = GUILayout.TextField(worldScaleStr, HighLogic.Skin.textField);
+             if (GUI.changed) {
+-                bool parseSuccess = System.Single.TryParse(worldScaleStr, out float worldScale);
++                float worldScale;
++                bool parseSuccess = System.Single.TryParse(worldScaleStr, out worldScale);
+                 if (parseSuccess &&
+                     worldScale >= 0.1 &&
+                     worldScale <= 10) {
+@@ -267,6 +271,22 @@ private void GenerateGUI(int windowId) {
+             }
+             GUILayout.EndHorizontal();
+ 
++            // init at startup toggle
++            GUILayout.BeginHorizontal();
++            bool initOpenVrAtStartup = GUILayout.Toggle(Configuration.Instance.InitOpenVrAtStartup, ""Init OpenVR at startup"", HighLogic.Skin.toggle);
++            if (GUI.changed) {
++                Configuration.Instance.InitOpenVrAtStartup = initOpenVrAtStartup;
++            }
++            GUILayout.EndHorizontal();
++
++            // swap control stick yaw and roll
++            GUILayout.BeginHorizontal();
++            bool swapYawRollControls = GUILayout.Toggle(Configuration.Instance.SwapYawRollControls, ""Swap Yaw/Roll Controls"", HighLogic.Skin.toggle);
++            if (GUI.changed) {
++                Configuration.Instance.SwapYawRollControls = swapYawRollControls;
++            }
++            GUILayout.EndHorizontal();
++
+ 
+             //------------------------------------------------------------------
+             GUILayout.EndVertical();"
+Vivero/Kerbal-VR,77,1f474b0,KerbalVR/KerbalVR_AssetLoader.cs,modified,7,13,20,"@@ -18,8 +18,8 @@ public class AssetLoader : MonoBehaviour
+         public static string KERBALVR_ASSET_BUNDLE_PATH {
+             get {
+                 string gameDataPath = Path.Combine(KSPUtil.ApplicationRootPath, ""GameData"");
+-                string kvrAssetsPath = Path.Combine(gameDataPath, Globals.KERBALVR_ASSETS_DIR);
+-                return Path.Combine(kvrAssetsPath, ""kerbalvr.ksp"");
++                string kvrAssetBundlesPath = Path.Combine(gameDataPath, Globals.KERBALVR_ASSETBUNDLES_DIR);
++                return Path.Combine(kvrAssetBundlesPath, ""kerbalvr.ksp"");
+             }
+         }
+         #endregion
+@@ -30,15 +30,13 @@ public static string KERBALVR_ASSET_BUNDLE_PATH {
+         private Dictionary<string, TMPro.TMP_FontAsset> fontsDictionary;
+ 
+         #region Singleton
+-        // this is a singleton class, and there must be one DeviceManager in the scene
++        // this is a singleton class, and there must be one AssetLoader in the scene
+         private static AssetLoader _instance;
+         public static AssetLoader Instance {
+             get {
+                 if (_instance == null) {
+                     _instance = FindObjectOfType<AssetLoader>();
+-                    if (_instance == null) {
+-                        Utils.LogError(""The scene needs to have one active GameObject with a AssetLoader script attached!"");
+-                    } else {
++                    if (_instance != null) {
+                         _instance.Initialize();
+                     }
+                 }
+@@ -72,7 +70,7 @@ void Awake() {
+ 
+         private void LoadFonts() {
+             TMPro.TMP_FontAsset[] fonts = Resources.FindObjectsOfTypeAll(typeof(TMPro.TMP_FontAsset)) as TMPro.TMP_FontAsset[];
+-            // Utils.Log(""Found "" + fonts.Length + "" fonts"");
++
+             for (int i = 0; i < fonts.Length; i++) {
+                 TMPro.TMP_FontAsset font = fonts[i];
+                 fontsDictionary.Add(font.name, font);
+@@ -96,24 +94,20 @@ private void LoadAssets() {
+                 if (assetName.EndsWith("".prefab"")) {
+                     Utils.Log(""Loading \"""" + assetName + ""\"""");
+                     GameObject assetGameObject = bundle.LoadAsset<GameObject>(assetName);
+-
+-                    // Utils.Log(""assetGameObject.name = "" + assetGameObject.name);
+                     gameObjectsDictionary.Add(assetGameObject.name, assetGameObject);
+                 }
+             }
+         }
+ 
+         public TMPro.TMP_FontAsset GetFont(string fontName) {
+-            TMPro.TMP_FontAsset font = null;
+-            if (fontsDictionary.TryGetValue(fontName, out font)) {
++            if (fontsDictionary.TryGetValue(fontName, out TMPro.TMP_FontAsset font)) {
+                 return font;
+             }
+             return null;
+         }
+ 
+         public GameObject GetGameObject(string gameObjectName) {
+-            GameObject obj = null;
+-            if (gameObjectsDictionary.TryGetValue(gameObjectName, out obj)) {
++            if (gameObjectsDictionary.TryGetValue(gameObjectName, out GameObject obj)) {
+                 return obj;
+             }
+             return null;"
+Vivero/Kerbal-VR,77,1f474b0,KerbalVR/KerbalVR_Configuration.cs,added,126,0,126,"@@ -0,0 +1,126 @@
++﻿using System;
++using System.IO;
++using UnityEngine;
++
++namespace KerbalVR
++{
++    /// <summary>
++    /// A class to manage global configuration settings for KerbalVR.
++    /// </summary>
++    public class Configuration : MonoBehaviour
++    {
++        #region Constants
++        /// <summary>
++        /// Full path to the KerbalVR configuration settings file.
++        /// </summary>
++        public static string KERBALVR_SETTINGS_PATH {
++            get {
++                string gameDataPath = Path.Combine(KSPUtil.ApplicationRootPath, ""GameData"");
++                string kvrAssetsPath = Path.Combine(gameDataPath, Globals.KERBALVR_ASSETS_DIR);
++                return Path.Combine(kvrAssetsPath, ""Settings.json"");
++            }
++        }
++        #endregion
++
++
++        #region Properties
++        /// <summary>
++        /// If true, initializes OpenVR as soon as KSP starts. Otherwise, OpenVR
++        /// initializes on the first time VR is enabled.
++        /// </summary>
++        private bool _initOpenVrAtStartup;
++        public bool InitOpenVrAtStartup {
++            get {
++                return _initOpenVrAtStartup;
++            }
++            set {
++                _initOpenVrAtStartup = value;
++                SaveSettings();
++            }
++        }
++
++        /// <summary>
++        /// If true, the control stick controls craft pitch and yaw, instead of
++        /// pitch and roll.
++        /// </summary>
++        private bool _swapYawRollControls;
++        public bool SwapYawRollControls {
++            get {
++                return _swapYawRollControls;
++            }
++            set {
++                _swapYawRollControls = value;
++                SaveSettings();
++            }
++        }
++        #endregion
++
++
++        #region Private Members
++        #endregion
++
++
++        #region Singleton
++        // this is a singleton class, and there must be one Configuration in the scene
++        private static Configuration _instance;
++        public static Configuration Instance {
++            get {
++                if (_instance == null) {
++                    _instance = FindObjectOfType<Configuration>();
++                    if (_instance == null) {
++                        Utils.LogError(""The scene needs to have one active GameObject with a Configuration script attached!"");
++                    } else {
++                        _instance.Initialize();
++                    }
++                }
++                return _instance;
++            }
++        }
++        #endregion
++
++        // first-time initialization for this singleton class
++        private void Initialize() {
++
++            if (File.Exists(KERBALVR_SETTINGS_PATH)) {
++                // load the settings file if it exists
++                string kvrSettingsText = File.ReadAllText(KERBALVR_SETTINGS_PATH);
++                Settings kvrSettings = JsonUtility.FromJson<Settings>(kvrSettingsText);
++
++                // store the settings
++                this._initOpenVrAtStartup = kvrSettings.initOpenVrAtStartup;
++
++#if DEBUG
++                Utils.Log(""Loaded Configuration:"");
++                Utils.Log(""initOpenVrAtStartup = "" + kvrSettings.initOpenVrAtStartup);
++#endif
++
++            } else {
++                // if no settings file exists, create a default one
++                Settings kvrSettings = new Settings();
++                string kvrSettingsText = JsonUtility.ToJson(kvrSettings, true);
++
++                // write to file
++                File.WriteAllText(KERBALVR_SETTINGS_PATH, kvrSettingsText);
++            }
++        }
++
++        private void SaveSettings() {
++            Settings kvrSettings = new Settings();
++            kvrSettings.initOpenVrAtStartup = this.InitOpenVrAtStartup;
++            kvrSettings.swapYawRollControls = this.SwapYawRollControls;
++
++            // write to file
++            string kvrSettingsText = JsonUtility.ToJson(kvrSettings, true);
++            File.WriteAllText(KERBALVR_SETTINGS_PATH, kvrSettingsText);
++        }
++    }
++
++    /// <summary>
++    /// A serializable class to contain KerbalVR settings.
++    /// </summary>
++    [Serializable]
++    public class Settings {
++        public bool initOpenVrAtStartup = true;
++        public bool swapYawRollControls = false;
++    }
++}"
+Vivero/Kerbal-VR,77,1f474b0,KerbalVR/KerbalVR_Core.cs,modified,122,91,213,"@@ -3,50 +3,47 @@
+ using UnityEngine;
+ using Valve.VR;
+ 
+-namespace KerbalVR
+-{
+-	/// <summary>
+-	/// The entry point for the KerbalVR plugin. This mod should
+-	/// start up once, when the game starts.
+-	/// </summary>
++namespace KerbalVR {
++    /// <summary>
++    /// The entry point for the KerbalVR plugin. This mod should
++    /// start up once, when the game starts.
++    /// </summary>
+     [KSPAddon(KSPAddon.Startup.Instantly, true)]
+-    public class Core : MonoBehaviour
+-    {
++    public class Core : MonoBehaviour {
+         // this function allows importing DLLs from a given path
+         [DllImport(""kernel32.dll"", SetLastError = true)]
+         protected static extern bool SetDllDirectory(string lpPathName);
+ 
+ 
++        #region Types
++        public enum HmdState {
++            Uninitialized,
++            Initializing,
++            Initialized,
++            InitFailed,
++        }
++        #endregion
++
++
+         #region Properties
+ 
+-		/// <summary>
+-		/// Returns true if VR is currently enabled. Enabled
+-		/// does not necessarily mean VR is currently running, only
+-		/// that the user allowing VR to be activated.
+-		/// Set to true to enable VR; false to disable VR.
+-		/// </summary>
+-        private static bool _hmdIsEnabled;
+-        public static bool HmdIsEnabled {
+-            get { return _hmdIsEnabled; }
+-            set {
+-                _hmdIsEnabled = value;
+-
+-                if (_hmdIsEnabled && hmdIsInitialized) {
+-                    Scene.Instance.SetupScene();
+-                    ResetInitialHmdPosition();
+-                }
+-            }
+-        }
++        /// <summary>
++        /// Returns true if VR is currently enabled. Enabled
++        /// does not necessarily mean VR is currently running, only
++        /// that the user allowing VR to be activated.
++        /// Set to true to enable VR; false to disable VR.
++        /// </summary>
++        public static bool HmdIsEnabled { get; set; } = false;
+ 
+-		/// <summary>
+-		/// Returns true if VR is allowed to run in the current scene.
+-		/// </summary>
++        /// <summary>
++        /// Returns true if VR is allowed to run in the current scene.
++        /// </summary>
+         public static bool HmdIsAllowed { get; private set; }
+ 
+-		/// <summary>
+-		/// Returns true if VR is currently running, i.e. tracking devices
+-		/// and rendering images to the headset.
+-		/// </summary>
++        /// <summary>
++        /// Returns true if VR is currently running, i.e. tracking devices
++        /// and rendering images to the headset.
++        /// </summary>
+         public static bool HmdIsRunning { get; private set; }
+ 
+         /// <summary>
+@@ -64,16 +61,17 @@ public static bool HmdIsEnabled {
+         private AppGUI gui;
+ 
+         // keep track of when the HMD is rendering images
+-        private static bool hmdIsInitialized = false;
++        private static HmdState hmdState = HmdState.Uninitialized;
+         private static bool hmdIsRunningPrev = false;
++        private static DateTime hmdInitLastAttempt;
+ 
+         // defines the bounds to texture bounds for rendering
+-        private VRTextureBounds_t hmdTextureBounds;
++        private static VRTextureBounds_t hmdTextureBounds;
+ 
+         // these arrays each hold one object for the corresponding eye, where
+         // index 0 = Left_Eye, index 1 = Right_Eye
+-        private Texture_t[] hmdEyeTexture = new Texture_t[2];
+-        private RenderTexture[] hmdEyeRenderTexture = new RenderTexture[2];
++        private static Texture_t[] hmdEyeTexture = new Texture_t[2];
++        private static RenderTexture[] hmdEyeRenderTexture = new RenderTexture[2];
+ 
+         // store the tracked device poses
+         private static TrackedDevicePose_t[] devicePoses = new TrackedDevicePose_t[OpenVR.k_unMaxTrackedDeviceCount];
+@@ -86,14 +84,13 @@ public static bool HmdIsEnabled {
+         /// <summary>
+         /// Initialize the application GUI, singleton classes, and initialize OpenVR.
+         /// </summary>
+-        protected void Awake() {
++        private void Awake() {
+ #if DEBUG
+             Utils.Log(Globals.KERBALVR_NAME + "" plugin starting..."");
+ #endif
+ 
+             // init objects
+             gui = new AppGUI();
+-            _hmdIsEnabled = false;
+             HmdIsAllowed = false;
+ 
+             // init GameObjects
+@@ -107,18 +104,20 @@ protected void Awake() {
+             Scene kvrSceneComponent = Scene.Instance; // init the singleton
+             DontDestroyOnLoad(kvrScene);
+ 
++            GameObject kvrConfiguration = new GameObject(""KVR_Configuration"");
++            kvrConfiguration.AddComponent<Configuration>();
++            Configuration kvrConfigurationComponent = Configuration.Instance; // init the singleton
++            DontDestroyOnLoad(kvrConfiguration);
++
++            // initialize OpenVR if allowed in config
++            if (Configuration.Instance.InitOpenVrAtStartup) {
++                InitializeHMD();
++            }
++
+             // add an event triggered when game scene changes, to handle
+             // shutting off the HMD outside of allowed VR scenes
+             GameEvents.onGameSceneLoadRequested.Add(OnGameSceneLoadRequested);
+ 
+-            // initialize the OpenVR API
+-            bool success = InitHMD();
+-            if (!success) {
+-                Utils.LogError(""Unable to initialize VR headset!"");
+-            } else {
+-                Utils.Log(""Initialized OpenVR."");
+-            }
+-
+             // when ready for a GUI, load it
+             GameEvents.onGUIApplicationLauncherReady.Add(gui.OnAppLauncherReady);
+             GameEvents.onGUIApplicationLauncherDestroyed.Add(gui.OnAppLauncherDestroyed);
+@@ -130,37 +129,47 @@ protected void Awake() {
+         /// <summary>
+         /// Overrides the OnGUI method to render the application launcher GUI.
+         /// </summary>
+-        protected void OnGUI() {
++        private void OnGUI() {
+             gui.OnGUI();
+         }
+ 
+         /// <summary>
+         /// Overrides the OnDestroy method, called when plugin is destroyed.
+         /// </summary>
+-        protected void OnDestroy() {
++        private void OnDestroy() {
+             Utils.Log(Globals.KERBALVR_NAME + "" is shutting down..."");
+             CloseHMD();
+         }
+ 
+         /// <summary>
+         /// On LateUpdate, dispatch OpenVR events, run the main HMD loop code.
+         /// </summary>
+-        protected void LateUpdate() {
++        private void LateUpdate() {
+             // dispatch any OpenVR events
+-            if (hmdIsInitialized) {
++            if (hmdState == HmdState.Initialized) {
+                 DispatchOpenVREvents();
+             }
+ 
+             // check if the current scene allows VR
+             HmdIsAllowed = Scene.Instance.SceneAllowsVR();
+ 
++            // process the state of OpenVR
++            ProcessHmdState();
++
+             // check if we are running the HMD
+-            HmdIsRunning = HmdIsAllowed && hmdIsInitialized && HmdIsEnabled;
++            HmdIsRunning = HmdIsAllowed && (hmdState == HmdState.Initialized) && HmdIsEnabled;
+ 
+             // perform regular updates if HMD is initialized
+             if (HmdIsRunning) {
+                 EVRCompositorError vrCompositorError = EVRCompositorError.None;
+ 
++                // we've just started VR
++                if (!hmdIsRunningPrev) {
++                    Utils.Log(""HMD is now on"");
++                    Scene.Instance.SetupScene();
++                    ResetInitialHmdPosition();
++                }
++
+                 try {
+                     // get latest device poses, emit an event to indicate devices have been updated
+                     float secondsToPhotons = Utils.CalculatePredictedSecondsToPhotons();
+@@ -194,7 +203,7 @@ protected void LateUpdate() {
+                             hmdEyeTexture[i]);
+                     }
+ 
+-					// [insert dark magic here]
++                    // [insert dark magic here]
+                     OpenVR.Compositor.PostPresentHandoff();
+ 
+                     // render to the game screen
+@@ -203,7 +212,7 @@ protected void LateUpdate() {
+                     }
+ 
+                 } catch (Exception e) {
+-					// shut off VR when an error occurs
++                    // shut off VR when an error occurs
+                     Utils.LogError(e);
+                     HmdIsEnabled = false;
+                     HmdIsRunning = false;
+@@ -214,23 +223,23 @@ protected void LateUpdate() {
+             if (!HmdIsRunning && hmdIsRunningPrev) {
+                 Utils.Log(""HMD is now off, resetting cameras..."");
+                 Scene.Instance.CloseScene();
+-				
+-				// TODO: figure out why we can no longer manipulate the IVA camera in the regular game
++
++                // TODO: figure out why we can no longer manipulate the IVA camera in the regular game
+             }
+ 
+ 
+ #if DEBUG
+-			// debug hooks
++            // debug hooks
+             if (Input.GetKeyDown(KeyCode.Y)) {
+-                Utils.PrintAllCameras();
++                // Utils.PrintAllCameras();
+                 // Utils.PrintAllLayers();
+-                // Utils.PrintDebug();
++                Utils.PrintDebug();
+                 // Utils.PrintFonts();
+                 // Utils.PrintCollisionMatrix();
+             }
+ #endif
+ 
+-			// keep track of whether we were running the HMD
++            // keep track of whether we were running the HMD
+             hmdIsRunningPrev = HmdIsRunning;
+         }
+ 
+@@ -269,10 +278,44 @@ private void DispatchOpenVREvents() {
+             }
+         }
+ 
+-		/// <summary>
++        private static void ProcessHmdState() {
++            switch (hmdState) {
++                case HmdState.Uninitialized:
++                    if (HmdIsEnabled) {
++                        hmdState = HmdState.Initializing;
++                    }
++                    break;
++
++                case HmdState.Initializing:
++                    InitializeHMD();
++                    break;
++
++                case HmdState.InitFailed:
++                    if (DateTime.Now.Subtract(hmdInitLastAttempt).TotalSeconds > 10) {
++                        hmdState = HmdState.Uninitialized;
++                    }
++                    break;
++            }
++        }
++
++        private static void InitializeHMD() {
++            hmdInitLastAttempt = DateTime.Now;
++            try {
++                InitializeOpenVR();
++                hmdState = HmdState.Initialized;
++                Utils.Log(""Initialized OpenVR."");
++
++            } catch (Exception e) {
++                hmdState = HmdState.InitFailed;
++                Utils.LogError(""InitHMD failed: "" + e);
++                HmdIsEnabled = false;
++            }
++        }
++
++        /// <summary>
+         /// Renders a set of cameras onto a RenderTexture, and submit the frame to the HMD.
+         /// </summary>
+-        protected void RenderHmdCameras(
++        private void RenderHmdCameras(
+             EVREye eye,
+             SteamVR_Utils.RigidTransform hmdTransform,
+             SteamVR_Utils.RigidTransform hmdEyeTransform,
+@@ -334,46 +377,39 @@ protected void RenderHmdCameras(
+         /// An event called when the game is switching scenes. The VR headset should be disabled.
+         /// </summary>
+         /// <param name=""scene"">The scene being switched into.</param>
+-        protected void OnGameSceneLoadRequested(GameScenes scene) {
++        private void OnGameSceneLoadRequested(GameScenes scene) {
+             HmdIsEnabled = false;
+         }
+ 
+         /// <summary>
+         /// Initialize HMD using OpenVR API calls.
+         /// </summary>
+         /// <returns>True on successful initialization, false otherwise.</returns>
+-        protected bool InitHMD() {
+-            bool retVal = false;
++        private static void InitializeOpenVR() {
+ 
+             // return if HMD has already been initialized
+-            if (hmdIsInitialized) {
+-                return true;
++            if (hmdState == HmdState.Initialized) {
++                return;
+             }
+ 
+             // set the location of the OpenVR DLL
+             SetDllDirectory(Globals.OpenVRDllPath);
+ 
+             // check if HMD is connected on the system
+-            retVal = OpenVR.IsHmdPresent();
+-            if (!retVal) {
+-                Utils.LogError(""HMD not found on this system."");
+-                return retVal;
++            if (!OpenVR.IsHmdPresent()) {
++                throw new InvalidOperationException(""HMD not found on this system"");
+             }
+ 
+             // check if SteamVR runtime is installed
+-            retVal = OpenVR.IsRuntimeInstalled();
+-            if (!retVal) {
+-                Utils.LogError(""SteamVR runtime not found on this system."");
+-                return retVal;
++            if (!OpenVR.IsRuntimeInstalled()) {
++                throw new InvalidOperationException(""SteamVR runtime not found on this system"");
+             }
+ 
+             // initialize HMD
+             EVRInitError hmdInitErrorCode = EVRInitError.None;
+             OpenVR.Init(ref hmdInitErrorCode, EVRApplicationType.VRApplication_Scene);
+-            retVal = (hmdInitErrorCode == EVRInitError.None);
+-            if (!retVal) {
+-                Utils.LogError(""Failed to initialize HMD. Init returned: "" + OpenVR.GetStringForHmdError(hmdInitErrorCode));
+-                return retVal;
++            if (hmdInitErrorCode != EVRInitError.None) {
++                throw new Exception(""OpenVR error: "" + OpenVR.GetStringForHmdError(hmdInitErrorCode));
+             }
+ 
+             // reset ""seated position"" and capture initial position. this means you should hold the HMD in
+@@ -392,18 +428,17 @@ protected bool InitHMD() {
+                 case UnityEngine.Rendering.GraphicsDeviceType.OpenGLES2:
+                 case UnityEngine.Rendering.GraphicsDeviceType.OpenGLES3:
+                     textureType = ETextureType.OpenGL;
+-                    Utils.LogWarning(""OpenGL is known to cause problems with VR."");
+-                    break; // doesn't work
++                    throw new InvalidOperationException(SystemInfo.graphicsDeviceType.ToString() + "" does not support VR. You must use -force-d3d12"");
+                 case UnityEngine.Rendering.GraphicsDeviceType.Direct3D9:
++                    throw new InvalidOperationException(SystemInfo.graphicsDeviceType.ToString() + "" does not support VR. You must use -force-d3d12"");
+                 case UnityEngine.Rendering.GraphicsDeviceType.Direct3D11:
+                     textureType = ETextureType.DirectX;
+-                    Utils.LogWarning(""Direct3D9 and Direct3D11 are known to cause problems with VR."");
+-                    break; // doesn't work
++                    break;
+                 case UnityEngine.Rendering.GraphicsDeviceType.Direct3D12:
+-                    textureType = ETextureType.DirectX; // do not use DirectX12
++                    textureType = ETextureType.DirectX;
+                     break;
+                 default:
+-                    throw (new Exception(SystemInfo.graphicsDeviceType.ToString() + "" not supported""));
++                    throw new InvalidOperationException(SystemInfo.graphicsDeviceType.ToString() + "" not supported"");
+             }
+ 
+             // initialize render textures (for displaying on HMD)
+@@ -420,17 +455,13 @@ protected bool InitHMD() {
+             hmdTextureBounds.uMax = 1.0f;
+             hmdTextureBounds.vMin = 1.0f; // flip the vertical coordinate for some reason
+             hmdTextureBounds.vMax = 0.0f;
+-            
+-            hmdIsInitialized = true;
+-
+-            return retVal;
+         }
+ 
+         /// <summary>
+         /// Sets the current real-world position of the HMD as the seated origin.
+         /// </summary>
+         public static void ResetInitialHmdPosition() {
+-            if (hmdIsInitialized) {
++            if (hmdState == HmdState.Initialized) {
+                 OpenVR.System.ResetSeatedZeroPose();
+             }
+         }
+@@ -449,7 +480,7 @@ public static bool CanResetSeatedPose() {
+         private void CloseHMD() {
+             HmdIsEnabled = false;
+             OpenVR.Shutdown();
+-            hmdIsInitialized = false;
++            hmdState = HmdState.Uninitialized;
+         }
+ 
+     } // class Core"
+Vivero/Kerbal-VR,77,1f474b0,KerbalVR/KerbalVR_DeviceManager.cs,modified,0,70,70,"@@ -10,29 +10,11 @@ namespace KerbalVR
+     /// </summary>
+     public class DeviceManager : MonoBehaviour
+     {
+-        #region Constants
+-        public readonly Vector3 GLOVE_POSITION = new Vector3(0f, 0.02f, -0.1f);
+-        public readonly Vector3 GLOVE_ROTATION = new Vector3(-45f, 0f, 90f);
+-        #endregion
+-
+-
+         #region Properties
+         // Manipulator objects
+         public Manipulator ManipulatorLeft { get; private set; }
+         public Manipulator ManipulatorRight { get; private set; }
+ 
+-        // Manipulator object properties
+-        private float _manipulatorSize = 0.45f;
+-        public float ManipulatorSize {
+-            get {
+-                return _manipulatorSize;
+-            }
+-            set {
+-                _manipulatorSize = value;
+-                SetManipulatorSize(_manipulatorSize);
+-            }
+-        }
+-
+         // keep aliases of controller indices
+         public uint ControllerIndexLeft { get; private set; }
+         public uint ControllerIndexRight { get; private set; }
+@@ -200,48 +182,9 @@ protected GameObject CreateManipulator(ETrackedControllerRole role) {
+             GameObject manipulator = new GameObject(""KVR_Manipulator_"" + role.ToString());
+             DontDestroyOnLoad(manipulator);
+ 
+-            // define the render model
+-            GameObject glovePrefab = AssetLoader.Instance.GetGameObject(""GlovePrefab"");
+-            if (glovePrefab == null) {
+-                Utils.LogError(""GameObject \""GlovePrefab\"" was not found!"");
+-                return manipulator;
+-            }
+-            GameObject gloveObject = Instantiate(glovePrefab);
+-            gloveObject.transform.SetParent(manipulator.transform);
+-            Vector3 gloveObjectScale = Vector3.one * ManipulatorSize;
+-            if (role == ETrackedControllerRole.RightHand) {
+-                gloveObjectScale.y *= -1f;
+-            }
+-            gloveObject.transform.localPosition = GLOVE_POSITION;
+-            gloveObject.transform.localRotation = Quaternion.Euler(GLOVE_ROTATION);
+-            gloveObject.transform.localScale = gloveObjectScale;
+-            Utils.SetLayer(gloveObject, 20);
+-
+-            // define the colliders
+-            Transform colliderObject = gloveObject.transform.Find(""HandDummy/Arm Bone L/Wrist Bone L/Finger Index Bone L1/Finger Index Bone L2/Finger Index Bone L3/Finger Index Bone L4"");
+-            if (colliderObject == null) {
+-                Utils.LogWarning(""Manipulator is missing fingertip collider child object"");
+-                return manipulator;
+-            }
+-            SphereCollider fingertipCollider = colliderObject.GetComponent<SphereCollider>();
+-
+-            colliderObject = gloveObject.transform.Find(""HandDummy/Arm Bone L/Wrist Bone L"");
+-            if (colliderObject == null) {
+-                Utils.LogWarning(""Manipulator is missing grip collider child object"");
+-                return manipulator;
+-            }
+-            CapsuleCollider gripCollider = colliderObject.GetComponent<CapsuleCollider>();
+-            
+-
+-            // retrieve the animator
+-            Animator manipulatorAnimator = gloveObject.GetComponent<Animator>();
+-
+             // define the Manipulator component
+             Manipulator manipulatorComponent = manipulator.AddComponent<Manipulator>();
+             manipulatorComponent.role = role;
+-            manipulatorComponent.fingertipCollider = fingertipCollider;
+-            manipulatorComponent.gripCollider = gripCollider;
+-            manipulatorComponent.manipulatorAnimator = manipulatorAnimator;
+ 
+ #if DEBUG
+             GameObject manipulatorGizmo = Utils.CreateGizmo();
+@@ -270,19 +213,6 @@ private void ManageManipulators() {
+             }
+         }
+ 
+-        /// <summary>
+-        /// Sets the size of each ""VR hand"".
+-        /// </summary>
+-        /// <param name=""size"">Size of the hand, in meters.</param>
+-        protected void SetManipulatorSize(float size) {
+-            if (manipulatorLeft != null) {
+-                manipulatorLeft.transform.localScale = Vector3.one * ManipulatorSize;
+-            }
+-            if (manipulatorRight != null) {
+-                manipulatorRight.transform.localScale = Vector3.one * ManipulatorSize;
+-            }
+-        }
+-
+         /// <summary>
+         /// Checks whether the given Collider is the left Manipulator's fingertip.
+         /// </summary>"
+Vivero/Kerbal-VR,77,1f474b0,KerbalVR/KerbalVR_Globals.cs,modified,7,1,8,"@@ -12,7 +12,13 @@ public class Globals
+         public static readonly string KERBALVR_NAME = ""KerbalVR"";
+ 
+         // path to the KerbalVR Assets directory
+-        public static readonly string KERBALVR_ASSETS_DIR = ""KerbalVR/Assets/"";
++        public static readonly string KERBALVR_ASSETS_DIR = Path.Combine(KERBALVR_NAME, ""Assets"");
++
++        // path to asset bundles
++        public static readonly string KERBALVR_ASSETBUNDLES_DIR = Path.Combine(KERBALVR_ASSETS_DIR, ""AssetBundles"");
++
++        // path to textures
++        public static readonly string KERBALVR_TEXTURES_DIR = Path.Combine(KERBALVR_ASSETS_DIR, ""Textures"");
+ 
+         // define location of OpenVR library
+         public static string OpenVRDllPath {"
+Vivero/Kerbal-VR,77,1f474b0,KerbalVR/KerbalVR_Manipulator.cs,modified,85,16,101,"@@ -8,20 +8,31 @@ namespace KerbalVR
+     /// <summary>
+     /// Manipulator is a GameObject component that represents your VR ""hands"",
+     /// and serves as a storage container for the latest controller device
+-    /// button state and tracking position.
+-    /// 
+-    /// Future work: this class should probably handle *how* the manipulators
+-    /// are rendered (MeshFilter model, MeshRenderer material, etc).
+-    /// I'm not sure how all this Manipulator code is turning out, it might
+-    /// need to be re-factored or designed better at a later time.
++    /// button state, tracking position, and rendering.
+     /// </summary>
+     public class Manipulator : MonoBehaviour
+     {
++        #region Constants
++        public readonly Vector3 GLOVE_POSITION = new Vector3(0f, 0.02f, -0.1f);
++        public readonly Vector3 GLOVE_ROTATION = new Vector3(-45f, 0f, 90f);
++        #endregion
+ 
+         #region Properties
+         public SteamVR_Controller.Device State { get; private set; }
+         public Vector3 GripPosition { get; private set; }
+ 
++        // Manipulator object properties
++        private float _manipulatorSize = 0.45f;
++        public float ManipulatorSize {
++            get {
++                return _manipulatorSize;
++            }
++            set {
++                _manipulatorSize = value;
++                SetManipulatorSize(_manipulatorSize);
++            }
++        }
++
+         public List<GameObject> FingertipCollidedGameObjects { get; private set; } = new List<GameObject>();
+         #endregion
+ 
+@@ -32,24 +43,82 @@ public class Manipulator : MonoBehaviour
+         public Collider gripCollider;
+         public Animator manipulatorAnimator;
+         public bool isGripping = false;
++        public GameObject gloveGameObject = null;
+         #endregion
+-        
+ 
+-        protected void Start() {
+-            FingertipManipulator fingertipManipulator = fingertipCollider.gameObject.AddComponent<FingertipManipulator>();
+-            FingertipCollidedGameObjects = fingertipManipulator.CollidedGameObjects;
+-        }
+ 
+         protected void Update() {
++            // determine if we need to load the Glove object
++            if (gloveGameObject == null) {
++                LoadManipulatorRenderGameObject();
++            }
++
+             // enable this object while VR is active
+             // TODO: can we make this a little more efficient?
+-            Utils.SetGameObjectChildrenActive(gameObject, Core.HmdIsEnabled);
++            Utils.SetGameObjectChildrenActive(this.gameObject, Core.HmdIsEnabled);
+ 
+-            // update transforms
+-            GripPosition = gripCollider.transform.TransformPoint(((CapsuleCollider)gripCollider).center);
++            // apply logic once we have a Glove object
++            if (gloveGameObject != null) {
++                // update transforms
++                GripPosition = gripCollider.transform.TransformPoint(((CapsuleCollider)gripCollider).center);
+ 
+-            // animate grip
+-            manipulatorAnimator.SetBool(""Hold"", isGripping);
++                // animate grip
++                manipulatorAnimator.SetBool(""Hold"", isGripping);
++            }
++        }
++
++        protected void LoadManipulatorRenderGameObject() {
++            AssetLoader assetLoader = AssetLoader.Instance;
++            if (assetLoader != null) {
++                // define the render model
++                GameObject glovePrefab = AssetLoader.Instance.GetGameObject(""GlovePrefab"");
++                if (glovePrefab == null) {
++                    Utils.LogError(""GameObject \""GlovePrefab\"" was not found!"");
++                    return;
++                }
++                gloveGameObject = Instantiate(glovePrefab);
++                gloveGameObject.transform.SetParent(this.transform);
++                Vector3 gloveObjectScale = Vector3.one * ManipulatorSize;
++                if (role == ETrackedControllerRole.RightHand) {
++                    gloveObjectScale.y *= -1f;
++                }
++                gloveGameObject.transform.localPosition = GLOVE_POSITION;
++                gloveGameObject.transform.localRotation = Quaternion.Euler(GLOVE_ROTATION);
++                gloveGameObject.transform.localScale = gloveObjectScale;
++                Utils.SetLayer(gloveGameObject, 20);
++
++                // define the colliders
++                Transform colliderObject = gloveGameObject.transform.Find(""HandDummy/Arm Bone L/Wrist Bone L/Finger Index Bone L1/Finger Index Bone L2/Finger Index Bone L3/Finger Index Bone L4"");
++                if (colliderObject == null) {
++                    Utils.LogWarning(""Manipulator is missing fingertip collider child object"");
++                    return;
++                }
++                fingertipCollider = colliderObject.GetComponent<SphereCollider>();
++
++                colliderObject = gloveGameObject.transform.Find(""HandDummy/Arm Bone L/Wrist Bone L"");
++                if (colliderObject == null) {
++                    Utils.LogWarning(""Manipulator is missing grip collider child object"");
++                    return;
++                }
++                gripCollider = colliderObject.GetComponent<CapsuleCollider>();
++
++
++                // retrieve the animator
++                manipulatorAnimator = gloveGameObject.GetComponent<Animator>();
++
++                FingertipManipulator fingertipManipulator = fingertipCollider.gameObject.AddComponent<FingertipManipulator>();
++                FingertipCollidedGameObjects = fingertipManipulator.CollidedGameObjects;
++            }
++        }
++
++        /// <summary>
++        /// Sets the size of each ""VR hand"".
++        /// </summary>
++        /// <param name=""size"">Size of the hand, in meters.</param>
++        protected void SetManipulatorSize(float size) {
++            if (gloveGameObject != null) {
++                gloveGameObject.transform.localScale = Vector3.one * ManipulatorSize;
++            }
+         }
+ 
+         /// <summary>"
+Vivero/Kerbal-VR,77,1f474b0,KerbalVR/KerbalVR_Scene.cs,modified,75,8,83,"@@ -13,14 +13,21 @@ namespace KerbalVR
+     public class Scene : MonoBehaviour
+     {
+         #region Constants
+-        public static readonly string[] FLIGHT_SCENE_CAMERAS = {
++        public static readonly string[] FLIGHT_SCENE_IVA_CAMERAS = {
+             ""GalaxyCamera"",
+             ""Camera ScaledSpace"",
+             ""Camera 01"",
+             ""Camera 00"",
+             ""InternalCamera"",
+         };
+ 
++        public static readonly string[] FLIGHT_SCENE_EVA_CAMERAS = {
++            ""GalaxyCamera"",
++            ""Camera ScaledSpace"",
++            ""Camera 01"",
++            ""Camera 00"",
++        };
++
+         public static readonly string[] SPACECENTER_SCENE_CAMERAS = {
+             ""GalaxyCamera"",
+             ""Camera ScaledSpace"",
+@@ -144,7 +151,11 @@ void OnDisable() {
+         public void SetupScene() {
+             switch (HighLogic.LoadedScene) {
+                 case GameScenes.FLIGHT:
+-                    SetupFlightScene();
++                    if (CameraManager.Instance.currentCameraMode == CameraManager.CameraMode.IVA) {
++                        SetupFlightIvaScene();
++                    } else if (FlightGlobals.ActiveVessel.isEVA) {
++                        SetupFlightEvaScene();
++                    }
+                     break;
+ 
+                 case GameScenes.EDITOR:
+@@ -160,15 +171,15 @@ public void SetupScene() {
+             CurrentRotation = InitialRotation;
+         }
+ 
+-        private void SetupFlightScene() {
++        private void SetupFlightIvaScene() {
+             // use seated mode during IVA flight
+             TrackingSpace = ETrackingUniverseOrigin.TrackingUniverseSeated;
+ 
+             // render KerbalVR objects on the InternalSpace layer
+             RenderLayer = 20;
+ 
+             // generate list of cameras to render
+-            PopulateCameraList(FLIGHT_SCENE_CAMERAS);
++            PopulateCameraList(FLIGHT_SCENE_IVA_CAMERAS);
+ 
+             // set inital scene position
+             InitialPosition = InternalCamera.Instance.transform.position;
+@@ -183,6 +194,29 @@ private void SetupFlightScene() {
+             InitialRotation = InternalCamera.Instance.transform.rotation;
+         }
+ 
++        private void SetupFlightEvaScene() {
++            // use seated mode during EVA
++            TrackingSpace = ETrackingUniverseOrigin.TrackingUniverseSeated;
++
++            // render KerbalVR objects on the InternalSpace layer
++            RenderLayer = 20;
++
++            // generate list of cameras to render
++            PopulateCameraList(FLIGHT_SCENE_EVA_CAMERAS);
++
++            // set inital scene position
++            InitialPosition = FlightGlobals.ActiveVessel.transform.position;
++
++            // set rotation to always point forward inside the cockpit
++            // NOTE: actually this code doesn't work for certain capsules
++            // with different internal origin orientations
++            /*InitialRotation = Quaternion.LookRotation(
++                InternalSpace.Instance.transform.rotation * Vector3.up,
++                InternalSpace.Instance.transform.rotation * Vector3.back);*/
++
++            InitialRotation = FlightGlobals.ActiveVessel.transform.rotation;
++        }
++
+         private void SetupEditorScene() {
+             // use room-scale in editor
+             TrackingSpace = ETrackingUniverseOrigin.TrackingUniverseStanding;
+@@ -218,7 +252,11 @@ public void UpdateScene(
+ 
+             switch (HighLogic.LoadedScene) {
+                 case GameScenes.FLIGHT:
+-                    UpdateFlightScene(eye, hmdTransform, hmdEyeTransform);
++                    if (CameraManager.Instance.currentCameraMode == CameraManager.CameraMode.IVA) {
++                        UpdateFlightIvaScene(eye, hmdTransform, hmdEyeTransform);
++                    } else if (FlightGlobals.ActiveVessel.isEVA) {
++                        UpdateFlightEvaScene(eye, hmdTransform, hmdEyeTransform);
++                    }
+                     break;
+ 
+                 case GameScenes.EDITOR:
+@@ -234,7 +272,7 @@ public void UpdateScene(
+             HmdRotation = CurrentRotation * hmdTransform.rot;
+         }
+ 
+-        private void UpdateFlightScene(
++        private void UpdateFlightIvaScene(
+             EVREye eye,
+             SteamVR_Utils.RigidTransform hmdTransform,
+             SteamVR_Utils.RigidTransform hmdEyeTransform) {
+@@ -263,6 +301,35 @@ private void UpdateFlightScene(
+             HmdEyeRotation[(int)eye] = updatedRotation;
+         }
+ 
++        private void UpdateFlightEvaScene(
++            EVREye eye,
++            SteamVR_Utils.RigidTransform hmdTransform,
++            SteamVR_Utils.RigidTransform hmdEyeTransform) {
++
++            // in flight, don't allow movement of the origin point
++            CurrentPosition = InitialPosition;
++            CurrentRotation = InitialRotation;
++
++            // get position of your eyeball
++            Vector3 positionToHmd = hmdTransform.pos;
++            Vector3 positionToEye = hmdTransform.pos + hmdTransform.rot * hmdEyeTransform.pos;
++
++            // translate device space to Unity space, with world scaling
++            Vector3 updatedPosition = DevicePoseToWorld(positionToEye);
++            Quaternion updatedRotation = DevicePoseToWorld(hmdTransform.rot);
++
++            // in flight, update the flight cameras
++            FlightCamera.fetch.transform.position = updatedPosition;
++            FlightCamera.fetch.transform.rotation = updatedRotation;
++
++            ScaledCamera.Instance.transform.position = updatedPosition;
++            ScaledCamera.Instance.transform.rotation = updatedRotation;
++
++            // store the eyeball position
++            HmdEyePosition[(int)eye] = updatedPosition;
++            HmdEyeRotation[(int)eye] = updatedRotation;
++        }
++
+         private void UpdateEditorScene(
+             EVREye eye,
+             SteamVR_Utils.RigidTransform hmdTransform,
+@@ -335,8 +402,8 @@ public bool SceneAllowsVR() {
+             bool allowed;
+             switch (HighLogic.LoadedScene) {
+                 case GameScenes.FLIGHT:
+-                    allowed = (CameraManager.Instance != null) &&
+-                        (CameraManager.Instance.currentCameraMode == CameraManager.CameraMode.IVA);
++                    allowed = ((CameraManager.Instance != null) && (CameraManager.Instance.currentCameraMode == CameraManager.CameraMode.IVA)) ||
++                        (FlightGlobals.ActiveVessel.isEVA);
+                     break;
+ 
+                 case GameScenes.EDITOR:"
+Vivero/Kerbal-VR,77,1f474b0,KerbalVR/KerbalVR_Utils.cs,modified,2,13,15,"@@ -238,20 +238,9 @@ public static void PrintGameObjectTree(GameObject go) {
+         }
+ 
+         public static void PrintDebug() {
+-            GameObject[] allObjects = UnityEngine.Object.FindObjectsOfType<GameObject>();
++            bool isEva = FlightGlobals.ActiveVessel.isEVA;
+ 
+-            foreach (GameObject GO in allObjects) {
+-                if (GO.activeInHierarchy) {
+-                    Collider GO_coll = GO.GetComponent<Collider>();
+-
+-                    if (GO_coll != null) {
+-                        Utils.Log(""GO.name = "" + GO.name);
+-                        Utils.Log(""GO.layer = "" + GO.layer);
+-                        Utils.Log(""GO.collider = "" + GO_coll);
+-                    }
+-                }
+-                
+-            }
++            Utils.Log(""EVA Active? "" + isEva);
+         }
+ 
+         public static void PrintAllLayers() {"
+Vivero/Kerbal-VR,77,1f474b0,KerbalVR/Modules/KVR_ControlStick.cs,modified,9,3,12,"@@ -277,9 +277,15 @@ public void OnColliderExited(Collider thisObject, Collider otherObject) {
+ 
+         private void VesselControl(FlightCtrlState state) {
+             if (isCommandingControl) {
+-                state.yaw = TwistAxis;
+-                state.pitch = -StickAxisY;
+-                state.roll = StickAxisX;
++                if (Configuration.Instance.SwapYawRollControls) {
++                    state.yaw = StickAxisX;
++                    state.pitch = -StickAxisY;
++                    state.roll = TwistAxis;
++                } else {
++                    state.yaw = TwistAxis;
++                    state.pitch = -StickAxisY;
++                    state.roll = StickAxisX;
++                }
+             }
+         }
+ "
+Vivero/Kerbal-VR,77,1f474b0,KerbalVR/Properties/AssemblyInfo.cs,modified,1,1,2,"@@ -32,4 +32,4 @@
+ // You can specify all the values or you can default the Build and Revision Numbers 
+ // by using the '*' as shown below:
+ // [assembly: AssemblyVersion(""1.0.*"")]
+-[assembly: AssemblyVersion(""3.2.3.*"")]
++[assembly: AssemblyVersion(""3.2.4.*"")]"
+Vivero/Kerbal-VR,77,1f474b0,KerbalVR/lib/win32/openvr_api.dll,modified,0,0,0,
+Vivero/Kerbal-VR,77,1f474b0,KerbalVR/lib/win64/openvr_api.dll,modified,0,0,0,
+Vivero/Kerbal-VR,77,1f474b0,README.md,modified,3,3,6,"@@ -6,7 +6,7 @@ An add-on for Kerbal Space Program (KSP) to enable the use of a virtual reality
+ 
+ ----
+ 
+-**Built for KSP v1.7.0**
++**Built for KSP v1.7.1**
+ 
+ [Demonstration video](https://www.youtube.com/watch?v=DjQauN66rQA)
+ 
+@@ -27,7 +27,7 @@ VR will only work with KSP using Direct3D 12, i.e. you need to use the `-force-d
+ 
+ ## Requirements
+ 
+-- [Module Manager](https://forum.kerbalspaceprogram.com/index.php?/topic/50533-141-module-manager-307-may-5th-2018-its-dangerous-to-go-alone-take-those-cats-with-you/)
++- [Module Manager](https://forum.kerbalspaceprogram.com/index.php?/topic/50533-140-16x-module-manager-402-february-3rd-2019-right-to-ludicrous-speed/)
+ 
+ 
+ ## Installation & Usage
+@@ -91,4 +91,4 @@ I'm developing this mod with a Vive / Core i5-6600K / GTX 1070. Other systems ha
+ 
+ | Nvidia | SteamVR                  |
+ |--------|--------------------------|
+-| 425.31 | beta 1.3.23 (1555289821) |
++| 430.86 | 1.5.6 (1559872573)       |"

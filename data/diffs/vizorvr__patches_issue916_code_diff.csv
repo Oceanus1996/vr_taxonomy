@@ -1,0 +1,255 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vizorvr/patches,916,14ca1dd,browser/plugins/convert_camera_matrices.plugin.js,modified,22,15,37,"@@ -3,31 +3,38 @@ E2.p = E2.plugins[""convert_camera_matrices""] = function(core, node)
+ 	this.desc = 'Extract the projection and view matrices from a camera.';
+ 	
+ 	this.input_slots = [ 
+-		{ name: 'camera', dt: core.datatypes.CAMERA, desc: 'The input camera to be split into constituent matrices.', def: core.renderer.camera_screenspace },
+-	];
++		{ name: 'camera', dt: core.datatypes.CAMERA, desc: 'The input camera to be split into constituent matrices.' },
++	]
+ 	
+ 	this.output_slots = [ 
+-		{ name: 'projection', dt: core.datatypes.MATRIX, desc: 'The camera projection matrix.', def: core.renderer.matrix_identity },
+-		{ name: 'view', dt: core.datatypes.MATRIX, desc: 'The camera view matrix.', def: core.renderer.matrix_identity }
+-	];
+-	
+-	this.gl = core.renderer.context;
+-};
++		{ name: 'projection', dt: core.datatypes.MATRIX, desc: 'The camera projection matrix.' },
++		{ name: 'view', dt: core.datatypes.MATRIX, desc: 'The camera view matrix.' }
++	]
++
++	this.viewMatrix = new THREE.Matrix4()
++}
+ 
+ E2.p.prototype.reset = function()
+ {
+-	this.camera = new THREE.Camera();
+-};
++	this.camera = new THREE.Camera()
++}
+ 
+ E2.p.prototype.update_input = function(slot, data)
+ {
+-	this.camera = data;
+-};	
++	this.camera = data
++	this.camera.updateMatrixWorld()
++
++	this.viewMatrix.copy(this.camera.matrixWorld)
++	this.viewMatrix.elements[12] = 0
++	this.viewMatrix.elements[13] = 0
++	this.viewMatrix.elements[14] = 0
++
++}
+ 
+ E2.p.prototype.update_output = function(slot)
+ {
+ 	if(slot.index === 0)
+-		return this.camera.projectionMatrix;
++		return this.camera.projectionMatrix
+ 	else
+-		return this.camera.viewMatrix; 
+-};
++		return this.viewMatrix
++}"
+vizorvr/patches,916,14ca1dd,browser/plugins/three_gaze_clicker.plugin.js,modified,24,5,29,"@@ -11,17 +11,21 @@
+ 			{name: 'camera', dt: core.datatypes.CAMERA},
+ 			{name: 'scene', dt: core.datatypes.SCENE},
+ 			{name: 'delay', dt: core.datatypes.FLOAT, def: 1.0},
++			{name: 'show icon', dt: core.datatypes.BOOL, def: true},
+ 			{name: 'eye distance', dt: core.datatypes.FLOAT, def: this.iconDistance,
+ 			 desc: 'Eye Distance for Gaze Clicker icon in VR'}
+ 		]
+ 
+ 		this.output_slots = [
+ 			{name: 'scene', dt: core.datatypes.SCENE},
++			{name: 'object', dt: core.datatypes.OBJECT3D}
+ 		]
+ 
+ 		this.always_update = true
+ 
+ 		this.clickDelay = 1.0
++
++		this.showIcon = true
+ 	}
+ 
+ 	ThreeGazeClicker.prototype = Object.create(Plugin.prototype)
+@@ -44,6 +48,9 @@
+ 		case 2: // delay
+ 			this.clickDelay = data
+ 			break
++		case 3: // icon
++			this.showIcon = data
++			break
+ 		default:
+ 			break
+ 		}
+@@ -58,8 +65,13 @@
+ 		}
+ 	}
+ 
+-	ThreeGazeClicker.prototype.update_output = function() {
+-		return this.scene
++	ThreeGazeClicker.prototype.update_output = function(slot) {
++		if (slot.index === 0) {
++			return this.scene
++		}
++		else if (slot.index === 1) {
++			return this.lastObj
++		}
+ 	}
+ 
+ 	ThreeGazeClicker.prototype.state_changed = function(ui) {
+@@ -251,10 +263,17 @@
+ 		mesh.position.copy(this.camera.position)
+ 		mesh.quaternion.copy(this.camera.quaternion)
+ 
+-		this.geometry.update(this.clickFactor, Math.max(1.0 - Math.max(0.0, this.clickTime - this.clickDelay) * 10.0, 0.0))
++		if (this.showIcon) {
++			this.geometry.update(this.clickFactor, Math.max(1.0 - Math.max(0.0, this.clickTime - this.clickDelay) * 10.0, 0.0))
+ 
+-		if (this.scene.children[1].children.indexOf(mesh) < 0) {
+-			this.scene.children[1].add(mesh)
++			if (this.scene.children[1].children.indexOf(mesh) < 0) {
++				this.scene.children[1].add(mesh)
++			}
++		}
++		else {
++			if (this.scene.children[1].children.indexOf(mesh) >= 0) {
++				this.scene.children[1].remove(mesh)
++			}
+ 		}
+ 	}
+ })()
+\ No newline at end of file"
+vizorvr/patches,916,14ca1dd,browser/plugins/vector_to_screenspace.plugin.js,modified,30,26,56,"@@ -3,42 +3,46 @@ E2.p = E2.plugins[""vector_to_screenspace""] = function(core, node)
+ 	this.desc = 'Transform a vector from world to screenspace given a specified camera.';
+ 	
+ 	this.input_slots = [ 
+-		{ name: 'vector', dt: core.datatypes.VECTOR, desc: 'Input vector (in worldspace) to transform.', def: core.renderer.vector_origin },
+-		{ name: 'camera', dt: core.datatypes.CAMERA, desc: 'Camera to use for transformation.', def: core.renderer.camera_screenspace } 
+-	];
++		{ name: 'vector', dt: core.datatypes.VECTOR, desc: 'Input vector (in worldspace) to transform.' },
++		{ name: 'camera', dt: core.datatypes.CAMERA, desc: 'Camera to use for transformation.' }
++	]
+ 	
+ 	this.output_slots = [
+-		{ name: 'vector', dt: core.datatypes.VECTOR, desc: 'Emits the transformed input vector.', def: core.renderer.vector_origin }
+-	];
+-};
++		{ name: 'vector', dt: core.datatypes.VECTOR, desc: 'Emits the transformed input vector.' }
++	]
++}
+ 
+-E2.p.prototype.update_input = function(slot, data)
+-{
+-	if(slot.index === 0)
+-		this.vector = data;
+-	else if(slot.index === 1)
+-		this.camera = data;
+-};	
++E2.p.prototype.update_input = function(slot, data) {
++	if (slot.index === 0)
++		this.vector = data
++	else if (slot.index === 1)
++		this.camera = data
++}
+ 
+-E2.p.prototype.update_state = function()
+-{
+-	var m = mat4.create();
+-	
+-	mat4.multiply(this.camera.projection, this.camera.view, m);
+-	mat4.multiplyVec3(m, this.vector, this.transformed);
+-};
++E2.p.prototype.update_state = function() {
++	this.camera.updateMatrixWorld()
++	this.camera.updateProjectionMatrix()
++
++	var m = new THREE.Matrix4()
++	this.camera.matrixWorldInverse.getInverse(this.camera.matrixWorld)
++	m.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse)
++
++	this.transformed.copy(this.vector)
++
++	this.transformed.applyMatrix4(m)
++}
+ 
+ E2.p.prototype.update_output = function(slot)
+ {
+-	return this.transformed;
+-};	
++	return this.transformed
++}
+ 
+ E2.p.prototype.state_changed = function(ui)
+ {
+ 	if(!ui)
+ 	{
+-		this.vector = [0, 0, 0];
+-		this.transformed = [0, 0, 0];
+-		this.camera = new Camera();
++		this.vector = new THREE.Vector3()
++		this.transformed = new THREE.Vector3()
++		this.camera = new THREE.Camera()
+ 	}
+-};
++}"
+vizorvr/patches,916,14ca1dd,browser/plugins/vector_transform.plugin.js,modified,8,7,15,"@@ -3,12 +3,12 @@ E2.p = E2.plugins[""vector_transform""] = function(core, node)
+ 	this.desc = 'Transform a vector by the supplied matrix.';
+ 	
+ 	this.input_slots = [ 
+-		{ name: 'vector', dt: core.datatypes.VECTOR, desc: 'Input vector to transform.', def: core.renderer.vector_origin },
+-		{ name: 'matrix', dt: core.datatypes.MATRIX, desc: 'Transformation matrix to multiply the vector by.', def: core.renderer.matrix_identity } 
++		{ name: 'vector', dt: core.datatypes.VECTOR, desc: 'Input vector to transform.' },
++		{ name: 'matrix', dt: core.datatypes.MATRIX, desc: 'Transformation matrix to multiply the vector by.' }
+ 	];
+ 	
+ 	this.output_slots = [
+-		{ name: 'vector', dt: core.datatypes.VECTOR, desc: 'Emits the transformed input vector.', def: core.renderer.vector_origin }
++		{ name: 'vector', dt: core.datatypes.VECTOR, desc: 'Emits the transformed input vector.' }
+ 	];
+ };
+ 
+@@ -22,7 +22,8 @@ E2.p.prototype.update_input = function(slot, data)
+ 
+ E2.p.prototype.update_state = function()
+ {
+-	this.vector.transformDirection(this.matrix)
++	this.transformed.copy(this.vector)
++	this.transformed.applyMatrix4(this.matrix)
+ };
+ 
+ E2.p.prototype.update_output = function(slot)
+@@ -34,9 +35,9 @@ E2.p.prototype.state_changed = function(ui)
+ {
+ 	if(!ui)
+ 	{
+-		this.vector = new THREE.Vector3(0, 0, 0)
+-		this.transformed = new THREE.Vector3(0, 0, 0)
+-		this.matrix = new THREE.Matrix4(0, 0, 0)
++		this.vector = new THREE.Vector3()
++		this.transformed = new THREE.Vector3()
++		this.matrix = new THREE.Matrix4()
+ 		this.matrix.identity()
+ 	}
+ };"
+vizorvr/patches,916,14ca1dd,browser/vendor/three/TransformControls.js,modified,2,2,4,"@@ -984,7 +984,7 @@
+ 				point.sub( offset );
+ 				point.multiply( parentScale );
+ 
+-				var newValue = scope.object.position.clone()
++				var newValue = oldPosition.clone()
+ 
+ 				if ( scope.space === ""local"" ) {
+ 
+@@ -1117,7 +1117,7 @@
+ 					rotation.set( Math.atan2( point.z, point.y ), Math.atan2( point.x, point.z ), Math.atan2( point.y, point.x ) );
+ 					offsetRotation.set( Math.atan2( tempVector.z, tempVector.y ), Math.atan2( tempVector.x, tempVector.z ), Math.atan2( tempVector.y, tempVector.x ) );
+ 
+-					quaternionXYZ.setFromRotationMatrix( oldRotationMatrix );
++					quaternionXYZ.copy( oldQuaternion );
+ 
+ 					if ( scope.rotationSnap !== null ) {
+ "

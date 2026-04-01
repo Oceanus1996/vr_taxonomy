@@ -1,0 +1,218 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+Unity-Technologies/EditorXR,286,6db0aa5cd51998186db720323d914f32dfc08d45,Scripts/Core/EditorVR.Menus.cs,modified,1,1,2,"@@ -42,7 +42,7 @@ internal class MenuHideData
+ 
+ 			// Local method use only -- created here to reduce garbage collection
+ 			readonly List<DeviceData> m_ActiveDeviceData = new List<DeviceData>();
+-			readonly List<WorkspaceUI> m_WorkspaceComponents = new List<WorkspaceUI>();
++			readonly List<IWorkspace> m_WorkspaceComponents = new List<IWorkspace>();
+ 			readonly Collider[] m_WorkspaceOverlaps = new Collider[k_PossibleOverlaps];
+ 
+ 			public Menus()"
+Unity-Technologies/EditorXR,286,6db0aa5cd51998186db720323d914f32dfc08d45,Scripts/Core/EditorVR.MiniWorlds.cs,modified,2,0,2,"@@ -123,6 +123,7 @@ public void EnterPreviewMode(IUsesSpatialHash hash, float scaleFactor)
+ 					{
+ 						hash.RemoveFromSpatialHash(grabData.transform.gameObject);
+ 						grabData.SetScale(scaleFactor);
++						grabData.Update(originalRayOrigin);
+ 					}
+ 				}
+ 
+@@ -156,6 +157,7 @@ public void DropPreviewObjects(IPlaceSceneObjects placer)
+ 					if (hasPreview)
+ 						placer.PlaceSceneObjects(transforms, targetPositionOffsets, targetRotations, targetScales);
+ 
++					m_GrabData.Clear();
+ 					hasPreview = false;
+ 				}
+ "
+Unity-Technologies/EditorXR,286,6db0aa5cd51998186db720323d914f32dfc08d45,Scripts/Core/EditorVR.UI.cs,modified,1,2,3,"@@ -100,8 +100,7 @@ internal void Initialize()
+ 
+ 			internal GameObject InstantiateUI(GameObject prefab, Transform parent = null, bool worldPositionStays = true)
+ 			{
+-				var go = ObjectUtils.Instantiate(prefab);
+-				go.transform.SetParent(parent ? parent : evr.transform, worldPositionStays);
++				var go = ObjectUtils.Instantiate(prefab, parent ? parent : evr.transform, worldPositionStays);
+ 				foreach (var canvas in go.GetComponentsInChildren<Canvas>())
+ 					canvas.worldCamera = m_EventCamera;
+ "
+Unity-Technologies/EditorXR,286,6db0aa5cd51998186db720323d914f32dfc08d45,Workspaces/Base/Workspace.cs,modified,2,3,5,"@@ -132,8 +132,7 @@ public float topPanelDividerOffset
+ 
+ 		public virtual void Setup()
+ 		{
+-			var baseObject = this.InstantiateUI(m_BasePrefab);
+-			baseObject.transform.SetParent(transform, false);
++			var baseObject = this.InstantiateUI(m_BasePrefab, transform, false);
+ 
+ 			m_WorkspaceUI = baseObject.GetComponent<WorkspaceUI>();
+ 			this.ConnectInterfaces(m_WorkspaceUI);
+@@ -160,7 +159,7 @@ public virtual void Setup()
+ 
+ 			m_WorkspaceUI.sceneContainer.transform.localPosition = Vector3.zero;
+ 
+-			m_OuterCollider = m_WorkspaceUI.gameObject.AddComponent<BoxCollider>();
++			m_OuterCollider = gameObject.AddComponent<BoxCollider>();
+ 			m_OuterCollider.isTrigger = true;
+ 
+ 			var startingBounds = m_CustomStartingBounds ?? DefaultBounds;"
+Unity-Technologies/EditorXR,286,6db0aa5cd51998186db720323d914f32dfc08d45,Workspaces/Base/WorkspaceBase.prefab,modified,16,16,32,"@@ -152,7 +152,7 @@ GameObject:
+   serializedVersion: 5
+   m_Component:
+   - component: {fileID: 4000012074834286}
+-  m_Layer: 0
++  m_Layer: 5
+   m_Name: TooltipTarget
+   m_TagString: Untagged
+   m_Icon: {fileID: 0}
+@@ -223,7 +223,7 @@ GameObject:
+   - component: {fileID: 114000014286123538}
+   - component: {fileID: 114000013983468268}
+   - component: {fileID: 65736115287711426}
+-  m_Layer: 0
++  m_Layer: 5
+   m_Name: WorkspaceBase
+   m_TagString: Untagged
+   m_Icon: {fileID: 0}
+@@ -311,7 +311,7 @@ GameObject:
+   - component: {fileID: 4000014022192516}
+   - component: {fileID: 33000014019345868}
+   - component: {fileID: 23000013394386716}
+-  m_Layer: 0
++  m_Layer: 5
+   m_Name: TopFace
+   m_TagString: Untagged
+   m_Icon: {fileID: 0}
+@@ -328,7 +328,7 @@ GameObject:
+   - component: {fileID: 4000012169316234}
+   - component: {fileID: 33000013143236502}
+   - component: {fileID: 23000013761711670}
+-  m_Layer: 0
++  m_Layer: 5
+   m_Name: SeparatorMask
+   m_TagString: Untagged
+   m_Icon: {fileID: 0}
+@@ -377,7 +377,7 @@ GameObject:
+   serializedVersion: 5
+   m_Component:
+   - component: {fileID: 4000014171123912}
+-  m_Layer: 0
++  m_Layer: 5
+   m_Name: TooltipSource
+   m_TagString: Untagged
+   m_Icon: {fileID: 0}
+@@ -411,7 +411,7 @@ GameObject:
+   - component: {fileID: 4000013290412170}
+   - component: {fileID: 33000010567856684}
+   - component: {fileID: 23000013191296468}
+-  m_Layer: 0
++  m_Layer: 5
+   m_Name: ButtonMesh
+   m_TagString: Untagged
+   m_Icon: {fileID: 0}
+@@ -429,7 +429,7 @@ GameObject:
+   - component: {fileID: 33000013418938564}
+   - component: {fileID: 23000010475008990}
+   - component: {fileID: 114000013312479136}
+-  m_Layer: 0
++  m_Layer: 5
+   m_Name: TopHighlight
+   m_TagString: Untagged
+   m_Icon: {fileID: 0}
+@@ -529,7 +529,7 @@ GameObject:
+   - component: {fileID: 4000012134427690}
+   - component: {fileID: 33000012282235858}
+   - component: {fileID: 23000013313223260}
+-  m_Layer: 0
++  m_Layer: 5
+   m_Name: FrameFrontFace
+   m_TagString: Untagged
+   m_Icon: {fileID: 0}
+@@ -559,7 +559,7 @@ GameObject:
+   serializedVersion: 5
+   m_Component:
+   - component: {fileID: 4000012021209696}
+-  m_Layer: 0
++  m_Layer: 5
+   m_Name: TopFaceContainer
+   m_TagString: Untagged
+   m_Icon: {fileID: 0}
+@@ -574,7 +574,7 @@ GameObject:
+   serializedVersion: 5
+   m_Component:
+   - component: {fileID: 4000012708483634}
+-  m_Layer: 0
++  m_Layer: 5
+   m_Name: TooltipTarget
+   m_TagString: Untagged
+   m_Icon: {fileID: 0}
+@@ -589,7 +589,7 @@ GameObject:
+   serializedVersion: 5
+   m_Component:
+   - component: {fileID: 4000012913026432}
+-  m_Layer: 0
++  m_Layer: 5
+   m_Name: TooltipSource
+   m_TagString: Untagged
+   m_Icon: {fileID: 0}
+@@ -673,7 +673,7 @@ GameObject:
+   serializedVersion: 5
+   m_Component:
+   - component: {fileID: 4000011607955888}
+-  m_Layer: 0
++  m_Layer: 5
+   m_Name: TopDividerContainer
+   m_TagString: Untagged
+   m_Icon: {fileID: 0}
+@@ -768,7 +768,7 @@ GameObject:
+   - component: {fileID: 4000012157338960}
+   - component: {fileID: 33000011738463840}
+   - component: {fileID: 23000014080278418}
+-  m_Layer: 0
++  m_Layer: 5
+   m_Name: ButtonMesh
+   m_TagString: Untagged
+   m_Icon: {fileID: 0}
+@@ -851,7 +851,7 @@ GameObject:
+   serializedVersion: 5
+   m_Component:
+   - component: {fileID: 4000012340493516}
+-  m_Layer: 0
++  m_Layer: 5
+   m_Name: TopHighlightContainer
+   m_TagString: Untagged
+   m_Icon: {fileID: 0}
+@@ -921,7 +921,7 @@ GameObject:
+   - component: {fileID: 33000014175619198}
+   - component: {fileID: 23000011122332112}
+   - component: {fileID: 114000013793407110}
+-  m_Layer: 0
++  m_Layer: 5
+   m_Name: Highlight
+   m_TagString: Untagged
+   m_Icon: {fileID: 0}
+@@ -936,7 +936,7 @@ GameObject:
+   serializedVersion: 5
+   m_Component:
+   - component: {fileID: 4000011062655166}
+-  m_Layer: 0
++  m_Layer: 5
+   m_Name: FrameFrontFaceContainer
+   m_TagString: Untagged
+   m_Icon: {fileID: 0}"
+Unity-Technologies/EditorXR,286,6db0aa5cd51998186db720323d914f32dfc08d45,Workspaces/Base/WorkspaceUI.cs,modified,2,2,4,"@@ -134,9 +134,7 @@ sealed class WorkspaceUI : MonoBehaviour, IUsesStencilRef, IUsesViewerScale, IGe
+ 		[SerializeField]
+ 		WorkspaceButton m_ResizeButton;
+ 
+-		[SerializeField]
+ 		BoxCollider m_FrameCollider;
+-
+ 		Bounds m_Bounds;
+ 		float? m_TopPanelDividerOffset;
+ 
+@@ -446,6 +444,8 @@ void Awake()
+ 			m_CloseButton.hovered += OnButtonHovered;
+ 			m_ResizeButton.clicked += OnResetSizeClicked;
+ 			m_ResizeButton.hovered += OnButtonHovered;
++
++			m_FrameCollider = transform.parent.gameObject.AddComponent<BoxCollider>();
+ 		}
+ 
+ 		IEnumerator Start()"

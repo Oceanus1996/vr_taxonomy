@@ -1,0 +1,46 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+SlimeVR/SlimeVR-Server,657,a92864d,gui/src/components/tracker/TrackersTable.tsx,modified,2,4,6,"@@ -291,11 +291,9 @@ export function TrackersTable({
+       {column({
+         id: DisplayColumn.TPS,
+         label: l10n.getString('tracker-table-column-tps'),
+-        row: ({ device }) => (
++        row: ({ tracker }) => (
+           <Typography color={fontColor}>
+-            {(device?.hardwareStatus?.tps != null && (
+-              <>{device.hardwareStatus.tps || 0}</>
+-            )) || <></>}
++            {tracker?.tps != null ? <>{tracker.tps}</> : <></>}
+           </Typography>
+         ),
+       })}"
+SlimeVR/SlimeVR-Server,657,a92864d,gui/src/hooks/datafeed-config.ts,modified,1,0,1,"@@ -16,6 +16,7 @@ export function useDataFeedConfig() {
+   trackerData.linearAcceleration = true;
+   trackerData.rotationReferenceAdjusted = true;
+   trackerData.rotationIdentityAdjusted = true;
++  trackerData.tps = true;
+ 
+   const dataMask = new DeviceDataMaskT();
+   dataMask.deviceData = true;"
+SlimeVR/SlimeVR-Server,657,a92864d,server/src/main/java/dev/slimevr/protocol/datafeed/DataFeedBuilder.java,modified,3,3,6,"@@ -201,6 +201,9 @@ public static int createTrackerData(
+ 				TrackerData.addRotationIdentityAdjusted(fbb, createQuat(fbb, quaternion));
+ 			}
+ 		}
++		if (mask.getTps() && tracker instanceof TrackerWithTPS trackerWithTps) {
++			TrackerData.addTps(fbb, (int) trackerWithTps.getTPS());
++		}
+ 
+ 		return TrackerData.endTrackerData(fbb);
+ 	}
+@@ -252,9 +255,6 @@ public static int createDeviceData(
+ 		HardwareStatus.startHardwareStatus(fbb);
+ 		HardwareStatus.addErrorStatus(fbb, tracker.getStatus().id);
+ 
+-		if (tracker instanceof TrackerWithTPS)
+-			HardwareStatus.addTps(fbb, (int) ((TrackerWithTPS) tracker).getTPS());
+-
+ 		if (tracker instanceof TrackerWithBattery twb) {
+ 			HardwareStatus.addBatteryVoltage(fbb, twb.getBatteryVoltage());
+ 			HardwareStatus.addBatteryPctEstimate(fbb, (int) twb.getBatteryLevel());"
+SlimeVR/SlimeVR-Server,657,a92864d,solarxr-protocol,modified,1,1,2,"@@ -1 +1 @@
+-Subproject commit 7fed7a87c585d7f00899d29069bc6fec83892582
++Subproject commit f615e9a331c008457b710cb8aaea3eff80acb237"

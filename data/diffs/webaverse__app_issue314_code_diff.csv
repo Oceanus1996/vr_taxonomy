@@ -1,0 +1,567 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+webaverse/app,314,b85396a19d020c3d85ba6be24fd0eb4955739644,react-ui/components/AssetCard.js,modified,1,1,2,"@@ -38,7 +38,7 @@ const Card = ({
+               <span className=""cardAssetName cardName ${cardSize}"">${assetName}</span>
+             </div>
+             <div className=""upperCardInfoRight upperCardInfoRight ${cardSize}"">
+-              <img className=""networkType networkType ${cardSize}"" src='${window.locationSubdirectory}../images/icon-${networkType}.svg' />
++              <img className=""networkType networkType ${cardSize}"" src='${window.locationSubdirectory}/images/icon-${networkType}.svg' />
+               <div className=""itemType ext ${cardSize} ext_${ext}"">
+                 <img className=""itemTypeIcon itemTypeIcon ${cardSize}"" src='${window.locationSubdirectory}/components/AssetCardAdditional/icon-${ext}.svg' />
+                 <span className=""itemTypeExt itemTypeExt ${cardSize}"">.${ext}</span> "
+webaverse/app,314,b85396a19d020c3d85ba6be24fd0eb4955739644,react-ui/components/AssetDetails.js,modified,7,1,8,"@@ -46,6 +46,7 @@ export const AssetDetails = ({
+     const [toggleSaleOpen, setToggleSaleOpen] = useState(false);
+     const [toggleOnSaleOpen, setToggleOnSaleOpen] = useState(false);
+     const [toggleTransferToOpen, setToggleTransferToOpen] = useState(false);
++    const [toggleDropdownConfirmOpen, setToggleDropdownConfirmOpen] = useState(false);
+ 
+     // Do you own this asset?
+     console.log(""Owner address is"", ownerAddress);
+@@ -166,6 +167,10 @@ export const AssetDetails = ({
+         setToggleTransferToOpen(!toggleTransferToOpen);
+     }
+ 
++    const toggleDropdownConfirm = () => {
++        setToggleDropdownConfirmOpen(!toggleDropdownConfirmOpen)
++    }
++
+     return html`
+         <div className=""${styles} assetDetails"">
+             <div className=""assetDetailsLeftColumn"">
+@@ -333,7 +338,8 @@ export const AssetDetails = ({
+                                 </div>
+                                 ${toggleOnSaleOpen && html`
+                                 <div className=""accordionDropdown"">
+-                                    <button className=""assetDetailsButton assetSubmitButton"" onClick=${handleBuyAsset}>Buy Asset</button>         
++                                    <button className=""assetDetailsButton assetSubmitButton"" onClick=${toggleDropdownConfirm}>Buy Asset</button>         
++                                    
+                                 </div>
+                                 `}
+                             </div>"
+webaverse/app,314,b85396a19d020c3d85ba6be24fd0eb4955739644,react-ui/components/MintPage.css,modified,36,16,52,"@@ -7,24 +7,31 @@
+   flex-direction: column;
+   justify-content: center;
+   align-items: center;
+-  margin-top: 4em;
+ }
+ 
+-.mintPageHeaderTitle {
+-  width: 14em;
+-  justify-content: center;
++.mintHeaderTitle {
+   align-self: flex-start;
+-  background-image: url(""data:image/svg+xml,%3Csvg width='551' height='58' viewBox='0 0 551 58' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 0H550.5L530.5 58H0V0Z' fill='%237E57C2'/%3E%3C/svg%3E%0A"");
+-  background-repeat: no-repeat;
+-  background-size: 14em;
+-  font-size: 2.1em;
++  width: 17.2em;
++  position: relative;
++  font-size: 2em;
+   font-weight: 700;
+-  text-transform: uppercase;
+   color: white;
+-  padding-left: 7.3em;
++  margin-top: 1em;
++  margin-bottom: 0.5em;
++}
++
++.headerTitleValue {
++  position: absolute;
++  top: 0.15em;
++  left: 10em;
+ }
+ 
+-.mintPageHeaderTitle+div {
++.headerTitleImg {
++  height: 1.8em;
++  width: 17em;
++}
++
++.mintHeaderTitle+div {
+   display: flex;
+   justify-content: space-between;
+   align-items: center;
+@@ -133,25 +140,33 @@
+ 
+ /* Page Two */
+ .mintPageBodyFormTwo {
+-  width: 1200px;
++  /* width: 1200px; */
+   display: flex;
+   margin-bottom: 2em;
+ }
+ 
+-.mintPageBodyFormTwo>div {
++.mintPageBodyFormTwo div {
+   display: flex;
+   flex-direction: column;
+-  width: 50%;
++}
++
++.mintNftImageContainer {
++  width: 40%;
+ }
+ 
+ .mintNftImagePreview {
+-  width: 600px;
+-  height: 600px;
++  width: 22em;
++  height: 35em;
++  object-fit: contain;
++  /* border: 1px solid #525252; */
++  filter: drop-shadow(0px 4px 4px rgba(0, 0, 0, 0.25));
++  border-radius: 0px;
+ }
+ 
+ .mintPageFormTwoContainer {
+   padding-left: 2em;
+   padding-right: 4em;
++  width: 42em;
+ }
+ 
+ .mintNftNameLabel {
+@@ -189,6 +204,7 @@
+ 
+ .mintNftDescription+div {
+   display: flex;
++  flex-direction: row;
+   justify-content: center;
+ }
+ 
+@@ -293,6 +309,10 @@
+   font-weight: 400;
+ }
+ 
++.mintPageBodyQuantitySet:focus {
++  outline: none;
++}
++
+ .mintPageBodyMintingFee {
+   justify-content: space-between;
+   width: 100%;"
+webaverse/app,314,b85396a19d020c3d85ba6be24fd0eb4955739644,react-ui/components/MintPage.js,modified,14,8,22,"@@ -14,6 +14,9 @@ const MintingPage = () => {
+   const { state, dispatch } = useContext(Context);
+   let [currentStep, setCurrentStep] = useState(1);
+ 
++  const headerTitleImg = window.locationSubdirectory + ""/images/Gallery_Subheader_Background.svg"";
++
++
+   // Current file
+   let [file, setFile] = useState(null);
+ 
+@@ -96,10 +99,13 @@ const MintingPage = () => {
+ 
+   const handleSetDescription = (e) => setDescription(e.target.value);
+ 
+-
++  
+   const MintPageHeader = () => html`
+     <div className=""mintPageHeader"">
+-      <div className=""mintPageHeaderTitle"">the forge</div>
++    <div className="" mintHeaderTitle"">
++      <span className=""headerTitleValue"">THE FORGE</span>
++      <img className=""headerTitleImg"" src=""${headerTitleImg}"" />
++    </div>
+       <div>
+         <div className=""mintPageHeaderStep ${currentStep === 1 ? 'selected' : ''}"">
+           <span className=""mintPageHeaderNumber ${currentStep === 1 ? 'selected' : ''}"">1</span>
+@@ -135,7 +141,7 @@ const MintingPage = () => {
+   const pageTwo = html`
+     <div className=""mintPageBody"">
+       <form className=""mintPageBodyFormTwo"">
+-        <div>
++        <div className=""mintNftImageContainer"">
+           ${imagePreview !== null && html`
+             <img src=${imagePreview} className=""mintNftImagePreview""/>
+           `}
+@@ -158,20 +164,20 @@ const MintingPage = () => {
+       id: 1,
+       assetName: 'My Cool Item',
+       description: 'This is the first avatar I’ve uploaded to the Webaverse.',
+-      image: '/components/AssetCardAdditional/tempImage.png',
++      image: imagePreview,
+       hash: '0x35ddcd7d8b66f1331f77186af17dbcf231909433',
+       ext: 'jpg',
+       totalSupply: 1,
+       numberInEdition: 1,
+       balance: 2000,
+-      ownerAvatarPreview: '/components/AssetCardAdditional/tempImageIcon.png',
++      ownerAvatarPreview: imagePreview,
+       ownerUsername: 'Paul',
+       ownerAddress: null,
+-      minterAvatarPreview: '/components/AssetCardAdditional/tempImageIcon.png',
++      minterAvatarPreview: imagePreview,
+       minterAddress: null,
+       minterUsername: null,
+       cardSize: ""large"",
+-      networkType: 'vrm',
++      networkType: 'webaverse',
+       onClickFunction: null,
+     }
+ 
+@@ -187,7 +193,7 @@ const MintingPage = () => {
+           </div>
+           <div className=""mintPageBodyQuantity flex"">
+             <span>quantity</span>
+-            <input type=""number"" className=""mintPageBodyQuantitySet"" value=1 onChange=${(e) => setQuantity(e.target.value)} />
++            <input type=""number"" min=1 className=""mintPageBodyQuantitySet"" value=${quantity} onChange=${(e) => setQuantity(e.target.value)} />
+           </div>
+           <div className=""mintPageBodyMintingFee flex"">
+             <span>minting fee:</span>"
+webaverse/app,314,b85396a19d020c3d85ba6be24fd0eb4955739644,react-ui/components/NavBar.css,modified,5,0,5,"@@ -36,6 +36,10 @@ a:hover {
+     cursor: pointer;
+ }
+ 
++.nav-link-home {
++    
++}
++
+ .nav-link {
+     padding: 1.4em;
+     height: 4em;
+@@ -56,6 +60,7 @@ a:hover {
+     background-image: url(""data:image/svg+xml,%3Csvg width='64' height='64' viewBox='0 0 64 64' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='64' height='64' fill='url(%23paint0_linear)'/%3E%3Cdefs%3E%3ClinearGradient id='paint0_linear' x1='32' y1='0' x2='32' y2='64' gradientUnits='userSpaceOnUse'%3E%3Cstop stop-color='%23E30069'/%3E%3Cstop offset='0.463542' stop-color='%23990357'/%3E%3Cstop offset='1' stop-color='%239F035B'/%3E%3C/linearGradient%3E%3C/defs%3E%3C/svg%3E%0A"");
+ }
+ 
++
+ .nav-logo-logo {
+     width: 100%;
+     height: 100%;"
+webaverse/app,314,b85396a19d020c3d85ba6be24fd0eb4955739644,react-ui/components/NavBar.js,modified,5,1,6,"@@ -162,7 +162,11 @@ const NavBar = () => {
+   return html`
+     <div className=""navbarWrapper ${styles}"">
+         <nav className=""navbar""> 
+-          <div className='nav-logo'><div className=""nav-logo-logo""></div></div>
++          <div className='nav-logo'>
++            <a href='${window.locationSubdirectory}/' className='nav-link-home'>
++              <div className=""nav-logo-logo""></div>
++            </a>
++          </div>
+           <span className='nav-item'><${NavLink} to='${window.locationSubdirectory}/' className='nav-link'>Profile</${NavLink}></span>
+           <span className='nav-item'><${NavLink} to='${window.locationSubdirectory}/gallery' className='nav-link'>Gallery</${NavLink}></span>
+           <span className='nav-item'><${NavLink} to='${window.locationSubdirectory}/creators' className='nav-link'>Creators</${NavLink}></span>"
+webaverse/app,314,b85396a19d020c3d85ba6be24fd0eb4955739644,react-ui/components/Profile.js,modified,13,3,16,"@@ -52,7 +52,12 @@ const Profile = (props) => {
+       console.log(newStoreAssets);
+       console.log(state);
+       setStoreAssets(newStoreAssets);
+-      if((view === undefined || view === null || view === """") && newStoreAssets.length > 0) setView('booth');
++      if((view === undefined || view === null || view === """") && newStoreAssets.length > 0) {
++        if(state?.creatorProfiles?.[creatorAddress]?.address === state?.address) {
++          setView('inventory')
++        } else
++        setView('booth')
++      };
+ 
+     }, 100)
+   }, [])
+@@ -73,8 +78,8 @@ const Profile = (props) => {
+   // `}
+ 
+   //             <span className=""profileLoadout""><a href=""#"">Loadout</a></span>
++  // console.log(state?.creatorProfiles?.[creatorAddress]?.address === state.address)
+ 
+-  console.log(homespacePreview)
+ 
+   return html`
+     <${React.Suspense} fallback=${html`<div>Loading...</div>`}>
+@@ -103,7 +108,7 @@ const Profile = (props) => {
+               <div className=""profileBodyNavContainer"">
+                 ${storeAssets.length > 0 && html`
+                   <${Link} className='profileNavLink ${view === 'booth' || view === 'store' || view === 'onsale' ? 'active' : ''}' to='${window.locationSubdirectory}/creator/${creatorAddress}/booth'>For Sale</${Link}>
+-                `}
++                  `}
+                   <${Link} className='profileNavLink ${view === undefined || view === 'inventory' ? 'active' : ''}' to='${window.locationSubdirectory}/creator/${creatorAddress}/inventory'>Inventory</${Link}>
+               </div>
+             </div>
+@@ -126,3 +131,8 @@ const Profile = (props) => {
+ };
+ 
+ export default Profile;
++
++
++
++///////////////////////////// 
++///////////////
+\ No newline at end of file"
+webaverse/app,314,3850951ae5c960932c2baca78be6679210efb863,react-ui/components/AssetCard.js,modified,1,1,2,"@@ -38,7 +38,7 @@ const Card = ({
+               <span className=""cardAssetName cardName ${cardSize}"">${assetName}</span>
+             </div>
+             <div className=""upperCardInfoRight upperCardInfoRight ${cardSize}"">
+-              <img className=""networkType networkType ${cardSize}"" src='${window.locationSubdirectory}../images/icon-${networkType}.svg' />
++              <img className=""networkType networkType ${cardSize}"" src='${window.locationSubdirectory}/images/icon-${networkType}.svg' />
+               <div className=""itemType ext ${cardSize} ext_${ext}"">
+                 <img className=""itemTypeIcon itemTypeIcon ${cardSize}"" src='${window.locationSubdirectory}/components/AssetCardAdditional/icon-${ext}.svg' />
+                 <span className=""itemTypeExt itemTypeExt ${cardSize}"">.${ext}</span> "
+webaverse/app,314,3850951ae5c960932c2baca78be6679210efb863,react-ui/components/AssetDetails.js,modified,7,1,8,"@@ -46,6 +46,7 @@ export const AssetDetails = ({
+     const [toggleSaleOpen, setToggleSaleOpen] = useState(false);
+     const [toggleOnSaleOpen, setToggleOnSaleOpen] = useState(false);
+     const [toggleTransferToOpen, setToggleTransferToOpen] = useState(false);
++    const [toggleDropdownConfirmOpen, setToggleDropdownConfirmOpen] = useState(false);
+ 
+     // Do you own this asset?
+     console.log(""Owner address is"", ownerAddress);
+@@ -166,6 +167,10 @@ export const AssetDetails = ({
+         setToggleTransferToOpen(!toggleTransferToOpen);
+     }
+ 
++    const toggleDropdownConfirm = () => {
++        setToggleDropdownConfirmOpen(!toggleDropdownConfirmOpen)
++    }
++
+     return html`
+         <div className=""${styles} assetDetails"">
+             <div className=""assetDetailsLeftColumn"">
+@@ -333,7 +338,8 @@ export const AssetDetails = ({
+                                 </div>
+                                 ${toggleOnSaleOpen && html`
+                                 <div className=""accordionDropdown"">
+-                                    <button className=""assetDetailsButton assetSubmitButton"" onClick=${handleBuyAsset}>Buy Asset</button>         
++                                    <button className=""assetDetailsButton assetSubmitButton"" onClick=${toggleDropdownConfirm}>Buy Asset</button>         
++                                    
+                                 </div>
+                                 `}
+                             </div>"
+webaverse/app,314,3850951ae5c960932c2baca78be6679210efb863,react-ui/components/MintPage.css,modified,36,16,52,"@@ -7,24 +7,31 @@
+   flex-direction: column;
+   justify-content: center;
+   align-items: center;
+-  margin-top: 4em;
+ }
+ 
+-.mintPageHeaderTitle {
+-  width: 14em;
+-  justify-content: center;
++.mintHeaderTitle {
+   align-self: flex-start;
+-  background-image: url(""data:image/svg+xml,%3Csvg width='551' height='58' viewBox='0 0 551 58' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 0H550.5L530.5 58H0V0Z' fill='%237E57C2'/%3E%3C/svg%3E%0A"");
+-  background-repeat: no-repeat;
+-  background-size: 14em;
+-  font-size: 2.1em;
++  width: 17.2em;
++  position: relative;
++  font-size: 2em;
+   font-weight: 700;
+-  text-transform: uppercase;
+   color: white;
+-  padding-left: 7.3em;
++  margin-top: 1em;
++  margin-bottom: 0.5em;
++}
++
++.headerTitleValue {
++  position: absolute;
++  top: 0.15em;
++  left: 10em;
+ }
+ 
+-.mintPageHeaderTitle+div {
++.headerTitleImg {
++  height: 1.8em;
++  width: 17em;
++}
++
++.mintHeaderTitle+div {
+   display: flex;
+   justify-content: space-between;
+   align-items: center;
+@@ -133,25 +140,33 @@
+ 
+ /* Page Two */
+ .mintPageBodyFormTwo {
+-  width: 1200px;
++  /* width: 1200px; */
+   display: flex;
+   margin-bottom: 2em;
+ }
+ 
+-.mintPageBodyFormTwo>div {
++.mintPageBodyFormTwo div {
+   display: flex;
+   flex-direction: column;
+-  width: 50%;
++}
++
++.mintNftImageContainer {
++  width: 40%;
+ }
+ 
+ .mintNftImagePreview {
+-  width: 600px;
+-  height: 600px;
++  width: 22em;
++  height: 35em;
++  object-fit: contain;
++  /* border: 1px solid #525252; */
++  filter: drop-shadow(0px 4px 4px rgba(0, 0, 0, 0.25));
++  border-radius: 0px;
+ }
+ 
+ .mintPageFormTwoContainer {
+   padding-left: 2em;
+   padding-right: 4em;
++  width: 42em;
+ }
+ 
+ .mintNftNameLabel {
+@@ -189,6 +204,7 @@
+ 
+ .mintNftDescription+div {
+   display: flex;
++  flex-direction: row;
+   justify-content: center;
+ }
+ 
+@@ -293,6 +309,10 @@
+   font-weight: 400;
+ }
+ 
++.mintPageBodyQuantitySet:focus {
++  outline: none;
++}
++
+ .mintPageBodyMintingFee {
+   justify-content: space-between;
+   width: 100%;"
+webaverse/app,314,3850951ae5c960932c2baca78be6679210efb863,react-ui/components/MintPage.js,modified,14,8,22,"@@ -14,6 +14,9 @@ const MintingPage = () => {
+   const { state, dispatch } = useContext(Context);
+   let [currentStep, setCurrentStep] = useState(1);
+ 
++  const headerTitleImg = window.locationSubdirectory + ""/images/Gallery_Subheader_Background.svg"";
++
++
+   // Current file
+   let [file, setFile] = useState(null);
+ 
+@@ -96,10 +99,13 @@ const MintingPage = () => {
+ 
+   const handleSetDescription = (e) => setDescription(e.target.value);
+ 
+-
++  
+   const MintPageHeader = () => html`
+     <div className=""mintPageHeader"">
+-      <div className=""mintPageHeaderTitle"">the forge</div>
++    <div className="" mintHeaderTitle"">
++      <span className=""headerTitleValue"">THE FORGE</span>
++      <img className=""headerTitleImg"" src=""${headerTitleImg}"" />
++    </div>
+       <div>
+         <div className=""mintPageHeaderStep ${currentStep === 1 ? 'selected' : ''}"">
+           <span className=""mintPageHeaderNumber ${currentStep === 1 ? 'selected' : ''}"">1</span>
+@@ -135,7 +141,7 @@ const MintingPage = () => {
+   const pageTwo = html`
+     <div className=""mintPageBody"">
+       <form className=""mintPageBodyFormTwo"">
+-        <div>
++        <div className=""mintNftImageContainer"">
+           ${imagePreview !== null && html`
+             <img src=${imagePreview} className=""mintNftImagePreview""/>
+           `}
+@@ -158,20 +164,20 @@ const MintingPage = () => {
+       id: 1,
+       assetName: 'My Cool Item',
+       description: 'This is the first avatar I’ve uploaded to the Webaverse.',
+-      image: '/components/AssetCardAdditional/tempImage.png',
++      image: imagePreview,
+       hash: '0x35ddcd7d8b66f1331f77186af17dbcf231909433',
+       ext: 'jpg',
+       totalSupply: 1,
+       numberInEdition: 1,
+       balance: 2000,
+-      ownerAvatarPreview: '/components/AssetCardAdditional/tempImageIcon.png',
++      ownerAvatarPreview: imagePreview,
+       ownerUsername: 'Paul',
+       ownerAddress: null,
+-      minterAvatarPreview: '/components/AssetCardAdditional/tempImageIcon.png',
++      minterAvatarPreview: imagePreview,
+       minterAddress: null,
+       minterUsername: null,
+       cardSize: ""large"",
+-      networkType: 'vrm',
++      networkType: 'webaverse',
+       onClickFunction: null,
+     }
+ 
+@@ -187,7 +193,7 @@ const MintingPage = () => {
+           </div>
+           <div className=""mintPageBodyQuantity flex"">
+             <span>quantity</span>
+-            <input type=""number"" className=""mintPageBodyQuantitySet"" value=1 onChange=${(e) => setQuantity(e.target.value)} />
++            <input type=""number"" min=1 className=""mintPageBodyQuantitySet"" value=${quantity} onChange=${(e) => setQuantity(e.target.value)} />
+           </div>
+           <div className=""mintPageBodyMintingFee flex"">
+             <span>minting fee:</span>"
+webaverse/app,314,3850951ae5c960932c2baca78be6679210efb863,react-ui/components/NavBar.css,modified,5,0,5,"@@ -36,6 +36,10 @@ a:hover {
+     cursor: pointer;
+ }
+ 
++.nav-link-home {
++    
++}
++
+ .nav-link {
+     padding: 1.4em;
+     height: 4em;
+@@ -56,6 +60,7 @@ a:hover {
+     background-image: url(""data:image/svg+xml,%3Csvg width='64' height='64' viewBox='0 0 64 64' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='64' height='64' fill='url(%23paint0_linear)'/%3E%3Cdefs%3E%3ClinearGradient id='paint0_linear' x1='32' y1='0' x2='32' y2='64' gradientUnits='userSpaceOnUse'%3E%3Cstop stop-color='%23E30069'/%3E%3Cstop offset='0.463542' stop-color='%23990357'/%3E%3Cstop offset='1' stop-color='%239F035B'/%3E%3C/linearGradient%3E%3C/defs%3E%3C/svg%3E%0A"");
+ }
+ 
++
+ .nav-logo-logo {
+     width: 100%;
+     height: 100%;"
+webaverse/app,314,3850951ae5c960932c2baca78be6679210efb863,react-ui/components/NavBar.js,modified,5,1,6,"@@ -162,7 +162,11 @@ const NavBar = () => {
+   return html`
+     <div className=""navbarWrapper ${styles}"">
+         <nav className=""navbar""> 
+-          <div className='nav-logo'><div className=""nav-logo-logo""></div></div>
++          <div className='nav-logo'>
++            <a href='${window.locationSubdirectory}/' className='nav-link-home'>
++              <div className=""nav-logo-logo""></div>
++            </a>
++          </div>
+           <span className='nav-item'><${NavLink} to='${window.locationSubdirectory}/' className='nav-link'>Profile</${NavLink}></span>
+           <span className='nav-item'><${NavLink} to='${window.locationSubdirectory}/gallery' className='nav-link'>Gallery</${NavLink}></span>
+           <span className='nav-item'><${NavLink} to='${window.locationSubdirectory}/creators' className='nav-link'>Creators</${NavLink}></span>"
+webaverse/app,314,3850951ae5c960932c2baca78be6679210efb863,react-ui/components/Profile.js,modified,13,3,16,"@@ -52,7 +52,12 @@ const Profile = (props) => {
+       console.log(newStoreAssets);
+       console.log(state);
+       setStoreAssets(newStoreAssets);
+-      if((view === undefined || view === null || view === """") && newStoreAssets.length > 0) setView('booth');
++      if((view === undefined || view === null || view === """") && newStoreAssets.length > 0) {
++        if(state?.creatorProfiles?.[creatorAddress]?.address === state?.address) {
++          setView('inventory')
++        } else
++        setView('booth')
++      };
+ 
+     }, 100)
+   }, [])
+@@ -73,8 +78,8 @@ const Profile = (props) => {
+   // `}
+ 
+   //             <span className=""profileLoadout""><a href=""#"">Loadout</a></span>
++  // console.log(state?.creatorProfiles?.[creatorAddress]?.address === state.address)
+ 
+-  console.log(homespacePreview)
+ 
+   return html`
+     <${React.Suspense} fallback=${html`<div>Loading...</div>`}>
+@@ -103,7 +108,7 @@ const Profile = (props) => {
+               <div className=""profileBodyNavContainer"">
+                 ${storeAssets.length > 0 && html`
+                   <${Link} className='profileNavLink ${view === 'booth' || view === 'store' || view === 'onsale' ? 'active' : ''}' to='${window.locationSubdirectory}/creator/${creatorAddress}/booth'>For Sale</${Link}>
+-                `}
++                  `}
+                   <${Link} className='profileNavLink ${view === undefined || view === 'inventory' ? 'active' : ''}' to='${window.locationSubdirectory}/creator/${creatorAddress}/inventory'>Inventory</${Link}>
+               </div>
+             </div>
+@@ -126,3 +131,8 @@ const Profile = (props) => {
+ };
+ 
+ export default Profile;
++
++
++
++///////////////////////////// 
++///////////////
+\ No newline at end of file"

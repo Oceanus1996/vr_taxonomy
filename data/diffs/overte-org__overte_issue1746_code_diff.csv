@@ -1,0 +1,158 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+overte-org/overte,1746,b9073c8,scripts/system/controllers/controllerModules/farActionGrabEntity.js,modified,3,3,6,"@@ -310,8 +310,7 @@ Script.include(""/~/system/libraries/controllers.js"");
+             var entityType = entityProperty.type;
+             var hudRayPick = controllerData.hudRayPicks[this.hand];
+             var point2d = this.calculateNewReticlePosition(hudRayPick.intersection);
+-            if (intersection.objectID === HMD.tabletID ||
+-                entityType === ""Web"" ||
++            if (entityType === ""Web"" ||
+                 Window.isPointOnDesktopWindow(point2d)) {
+                 return true;
+             }
+@@ -452,7 +451,7 @@ Script.include(""/~/system/libraries/controllers.js"");
+                 }
+ 
+                 var rayPickInfo = controllerData.rayPicks[this.hand];
+-                if (controllerData.triggerClicks[this.hand]) {
++                if (controllerData.triggerClicks[this.hand] && rayPickInfo.intersects) {
+                     var entityID = rayPickInfo.objectID;
+                     var targetProps = Entities.getEntityProperties(entityID, DISPATCHER_PROPERTIES);
+                     if (targetProps.href !== """") {
+@@ -472,6 +471,7 @@ Script.include(""/~/system/libraries/controllers.js"");
+ 
+                     if (
+                         entityID !== HMD.tabletID &&
++                        !Keyboard.containsID(entityID) &&
+                         (entityIsGrabbable(targetProps) ||
+                         entityIsGrabbable(this.targetObject.entityProps))
+                     ) {"
+overte-org/overte,1746,b9073c8,scripts/system/controllers/controllerModules/farGrabEntity.js,modified,3,3,6,"@@ -365,8 +365,7 @@ Script.include(""/~/system/libraries/controllers.js"");
+             if (!hudRayPick.intersects) return false;
+             var point2d = this.calculateNewReticlePosition(hudRayPick.intersection);
+ 
+-            if (intersection.objectID === HMD.tabletID ||
+-                entityType === ""Web"" ||
++            if (entityType === ""Web"" ||
+                 Window.isPointOnDesktopWindow(point2d)) {
+                 return true;
+             }
+@@ -464,7 +463,7 @@ Script.include(""/~/system/libraries/controllers.js"");
+                 }
+ 
+                 var rayPickInfo = controllerData.rayPicks[this.hand];
+-                if (controllerData.triggerClicks[this.hand]) {
++                if (controllerData.triggerClicks[this.hand] && rayPickInfo.intersects) {
+                     var entityID = rayPickInfo.objectID;
+                     var targetProps = Entities.getEntityProperties(entityID, DISPATCHER_PROPERTIES);
+                     if (targetProps.href !== """") {
+@@ -483,6 +482,7 @@ Script.include(""/~/system/libraries/controllers.js"");
+ 
+                     if (
+                         entityID !== HMD.tabletID &&
++                        !Keyboard.containsID(entityID) &&
+                         (entityIsGrabbable(targetProps) ||
+                         entityIsGrabbable(this.targetObject.entityProps))
+                     ) {"
+overte-org/overte,1746,b9073c8,scripts/system/controllers/controllerModules/hudOverlayPointer.js,modified,11,10,21,"@@ -90,26 +90,27 @@
+             var controllerLocation = controllerData.controllerLocations[this.hand];
+             var hudRayPick = controllerData.hudRayPicks[this.hand];
+             var point2d = this.calculateNewReticlePosition(hudRayPick.intersection);
++            var triggerValue = controllerData.triggerValues[this.hand];
+             this.triggerClicked = controllerData.triggerClicks[this.hand];
+ 
+             if (
+-                (controllerData.triggerValues[this.hand] < ControllerDispatcherUtils.TRIGGER_ON_VALUE || !controllerLocation.valid) ||
+-                this.pointingAtTablet(controllerData) ||
+-                (!Window.isPointOnDesktopWindow(point2d) && !this.triggerClicked)
++                (triggerValue > ControllerDispatcherUtils.TRIGGER_ON_VALUE && controllerLocation.valid) &&
++                Window.isPointOnDesktopWindow(point2d) &&
++                !this.pointingAtTablet(controllerData)
+             ) {
+-                if (this.scrollMappingEnabled) {
+-                    this.scrollMapping.disable();
+-                    this.scrollMappingEnabled = false;
+-                }
+-
+-                return false;
+-            } else {
+                 if (!this.scrollMappingEnabled) {
+                     this.scrollMapping.enable();
+                     this.scrollMappingEnabled = true;
+                 }
+ 
+                 return true;
++            } else {
++                if (this.scrollMappingEnabled) {
++                    this.scrollMapping.disable();
++                    this.scrollMappingEnabled = false;
++                }
++
++                return false;
+             }
+         };
+ "
+overte-org/overte,1746,b9073c8,scripts/system/controllers/controllerModules/webSurfaceLaserInput.js,modified,9,29,38,"@@ -140,36 +140,16 @@ Script.include(""/~/system/libraries/controllers.js"");
+             this.ignoredObjects = [];
+         };
+ 
+-        this.getInteractableType = function(controllerData, triggerPressed, checkEntitiesOnly) {
++        this.getInteractableType = function(controllerData, triggerPressed) {
+             // allow pointing at tablet, unlocked web entities, or web overlays automatically without pressing trigger,
+             // but for pointing at locked web entities or non-web overlays user must be pressing trigger
+             var intersection = controllerData.rayPicks[this.hand];
+             var objectID = intersection.objectID;
+-            if (intersection.type === Picks.INTERSECTED_OVERLAY && !checkEntitiesOnly) {
+-                if ((HMD.tabletID && objectID === HMD.tabletID) ||
+-                    (HMD.tabletScreenID && objectID === HMD.tabletScreenID) ||
+-                    (HMD.homeButtonID && objectID === HMD.homeButtonID)) {
+-                    return intersectionType[""HifiTablet""];
+-                } else {
+-                    var overlayType = Overlays.getOverlayType(objectID);
+-                    var type = intersectionType[""None""];
+-                    if (Keyboard.containsID(objectID) && !Keyboard.preferMalletsOverLasers) {
+-                        type = intersectionType[""HifiKeyboard""];
+-                    } else if (overlayType === ""web3d"") {
+-                        type = intersectionType[""WebOverlay""];
+-                    } else if (triggerPressed) {
+-                        type = intersectionType[""Overlay""];
+-                    }
+-
+-                    return type;
+-                }
+-            } else if (intersection.type === Picks.INTERSECTED_ENTITY) {
+-                var entityProperties = Entities.getEntityProperties(objectID, [""type"",""locked""]);
+-                var entityType = entityProperties.type;
+-                var isLocked = entityProperties.locked;
+-                if (entityType === ""Web"" && (!isLocked || triggerPressed)) {
+-                    return intersectionType[""WebEntity""];
+-                }
++            var entityProperties = Entities.getEntityProperties(objectID, [""type"",""locked""]);
++            var entityType = entityProperties.type;
++            var isLocked = entityProperties.locked;
++            if (entityType === ""Web"" && (!isLocked || triggerPressed)) {
++                return intersectionType[""WebEntity""];
+             }
+             return intersectionType[""None""];
+         };
+@@ -193,10 +173,10 @@ Script.include(""/~/system/libraries/controllers.js"");
+ 
+             var isTriggerPressed = controllerData.triggerValues[this.hand] > TRIGGER_OFF_VALUE &&
+                                    controllerData.triggerValues[this.otherHand] <= TRIGGER_OFF_VALUE;
+-            var type = this.getInteractableType(controllerData, isTriggerPressed, false);
++            var type = this.getInteractableType(controllerData, isTriggerPressed);
+ 
+             if (type !== intersectionType[""None""] && !this.grabModuleWantsNearbyOverlay(controllerData)) {
+-                if (type === intersectionType[""WebOverlay""] || type === intersectionType[""WebEntity""] || type === intersectionType[""HifiTablet""]) {
++                if (type === intersectionType[""WebEntity""]) {
+                     var otherModuleRunning = this.getOtherModule().running;
+                     otherModuleRunning = otherModuleRunning && this.getDominantHand() !== this.hand; // Auto-swap to dominant hand.
+                     var allowThisModule = !otherModuleRunning || isTriggerPressed;
+@@ -245,7 +225,7 @@ Script.include(""/~/system/libraries/controllers.js"");
+         this.run = function(controllerData, deltaTime) {
+             this.addObjectToIgnoreList(controllerData);
+             var isTriggerPressed = controllerData.triggerValues[this.hand] > TRIGGER_OFF_VALUE;
+-            var type = this.getInteractableType(controllerData, isTriggerPressed, false);
++            var type = this.getInteractableType(controllerData, isTriggerPressed);
+             var laserOn = isTriggerPressed || this.parameters.handLaser.alwaysOn;
+             this.addObjectToIgnoreList(controllerData);
+ "

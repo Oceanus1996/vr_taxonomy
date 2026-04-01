@@ -1,0 +1,70 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+secondlife/viewer,1485,29be88d,indra/newview/app_settings/shaders/class1/deferred/pbrShadowAlphaMaskF.glsl,modified,1,1,2,"@@ -35,7 +35,7 @@ uniform float minimum_alpha;
+ 
+ void main() 
+ {
+-    float alpha = texture(diffuseMap,vary_texcoord0.xy).a;
++    float alpha = texture(diffuseMap,vary_texcoord0.xy).a * vertex_color.a;
+ 
+     if (alpha < minimum_alpha)
+     {"
+secondlife/viewer,1485,29be88d,indra/newview/app_settings/shaders/class1/deferred/pbropaqueF.glsl,modified,6,2,8,"@@ -69,12 +69,16 @@ void main()
+     mirrorClip(vary_position);
+ 
+     vec4 basecolor = texture(diffuseMap, base_color_texcoord.xy).rgba;
++    basecolor.rgb = srgb_to_linear(basecolor.rgb);
++
++    basecolor *= vertex_color;
++
+     if (basecolor.a < minimum_alpha)
+     {
+         discard;
+     }
+ 
+-    vec3 col = vertex_color.rgb * srgb_to_linear(basecolor.rgb);
++    vec3 col = basecolor.rgb;
+ 
+     // from mikktspace.com
+     vec3 vNt = texture(bumpMap, normal_texcoord.xy).xyz*2.0-1.0;
+@@ -108,7 +112,7 @@ void main()
+     //emissive = tnorm*0.5+0.5;
+     // See: C++: addDeferredAttachments(), GLSL: softenLightF
+     frag_data[0] = max(vec4(col, 0.0), vec4(0));                                                   // Diffuse
+-    frag_data[1] = max(vec4(spec.rgb,vertex_color.a), vec4(0));                                    // PBR linear packed Occlusion, Roughness, Metal.
++    frag_data[1] = max(vec4(spec.rgb,0.0), vec4(0));                                    // PBR linear packed Occlusion, Roughness, Metal.
+     frag_data[2] = vec4(tnorm, GBUFFER_FLAG_HAS_PBR); // normal, environment intensity, flags
+     frag_data[3] = max(vec4(emissive,0), vec4(0));                                                // PBR sRGB Emissive
+ }"
+secondlife/viewer,1485,29be88d,indra/newview/llface.cpp,modified,3,3,6,"@@ -1261,11 +1261,11 @@ BOOL LLFace::getGeometryVolume(const LLVolume& volume,
+     {
+         color = tep->getGLTFRenderMaterial()->mBaseColor;
+     }
+-
+-	if (rebuild_color)
++    
++    if (rebuild_color)
+ 	{ //decide if shiny goes in alpha channel of color
+ 		if (tep && 
+-			!isInAlphaPool())  // <--- alpha channel MUST contain transparency, not shiny
++			!isInAlphaPool() && tep->getGLTFRenderMaterial() == nullptr)  // <--- alpha channel MUST contain transparency, not shiny
+ 	{
+ 			LLMaterial* mat = tep->getMaterialParams().get();
+ 						"
+secondlife/viewer,1485,29be88d,indra/newview/llfetchedgltfmaterial.cpp,modified,1,10,11,"@@ -77,16 +77,7 @@ void LLFetchedGLTFMaterial::bind(LLViewerTexture* media_tex)
+     {
+         if (mAlphaMode == LLGLTFMaterial::ALPHA_MODE_MASK)
+         {
+-            // dividing the alpha cutoff by transparency here allows the shader to compare against
+-            // the alpha value of the texture without needing the transparency value
+-            if (mBaseColor.mV[3] > 0.f)
+-            {
+-                min_alpha = mAlphaCutoff / mBaseColor.mV[3];
+-            }
+-            else
+-            {
+-                min_alpha = 1024.f;
+-            }
++            min_alpha = mAlphaCutoff;
+         }
+         shader->uniform1f(LLShaderMgr::MINIMUM_ALPHA, min_alpha);
+     }"

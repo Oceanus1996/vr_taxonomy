@@ -1,0 +1,443 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+De-Panther/unity-webxr-export,64,455ee2f,Assets/WebGLTemplates/WebXR/index.html,modified,0,6,6,"@@ -14,12 +14,6 @@
+         if (!UnityLoader.SystemInfo.hasWebGL) {
+           unityInstance.popup('Your browser does not support WebGL',
+             [{text: 'OK', callback: onerror}]);
+-        } else if (['Edge', 'Firefox', 'Chrome', 'Safari'].indexOf(UnityLoader.SystemInfo.browser) == -1 && UnityLoader.SystemInfo.os != 'iOS') {
+-          unityInstance.popup([
+-            UnityLoader.SystemInfo.os,
+-            UnityLoader.SystemInfo.browser,
+-            'No support for Unity WebGL content'
+-          ].join(' '), [{text: 'OK', callback: onsuccess}]);
+         } else {
+           onsuccess();
+         }"
+De-Panther/unity-webxr-export,64,455ee2f,Assets/WebGLTemplates/WebXR/webxr.js,modified,11,12,23,"@@ -133,9 +133,10 @@
+     this.didNotifyUnity = false;
+     this.isARSupported = false;
+     this.isVRSupported = false;
+-    this.rAFCB = null;
+     this.onInputEvent = null;
+     this.waitingHandheldARHack = false;
++    this.BrowserObject = null;
++    this.JSEventsObject = null;
+     this.init();
+   }
+ 
+@@ -317,19 +318,19 @@
+       }
+       switch (xrInputSourceEvent.type) {
+         case ""select"": // mousemove 5
+-          unityInstance.Module.InternalJSEvents.eventHandlers[5].eventListenerFunc(
++          this.JSEventsObject.eventHandlers[5].eventListenerFunc(
+             new XRMouseEvent(""mousemove"", this.canvas, xPercentage, yPercentage, 0));
+           break;
+         case ""selectstart"": // mousedown 4
+           this.xrData.handHeldMove = true;
+-          unityInstance.Module.InternalJSEvents.eventHandlers[5].eventListenerFunc(
++          this.JSEventsObject.eventHandlers[5].eventListenerFunc(
+             new XRMouseEvent(""mousemove"", this.canvas, xPercentage, yPercentage, 0));
+-          unityInstance.Module.InternalJSEvents.eventHandlers[4].eventListenerFunc(
++            this.JSEventsObject.eventHandlers[4].eventListenerFunc(
+             new XRMouseEvent(""mousedown"", this.canvas, xPercentage, yPercentage, 0));
+           break;
+         case ""selectend"": // mouseup 3
+           this.xrData.handHeldMove = false;
+-          unityInstance.Module.InternalJSEvents.eventHandlers[3].eventListenerFunc(
++          this.JSEventsObject.eventHandlers[3].eventListenerFunc(
+             new XRMouseEvent(""mouseup"", this.canvas, xPercentage, yPercentage, 0));
+           break;
+       }
+@@ -405,11 +406,9 @@
+       this.ctx = this.gameInstance.Module.ctx;
+ 
+       var thisXRMananger = this;
+-      this.gameInstance.Module.InternalBrowser.requestAnimationFrame = function (func) {
+-        if (!thisXRMananger.rAFCB)
+-        {
+-          thisXRMananger.rAFCB=func;
+-        }
++      this.JSEventsObject = this.gameInstance.Module.WebXR.GetJSEventsObject();
++      this.BrowserObject = this.gameInstance.Module.WebXR.GetBrowserObject();
++      this.BrowserObject.requestAnimationFrame = function (func) {
+         if (thisXRMananger.xrSession && thisXRMananger.xrSession.isInSession) {
+           return thisXRMananger.xrSession.requestAnimationFrame((time, xrFrame) =>
+           {
+@@ -603,7 +602,7 @@
+       } else if (xrData.handHeldMove && inputSource.gamepad && inputSource.gamepad.axes) {
+             if (xrData.handHeldMove)
+             {
+-              unityInstance.Module.InternalJSEvents.eventHandlers[5].eventListenerFunc(
++              this.JSEventsObject.eventHandlers[5].eventListenerFunc(
+                 new XRMouseEvent(""mousemove"", this.canvas,
+                                   (inputSource.gamepad.axes[0] + 1.0) * 0.5,
+                                   (inputSource.gamepad.axes[1] + 1.0) * 0.5, 0));
+@@ -674,7 +673,7 @@
+       if (session.isImmersive)
+       {
+         // Inform the session that we're ready to begin drawing.
+-        this.gameInstance.Module.InternalBrowser.requestAnimationFrame(this.rAFCB);
++        this.BrowserObject.requestAnimationFrame(this.BrowserObject.mainLoop.runner);
+       }
+     });
+   }"
+De-Panther/unity-webxr-export,64,455ee2f,Assets/WebGLTemplates/WebXRFullView/index.html,modified,0,6,6,"@@ -15,12 +15,6 @@
+         if (!UnityLoader.SystemInfo.hasWebGL) {
+           unityInstance.popup('Your browser does not support WebGL',
+             [{text: 'OK', callback: onerror}]);
+-        } else if (['Edge', 'Firefox', 'Chrome', 'Safari'].indexOf(UnityLoader.SystemInfo.browser) == -1 && UnityLoader.SystemInfo.os != 'iOS') {
+-          unityInstance.popup([
+-            UnityLoader.SystemInfo.os,
+-            UnityLoader.SystemInfo.browser,
+-            'No support for Unity WebGL content'
+-          ].join(' '), [{text: 'OK', callback: onsuccess}]);
+         } else {
+           onsuccess();
+         }"
+De-Panther/unity-webxr-export,64,455ee2f,Assets/WebGLTemplates/WebXRFullView/webxr.js,modified,11,12,23,"@@ -133,9 +133,10 @@
+     this.didNotifyUnity = false;
+     this.isARSupported = false;
+     this.isVRSupported = false;
+-    this.rAFCB = null;
+     this.onInputEvent = null;
+     this.waitingHandheldARHack = false;
++    this.BrowserObject = null;
++    this.JSEventsObject = null;
+     this.init();
+   }
+ 
+@@ -317,19 +318,19 @@
+       }
+       switch (xrInputSourceEvent.type) {
+         case ""select"": // mousemove 5
+-          unityInstance.Module.InternalJSEvents.eventHandlers[5].eventListenerFunc(
++          this.JSEventsObject.eventHandlers[5].eventListenerFunc(
+             new XRMouseEvent(""mousemove"", this.canvas, xPercentage, yPercentage, 0));
+           break;
+         case ""selectstart"": // mousedown 4
+           this.xrData.handHeldMove = true;
+-          unityInstance.Module.InternalJSEvents.eventHandlers[5].eventListenerFunc(
++          this.JSEventsObject.eventHandlers[5].eventListenerFunc(
+             new XRMouseEvent(""mousemove"", this.canvas, xPercentage, yPercentage, 0));
+-          unityInstance.Module.InternalJSEvents.eventHandlers[4].eventListenerFunc(
++            this.JSEventsObject.eventHandlers[4].eventListenerFunc(
+             new XRMouseEvent(""mousedown"", this.canvas, xPercentage, yPercentage, 0));
+           break;
+         case ""selectend"": // mouseup 3
+           this.xrData.handHeldMove = false;
+-          unityInstance.Module.InternalJSEvents.eventHandlers[3].eventListenerFunc(
++          this.JSEventsObject.eventHandlers[3].eventListenerFunc(
+             new XRMouseEvent(""mouseup"", this.canvas, xPercentage, yPercentage, 0));
+           break;
+       }
+@@ -405,11 +406,9 @@
+       this.ctx = this.gameInstance.Module.ctx;
+ 
+       var thisXRMananger = this;
+-      this.gameInstance.Module.InternalBrowser.requestAnimationFrame = function (func) {
+-        if (!thisXRMananger.rAFCB)
+-        {
+-          thisXRMananger.rAFCB=func;
+-        }
++      this.JSEventsObject = this.gameInstance.Module.WebXR.GetJSEventsObject();
++      this.BrowserObject = this.gameInstance.Module.WebXR.GetBrowserObject();
++      this.BrowserObject.requestAnimationFrame = function (func) {
+         if (thisXRMananger.xrSession && thisXRMananger.xrSession.isInSession) {
+           return thisXRMananger.xrSession.requestAnimationFrame((time, xrFrame) =>
+           {
+@@ -603,7 +602,7 @@
+       } else if (xrData.handHeldMove && inputSource.gamepad && inputSource.gamepad.axes) {
+             if (xrData.handHeldMove)
+             {
+-              unityInstance.Module.InternalJSEvents.eventHandlers[5].eventListenerFunc(
++              this.JSEventsObject.eventHandlers[5].eventListenerFunc(
+                 new XRMouseEvent(""mousemove"", this.canvas,
+                                   (inputSource.gamepad.axes[0] + 1.0) * 0.5,
+                                   (inputSource.gamepad.axes[1] + 1.0) * 0.5, 0));
+@@ -674,7 +673,7 @@
+       if (session.isImmersive)
+       {
+         // Inform the session that we're ready to begin drawing.
+-        this.gameInstance.Module.InternalBrowser.requestAnimationFrame(this.rAFCB);
++        this.BrowserObject.requestAnimationFrame(this.BrowserObject.mainLoop.runner);
+       }
+     });
+   }"
+De-Panther/unity-webxr-export,64,455ee2f,Assets/WebXR/Plugins/WebGL/webxr.c,modified,2,2,4,"@@ -2,9 +2,9 @@
+ #include ""emscripten.h""
+ 
+ typedef void (*webxr_void)();
+-typedef void (*webxr_void_int)();
++typedef void (*webxr_void_int)(int32_t);
+ typedef void (*webxr_void_int_float4_float4)(int32_t, float, float, float, float, float, float, float, float);
+-typedef void (*webxr_void_string)();
++typedef void (*webxr_void_string)(const char *ptr);
+ 
+ webxr_void_int_float4_float4 on_start_ar_ref;
+ webxr_void_int on_start_vr_ref;"
+De-Panther/unity-webxr-export,64,455ee2f,Assets/WebXR/Plugins/WebGL/webxr.jslib,modified,48,48,96,"@@ -1,20 +1,20 @@
+ /* functions called from unity */
+ mergeInto(LibraryManager.library, {
+   InitXRSharedArray: function(byteOffset, length) {
+-    XRSharedArray = new Float32Array(buffer, byteOffset, length);
++    Module.XRSharedArray = new Float32Array(buffer, byteOffset, length);
+     document.dispatchEvent(new CustomEvent('UnityLoaded', {detail: 'Ready'}));
+   },
+ 
+   InitControllersArray: function(byteOffset, length) {
+-    ControllersArray = new Float32Array(buffer, byteOffset, length);
++    Module.ControllersArray = new Float32Array(buffer, byteOffset, length);
+   },
+ 
+   InitHandsArray: function(byteOffset, length) {
+-    HandsArray = new Float32Array(buffer, byteOffset, length);
++    Module.HandsArray = new Float32Array(buffer, byteOffset, length);
+   },
+ 
+   InitViewerHitTestPoseArray: function(byteOffset, length) {
+-    ViewerHitTestPoseArray = new Float32Array(buffer, byteOffset, length);
++    Module.ViewerHitTestPoseArray = new Float32Array(buffer, byteOffset, length);
+   },
+ 
+   ToggleViewerHitTest: function() {
+@@ -34,7 +34,7 @@ mergeInto(LibraryManager.library, {
+         var dataLength = data[key].length;
+         if (dataLength) {
+           for (var x = 0; x < dataLength; x++) {
+-            XRSharedArray[index++] = data[key][x];
++            Module.XRSharedArray[index++] = data[key][x];
+           }
+         }
+       });
+@@ -43,62 +43,62 @@ mergeInto(LibraryManager.library, {
+       var data = evt.detail;
+       var index = 0;
+       Object.keys(data).forEach(function (key, i) {
+-        ControllersArray[index++] = data[key].frame;
+-        ControllersArray[index++] = data[key].enabled;
+-        ControllersArray[index++] = data[key].hand;
+-        ControllersArray[index++] = data[key].positionX;
+-        ControllersArray[index++] = data[key].positionY;
+-        ControllersArray[index++] = data[key].positionZ;
+-        ControllersArray[index++] = data[key].rotationX;
+-        ControllersArray[index++] = data[key].rotationY;
+-        ControllersArray[index++] = data[key].rotationZ;
+-        ControllersArray[index++] = data[key].rotationW;
+-        ControllersArray[index++] = data[key].trigger;
+-        ControllersArray[index++] = data[key].squeeze;
+-        ControllersArray[index++] = data[key].thumbstick;
+-        ControllersArray[index++] = data[key].thumbstickX;
+-        ControllersArray[index++] = data[key].thumbstickY;
+-        ControllersArray[index++] = data[key].touchpad;
+-        ControllersArray[index++] = data[key].touchpadX;
+-        ControllersArray[index++] = data[key].touchpadY;
+-        ControllersArray[index++] = data[key].buttonA;
+-        ControllersArray[index++] = data[key].buttonB;
++        Module.ControllersArray[index++] = data[key].frame;
++        Module.ControllersArray[index++] = data[key].enabled;
++        Module.ControllersArray[index++] = data[key].hand;
++        Module.ControllersArray[index++] = data[key].positionX;
++        Module.ControllersArray[index++] = data[key].positionY;
++        Module.ControllersArray[index++] = data[key].positionZ;
++        Module.ControllersArray[index++] = data[key].rotationX;
++        Module.ControllersArray[index++] = data[key].rotationY;
++        Module.ControllersArray[index++] = data[key].rotationZ;
++        Module.ControllersArray[index++] = data[key].rotationW;
++        Module.ControllersArray[index++] = data[key].trigger;
++        Module.ControllersArray[index++] = data[key].squeeze;
++        Module.ControllersArray[index++] = data[key].thumbstick;
++        Module.ControllersArray[index++] = data[key].thumbstickX;
++        Module.ControllersArray[index++] = data[key].thumbstickY;
++        Module.ControllersArray[index++] = data[key].touchpad;
++        Module.ControllersArray[index++] = data[key].touchpadX;
++        Module.ControllersArray[index++] = data[key].touchpadY;
++        Module.ControllersArray[index++] = data[key].buttonA;
++        Module.ControllersArray[index++] = data[key].buttonB;
+       });
+     });
+     document.addEventListener('XRHandsData', function(evt) {
+       var data = evt.detail;
+       var index = 0;
+       Object.keys(data).forEach(function (key, i) {
+-        HandsArray[index++] = data[key].frame;
+-        HandsArray[index++] = data[key].enabled;
+-        HandsArray[index++] = data[key].hand;
+-        HandsArray[index++] = data[key].trigger;
+-        HandsArray[index++] = data[key].squeeze;
++        Module.HandsArray[index++] = data[key].frame;
++        Module.HandsArray[index++] = data[key].enabled;
++        Module.HandsArray[index++] = data[key].hand;
++        Module.HandsArray[index++] = data[key].trigger;
++        Module.HandsArray[index++] = data[key].squeeze;
+         for (var j = 0; j < 25; j++) {
+-          HandsArray[index++] = data[key].joints[j].enabled;
+-          HandsArray[index++] = data[key].joints[j].position[0];
+-          HandsArray[index++] = data[key].joints[j].position[1];
+-          HandsArray[index++] = data[key].joints[j].position[2];
+-          HandsArray[index++] = data[key].joints[j].rotation[0];
+-          HandsArray[index++] = data[key].joints[j].rotation[1];
+-          HandsArray[index++] = data[key].joints[j].rotation[2];
+-          HandsArray[index++] = data[key].joints[j].rotation[3];
+-          HandsArray[index++] = data[key].joints[j].radius;
++          Module.HandsArray[index++] = data[key].joints[j].enabled;
++          Module.HandsArray[index++] = data[key].joints[j].position[0];
++          Module.HandsArray[index++] = data[key].joints[j].position[1];
++          Module.HandsArray[index++] = data[key].joints[j].position[2];
++          Module.HandsArray[index++] = data[key].joints[j].rotation[0];
++          Module.HandsArray[index++] = data[key].joints[j].rotation[1];
++          Module.HandsArray[index++] = data[key].joints[j].rotation[2];
++          Module.HandsArray[index++] = data[key].joints[j].rotation[3];
++          Module.HandsArray[index++] = data[key].joints[j].radius;
+         }
+       });
+     });
+     document.addEventListener('XRViewerHitTestPose', function(evt) {
+       var data = evt.detail;
+       var index = 0;
+-      ViewerHitTestPoseArray[index++] = data.viewerHitTestPose.frame;
+-      ViewerHitTestPoseArray[index++] = data.viewerHitTestPose.available;
+-      ViewerHitTestPoseArray[index++] = data.viewerHitTestPose.position[0];
+-      ViewerHitTestPoseArray[index++] = data.viewerHitTestPose.position[1];
+-      ViewerHitTestPoseArray[index++] = data.viewerHitTestPose.position[2];
+-      ViewerHitTestPoseArray[index++] = data.viewerHitTestPose.rotation[0];
+-      ViewerHitTestPoseArray[index++] = data.viewerHitTestPose.rotation[1];
+-      ViewerHitTestPoseArray[index++] = data.viewerHitTestPose.rotation[2];
+-      ViewerHitTestPoseArray[index++] = data.viewerHitTestPose.rotation[3];
++      Module.ViewerHitTestPoseArray[index++] = data.viewerHitTestPose.frame;
++      Module.ViewerHitTestPoseArray[index++] = data.viewerHitTestPose.available;
++      Module.ViewerHitTestPoseArray[index++] = data.viewerHitTestPose.position[0];
++      Module.ViewerHitTestPoseArray[index++] = data.viewerHitTestPose.position[1];
++      Module.ViewerHitTestPoseArray[index++] = data.viewerHitTestPose.position[2];
++      Module.ViewerHitTestPoseArray[index++] = data.viewerHitTestPose.rotation[0];
++      Module.ViewerHitTestPoseArray[index++] = data.viewerHitTestPose.rotation[1];
++      Module.ViewerHitTestPoseArray[index++] = data.viewerHitTestPose.rotation[2];
++      Module.ViewerHitTestPoseArray[index++] = data.viewerHitTestPose.rotation[3];
+     });
+   }
+ });
+\ No newline at end of file"
+De-Panther/unity-webxr-export,64,455ee2f,Assets/WebXR/Plugins/WebGL/webxr.jspre,modified,8,2,10,"@@ -1,6 +1,4 @@
+ setTimeout(function () {
+-    Module['InternalBrowser'] = Browser || {};
+-    Module[""InternalJSEvents""] = JSEvents || {};
+     if (GL && GL.createContext)
+     {
+         GL.createContextOld = GL.createContext;
+@@ -23,6 +21,14 @@ setTimeout(function () {
+ 
+ Module['WebXR'] = Module['WebXR'] || {};
+ 
++Module['WebXR'].GetBrowserObject = function () {
++  return Browser;
++}
++
++Module['WebXR'].GetJSEventsObject = function () {
++  return JSEvents;
++}
++
+ Module['WebXR'].OnStartAR = function (views_count, left_rect, right_rect) {
+   this.OnStartARInternal = this.OnStartARInternal || Module.cwrap(""on_start_ar"", null, [""number"",
+                                                                   ""number"", ""number"", ""number"", ""number"","
+De-Panther/unity-webxr-export,64,455ee2f,Assets/WebXR/Samples/Desert/Prefabs/WebXRCameraSet.prefab,modified,2,2,4,"@@ -1889,7 +1889,7 @@ Camera:
+   m_GameObject: {fileID: 3250837035476248814}
+   m_Enabled: 1
+   serializedVersion: 2
+-  m_ClearFlags: 3
++  m_ClearFlags: 4
+   m_BackGroundColor: {r: 0.19215687, g: 0.3019608, b: 0.4745098, a: 0.019607844}
+   m_projectionMatrixMode: 1
+   m_GateFitMode: 2
+@@ -1963,7 +1963,7 @@ Camera:
+   m_GameObject: {fileID: 6032564905858711458}
+   m_Enabled: 1
+   serializedVersion: 2
+-  m_ClearFlags: 3
++  m_ClearFlags: 4
+   m_BackGroundColor: {r: 0.19215687, g: 0.3019608, b: 0.4745098, a: 0.019607844}
+   m_projectionMatrixMode: 1
+   m_GateFitMode: 2"
+De-Panther/unity-webxr-export,64,455ee2f,Build/Build/Build.data.unityweb,modified,0,0,0,
+De-Panther/unity-webxr-export,64,455ee2f,Build/Build/Build.wasm,modified,0,0,0,
+De-Panther/unity-webxr-export,64,455ee2f,Build/Build/Build.wasm.framework.unityweb,modified,1,1,2,
+De-Panther/unity-webxr-export,64,455ee2f,Build/index.html,modified,0,6,6,"@@ -14,12 +14,6 @@
+         if (!UnityLoader.SystemInfo.hasWebGL) {
+           unityInstance.popup('Your browser does not support WebGL',
+             [{text: 'OK', callback: onerror}]);
+-        } else if (['Edge', 'Firefox', 'Chrome', 'Safari'].indexOf(UnityLoader.SystemInfo.browser) == -1 && UnityLoader.SystemInfo.os != 'iOS') {
+-          unityInstance.popup([
+-            UnityLoader.SystemInfo.os,
+-            UnityLoader.SystemInfo.browser,
+-            'No support for Unity WebGL content'
+-          ].join(' '), [{text: 'OK', callback: onsuccess}]);
+         } else {
+           onsuccess();
+         }"
+De-Panther/unity-webxr-export,64,455ee2f,Build/webxr.js,modified,11,12,23,"@@ -133,9 +133,10 @@
+     this.didNotifyUnity = false;
+     this.isARSupported = false;
+     this.isVRSupported = false;
+-    this.rAFCB = null;
+     this.onInputEvent = null;
+     this.waitingHandheldARHack = false;
++    this.BrowserObject = null;
++    this.JSEventsObject = null;
+     this.init();
+   }
+ 
+@@ -317,19 +318,19 @@
+       }
+       switch (xrInputSourceEvent.type) {
+         case ""select"": // mousemove 5
+-          unityInstance.Module.InternalJSEvents.eventHandlers[5].eventListenerFunc(
++          this.JSEventsObject.eventHandlers[5].eventListenerFunc(
+             new XRMouseEvent(""mousemove"", this.canvas, xPercentage, yPercentage, 0));
+           break;
+         case ""selectstart"": // mousedown 4
+           this.xrData.handHeldMove = true;
+-          unityInstance.Module.InternalJSEvents.eventHandlers[5].eventListenerFunc(
++          this.JSEventsObject.eventHandlers[5].eventListenerFunc(
+             new XRMouseEvent(""mousemove"", this.canvas, xPercentage, yPercentage, 0));
+-          unityInstance.Module.InternalJSEvents.eventHandlers[4].eventListenerFunc(
++            this.JSEventsObject.eventHandlers[4].eventListenerFunc(
+             new XRMouseEvent(""mousedown"", this.canvas, xPercentage, yPercentage, 0));
+           break;
+         case ""selectend"": // mouseup 3
+           this.xrData.handHeldMove = false;
+-          unityInstance.Module.InternalJSEvents.eventHandlers[3].eventListenerFunc(
++          this.JSEventsObject.eventHandlers[3].eventListenerFunc(
+             new XRMouseEvent(""mouseup"", this.canvas, xPercentage, yPercentage, 0));
+           break;
+       }
+@@ -405,11 +406,9 @@
+       this.ctx = this.gameInstance.Module.ctx;
+ 
+       var thisXRMananger = this;
+-      this.gameInstance.Module.InternalBrowser.requestAnimationFrame = function (func) {
+-        if (!thisXRMananger.rAFCB)
+-        {
+-          thisXRMananger.rAFCB=func;
+-        }
++      this.JSEventsObject = this.gameInstance.Module.WebXR.GetJSEventsObject();
++      this.BrowserObject = this.gameInstance.Module.WebXR.GetBrowserObject();
++      this.BrowserObject.requestAnimationFrame = function (func) {
+         if (thisXRMananger.xrSession && thisXRMananger.xrSession.isInSession) {
+           return thisXRMananger.xrSession.requestAnimationFrame((time, xrFrame) =>
+           {
+@@ -603,7 +602,7 @@
+       } else if (xrData.handHeldMove && inputSource.gamepad && inputSource.gamepad.axes) {
+             if (xrData.handHeldMove)
+             {
+-              unityInstance.Module.InternalJSEvents.eventHandlers[5].eventListenerFunc(
++              this.JSEventsObject.eventHandlers[5].eventListenerFunc(
+                 new XRMouseEvent(""mousemove"", this.canvas,
+                                   (inputSource.gamepad.axes[0] + 1.0) * 0.5,
+                                   (inputSource.gamepad.axes[1] + 1.0) * 0.5, 0));
+@@ -674,7 +673,7 @@
+       if (session.isImmersive)
+       {
+         // Inform the session that we're ready to begin drawing.
+-        this.gameInstance.Module.InternalBrowser.requestAnimationFrame(this.rAFCB);
++        this.BrowserObject.requestAnimationFrame(this.BrowserObject.mainLoop.runner);
+       }
+     });
+   }"

@@ -1,0 +1,96 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vrm-c/UniVRM,1466,06c90137d3f6f61b6c89fbf14147e9d5647ba362,Assets/VRM/Editor/BlendShape/BlendShapeClipEditorHelper.cs,modified,18,10,28,"@@ -21,17 +21,25 @@ public static bool DrawBlendShapeBinding(Rect position, SerializedProperty prope
+                 var y = position.y;
+                 var rect = new Rect(position.x, y, position.width, height);
+                 int pathIndex;
+-                if (StringPopup(rect, property.FindPropertyRelative(""RelativePath""), scene.SkinnedMeshRendererPathList, out pathIndex))
++                var (relChanged, oldIndex) = StringPopup(rect, property.FindPropertyRelative(""RelativePath""), scene.SkinnedMeshRendererPathList, out pathIndex);
++                if (relChanged)
+                 {
+                     changed = true;
+                 }
+ 
+                 y += height;
+                 rect = new Rect(position.x, y, position.width, height);
+-                int blendShapeIndex;
+-                if (IntPopup(rect, property.FindPropertyRelative(""Index""), scene.GetBlendShapeNames(pathIndex), out blendShapeIndex))
++                if (!relChanged && oldIndex == -1)
+                 {
+-                    changed = true;
++                    EditorGUI.HelpBox(rect, ""renderer not found ! please fix"", MessageType.Error);
++                }
++                else
++                {
++                    int blendShapeIndex;
++                    if (IntPopup(rect, property.FindPropertyRelative(""Index""), scene.GetBlendShapeNames(pathIndex), out blendShapeIndex))
++                    {
++                        changed = true;
++                    }
+                 }
+ 
+                 y += height;
+@@ -58,7 +66,7 @@ public static bool DrawMaterialValueBinding(Rect position, SerializedProperty pr
+                 var y = position.y;
+                 var rect = new Rect(position.x, y, position.width, height);
+                 int materialIndex;
+-                if (StringPopup(rect, property.FindPropertyRelative(""MaterialName""), scene.MaterialNames, out materialIndex))
++                if (StringPopup(rect, property.FindPropertyRelative(""MaterialName""), scene.MaterialNames, out materialIndex).Item1)
+                 {
+                     changed = true;
+                 }
+@@ -73,7 +81,7 @@ public static bool DrawMaterialValueBinding(Rect position, SerializedProperty pr
+ 
+                         // プロパティ名のポップアップ
+                         int propIndex;
+-                        if (StringPopup(rect, property.FindPropertyRelative(""ValueName""), materialItem.PropNames, out propIndex))
++                        if (StringPopup(rect, property.FindPropertyRelative(""ValueName""), materialItem.PropNames, out propIndex).Item1)
+                         {
+                             changed = true;
+                         }
+@@ -122,24 +130,24 @@ public static bool DrawMaterialValueBinding(Rect position, SerializedProperty pr
+         }
+ 
+         #region Private
+-        static bool StringPopup(Rect rect, SerializedProperty prop, string[] options, out int newIndex)
++        static (bool, int?) StringPopup(Rect rect, SerializedProperty prop, string[] options, out int newIndex)
+         {
+             if (options == null)
+             {
+                 newIndex = -1;
+-                return false;
++                return (false, default);
+             }
+ 
+             var oldIndex = Array.IndexOf(options, prop.stringValue);
+             newIndex = EditorGUI.Popup(rect, oldIndex, options);
+             if (newIndex != oldIndex && newIndex >= 0 && newIndex < options.Length)
+             {
+                 prop.stringValue = options[newIndex];
+-                return true;
++                return (true, oldIndex);
+             }
+             else
+             {
+-                return false;
++                return (false, oldIndex);
+             }
+         }
+ "
+vrm-c/UniVRM,1466,06c90137d3f6f61b6c89fbf14147e9d5647ba362,Assets/VRM/Editor/BlendShape/VRMBlendShapeProxyValidator.cs,modified,1,1,2,"@@ -59,7 +59,7 @@ public static IEnumerable<Validation> Validate(this VRMBlendShapeProxy p, GameOb
+                     var target = p.transform.Find(v.RelativePath);
+                     if (target == null)
+                     {
+-                        yield return Validation.Warning($""{c}.Values[{i}].RelativePath({v.RelativePath} is not found"");
++                        yield return Validation.Warning($""{c}.Values[{i}].RelativePath({v.RelativePath}) is not found"", ValidationContext.Create(c));
+                     }
+                 }
+ "
+vrm-c/UniVRM,1466,06c90137d3f6f61b6c89fbf14147e9d5647ba362,Assets/VRM/Runtime/Extensions/glTF_VRMExtensions.cs,modified,1,1,2,"@@ -32,7 +32,7 @@ public static glTF_VRM_BlendShapeBind Create(Transform root, BlendShapeBinding b
+             if (found == null)
+             {
+                 var name = binding.RelativePath.Split('/').Last();
+-                found = root.GetComponentsInChildren<Transform>().Where(x => x.name == name).FirstOrDefault();
++                found = root.GetComponentsInChildren<Transform>().FirstOrDefault(x => x.name == name);
+                 if (found == null)
+                 {
+                     Debug.LogWarning($""{binding.RelativePath} not found"");"

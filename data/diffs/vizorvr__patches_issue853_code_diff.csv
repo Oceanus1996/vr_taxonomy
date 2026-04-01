@@ -1,0 +1,74 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vizorvr/patches,853,b7f633e,browser/plugins/three_vr_camera.plugin.js,modified,2,2,4,"@@ -113,10 +113,10 @@
+ 		if (this.dirty)
+ 			this.perspectiveCamera.updateProjectionMatrix()
+ 
+-		this.perspectiveCamera.updateMatrixWorld()
+-
+ 		this.controls.update(this.perspectiveCamera.position.clone(), this.perspectiveCamera.quaternion.clone())
+ 
++		this.perspectiveCamera.updateMatrixWorld()
++
+ 		this.updated = true
+ 	}
+ "
+vizorvr/patches,853,b7f633e,browser/scripts/worldEditor/vrCameraHelperObject.js,modified,10,6,16,"@@ -124,20 +124,17 @@ function VRCameraHelper( camera ) {
+ 	VRCameraGeometry.prototype = Object.create(THREE.Geometry.prototype)
+ 	VRCameraGeometry.prototype.constructor = THREE.Geometry
+ 
+-	this.camera = camera
+-	this.camera.updateMatrixWorld()
+ 	this.geometry = new VRCameraGeometry()
+ 	this.material = new THREE.MeshLambertMaterial({color: 0xffffff})
+ 	this.material.wireframe = false
+ 
+ 	THREE.Mesh.call(this, this.geometry, this.material)
+ 
+-	this.camera.updateMatrixWorld()
+ 	this.matrixAutoUpdate = false
+ 
+-	this.matrix = this.camera.matrixWorld
+-
+-	this.backReference = this.camera.backReference
++	if (camera) {
++		this.attachCamera(camera)
++	}
+ }
+ 
+ VRCameraHelper.prototype = Object.create( THREE.Mesh.prototype )
+@@ -148,3 +145,10 @@ VRCameraHelper.prototype.dispose = function() {
+ 	this.material.dispose()
+ }
+ 
++VRCameraHelper.prototype.attachCamera = function(camera) {
++	this.camera = camera
++
++	this.matrix = this.camera.matrixWorld
++
++	this.backReference = this.camera.backReference
++}"
+vizorvr/patches,853,b7f633e,browser/scripts/worldEditor/worldEditor.js,modified,4,4,8,"@@ -45,6 +45,8 @@ function WorldEditor(domElement) {
+ 	// transform controls
+ 	this.transformControls = new THREE.TransformControls(this.camera.perspectiveCamera, this.domElement)
+ 
++	this.cameraHelper = new VRCameraHelper()
++
+ 	var that = this
+ 
+ 	this.transformControls.addEventListener('mouseDown', function() {
+@@ -129,13 +131,11 @@ WorldEditor.prototype.updateScene = function(scene, camera) {
+ 	if (scene) {
+ 		scene.children[0].traverse( nodeHandler )
+ 	}
+-	
++
+ 	// add handles for the camera helper
+-	this.cameraHelper = new VRCameraHelper(camera)
+-	this.cameraHelper.backReference = camera.backReference
++	this.cameraHelper.attachCamera(camera)
+ 	this.handleTree.add(this.cameraHelper)
+ 
+-
+ 	// if there's a pending selection (something was pasted),
+ 	// set selection accordingly
+ 	if (this.pendingSelection !== undefined) {"

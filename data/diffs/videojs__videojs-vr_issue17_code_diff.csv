@@ -1,0 +1,245 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+videojs/videojs-vr,17,6f098148e4946b032e01c1d8e4db4b718fe847d3,src/cardboard-button.js,modified,23,3,26,"@@ -10,6 +10,8 @@ class CardboardButton extends Button {
+     this.handleVrDisplayActivate_ = videojs.bind(this, this.handleVrDisplayActivate_);
+     this.handleVrDisplayDeactivate_ = videojs.bind(this, this.handleVrDisplayDeactivate_);
+     this.handleVrDisplayPresentChange_ = videojs.bind(this, this.handleVrDisplayPresentChange_);
++    this.handleOrientationChange_ = videojs.bind(this, this.handleOrientationChange_);
++    window.addEventListener('orientationchange', this.handleOrientationChange_);
+     window.addEventListener('vrdisplayactivate', this.handleVrDisplayActivate_);
+     window.addEventListener('vrdisplaydeactivate', this.handleVrDisplayDeactivate_);
+ 
+@@ -46,14 +48,25 @@ class CardboardButton extends Button {
+     }
+   }
+ 
++  handleOrientationChange_() {
++    if (this.active_ && videojs.browser.IS_IOS) {
++      this.changeSize_();
++    }
++  }
++
++  changeSize_() {
++    this.player_.width(window.innerWidth);
++    this.player_.height(window.innerHeight);
++    window.dispatchEvent(new window.Event('resize'));
++  }
++
+   handleVrDisplayActivate_() {
+     // we mimic fullscreen on IOS
+     if (videojs.browser.IS_IOS) {
+       this.oldWidth_ = this.player_.currentWidth();
+       this.oldHeight_ = this.player_.currentHeight();
+-      this.player_.width(window.innerWidth);
+-      this.player_.height(window.innerHeight);
+-      window.dispatchEvent(new window.Event('resize'));
++      this.player_.enterFullWindow();
++      this.changeSize_();
+     }
+ 
+     this.active_ = true;
+@@ -68,6 +81,7 @@ class CardboardButton extends Button {
+       if (this.oldHeight_) {
+         this.player_.height(this.oldHeight_);
+       }
++      this.player_.exitFullWindow();
+       window.dispatchEvent(new window.Event('resize'));
+     }
+ 
+@@ -78,6 +92,12 @@ class CardboardButton extends Button {
+     // if cardboard mode display is not active, activate it
+     // otherwise deactivate it
+     if (!this.active_) {
++      // This starts playback mode when the cardboard button
++      // is clicked on Andriod. We need to do this as the controls
++      // disappear
++      if (!this.player_.hasStarted() && videojs.browser.IS_ANDROID) {
++        this.player_.play();
++      }
+       window.dispatchEvent(new window.Event('vrdisplayactivate'));
+     } else {
+       window.dispatchEvent(new window.Event('vrdisplaydeactivate'));"
+videojs/videojs-vr,17,6f098148e4946b032e01c1d8e4db4b718fe847d3,src/plugin.js,modified,35,26,61,"@@ -129,7 +129,6 @@ class VR extends Plugin {
+ 
+     this.handleVrDisplayActivate_ = videojs.bind(this, this.handleVrDisplayActivate_);
+     this.handleVrDisplayDeactivate_ = videojs.bind(this, this.handleVrDisplayDeactivate_);
+-    this.handleRotate_ = videojs.bind(this, this.handleRotate_);
+     this.handleResize_ = videojs.bind(this, this.handleResize_);
+     this.animate_ = videojs.bind(this, this.animate_);
+ 
+@@ -284,24 +283,6 @@ class VR extends Plugin {
+     this.vrDisplay.exitPresent();
+   }
+ 
+-  handleRotate_() {
+-    const screen = window.screen;
+-
+-    if (window.orientation === -90 || window.orientation === 90) {
+-      // in iOS, width and height never changes regardless orientation
+-      // so when in a horizontal mode, height still greater than width
+-      if (screen.height > screen.width) {
+-        this.camera.aspect = screen.height / screen.width;
+-      } else {
+-        // in Android, width and height will swap value depending on orientation
+-        this.camera.aspect = screen.width / screen.height;
+-      }
+-    } else {
+-      this.camera.aspect = screen.width / screen.height;
+-    }
+-    this.camera.updateProjectionMatrix();
+-  }
+-
+   togglePlay_() {
+     if (this.player_.paused()) {
+       this.player_.play();
+@@ -359,7 +340,7 @@ class VR extends Plugin {
+     const width = this.player_.currentWidth();
+     const height = this.player_.currentHeight();
+ 
+-    this.effect.setSize(width, height);
++    this.effect.setSize(width, height, false);
+     this.camera.aspect = width / height;
+     this.camera.updateProjectionMatrix();
+   }
+@@ -487,10 +468,10 @@ class VR extends Plugin {
+       antialias: true
+     });
+ 
+-    this.renderer.setSize(this.player_.currentWidth(), this.player_.currentHeight());
++    this.renderer.setSize(this.player_.currentWidth(), this.player_.currentHeight(), false);
+     this.effect = new VREffect(this.renderer);
+ 
+-    this.effect.setSize(this.player_.currentWidth(), this.player_.currentHeight());
++    this.effect.setSize(this.player_.currentWidth(), this.player_.currentHeight(), false);
+     this.vrDisplay = null;
+ 
+     // Previous timestamps for gamepad updates
+@@ -500,8 +481,34 @@ class VR extends Plugin {
+ 
+     this.renderedCanvas = this.renderer.domElement;
+ 
+-    this.renderedCanvas.style.width = 'inherit';
+-    this.renderedCanvas.style.height = 'inherit';
++    const debounce = function(fn, wait) {
++      let timeout;
++
++      return function(...args) {
++        // reset the timer
++        if (timeout) {
++          window.clearTimeout(timeout);
++        }
++        timeout = window.setTimeout(() => fn.apply(undefined, args), wait);
++      };
++    };
++    // we use this to stop webvr-polyfill from making the canvas take up more
++    // space then the video element
++    const setInherit = debounce((mut) => {
++      if (this.observer_) {
++        this.observer_.disconnect();
++      } else {
++        this.observer_ = new window.MutationObserver(setInherit);
++      }
++      this.renderedCanvas.setAttribute('style', 'width: inherit; height: inherit;');
++      this.handleResize_();
++      this.observer_.observe(this.renderedCanvas, {
++        attributes: true,
++        attributeList: ['style']
++      });
++    }, 10);
++
++    setInherit();
+ 
+     this.player_.el().insertBefore(this.renderedCanvas, this.player_.el().firstChild);
+     this.getVideoEl_().style.display = 'none';
+@@ -527,7 +534,6 @@ class VR extends Plugin {
+     window.addEventListener('resize', this.handleResize_, true);
+     window.addEventListener('vrdisplayactivate', this.handleVrDisplayActivate_, true);
+     window.addEventListener('vrdisplaydeactivate', this.handleVrDisplayDeactivate_, true);
+-    window.addEventListener('orientationchange', this.handleRotate_, false);
+ 
+     this.animate_();
+     this.initialized_ = true;
+@@ -553,7 +559,6 @@ class VR extends Plugin {
+     window.removeEventListener('vrdisplaypresentchange', this.handleResize_);
+     window.removeEventListener('vrdisplayactivate', this.handleVrDisplayActivate_);
+     window.removeEventListener('vrdisplaydeactivate', this.handleVrDisplayDeactivate_);
+-    window.removeEventListener('orientationchange', this.handleRotate_);
+ 
+     // re-add the big play button to player
+     if (!this.player_.getChild('BigPlayButton')) {
+@@ -580,6 +585,10 @@ class VR extends Plugin {
+     // set the current projection to the default
+     this.currentProjection_ = this.defaultProjection;
+ 
++    if (this.observer_) {
++      this.observer_.disconnect();
++    }
++
+     // remove the old canvas
+     if (this.renderedCanvas) {
+       this.renderedCanvas.parentNode.removeChild(this.renderedCanvas);"
+videojs/videojs-vr,17,162bd563397bd33bec6e732c6ee60684f4c21cd1,README.md,modified,18,6,24,"@@ -45,19 +45,31 @@ Oculus Rift and HTC Vive playback requires Firefox Nightly with the WebVR addon,
+ GearVR playback requires the latest Samsung Internet for Gear VR with WebVR support enabled. Go [here](https://mail.mozilla.org/pipermail/web-vr-discuss/2016-April/001054.html) for more info.
+ 
+ ## Accessing the Camera Position
+-The Three.js perspective camera and rotation values are exposed as the properties `camera` and `cameraVector` on the `vr` plugin namespace.
++The Three.js rotation values are exposed under the property `cameraVector` on the `vr` plugin namespace.
++
++For example, assuming the parent element for Video.js is `#video-container` the following code would return the current `cameraVector` values:
++
++    document.getElementById('video-container').player.vr.cameraVector
++ 
++See `example-camera.html` for a working demo that logs camera object and rotation to the console every second.
++
++## Accessing THREE.js objects
++The Three.js Scene, renderer, and perspective camera are exposed under the `threeJs` object as the properties `scene`, `renderer`, and `camera` on the `vr` plugin namespace.
+ 
+ For example, assuming the parent element for Video.js is `#video-container` the following code would return the current `camera` object:
+ 
+-    document.getElementById('video-container').player.vr.camera
++    document.getElementById('video-container').player.vr.threeJs.camera
+ 
+-and:
++ while:
+ 
+-    document.getElementById('video-container').player.vr.cameraVector
++    document.getElementById('video-container').player.vr.threeJs.scene
+  
+- would return the current `cameraVector` value:
++ would return the THREE.js Scene, and:
+ 
+-See `example-camera.html` for a working demo that logs camera object and rotation to the console every second.
++    document.getElementById('video-container').player.vr.threeJs.renderer
++ 
++ would return the THREE.js renderer.
++ 
+ 
+ ## Credits ##
+ "
+videojs/videojs-vr,17,162bd563397bd33bec6e732c6ee60684f4c21cd1,example-camera.html,modified,5,1,6,"@@ -54,7 +54,11 @@
+       console.log(""cameraVector"");
+       console.log(player.vr.cameraVector);
+       console.log(""Three JS perspective camera"");
+-      console.log(player.vr.camera);
++      console.log(player.vr.threeJs.camera);
++      console.log(""Three JS Scene"");
++      console.log(player.vr.threeJs.scene);
++      console.log(""Three JS renderer"");
++      console.log(player.vr.threeJs.renderer);
+     }, 1000);
+ </script>
+ </body>"
+videojs/videojs-vr,17,162bd563397bd33bec6e732c6ee60684f4c21cd1,src/js/videojs.vr.js,modified,6,2,8,"@@ -437,8 +437,12 @@
+ 
+             // Expose the Three.js perspective camera and rotation values on the player under the 'vr' namespace:
+             player.vr = {
+-              camera: camera,
+-              cameraVector: cameraVector
++              cameraVector: cameraVector,
++              threeJs: {
++                  scene: scene,
++                  camera: camera,
++                  renderer: renderer
++              }
+             };
+         }
+         initScene();"

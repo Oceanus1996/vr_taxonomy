@@ -1,0 +1,48 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+ExtendRealityLtd/VRTK,778,836d881,Assets/VRTK/Scripts/Pointers/VRTK_SimplePointer.cs,modified,23,2,25,"@@ -37,6 +37,9 @@ public class VRTK_SimplePointer : VRTK_BasePointer
+         private GameObject pointerTip;
+         private Vector3 pointerTipScale = new Vector3(0.05f, 0.05f, 0.05f);
+         private Vector3 pointerCursorOriginalScale = Vector3.one;
++        private bool activeEnabled;
++        private bool storedBeamState;
++        private bool storedTipState;
+ 
+         protected override void OnEnable()
+         {
+@@ -86,6 +89,13 @@ protected override void Update()
+                         pointerTip.transform.localScale = pointerCursorOriginalScale * pointerBeamLength;
+                     }
+                 }
++
++                if (activeEnabled)
++                {
++                    activeEnabled = false;
++                    pointerBeam.GetComponentInChildren<Renderer>().enabled = storedBeamState;
++                    pointerTip.GetComponentInChildren<Renderer>().enabled = storedTipState;
++                }
+             }
+         }
+ 
+@@ -176,9 +186,20 @@ protected override void TogglePointer(bool state)
+                 pointerTip.SetActive(tipState);
+             }
+ 
+-            if (pointerBeam && pointerBeam.GetComponent<Renderer>() && pointerVisibility == pointerVisibilityStates.Always_Off)
++            if (pointerBeam && pointerBeam.GetComponentInChildren<Renderer>() && pointerVisibility == pointerVisibilityStates.Always_Off)
++            {
++                pointerBeam.GetComponentInChildren<Renderer>().enabled = false;
++            }
++
++            activeEnabled = state;
++
++            if (activeEnabled)
+             {
+-                pointerBeam.GetComponent<Renderer>().enabled = false;
++                storedBeamState = pointerBeam.GetComponentInChildren<Renderer>().enabled;
++                storedTipState = pointerTip.GetComponentInChildren<Renderer>().enabled;
++
++                pointerBeam.GetComponentInChildren<Renderer>().enabled = false;
++                pointerTip.GetComponentInChildren<Renderer>().enabled = false;
+             }
+         }
+ "

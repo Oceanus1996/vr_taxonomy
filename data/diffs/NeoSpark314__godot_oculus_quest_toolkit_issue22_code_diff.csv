@@ -1,0 +1,104 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+NeoSpark314/godot_oculus_quest_toolkit,22,9d1775fdc19a8539148f3182ded8371ad7249234,OQ_Toolkit/OQ_UI2D/OQ_UI2DLabel.tscn,modified,9,9,18,"@@ -3,19 +3,17 @@
+ [ext_resource path=""res://OQ_Toolkit/OQ_UI2D/scripts/OQ_UI2DLabel.gd"" type=""Script"" id=1]
+ [ext_resource path=""res://OQ_Toolkit/OQ_UI2D/theme/oq_ui2d_standard.theme"" type=""Theme"" id=2]
+ 
+-[sub_resource type=""ViewportTexture"" id=1]
++[sub_resource type=""ViewportTexture"" id=2]
+ viewport_path = NodePath(""Viewport"")
+ 
+-[sub_resource type=""SpatialMaterial"" id=2]
++[sub_resource type=""SpatialMaterial"" id=3]
+ resource_local_to_scene = true
+ flags_unshaded = true
+ params_cull_mode = 2
+-albedo_texture = SubResource( 1 )
++albedo_texture = SubResource( 2 )
+ 
+-[sub_resource type=""PlaneMesh"" id=3]
+-resource_local_to_scene = true
+-material = SubResource( 2 )
+-size = Vector2( 0.199219, 0.0634766 )
++[sub_resource type=""QuadMesh"" id=1]
++size = Vector2( 1.19531, 0.380859 )
+ 
+ [node name=""OQ_UILabel"" type=""Spatial""]
+ script = ExtResource( 1 )
+@@ -28,6 +26,7 @@ hdr = false
+ disable_3d = true
+ keep_3d_linear = true
+ usage = 0
++render_target_v_flip = true
+ 
+ [node name=""ColorRect"" type=""ColorRect"" parent=""Viewport""]
+ margin_right = 204.0
+@@ -50,6 +49,7 @@ custom_colors/font_color = Color( 1, 1, 1, 1 )
+ text = ""I am a Label...""
+ 
+ [node name=""MeshInstance"" type=""MeshInstance"" parent="".""]
+-transform = Transform( 1, 6.35732e-08, 2.77887e-15, 0, -4.37114e-08, 1, 6.35732e-08, -1, -4.37114e-08, 0, 0, 0 )
+-mesh = SubResource( 3 )
++material_override = SubResource( 3 )
++cast_shadow = 0
++mesh = SubResource( 1 )
+ material/0 = null"
+NeoSpark314/godot_oculus_quest_toolkit,22,9d1775fdc19a8539148f3182ded8371ad7249234,OQ_Toolkit/OQ_UI2D/scripts/OQ_UI2DLabel.gd,modified,17,9,26,"@@ -13,35 +13,38 @@ export var font_size_multiplier := 1.0
+ export (Color) var font_color := Color(1,1,1,1);
+ export (Color) var background_color := Color(0,0,0,1);
+ #export var line_to_parent = false;
+-export var transparent := false;
++
++export var transparent := false setget set_transparent;
++func set_transparent(value: bool):
++	transparent = value
++	update_transparency()
++
+ 
+ onready var ui_label : Label = $Viewport/ColorRect/CenterContainer/Label
+ onready var ui_container : CenterContainer = $Viewport/ColorRect/CenterContainer
+ onready var ui_color_rect : CenterContainer = $Viewport/ColorRect
+ onready var ui_viewport : Viewport = $Viewport
+ onready var mesh_instance : MeshInstance = $MeshInstance
+-var ui_mesh : PlaneMesh = null;
++var ui_mesh : QuadMesh = null;
+ 
+ var mesh_material = null;
+ 
+ func _ready():
+ 	ui_mesh = mesh_instance.mesh;
+ 	set_label_text(text);
+ 	
+-	#mesh_material = mesh_instance.mesh.surface_get_material(0).duplicate();
+-	#mesh_instance.mesh.surface_set_material(0, mesh_material);
+-	mesh_material = mesh_instance.mesh.surface_get_material(0);
++	mesh_material = mesh_instance.material_override
+ 	
+ 	if (billboard):
+ 		mesh_material.params_billboard_mode = SpatialMaterial.BILLBOARD_FIXED_Y;
++	mesh_material.flags_no_depth_test = !depth_test;
++	
++	# only enable transparency when necessary as it is significantly slower than non-transparent rendering
++	update_transparency()
+ 	
+ 	ui_label.add_color_override(""font_color"", font_color)
+ 	ui_color_rect.color = background_color
+ 	
+-	# only enable transparency when necessary as it is significantly slower than non-transparent rendering
+-	mesh_material.flags_transparent = transparent;
+-	mesh_material.flags_no_depth_test = !depth_test;
+-	
+ 	#if (line_to_parent):
+ 		#var p = get_parent();
+ 		#$LineMesh.visible = true;
+@@ -50,6 +53,11 @@ func _ready():
+ 		#$LineMesh.look_at_from_position()
+ 
+ 
++func update_transparency():
++	if mesh_material != null:
++		mesh_material.flags_transparent = transparent;
++
++
+ func resize_auto():
+ 	var size = ui_label.get_minimum_size();
+ 	var res = Vector2(size.x + margin * 2, size.y + margin * 2)"

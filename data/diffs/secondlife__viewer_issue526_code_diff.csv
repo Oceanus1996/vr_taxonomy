@@ -1,0 +1,544 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+secondlife/viewer,526,54d4406,indra/llrender/llglslshader.cpp,modified,20,0,20,"@@ -62,6 +62,21 @@ U32 LLGLSLShader::sTotalDrawCalls = 0;
+ LLGLSLShader    gUIProgram;
+ LLGLSLShader    gSolidColorProgram;
+ 
++// NOTE: Keep gShaderConsts* and LLGLSLShader::ShaderConsts_e in sync!
++const std::string gShaderConstsKey[ LLGLSLShader::NUM_SHADER_CONSTS ] =
++{
++	  ""LL_SHADER_CONST_CLOUD_MOON_DEPTH""
++	, ""LL_SHADER_CONST_STAR_DEPTH""
++};
++
++// NOTE: Keep gShaderConsts* and LLGLSLShader::ShaderConsts_e in sync!
++const std::string gShaderConstsVal[ LLGLSLShader::NUM_SHADER_CONSTS ] =
++{
++	  ""0.99998"" // SHADER_CONST_CLOUD_MOON_DEPTH // SL-14113
++	, ""0.99999"" // SHADER_CONST_STAR_DEPTH       // SL-14113
++};
++
++
+ BOOL shouldChange(const LLVector4& v1, const LLVector4& v2)
+ {
+     return v1 != v2;
+@@ -755,6 +770,11 @@ void LLGLSLShader::addPermutation(std::string name, std::string value)
+     mDefines[name] = value;
+ }
+ 
++void LLGLSLShader::addConstant( const LLGLSLShader::eShaderConsts shader_const )
++{
++    addPermutation( gShaderConstsKey[ shader_const ], gShaderConstsVal[ shader_const ] );
++}
++
+ void LLGLSLShader::removePermutation(std::string name)
+ {
+     mDefines[name].erase();"
+secondlife/viewer,526,54d4406,indra/llrender/llglslshader.h,modified,10,1,11,"@@ -67,6 +67,13 @@ class LLShaderFeatures
+ class LLGLSLShader
+ {
+ public:
++    // NOTE: Keep gShaderConsts and LLGLSLShader::ShaderConsts_e in sync!
++    enum eShaderConsts
++    {
++          SHADER_CONST_CLOUD_MOON_DEPTH
++        , SHADER_CONST_STAR_DEPTH
++        , NUM_SHADER_CONSTS
++    };
+ 
+ 	enum 
+ 	{
+@@ -149,7 +156,9 @@ class LLGLSLShader
+     void clearPermutations();
+ 	void addPermutation(std::string name, std::string value);
+ 	void removePermutation(std::string name);
+-	
++
++    void addConstant( const LLGLSLShader::eShaderConsts shader_const );
++
+ 	//enable/disable texture channel for specified uniform
+ 	//if given texture uniform is active in the shader, 
+ 	//the corresponding channel will be active upon return"
+secondlife/viewer,526,54d4406,indra/newview/app_settings/shaders/class1/deferred/cloudsF.glsl,modified,1,1,2,"@@ -126,6 +126,6 @@ void main()
+     frag_data[1] = vec4(0.0,0.0,0.0,0.0);
+     frag_data[2] = vec4(0,0,0,1);
+ 
+-    gl_FragDepth = 0.99995f;
++    gl_FragDepth = LL_SHADER_CONST_CLOUD_MOON_DEPTH; // SL-14113 Stars and Clouds need same depth
+ }
+ "
+secondlife/viewer,526,54d4406,indra/newview/app_settings/shaders/class1/deferred/moonF.glsl,modified,7,1,8,"@@ -55,6 +55,12 @@ void main()
+         fade = clamp( moon_dir.z*moon_dir.z*4.0, 0.0, 1.0 );
+ 
+     vec4 c      = texture2D(diffuseMap, vary_texcoord0.xy);
++
++    // SL-14113 Don't write to depth; prevent moon's quad from hiding stars which should be visible
++    // Moon texture has transparent pixels <0x55,0x55,0x55,0x00>
++    if (c.a <= 2./255.) // 0.00784
++        discard;
++
+ //       c.rgb  = srgb_to_linear(c.rgb);
+          c.rgb *= moonlight_color.rgb;
+          c.rgb *= moon_brightness;
+@@ -68,6 +74,6 @@ void main()
+     frag_data[1] = vec4(0.0);
+     frag_data[2] = vec4(0.0f);
+ 
+-    gl_FragDepth = 0.999985f;
++    gl_FragDepth = LL_SHADER_CONST_CLOUD_MOON_DEPTH; // SL-14113
+ }
+ "
+secondlife/viewer,526,54d4406,indra/newview/app_settings/shaders/class1/deferred/starsF.glsl,modified,6,1,7,"@@ -46,8 +46,13 @@ float twinkle(){
+     return abs(d);
+ }
+ 
++// See:
++// ALM off: class1/environment/starsF.glsl
++// ALM on : class1/deferred/starsF.glsl
+ void main() 
+ {
++	// camera above water: class1\deferred\starsF.glsl
++	// camera below water: class1\environment\starsF.glsl
+     vec4 col_a = texture2D(diffuseMap, vary_texcoord0.xy);
+     vec4 col_b = texture2D(diffuseMap, vary_texcoord0.xy);
+     vec4 col = mix(col_b, col_a, blend_factor);
+@@ -62,6 +67,6 @@ void main()
+     frag_data[1] = vec4(0.0f);
+     frag_data[2] = vec4(0.0, 1.0, 0.0, 1.0);
+ 
+-    gl_FragDepth = 0.99995f;
++    gl_FragDepth = LL_SHADER_CONST_STAR_DEPTH; // SL-14113 Moon Haze -- Stars need to depth test behind the moon
+ }
+ "
+secondlife/viewer,526,54d4406,indra/newview/app_settings/shaders/class1/environment/moonF.glsl,added,51,0,51,"@@ -0,0 +1,51 @@
++/** 
++ * @file class1/environment/moonF.glsl
++ *
++ * $LicenseInfo:firstyear=2021&license=viewerlgpl$
++ * Second Life Viewer Source Code
++ * Copyright (C) 2021, Linden Research, Inc.
++ * 
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation;
++ * version 2.1 of the License only.
++ * 
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ * 
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with this library; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
++ * 
++ * Linden Research, Inc., 945 Battery Street, San Francisco, CA  94111  USA
++ * $/LicenseInfo$
++ */
++
++#ifdef DEFINE_GL_FRAGCOLOR
++out vec4 frag_color;
++#else
++#define frag_color gl_FragColor
++#endif
++
++uniform sampler2D tex0;
++
++VARYING vec2 vary_texcoord0;
++
++// See:
++// AS  off: class1/environment/moonF.glsl
++// ALM off: class1/windlight/moonF.glsl
++// ALM on : class1/deferred/moonF.glsl
++void main() 
++{
++    vec4 color = texture2D(tex0, vary_texcoord0.xy);
++
++    // SL-14113 Don't write to depth; prevent moon's quad from hiding stars which should be visible
++    // Moon texture has transparent pixels <0x55,0x55,0x55,0x00>
++    if (color.a <= 2./255.) // 0.00784
++        discard;
++
++    frag_color = color;
++    gl_FragDepth = LL_SHADER_CONST_CLOUD_MOON_DEPTH; // SL-14113 Moon is infront of stars
++}"
+secondlife/viewer,526,54d4406,indra/newview/app_settings/shaders/class1/environment/moonV.glsl,added,38,0,38,"@@ -0,0 +1,38 @@
++/** 
++ * @file class1\environment\moonV.glsl
++ *
++ * $LicenseInfo:firstyear=2021&license=viewerlgpl$
++ * Second Life Viewer Source Code
++ * Copyright (C) 2021, Linden Research, Inc.
++ * 
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation;
++ * version 2.1 of the License only.
++ * 
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ * 
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with this library; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
++ * 
++ * Linden Research, Inc., 945 Battery Street, San Francisco, CA  94111  USA
++ * $/LicenseInfo$
++ */
++ 
++uniform mat4 modelview_projection_matrix;
++
++ATTRIBUTE vec3 position;
++ATTRIBUTE vec2 texcoord0;
++
++VARYING vec2 vary_texcoord0;
++
++void main()
++{
++	gl_Position = modelview_projection_matrix * vec4(position, 1);
++	vary_texcoord0 = texcoord0;
++}
++"
+secondlife/viewer,526,54d4406,indra/newview/app_settings/shaders/class1/environment/starsF.glsl,added,51,0,51,"@@ -0,0 +1,51 @@
++/** 
++ * @file class1/environment/starsF.glsl
++ *
++ * $LicenseInfo:firstyear=2021&license=viewerlgpl$
++ * Second Life Viewer Source Code
++ * Copyright (C) 2021, Linden Research, Inc.
++ * 
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation;
++ * version 2.1 of the License only.
++ * 
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ * 
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with this library; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
++ * 
++ * Linden Research, Inc., 945 Battery Street, San Francisco, CA  94111  USA
++ * $/LicenseInfo$
++ */
++
++#ifdef DEFINE_GL_FRAGCOLOR
++out vec4 frag_color;
++#else
++#define frag_color gl_FragColor
++#endif
++
++uniform sampler2D diffuseMap;
++
++uniform float custom_alpha;
++
++VARYING vec4 vertex_color;
++VARYING vec2 vary_texcoord0;
++
++// See:
++// ALM off: class1/environment/starsF.glsl
++// ALM on : class1/deferred/starsF.glsl
++void main() 
++{
++    vec4 color = texture2D(diffuseMap, vary_texcoord0.xy);
++    color.rgb = pow(color.rgb, vec3(0.45));
++    color.rgb *= vertex_color.rgb;
++    color.a *= max(custom_alpha, vertex_color.a);
++
++    frag_color = color;
++    gl_FragDepth = LL_SHADER_CONST_STAR_DEPTH; // SL-14113 Moon Haze -- Stars need to depth test behind the moon
++}"
+secondlife/viewer,526,54d4406,indra/newview/app_settings/shaders/class1/environment/starsV.glsl,added,41,0,41,"@@ -0,0 +1,41 @@
++/** 
++ * @file class1/environment/starsV.glsl
++ *
++ * $LicenseInfo:firstyear=2021&license=viewerlgpl$
++ * Second Life Viewer Source Code
++ * Copyright (C) 2021, Linden Research, Inc.
++ * 
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation;
++ * version 2.1 of the License only.
++ * 
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ * 
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with this library; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
++ * 
++ * Linden Research, Inc., 945 Battery Street, San Francisco, CA  94111  USA
++ * $/LicenseInfo$
++ */
++
++uniform mat4 modelview_projection_matrix;
++
++ATTRIBUTE vec3 position;
++ATTRIBUTE vec4 diffuse_color;
++ATTRIBUTE vec2 texcoord0;
++
++VARYING vec4 vertex_color;
++VARYING vec2 vary_texcoord0;
++
++void main()
++{
++	gl_Position = modelview_projection_matrix * vec4(position.xyz, 1.0);
++	vary_texcoord0 = texcoord0;
++	vertex_color = diffuse_color;
++}
++"
+secondlife/viewer,526,54d4406,indra/newview/app_settings/shaders/class1/windlight/moonF.glsl,modified,7,0,7,"@@ -52,6 +52,12 @@ void main()
+         fade = clamp( moon_dir.z*moon_dir.z*4.0, 0.0, 1.0 );
+ 
+     vec4 c     = texture2D(diffuseMap, vary_texcoord0.xy);
++
++    // SL-14113 Don't write to depth; prevent moon's quad from hiding stars which should be visible
++    // Moon texture has transparent pixels <0x55,0x55,0x55,0x00>
++    if (c.a <= 2./255.) // 0.00784
++        discard;
++
+ //       c.rgb = pow(c.rgb, vec3(0.7f)); // can't use ""srgb_to_linear(color.rgb)"" as that is a deferred only function
+          c.rgb *= moonlight_color.rgb;
+          c.rgb *= moon_brightness;
+@@ -62,5 +68,6 @@ void main()
+          c.rgb  = scaleSoftClip(c.rgb);
+ 
+     frag_color = vec4(c.rgb, c.a);
++    gl_FragDepth = LL_SHADER_CONST_CLOUD_MOON_DEPTH; // SL-14113
+ }
+ "
+secondlife/viewer,526,54d4406,indra/newview/app_settings/shaders/class2/windlight/cloudsF.glsl,modified,6,0,6,"@@ -127,5 +127,11 @@ void main()
+ 
+     /// Gamma correct for WL (soft clip effect).
+     frag_color = vec4(color.rgb, alpha1);
++
++    // SL-14113 Moon Haze -- When the camera is underwater fix clouds clipping into moon
++    // camera above water: class1\deferred\cloudsF.glsl
++    // camera below water: class2\windlight\coudsV.glsl
++    // See: starsV.glsl, cloudsV.glsl, moonF.glsl
++    gl_FragDepth = LL_SHADER_CONST_CLOUD_MOON_DEPTH;
+ }
+ "
+secondlife/viewer,526,54d4406,indra/newview/lldrawpoolsky.cpp,modified,26,7,33,"@@ -116,27 +116,46 @@ void LLDrawPoolSky::render(S32 pass)
+ 
+ void LLDrawPoolSky::renderSkyFace(U8 index)
+ {
+-	LLFace* face = mDrawFace[index];
++    LLFace* face = mDrawFace[index];
+ 
+-	if (!face || !face->getGeomCount())
+-	{
+-		return;
+-	}
++    if (!face || !face->getGeomCount())
++    {
++        return;
++    }
+ 
+-    if (index < 6) // sky tex...interp
++    if (index < LLVOSky::FACE_SUN) // sky tex...interp
+     {
+         llassert(mSkyTex);
+-	    mSkyTex[index].bindTexture(true); // bind the current tex
++        mSkyTex[index].bindTexture(true); // bind the current tex
+ 
+         face->renderIndexed();
+     }
++    else // Moon
++    if (index == LLVOSky::FACE_MOON)
++    {
++        LLGLSPipelineDepthTestSkyBox gls_skybox(true, true); // SL-14113 Write depth for moon so stars can test if behind it
++
++        LLGLEnable blend(GL_BLEND);
++
++        // if (LLGLSLShader::sNoFixedFunction) // TODO: Necessary? is this always true? We already bailed on gPipeline.canUseWindLightShaders ... above
++        LLViewerTexture* tex = face->getTexture(LLRender::DIFFUSE_MAP);
++        if (tex)
++        {
++            gMoonProgram.bind(); // SL-14113 was gOneTextureNoColorProgram
++            gGL.getTexUnit(0)->bind(tex, true);
++            face->renderIndexed();
++        }
++    }
+     else // heavenly body faces, no interp...
+     {
++        LLGLSPipelineDepthTestSkyBox gls_skybox(true, false); // reset to previous
++
+         LLGLEnable blend(GL_BLEND);
+ 
+         LLViewerTexture* tex = face->getTexture(LLRender::DIFFUSE_MAP);
+         if (tex)
+         {
++            gOneTextureNoColorProgram.bind();
+             gGL.getTexUnit(0)->bind(tex, true);
+             face->renderIndexed();
+         }"
+secondlife/viewer,526,54d4406,indra/newview/lldrawpoolwlsky.cpp,modified,7,6,13,"@@ -270,8 +270,8 @@ void LLDrawPoolWLSky::renderStars(const LLVector3& camPosLocal) const
+ 	gGL.rotatef(gFrameTimeSeconds*0.01f, 0.f, 0.f, 1.f);
+ 	if (LLGLSLShader::sNoFixedFunction)
+ 	{
+-		gCustomAlphaProgram.bind();
+-		gCustomAlphaProgram.uniform1f(sCustomAlpha, star_alpha.mV[3]);
++		gStarsProgram.bind();
++		gStarsProgram.uniform1f(sCustomAlpha, star_alpha.mV[3]);
+ 	}
+ 	else
+ 	{
+@@ -288,7 +288,7 @@ void LLDrawPoolWLSky::renderStars(const LLVector3& camPosLocal) const
+ 
+ 	if (LLGLSLShader::sNoFixedFunction)
+ 	{
+-		gCustomAlphaProgram.unbind();
++		gStarsProgram.unbind(); // SL-14113 was gCustomAlphaProgram
+ 	}
+ 	else
+ 	{
+@@ -477,7 +477,8 @@ void LLDrawPoolWLSky::renderSkyClouds(const LLVector3& camPosLocal, F32 camHeigh
+ 
+ void LLDrawPoolWLSky::renderHeavenlyBodies()
+ {
+-	LLGLSPipelineBlendSkyBox gls_skybox(true, false);
++	//LLGLSPipelineBlendSkyBox gls_skybox(true, false);
++    LLGLSPipelineBlendSkyBox gls_skybox(true, true); // SL-14113 we need moon to write to depth to clip stars behind
+ 
+     LLVector3 const & origin = LLViewerCamera::getInstance()->getOrigin();
+ 	gGL.pushMatrix();
+@@ -607,8 +608,8 @@ void LLDrawPoolWLSky::renderDeferred(S32 pass)
+     if (gPipeline.canUseWindLightShaders())
+     {
+         renderSkyHazeDeferred(origin, camHeightLocal);
+-        renderStarsDeferred(origin);
+         renderHeavenlyBodies();
++        renderStarsDeferred(origin);
+         renderSkyCloudsDeferred(origin, camHeightLocal, cloud_shader);
+     }
+     gGL.setColorMask(true, true);
+@@ -626,8 +627,8 @@ void LLDrawPoolWLSky::render(S32 pass)
+     LLVector3 const & origin = LLViewerCamera::getInstance()->getOrigin();
+     
+ 	renderSkyHaze(origin, camHeightLocal);    
++    renderHeavenlyBodies();
+     renderStars(origin);
+-    renderHeavenlyBodies();	
+ 	renderSkyClouds(origin, camHeightLocal, cloud_shader);
+ 
+ 	gGL.getTexUnit(0)->unbind(LLTexUnit::TT_TEXTURE);"
+secondlife/viewer,526,54d4406,indra/newview/llviewershadermgr.cpp,modified,39,1,40,"@@ -78,7 +78,7 @@ LLGLSLShader			gTransformTangentProgram;
+ //utility shaders
+ LLGLSLShader	gOcclusionProgram;
+ LLGLSLShader	gOcclusionCubeProgram;
+-LLGLSLShader	gCustomAlphaProgram;
++LLGLSLShader	gCustomAlphaProgram; // SL-14113 This used to be used for the stars with Atmospheric Shaders: OFF
+ LLGLSLShader	gGlowCombineProgram;
+ LLGLSLShader	gSplatTextureRectProgram;
+ LLGLSLShader	gGlowCombineFXAAProgram;
+@@ -148,6 +148,8 @@ LLGLSLShader		gSkinnedObjectFullbrightShinyWaterProgram;
+ LLGLSLShader		gSkinnedObjectShinySimpleWaterProgram;
+ 
+ //environment shaders
++LLGLSLShader		gMoonProgram;
++LLGLSLShader		gStarsProgram;
+ LLGLSLShader		gTerrainProgram;
+ LLGLSLShader		gTerrainWaterProgram;
+ LLGLSLShader		gWaterProgram;
+@@ -819,6 +821,9 @@ void LLViewerShaderMgr::unloadShaders()
+ 	gWaterProgram.unload();
+     gWaterEdgeProgram.unload();
+ 	gUnderWaterProgram.unload();
++
++	gMoonProgram.unload();
++	gStarsProgram.unload();
+ 	gTerrainProgram.unload();
+ 	gTerrainWaterProgram.unload();
+ 	gGlowProgram.unload();
+@@ -1051,6 +1056,34 @@ BOOL LLViewerShaderMgr::loadShadersEnvironment()
+ 		llassert(success);
+ 	}
+ 
++	if (success)
++	{
++		gStarsProgram.mName = ""Environment Stars Shader"";
++		gStarsProgram.mShaderFiles.clear();
++		gStarsProgram.mShaderFiles.push_back(make_pair(""environment/starsV.glsl"", GL_VERTEX_SHADER_ARB));
++		gStarsProgram.mShaderFiles.push_back(make_pair(""environment/starsF.glsl"", GL_FRAGMENT_SHADER_ARB));
++		gStarsProgram.mShaderLevel = mShaderLevel[SHADER_ENVIRONMENT];
++        gStarsProgram.addConstant( LLGLSLShader::SHADER_CONST_STAR_DEPTH ); // SL-14113
++		success = gStarsProgram.createShader(NULL, NULL);
++		llassert(success);
++	}
++
++	if (success)
++	{
++		gMoonProgram.mName = ""Environment Moon Shader"";
++		gMoonProgram.mShaderFiles.clear();
++		gMoonProgram.mShaderFiles.push_back(make_pair(""environment/moonV.glsl"", GL_VERTEX_SHADER_ARB));
++		gMoonProgram.mShaderFiles.push_back(make_pair(""environment/moonF.glsl"", GL_FRAGMENT_SHADER_ARB));
++		gMoonProgram.mShaderLevel = mShaderLevel[SHADER_ENVIRONMENT];
++        gMoonProgram.addConstant( LLGLSLShader::SHADER_CONST_CLOUD_MOON_DEPTH ); // SL-14113
++		success = gMoonProgram.createShader(NULL, NULL);
++		if (success)
++		{
++			gMoonProgram.bind();
++			gMoonProgram.uniform1i(sTex0, 0);
++		}
++	}
++
+ 	if (!success)
+ 	{
+ 		mShaderLevel[SHADER_ENVIRONMENT] = 0;
+@@ -2719,6 +2752,7 @@ BOOL LLViewerShaderMgr::loadShadersDeferred()
+ 		gDeferredWLCloudProgram.mShaderFiles.push_back(make_pair(""deferred/cloudsF.glsl"", GL_FRAGMENT_SHADER_ARB));
+ 		gDeferredWLCloudProgram.mShaderLevel = mShaderLevel[SHADER_DEFERRED];
+ 		gDeferredWLCloudProgram.mShaderGroup = LLGLSLShader::SG_SKY;
++        gDeferredWLCloudProgram.addConstant( LLGLSLShader::SHADER_CONST_CLOUD_MOON_DEPTH ); // SL-14113
+ 		success = gDeferredWLCloudProgram.createShader(NULL, NULL);
+ 		llassert(success);
+ 	}
+@@ -2758,6 +2792,7 @@ BOOL LLViewerShaderMgr::loadShadersDeferred()
+         gDeferredWLMoonProgram.mShaderFiles.push_back(make_pair(""deferred/moonF.glsl"", GL_FRAGMENT_SHADER_ARB));
+         gDeferredWLMoonProgram.mShaderLevel = mShaderLevel[SHADER_DEFERRED];
+         gDeferredWLMoonProgram.mShaderGroup = LLGLSLShader::SG_SKY;
++        gDeferredWLMoonProgram.addConstant( LLGLSLShader::SHADER_CONST_CLOUD_MOON_DEPTH ); // SL-14113
+  	 	success = gDeferredWLMoonProgram.createShader(NULL, NULL);
+         llassert(success);
+  	}
+@@ -2770,6 +2805,7 @@ BOOL LLViewerShaderMgr::loadShadersDeferred()
+ 		gDeferredStarProgram.mShaderFiles.push_back(make_pair(""deferred/starsF.glsl"", GL_FRAGMENT_SHADER_ARB));
+ 		gDeferredStarProgram.mShaderLevel = mShaderLevel[SHADER_DEFERRED];
+ 		gDeferredStarProgram.mShaderGroup = LLGLSLShader::SG_SKY;
++        gDeferredStarProgram.addConstant( LLGLSLShader::SHADER_CONST_STAR_DEPTH ); // SL-14113
+ 		success = gDeferredStarProgram.createShader(NULL, NULL);
+         llassert(success);
+ 	}
+@@ -4126,6 +4162,7 @@ BOOL LLViewerShaderMgr::loadShadersWindLight()
+         gWLCloudProgram.mShaderFiles.push_back(make_pair(""windlight/cloudsF.glsl"", GL_FRAGMENT_SHADER_ARB));
+         gWLCloudProgram.mShaderLevel = mShaderLevel[SHADER_WINDLIGHT];
+         gWLCloudProgram.mShaderGroup = LLGLSLShader::SG_SKY;
++        gWLCloudProgram.addConstant( LLGLSLShader::SHADER_CONST_CLOUD_MOON_DEPTH ); // SL-14113
+         success = gWLCloudProgram.createShader(NULL, NULL);
+     }
+ 
+@@ -4162,6 +4199,7 @@ BOOL LLViewerShaderMgr::loadShadersWindLight()
+         gWLMoonProgram.mShaderFiles.push_back(make_pair(""windlight/moonF.glsl"", GL_FRAGMENT_SHADER_ARB));
+         gWLMoonProgram.mShaderLevel = mShaderLevel[SHADER_WINDLIGHT];
+         gWLMoonProgram.mShaderGroup = LLGLSLShader::SG_SKY;
++        gWLMoonProgram.addConstant( LLGLSLShader::SHADER_CONST_CLOUD_MOON_DEPTH ); // SL-14113
+         success = gWLMoonProgram.createShader(NULL, NULL);
+     }
+ "
+secondlife/viewer,526,54d4406,indra/newview/llviewershadermgr.h,modified,2,0,2,"@@ -234,6 +234,8 @@ extern LLGLSLShader			gSkinnedObjectFullbrightShinyWaterProgram;
+ extern LLGLSLShader			gSkinnedObjectShinySimpleWaterProgram;
+ 
+ //environment shaders
++extern LLGLSLShader			gMoonProgram;
++extern LLGLSLShader			gStarsProgram;
+ extern LLGLSLShader			gTerrainProgram;
+ extern LLGLSLShader			gTerrainWaterProgram;
+ extern LLGLSLShader			gWaterProgram;"

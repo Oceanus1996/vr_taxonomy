@@ -1,0 +1,79 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vircadia/vircadia-web,65,6050901a4bf6dff8477623de0e4acbc4e872c154,src/components/overlays/people/People.vue,modified,9,3,12,"@@ -36,9 +36,14 @@
+                 class=""col""
+                 style=""height: 100%""
+             >
+-                <q-list>
+-                    <q-item v-for=""avaInfo in $store.state.avatars.avatarsInfo.values()""
+-                        :key=""avaInfo.sessionId"" class=""q-mb-sm"" clickable v-ripple>
++                <q-list v-if=""$store.state.avatars.avatarsInfo.values().length > 0"">
++                    <q-item
++                        v-for=""avaInfo in $store.state.avatars.avatarsInfo.values()""
++                        :key=""avaInfo.sessionId""
++                        class=""q-mb-sm""
++                        clickable
++                        v-ripple
++                    >
+                         <q-item-section avatar>
+                             <q-avatar color=""primary"">
+                                 <img v-if=""getProfilePicture(avaInfo)""
+@@ -70,6 +75,7 @@
+                         -->
+                     </q-item>
+                 </q-list>
++                <p v-else class=""text-subtitle1 text-grey text-center q-mt-md"">There is no one else in this server.</p>
+             </q-scroll-area>
+         </q-card>
+         <!-- <q-inner-loading :showing="""">"
+vircadia/vircadia-web,65,6050901a4bf6dff8477623de0e4acbc4e872c154,src/components/overlays/settings/Audio.vue,modified,1,1,2,"@@ -56,7 +56,7 @@
+ 
+                             <div class="".col-8 row items-center"">
+                                 <span
+-                                    v-if=""selectedInputStore""
++                                    v-if=""selectedInputStore !== 'None selected'""
+                                     class=""text-subtitle1 items-center""
+                                 >
+                                     Using {{ selectedInputStore }}"
+vircadia/vircadia-web,65,6050901a4bf6dff8477623de0e4acbc4e872c154,src/layouts/MainLayout.vue,modified,23,4,27,"@@ -62,12 +62,22 @@
+                         round
+                         dense
+                         fab-mini
+-                        tooltip=""mute/unmute mic""
+-                        :icon=""$store.state.audio.user.muted ? 'mic_off' : 'mic'""
+-                        :color=""$store.state.audio.user.hasInputAccess ? 'primary' : 'red'""
++                        :title=""$store.state.audio.user.muted ? 'Unmute microphone' : 'Mute microphone'""
++                        :icon=""$store.state.audio.user.muted || !$store.state.audio.user.hasInputAccess ? 'mic_off' : 'mic'""
++                        :color=""determineMicColor()""
+                         @click=""micToggled""
+                         class=""q-mr-sm q-ml-sm""
+-                    />
++                        :style=""{
++                            backgroundColor: $q.dark.isActive ? '#282828' : '#e8e8e8'
++                        }""
++                    >
++                        <q-tooltip
++                            v-if=""!$store.state.audio.user.hasInputAccess""
++                            class=""bg-black""
++                            transition-show=""jump-down""
++                            transition-hide=""jump-up""
++                        >Please allow microphone access.</q-tooltip>
++                    </q-btn>
+ 
+                     <q-toolbar-title>
+                         <q-item-section>
+@@ -471,6 +481,15 @@ export default defineComponent({
+             if (this.$store.state.audio.user.hasInputAccess === true) {
+                 AudioMgr.muteAudio();
+             }
++        },
++        determineMicColor: function(): string {
++            if (!this.$store.state.audio.user.hasInputAccess) {
++                return ""grey-6"";
++            }
++            if (this.$store.state.audio.user.muted) {
++                return ""red"";
++            }
++            return ""primary"";
+         }
+     },
+     mounted: async function() {"

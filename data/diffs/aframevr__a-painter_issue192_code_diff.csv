@@ -1,0 +1,68 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/a-painter,192,2f32632,src/components/brush.js,modified,5,1,6,"@@ -28,11 +28,15 @@ AFRAME.registerComponent('brush', {
+ 
+     var self = this;
+ 
++    this.previousAxis = 0;
+     this.el.addEventListener('axismove', function (evt) {
+-      if (evt.detail.axis[0] === 0 && evt.detail.axis[1] === 0) {
++      if (evt.detail.axis[0] === 0 && evt.detail.axis[1] === 0 || this.previousAxis === evt.detail.axis[1]) {
+         return;
+       }
++
++      this.previousAxis = evt.detail.axis[1];
+       var size = (evt.detail.axis[1] + 1) / 2 * self.schema.size.max;
++
+       self.el.setAttribute('brush', 'size', size);
+     });
+ "
+aframevr/a-painter,192,2f32632,src/components/ui.js,modified,3,5,8,"@@ -190,7 +190,6 @@ AFRAME.registerComponent('ui', {
+       }
+       default: {
+         this.activeWidget = undefined;
+-        console.log('Unkown button down ' + name);
+       }
+     }
+     this.pressedObjects[name] = object;
+@@ -446,7 +445,9 @@ AFRAME.registerComponent('ui', {
+   onModelLoaded: function (evt) {
+     var uiEl = this.uiEl;
+     var model = uiEl.getObject3D('mesh');
+-    if (evt.detail.format !== 'json') { return; }
++    model = evt.detail.model;
++    if (evt.detail.format !== 'obj') { return; }
++
+     this.objects = {};
+     this.objects.brightnessCursor = model.getObjectByName('brightnesscursor');
+     this.objects.brightnessSlider = model.getObjectByName('brightness');
+@@ -546,9 +547,6 @@ AFRAME.registerComponent('ui', {
+     var hueCursor = this.objects.hueCursor;
+     var brightnessCursor = this.objects.brightnessCursor;
+     var sizeCursor = this.objects.sizeCursor;
+-    sizeCursor.material = sizeCursor.material.clone();
+-    hueCursor.material = hueCursor.material.clone();
+-    brightnessCursor.material = brightnessCursor.material.clone();
+     sizeCursor.material.alphaTest = 0.5;
+     hueCursor.material.alphaTest = 0.5;
+     brightnessCursor.material.alphaTest = 0.5;"
+aframevr/a-painter,192,2f32632,src/systems/painter.js,modified,3,5,8,"@@ -61,16 +61,14 @@ AFRAME.registerSystem('painter', {
+       if (!self.startPainting) {
+         var logo = document.getElementById('logo');
+         var mesh = logo.getObject3D('mesh');
+-        var object = { alpha: 1.0 };
+-        var tween = new AFRAME.TWEEN.Tween(object)
++        var tween = new AFRAME.TWEEN.Tween({ alpha: 1.0 })
+           .to({alpha: 0.0}, 4000)
+           .onComplete(function () {
+             logo.setAttribute('visible', false);
+           })
+           .onUpdate(function () {
+-            mesh.children[0].material.opacity = object.alpha;
+-          });
+-        tween.start();
++            mesh.children[0].material.opacity = this.alpha;
++          }).start();
+         self.startPainting = true;
+       }
+     });"
+aframevr/a-painter,192,2f32632,vendor/aframe-master.min.js,modified,326,208,534,

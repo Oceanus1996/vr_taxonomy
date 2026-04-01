@@ -1,0 +1,305 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe,194,4b99263790711e599e60add1186db55bbe1f334d,elements/lib/register-template.js,modified,28,8,36,"@@ -3,6 +3,15 @@ var utils = require('./utils');
+ 
+ var registerElement = aframeCore.registerElement.registerElement;
+ var AObject = aframeCore.AObject;
++var AComponents = aframeCore.AComponents;
++
++var ATTRIBUTE_BLACKLIST = utils.extend({
++  id: true,
++  name: true,
++  class: true,
++  target: true
++});
++var COMPONENT_BLACKLIST = utils.extend({}, AComponents);
+ 
+ registerElement('a-root', {prototype: Object.create(AObject.prototype)});
+ 
+@@ -23,7 +32,7 @@ module.exports = function (tagName) {
+               // We emit an event so `<a-object>` knows when we've been
+               // registered and adds our children as `object3D`s.
+               this.emit('nodeready');
+-              this.rerender();
++              this.rerender(false, true);
+             }
+           },
+ 
+@@ -36,12 +45,12 @@ module.exports = function (tagName) {
+           },
+ 
+           attributeBlacklist: {
+-            value: {
+-              id: true,
+-              name: true,
+-              class: true,
+-              target: true
+-            },
++            value: ATTRIBUTE_BLACKLIST,
++            writable: window.debug
++          },
++
++          componentBlacklist: {
++            value: COMPONENT_BLACKLIST,
+             writable: window.debug
+           },
+ 
+@@ -56,13 +65,24 @@ module.exports = function (tagName) {
+           },
+ 
+           rerender: {
+-            value: function (force) {
++            value: function (force, firstTime) {
++              var self = this;
+               if (!force && this.lastOuterHTML === this.outerHTML) { return; }
+               var template = utils.$('template[is=""a-template""][element=""' + tagName + '""]');
+               if (!template) { return; }
+ 
+               // Use the defaults defined on the original `<template is=""a-template"">`.
+               var templateAttrs = utils.mergeAttrs(template, this);
++              utils.forEach(template.attributes, function (attr) {
++                if (attr.name in self.componentBlacklist) {
++                  if (firstTime) {
++                    utils.warn('Cannot use attribute name ""%s"" for template ' +
++                      'definition of <%s> because it is a core component',
++                      attr.name, tagNameLower);
++                  }
++                  delete templateAttrs[attr.name];
++                }
++              });
+               Object.keys(templateAttrs).filter(function (key) {
+                 if (key in this.attributeBlacklist) {
+                   // Move these unique identifier attributes over"
+aframevr/aframe,194,4b99263790711e599e60add1186db55bbe1f334d,elements/lib/utils.js,modified,8,3,11,"@@ -72,9 +72,13 @@ module.exports.mergeAttrs = function () {
+   var mergedAttrs = {};
+   forEach(arguments, function (el) {
+     forEach(el.attributes, function (attr) {
+-      // NOTE: We use `getAttribute` instead of `attr.value` so our wrapper
+-      // for coordinate objects gets used.
+-      mergedAttrs[attr.name] = el.getAttribute(attr.name);
++      // NOTE: We use `getComputedAttribute` instead of `attr.value` so our
++      // wrapper for coordinate objects, etc. gets used.
++      if (el.getComputedAttribute) {
++        mergedAttrs[attr.name] = el.getComputedAttribute(attr.name);
++      } else {
++        mergedAttrs[attr.name] = el.getAttribute(attr.name);
++      }
+     });
+   });
+   return mergedAttrs;
+@@ -160,6 +164,7 @@ module.exports.wrapAEventElement = function (newTagName, eventName, data) {
+ 
+ // Useful utils from aframe-core.
+ module.exports.error = aframeCoreUtils.error;
++module.exports.extend = aframeCoreUtils.extend;
+ module.exports.fireEvent = aframeCoreUtils.fireEvent;
+ module.exports.log = aframeCoreUtils.log;
+ module.exports.splitString = aframeCoreUtils.splitString;"
+aframevr/aframe,194,4b99263790711e599e60add1186db55bbe1f334d,elements/templates/a-camera.html,modified,5,4,9,"@@ -3,10 +3,11 @@
+           fov=""45""
+           near=""1""
+           far=""10000""
+-          look-controls=""true""
+-          wasd-controls=""true"">
++          look=""true""
++          wasd-controls-enabled=""true""
++          look-controls-enabled=""true"">
+   <a-object camera=""fov: ${fov}; near: ${near}; far: ${far}""
+-            look-controls=""enabled: ${look-controls}""
+-            wasd-controls=""enabled: ${wasd-controls}"">
++            look-controls=""enabled: ${look-controls-enabled}""
++            wasd-controls=""enabled: ${wasd-controls-enabled}"">
+   </a-object>
+ </template>"
+aframevr/aframe,194,4b99263790711e599e60add1186db55bbe1f334d,examples/panoexplorer/templates/index.html,modified,4,4,8,"@@ -14,8 +14,8 @@
+ <template is=""a-template""
+           element=""a-cursor-gaze""
+           fov=""45""
+-          look-controls=""true""
+-          wasd-controls=""true""
++          look-controls-enabled=""true""
++          wasd-controls-enabled=""true""
+           colorDefault=""gray""
+           colorHover=""springgreen""
+           dur=""1500""
+@@ -26,8 +26,8 @@
+           innerRadius=""0.14""
+           timeout=""1500"">
+   <a-object camera=""fov: ${fov}""
+-            look-controls=""${look-controls}""
+-            wasd-controls=""${wasd-controls}"">
++            look-controls=""enabled: ${look-controls-enabled}""
++            wasd-controls=""enabled: ${wasd-controls-enabled}"">
+     <a-object id=""cursor""
+               position=""0 0 -3""
+               geometry=""primitive: ${primitive}; outerRadius: ${outerRadius}; innerRadius: ${innerRadius}"""
+aframevr/aframe,194,bc45e26d3d1e51832db654a017ce15653b085dca,elements/lib/register-template.js,modified,28,8,36,"@@ -3,6 +3,15 @@ var utils = require('./utils');
+ 
+ var registerElement = aframeCore.registerElement.registerElement;
+ var AObject = aframeCore.AObject;
++var AComponents = aframeCore.AComponents;
++
++var ATTRIBUTE_BLACKLIST = utils.extend({
++  id: true,
++  name: true,
++  class: true,
++  target: true
++});
++var COMPONENT_BLACKLIST = utils.extend({}, AComponents);
+ 
+ registerElement('a-root', {prototype: Object.create(AObject.prototype)});
+ 
+@@ -23,7 +32,7 @@ module.exports = function (tagName) {
+               // We emit an event so `<a-object>` knows when we've been
+               // registered and adds our children as `object3D`s.
+               this.emit('nodeready');
+-              this.rerender();
++              this.rerender(false, true);
+             }
+           },
+ 
+@@ -36,12 +45,12 @@ module.exports = function (tagName) {
+           },
+ 
+           attributeBlacklist: {
+-            value: {
+-              id: true,
+-              name: true,
+-              class: true,
+-              target: true
+-            },
++            value: ATTRIBUTE_BLACKLIST,
++            writable: window.debug
++          },
++
++          componentBlacklist: {
++            value: COMPONENT_BLACKLIST,
+             writable: window.debug
+           },
+ 
+@@ -56,13 +65,24 @@ module.exports = function (tagName) {
+           },
+ 
+           rerender: {
+-            value: function (force) {
++            value: function (force, firstTime) {
++              var self = this;
+               if (!force && this.lastOuterHTML === this.outerHTML) { return; }
+               var template = utils.$('template[is=""a-template""][element=""' + tagName + '""]');
+               if (!template) { return; }
+ 
+               // Use the defaults defined on the original `<template is=""a-template"">`.
+               var templateAttrs = utils.mergeAttrs(template, this);
++              utils.forEach(template.attributes, function (attr) {
++                if (attr.name in self.componentBlacklist) {
++                  if (firstTime) {
++                    utils.warn('Cannot use attribute name ""%s"" for template ' +
++                      'definition of <%s> because it is a core component',
++                      attr.name, tagNameLower);
++                  }
++                  delete templateAttrs[attr.name];
++                }
++              });
+               Object.keys(templateAttrs).filter(function (key) {
+                 if (key in this.attributeBlacklist) {
+                   // Move these unique identifier attributes over"
+aframevr/aframe,194,bc45e26d3d1e51832db654a017ce15653b085dca,elements/lib/utils.js,modified,8,3,11,"@@ -72,9 +72,13 @@ module.exports.mergeAttrs = function () {
+   var mergedAttrs = {};
+   forEach(arguments, function (el) {
+     forEach(el.attributes, function (attr) {
+-      // NOTE: We use `getAttribute` instead of `attr.value` so our wrapper
+-      // for coordinate objects gets used.
+-      mergedAttrs[attr.name] = el.getAttribute(attr.name);
++      // NOTE: We use `getComputedAttribute` instead of `attr.value` so our
++      // wrapper for coordinate objects, etc. gets used.
++      if (el.getComputedAttribute) {
++        mergedAttrs[attr.name] = el.getComputedAttribute(attr.name);
++      } else {
++        mergedAttrs[attr.name] = el.getAttribute(attr.name);
++      }
+     });
+   });
+   return mergedAttrs;
+@@ -160,6 +164,7 @@ module.exports.wrapAEventElement = function (newTagName, eventName, data) {
+ 
+ // Useful utils from aframe-core.
+ module.exports.error = aframeCoreUtils.error;
++module.exports.extend = aframeCoreUtils.extend;
+ module.exports.fireEvent = aframeCoreUtils.fireEvent;
+ module.exports.log = aframeCoreUtils.log;
+ module.exports.splitString = aframeCoreUtils.splitString;"
+aframevr/aframe,194,bc45e26d3d1e51832db654a017ce15653b085dca,elements/templates/a-camera.html,modified,5,4,9,"@@ -3,10 +3,11 @@
+           fov=""45""
+           near=""1""
+           far=""10000""
+-          look-controls=""true""
+-          wasd-controls=""true"">
++          look=""true""
++          wasd-controls-enabled=""true""
++          look-controls-enabled=""true"">
+   <a-object camera=""fov: ${fov}; near: ${near}; far: ${far}""
+-            look-controls=""enabled: ${look-controls}""
+-            wasd-controls=""enabled: ${wasd-controls}"">
++            look-controls=""enabled: ${look-controls-enabled}""
++            wasd-controls=""enabled: ${wasd-controls-enabled}"">
+   </a-object>
+ </template>"
+aframevr/aframe,194,bc45e26d3d1e51832db654a017ce15653b085dca,examples/panoexplorer/templates/index.html,modified,4,4,8,"@@ -14,8 +14,8 @@
+ <template is=""a-template""
+           element=""a-cursor-gaze""
+           fov=""45""
+-          look-controls=""true""
+-          wasd-controls=""true""
++          look-controls-enabled=""true""
++          wasd-controls-enabled=""true""
+           colorDefault=""gray""
+           colorHover=""springgreen""
+           dur=""1500""
+@@ -26,8 +26,8 @@
+           innerRadius=""0.14""
+           timeout=""1500"">
+   <a-object camera=""fov: ${fov}""
+-            look-controls=""${look-controls}""
+-            wasd-controls=""${wasd-controls}"">
++            look-controls=""enabled: ${look-controls-enabled}""
++            wasd-controls=""enabled: ${wasd-controls-enabled}"">
+     <a-object id=""cursor""
+               position=""0 0 -3""
+               geometry=""primitive: ${primitive}; outerRadius: ${outerRadius}; innerRadius: ${innerRadius}"""
+aframevr/aframe,194,5b1c9bd4bb2bba10abc903ba14d3b49ed85dc0c1,src/aframe-core.js,modified,4,0,4,"@@ -5,6 +5,9 @@ var registerElement = require('./a-register-element');
+ var AObject = require('./core/a-object');
+ var ANode = require('./core/a-node');
+ 
++// Must be required after `AObject` so all the components are registered.
++var AComponents = require('./core/components').components;
++
+ // Exports THREE to the window object so we can
+ // use three.js without alteration
+ var THREE = window.THREE = require('../lib/three');
+@@ -20,6 +23,7 @@ module.exports = {
+   THREE: THREE,
+   ANode: ANode,
+   AObject: AObject,
++  AComponents: AComponents,
+   registerElement: registerElement,
+   utils: utils
+ };"
+aframevr/aframe,194,ff2a05f244aaa3f4868d05aecb65538f4841d1f8,core/templates/vr-camera.html,modified,2,2,4,"@@ -6,7 +6,7 @@
+           look-controls=""true""
+           wasd-controls=""true"">
+     <vr-object camera=""fov: ${fov}; near: ${near}; far: ${far}""
+-               look-controls=""${look-controls}""
+-               wasd-controls=""${wasd-controls}"">
++               look-controls=""enabled: ${look-controls}""
++               wasd-controls=""enabled: ${wasd-controls}"">
+     </vr-object>
+ </template>"
+aframevr/aframe,194,eb7e2f535805870a463bca3af266e588964cb679,core/templates/vr-camera.html,modified,2,2,4,"@@ -6,7 +6,7 @@
+           look-controls=""true""
+           wasd-controls=""true"">
+     <vr-object camera=""fov: ${fov}; near: ${near}; far: ${far}""
+-               look-controls=""${look-controls}""
+-               wasd-controls=""${wasd-controls}"">
++               look-controls=""enabled: ${look-controls}""
++               wasd-controls=""enabled: ${wasd-controls}"">
+     </vr-object>
+ </template>"

@@ -1,0 +1,516 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe-inspector,188,d433a100d9b218043e0b860d9d44f03378d5b88f,src/actions/entity.js,modified,30,1,31,"@@ -1,9 +1,10 @@
+ var INSPECTOR = require('../lib/inspector.js');
+ var Events = require('../lib/Events.js');
+-
+ var components = AFRAME.components;
+ var isSingleProperty = AFRAME.schema.isSingleProperty;
+ 
++import {DEFAULT_COMPONENTS} from '../components/components/CommonComponents';
++
+ /**
+  * Update a component.
+  *
+@@ -124,6 +125,34 @@ export function cloneSelectedEntity () {
+   cloneEntity(INSPECTOR.selectedEntity);
+ }
+ 
++/**
++ * Returns the clipboard representation to be used to copy to the clipboard
++ * @param  {Element} entity Entity to copy to clipboard
++ * @return {string}        Entity clipboard representation
++ */
++export function getClipboardRepresentation (entity) {
++  entity.flushToDOM();
++  var clone = entity.cloneNode(true);
++
++  function removeDefaultAttributes (element) {
++    for (let i = 0; i < element.childNodes.length; i++) {
++      var child = element.childNodes[i];
++      if (child.isEntity) {
++        removeDefaultAttributes(child);
++      }
++    }
++
++    for (let i = 0; i < DEFAULT_COMPONENTS.length; i++) {
++      if (element.getAttribute(DEFAULT_COMPONENTS[i]).length === 0) {
++        element.removeAttribute(DEFAULT_COMPONENTS[i]);
++      }
++    }
++  }
++
++  removeDefaultAttributes(clone);
++  return clone.outerHTML;
++}
++
+ /**
+  * Detect element's Id collision and returns a valid one
+  * @param  {string} baseId Proposed Id"
+aframevr/aframe-inspector,188,d433a100d9b218043e0b860d9d44f03378d5b88f,src/components/Collapsible.js,modified,2,2,4,"@@ -43,8 +43,8 @@ export default class Collapsible extends React.Component {
+ 
+     return (
+       <div className={rootClasses}>
+-        <div className=""static"" onClick={this.toggleVisibility}>
+-          <div className=""collapse-button""/>
++        <div className='static' onClick={this.toggleVisibility}>
++          <div className='collapse-button'/>
+           {this.props.children[0]}
+         </div>
+         <div className={contentClasses}>"
+aframevr/aframe-inspector,188,d433a100d9b218043e0b860d9d44f03378d5b88f,src/components/Main.js,modified,10,6,16,"@@ -21,13 +21,13 @@ export default class Main extends React.Component {
+     super(props);
+     this.state = {
+       inspectorEnabled: true,
+-      isModalTexturesOpen: false,
+-      sceneEl: document.querySelector('a-scene')
++      sceneEl: document.querySelector('a-scene'),
++      entity: null,
++      isModalTexturesOpen: false
+     };
+   }
+ 
+   componentDidMount () {
+-
+     // Create an observer to notify the changes in the scene
+     var observer = new MutationObserver(function (mutations) {
+       Events.emit('domModified', mutations);
+@@ -39,6 +39,10 @@ export default class Main extends React.Component {
+       this.setState({isModalTexturesOpen: true, textureOnClose: textureOnClose});
+     }.bind(this));
+ 
++    Events.on('entitySelected', entity => {
++      this.setState({entity: entity});
++    });
++
+     Events.on('inspectorModeChanged', enabled => {
+       this.setState({inspectorEnabled: enabled});
+     });
+@@ -66,7 +70,7 @@ export default class Main extends React.Component {
+   render () {
+     var scene = this.state.sceneEl;
+     var textureDialogOpened = this.state.isModalTexturesOpen;
+-    let editButton = <a className='toggle-edit' onClick={this.toggleEdit}>{(this.state.inspectorEnabled ? 'Back to Scene' : 'Inspect Scene')}</a>
++    let editButton = <a className='toggle-edit' onClick={this.toggleEdit}>{(this.state.inspectorEnabled ? 'Back to Scene' : 'Inspect Scene')}</a>;
+ 
+     return (
+       <div>
+@@ -76,9 +80,9 @@ export default class Main extends React.Component {
+             onClose={this.onModalTextureOnClose}/>
+           <ToolBar/>
+           <div id='sidebar-left'>
+-            <SceneGraph scene={scene}/>
++            <SceneGraph scene={scene} selectedEntity={this.state.entity}/>
+           </div>
+-          <ComponentsSidebar/>
++          <ComponentsSidebar entity={this.state.entity}/>
+         </div>
+       </div>
+     );"
+aframevr/aframe-inspector,188,d433a100d9b218043e0b860d9d44f03378d5b88f,src/components/attributes/AttributesSidebar.js,removed,0,24,24,"@@ -1,24 +0,0 @@
+-var React = require('react');
+-
+-import AttributesPanel from './AttributesPanel';
+-
+-export default class AttributesSidebar extends React.Component {
+-  constructor (props) {
+-    super(props);
+-    this.state = {open: false};
+-  }
+-
+-  handleToggle = () => {
+-    this.setState({open: !this.state.open});
+-    ga('send', 'event', 'Components', 'toggleSidebar');
+-  }
+-
+-  render () {
+-    return (
+-      <div id=""sidebar"">
+-        <div className=""sidebar-title"">attributes</div>
+-        <AttributesPanel/>
+-      </div>
+-    );
+-  }
+-}"
+aframevr/aframe-inspector,188,d433a100d9b218043e0b860d9d44f03378d5b88f,src/components/attributes/Component.js,removed,0,77,77,"@@ -1,77 +0,0 @@
+-import React from 'react';
+-
+-import AttributeRow from './AttributeRow';
+-import Collapsible from '../Collapsible';
+-
+-function isSingleProperty (schema) {
+-  if ('type' in schema) {
+-    return typeof schema.type === 'string';
+-  }
+-  return 'default' in schema;
+-}
+-
+-export default class Component extends React.Component {
+-  static propTypes = {
+-    component: React.PropTypes.any,
+-    entity: React.PropTypes.object,
+-    name: React.PropTypes.string
+-  };
+-
+-  deleteComponent = event => {
+-    event.stopPropagation();
+-    this.props.entity.removeAttribute(this.props.name);
+-    ga('send', 'event', 'Components', 'removeComponent', this.props.name);
+-  }
+-
+-  resetComponent = event => {
+-    event.stopPropagation();
+-    this.props.entity.setAttribute(this.props.name, {});
+-    ga('send', 'event', 'Components', 'resetComponent', this.props.name);
+-  }
+-
+-  render () {
+-    const componentData = this.props.component;
+-    let componentName = this.props.name.toUpperCase();
+-    let subComponentName = '';
+-
+-    if (componentName.indexOf('__') !== -1) {
+-      subComponentName = componentName;
+-      componentName = componentName.substr(0, componentName.indexOf('__'));
+-    }
+-
+-    let attributeRows;
+-    if (isSingleProperty(componentData.schema)) {
+-      var key = componentName.toLowerCase();
+-      var schema = AFRAME.components[key.toLowerCase()].schema;
+-      attributeRows = (
+-        <AttributeRow key={key} name={key} schema={schema}
+-          data={componentData.data} componentname={key}
+-          entity={this.props.entity}/>
+-      );
+-    } else {
+-      attributeRows = Object.keys(componentData.schema).map(key => {
+-        return (
+-          <AttributeRow key={key} name={key} schema={componentData.schema[key]}
+-            data={componentData.data[key]} componentname={this.props.name}
+-            entity={this.props.entity}/>
+-        );
+-      });
+-    }
+-
+-    return (
+-      <Collapsible>
+-        <div className='collapsible-header'>
+-          <span>{componentName} <span className='subcomponent'>{subComponentName}</span></span>
+-          <div className='dropdown menu'>
+-            <div className='dropdown-content'>
+-              <a href='#' onClick={this.deleteComponent}>Delete</a>
+-              <a href='#' onClick={this.resetComponent}>Reset to default</a>
+-              <a href='#' className='disabled'>Copy to clipboard</a>
+-            </div>
+-          </div>
+-        </div>
+-        <div className='collapsible-content'>{attributeRows}</div>
+-      </Collapsible>
+-    );
+-  }
+-}"
+aframevr/aframe-inspector,188,d433a100d9b218043e0b860d9d44f03378d5b88f,src/components/components/CommonComponents.js,modified,42,41,83,"@@ -1,10 +1,10 @@
++/* global Events */
+ import React from 'react';
+ import {InputWidget} from '../widgets';
+ import PropertyRow from './PropertyRow';
+ import Collapsible from '../Collapsible';
+ import Mixins from './Mixins';
+ import {updateEntity} from '../../actions/entity';
+-const Events = require('../../lib/Events.js');
+ 
+ // @todo Take this out and use updateEntity?
+ function changeId (entity, componentName, propertyName, value) {
+@@ -14,45 +14,46 @@ function changeId (entity, componentName, propertyName, value) {
+   }
+ }
+ 
+-/**
+- * Core component properties such as id, position, rotation, scale.
+- */
+-const CommonComponents = props => {
+-  const entity = props.entity;
+-  const components = entity ? props.entity.components : {};
+-  if (!entity) { return <div></div>; }
+-  return (
+-    <Collapsible>
+-      <div className='collapsible-header'>
+-        <span>Common</span>
+-      </div>
+-      <div className='collapsible-content'>
+-        <div className='row'>
+-          <span className='value tagName'><code>&lt;{entity.tagName.toLowerCase()}&gt;</code></span>
++export const DEFAULT_COMPONENTS = ['visible', 'position', 'scale', 'rotation'];
++
++export class CommonComponents extends React.Component {
++  static propTypes = {
++    entity: React.PropTypes.object
++  };
++
++  renderCommonAttributes () {
++    const entity = this.props.entity;
++    const components = entity ? entity.components : {};
++    return Object.keys(components).filter(function (key) {
++      return DEFAULT_COMPONENTS.indexOf(key) !== -1;
++    }).map(componentName => {
++      const componentData = components[componentName];
++      const schema = AFRAME.components[componentName].schema;
++      return (
++        <PropertyRow onChange={updateEntity} key={componentName} name={componentName}
++          showHelp={true} schema={schema} data={componentData.data}
++          componentname={componentName} entity={entity}/>
++      );
++    });
++  }
++
++  render () {
++    const entity = this.props.entity;
++    if (!entity) { return <div></div>; }
++    return (
++      <Collapsible>
++        <div className='collapsible-header'>
++          <span>Common</span>
+         </div>
+-        <div className='row'>
+-          <span className='text'>ID</span>
+-          <InputWidget onChange={changeId} entity={entity} name='id' value={entity.id}/>
++        <div className='collapsible-content'>
++          <div className='row'>
++            <span className='text'>ID</span>
++            <InputWidget onChange={changeId} entity={entity} name='id' value={entity.id}/>
++          </div>
++          {this.renderCommonAttributes()}
++          <Mixins entity={entity}/>
+         </div>
+-        {
+-          Object.keys(components).filter(function (key) {
+-            return ['visible', 'position', 'scale', 'rotation'].indexOf(key) !== -1;
+-          }).map(function (key) {
+-            const componentData = components[key];
+-            const schema = AFRAME.components[key].schema;
+-            return (
+-              <PropertyRow onChange={updateEntity} key={key} name={key}
+-                showHelp={true} schema={schema} data={componentData.data}
+-                componentname={key} entity={props.entity}/>
+-            );
+-          })
+-        }
+-        <Mixins entity={entity}/>
+-      </div>
+-    </Collapsible>
+-  );
+-};
+-CommonComponents.propTypes = {
+-  entity: React.PropTypes.object
+-};
+-export default CommonComponents;
++      </Collapsible>
++    );
++  }
++}"
+aframevr/aframe-inspector,188,d433a100d9b218043e0b860d9d44f03378d5b88f,src/components/components/ComponentsContainer.js,modified,2,27,29,"@@ -1,44 +1,19 @@
+ import React from 'react';
+ import AddComponent from './AddComponent';
+ import Component from './Component';
+-import CommonComponents from './CommonComponents';
+-const Events = require('../../lib/Events');
+-
+-const DEFAULT_COMPONENTS = ['visible', 'position', 'scale', 'rotation'];
++import {CommonComponents, DEFAULT_COMPONENTS} from './CommonComponents';
+ 
+ export default class ComponentsContainer extends React.Component {
+   static propTypes = {
+     entity: React.PropTypes.object
+   };
+ 
+-  constructor (props) {
+-    super(props);
+-    this.state = {
+-      entity: props.entity
+-    };
+-  }
+-
+-  componentDidMount () {
+-    this.refresh();
+-    Events.on('entitySelected', entity => {
+-      this.setState({entity: entity});
+-      if (entity !== null) {
+-        entity.addEventListener('componentchanged', this.refresh);
+-      }
+-    });
+-    document.addEventListener('componentremoved', event => {
+-      if (this.state.entity === event.detail.target) {
+-        this.refresh();
+-      }
+-    });
+-  }
+-
+   refresh = () => {
+     this.forceUpdate();
+   }
+ 
+   render () {
+-    const entity = this.state.entity;
++    const entity = this.props.entity;
+     const components = entity ? entity.components : {};
+     const defaultComponents = Object.keys(components).filter(function (key) {
+       return DEFAULT_COMPONENTS.indexOf(key) === -1;"
+aframevr/aframe-inspector,188,d433a100d9b218043e0b860d9d44f03378d5b88f,src/components/components/Sidebar.js,modified,34,4,38,"@@ -1,23 +1,53 @@
+-var React = require('react');
+-
++import React from 'react';
+ import ComponentsContainer from './ComponentsContainer';
++import Clipboard from 'clipboard';
++import {getClipboardRepresentation} from '../../actions/entity';
+ 
+ export default class Sidebar extends React.Component {
++  static propTypes = {
++    entity: React.PropTypes.object
++  };
++
+   constructor (props) {
+     super(props);
+     this.state = {open: false};
+   }
+ 
++  componentDidMount () {
++    var clipboard = new Clipboard('[data-action=""copy-entity-to-clipboard""]', {
++      text: trigger => {
++        return getClipboardRepresentation(this.props.entity);
++      }
++    });
++    clipboard.on('error', e => {
++      // @todo Show the error on the UI
++    });
++  }
++
+   handleToggle = () => {
+     this.setState({open: !this.state.open});
+     ga('send', 'event', 'Components', 'toggleSidebar');
+   }
+ 
+   render () {
++    const entity = this.props.entity;
++    let entityButtons = '';
++    let entityName = '';
++    if (entity) {
++      entityButtons = <div>
++        <a href='#' title='Copy entity HTML to clipboard' data-action='copy-entity-to-clipboard'
++          className='button fa fa-clipboard' onClick={event => event.stopPropagation()}></a>
++      </div>;
++      entityName = '<' + entity.tagName.toLowerCase() + '>';
++    }
++
+     return (
+       <div id='sidebar'>
+-        <div className='sidebar-title'>components</div>
+-        <ComponentsContainer/>
++        <div className='sidebar-title'>
++          <code>{entityName}</code>
++          {entityButtons}
++        </div>
++        <ComponentsContainer entity={this.props.entity}/>
+       </div>
+     );
+   }"
+aframevr/aframe-inspector,188,d433a100d9b218043e0b860d9d44f03378d5b88f,src/css/main.css,modified,10,8,18,"@@ -225,7 +225,7 @@ input.number:focus {
+   margin: 0;
+   right: 0;
+   top: 0;
+-  border-bottom: 1px solid #111;
++  border-bottom: 1px solid #262626;
+ }
+ 
+   #menubar .menu {
+@@ -880,11 +880,14 @@ code, pre {
+ }
+ 
+ .sidebar-title {
+-	color: #AAA;
+-	text-align: left;
+-	background-color: #444;
+-	padding: 5px 10px;
+-	font-size: 12px;
++  color: #AAA;
++  text-align: center;
++  background-color: #444;
++  padding: 6px 10px;
++  font-size: 12px;
++	display: flex;
++	justify-content: space-between;
++
+ }
+ 
+ .toolbar {
+@@ -900,7 +903,6 @@ code, pre {
+   vertical-align: middle;
+   padding: 8px;
+   margin-left: 0px;
+-  /*margin-top: 7px;*/
+ }
+ 
+ 
+@@ -983,7 +985,7 @@ code, pre {
+ a.flat-button {
+   color: #bcbcbc;
+   background-color: #262626;
+-  font-size: 12px;
++  font-size: 11px;
+   text-decoration: none;
+   margin-left: 10px;
+   padding: 5px;"
+aframevr/aframe-inspector,188,d433a100d9b218043e0b860d9d44f03378d5b88f,src/lib/viewport/index.js,modified,0,2,2,"@@ -1,7 +1,5 @@
+ /* global THREE CustomEvent */
+ 
+-var INSPECTOR = require('../inspector.js');
+-
+ import debounce from 'lodash.debounce';
+ import TransformControls from '../vendor/threejs/TransformControls.js';
+ import EditorControls from '../vendor/threejs/EditorControls.js';"
+aframevr/aframe-inspector,188,fc98a86083ceb9b632892174839f0b11cb85e040,src/actions/component.js,modified,1,2,3,"@@ -45,7 +45,6 @@ export function getComponentDocsUrl (componentName) {
+     return 'https://aframe.io/docs/' + AFRAME.version + '/components/' +
+       (componentName === 'camera' ? '' : componentName.toLowerCase() + '.html');
+   }
+-  return null;
+ }
+ 
+ /**
+@@ -56,7 +55,7 @@ export function getComponentDocsUrl (componentName) {
+ export function getComponentDocsHtmlLink (componentName) {
+   let url = getComponentDocsUrl(componentName);
+   if (url) {
+-    return <a title='Help' className='button fa fa-question-circle'
++    return <a title='Help' className='button help-link fa fa-question-circle'
+       target='_blank' onClick={event => event.stopPropagation()}
+       href={url}></a>;
+   }"
+aframevr/aframe-inspector,188,fc98a86083ceb9b632892174839f0b11cb85e040,src/components/components/CommonComponents.js,modified,1,1,2,"@@ -42,7 +42,7 @@ const CommonComponents = props => {
+             const schema = AFRAME.components[key].schema;
+             return (
+               <PropertyRow onChange={updateEntity} key={key} name={key}
+-                show_help={true} schema={schema} data={componentData.data}
++                showHelp={true} schema={schema} data={componentData.data}
+                 componentname={key} entity={props.entity}/>
+             );
+           })"
+aframevr/aframe-inspector,188,fc98a86083ceb9b632892174839f0b11cb85e040,src/components/components/PropertyRow.js,modified,1,1,2,"@@ -81,7 +81,7 @@ export default class PropertyRow extends React.Component {
+   render () {
+     const props = this.props;
+     const title = 'type: ' + props.schema.type + ' value: ' + JSON.stringify(props.data);
+-    const help_link = props.show_help ? getComponentDocsHtmlLink(props.name) : '';
++    const help_link = props.showHelp ? getComponentDocsHtmlLink(props.name) : '';
+     return (
+       <div className='row'>
+         <label htmlFor={this.id} className='text' title={title}>{props.name}{help_link}</label>"
+aframevr/aframe-inspector,188,fc98a86083ceb9b632892174839f0b11cb85e040,src/css/main.css,modified,8,0,8,"@@ -991,3 +991,11 @@ a.flat-button:hover {
+ 	display: flex;
+ 	align-items: center;
+ }
++
++a.help-link {
++  opacity: 0.4;
++}
++
++a.help-link:hover {
++  opacity: 1.0;
++}"

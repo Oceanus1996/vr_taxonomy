@@ -1,0 +1,208 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+KozGit/DOOM-3-BFG-VR,97,54f5d6d203ef84a00f8abc6c1628dff27537720d,neo/d3xp/Game_local.cpp,modified,8,4,12,"@@ -4356,13 +4356,17 @@ bool idGameLocal::RequirementMet( idEntity* activator, const idStr& requires, in
+ idGameLocal::AlertAI
+ ============
+ */
+-void idGameLocal::AlertAI( idEntity* ent )
++void idGameLocal::AlertAI( idEntity* ent, float distanceAudible )
+ {
+ 	if( ent && ent->IsType( idActor::Type ) )
+ 	{
+-		// alert them for the next frame
+-		lastAIAlertTime = time + 1;
+-		lastAIAlertEntity = static_cast<idActor*>( ent );
++		// alert them for the next frame, unless we already heard a louder sound this frame
++		if ( lastAIAlertTime != time + 1 || Square(distanceAudible) >= lastAIAlertDistanceAudibleSquared )
++		{
++			lastAIAlertTime = time + 1;
++			lastAIAlertEntity = static_cast<idActor*>( ent );
++			lastAIAlertDistanceAudibleSquared = Square( distanceAudible );
++		}
+ 	}
+ }
+ "
+KozGit/DOOM-3-BFG-VR,97,54f5d6d203ef84a00f8abc6c1628dff27537720d,neo/d3xp/Game_local.h,modified,2,1,3,"@@ -471,7 +471,7 @@ class idGameLocal : public idGame
+ 	
+ 	bool					RequirementMet( idEntity* activator, const idStr& requires, int removeItem );
+ 	
+-	void					AlertAI( idEntity* ent );
++	void					AlertAI( idEntity* ent, float distanceAudible );
+ 	idActor* 				GetAlertEntity();
+ 	
+ 	bool					InPlayerPVS( idEntity* ent ) const;
+@@ -643,6 +643,7 @@ class idGameLocal : public idGame
+ 	idMenuHandler_Shell* 	shellHandler;
+ public:	
+ 	idStrList				aasNames;
++	float lastAIAlertDistanceAudibleSquared; // Carl: How far away the sound can be heard
+ private:
+ 	idEntityPtr<idActor>	lastAIAlertEntity;
+ 	int						lastAIAlertTime;"
+KozGit/DOOM-3-BFG-VR,97,54f5d6d203ef84a00f8abc6c1628dff27537720d,neo/d3xp/Player.cpp,modified,13,9,22,"@@ -6929,22 +6929,25 @@ idPlayer::UpdateWeapon
+ */
+ void idPlayer::UpdateWeapon()
+ {
+-	
+-	static bool wasTalking = false;
+-	bool talking = (usercmd.buttons & BUTTON_CHATTING) > 0;
+ 	if( health <= 0 )
+ 	{
+ 		return;
+ 	}
+ 	
+ 	assert( !spectating );
+ 	
+-	
+-	//koz
++
++	static bool wasTalking = false;
++	bool talking = (usercmd.buttons & BUTTON_CHATTING) > 0;
++
+ 	// Voice wakes up nearby monsters while you're speaking
+-	if ( vr_talkWakeMonsters.GetBool() )
++	// Carl: weapon method (voice wakes up monsters that respond to weapon sound)
++	if ( (vr_talkWakeMonsters.GetInteger() & 1) && talking )
++		gameLocal.AlertAI( this, 788 * commonVoice->currentVolume * (vr_talkWakeMonsterRadius.GetFloat() / 120) ); // maximum mic volume = 20 metres, normal volume = 5 m
++	//koz (voice wakes up monsters that respond to flashlight)
++	if ( vr_talkWakeMonsters.GetInteger() > 0 && vr_talkWakeMonsters.GetInteger() <= 2 )
+ 	{
+-		if ( !talking ) 
++		if ( !talking || commonVoice->maxVolume == 0 ) 
+ 		{
+ 			wasTalking = false;
+ 		}
+@@ -6953,12 +6956,13 @@ void idPlayer::UpdateWeapon()
+ 			wasTalking = true;
+ 			idEntity* entityList[MAX_GENTITIES];
+ 			int listedEntities;
+-			float radius = vr_talkWakeMonsterRadius.GetFloat();
++			float radius = 788 * commonVoice->maxVolume * (vr_talkWakeMonsterRadius.GetFloat() / 120);
++
+ 			listedEntities = gameLocal.EntitiesWithinRadius( GetPhysics()->GetOrigin(), radius, entityList, MAX_GENTITIES );
+ 			for ( int i = 0; i < listedEntities; i++ )
+ 			{
+ 				idEntity* ent = entityList[i];
+-				if ( ent )
++				if ( ent && !ent->IsHidden() )
+ 				{
+ 					if ( ent->IsType( idAI::Type ) )
+ 					{"
+KozGit/DOOM-3-BFG-VR,97,54f5d6d203ef84a00f8abc6c1628dff27537720d,neo/d3xp/Projectile.cpp,modified,1,1,2,"@@ -1246,7 +1246,7 @@ void idProjectile::Explode( const trace_t& collision, idEntity* ignore )
+ 	}
+ 	
+ 	// alert the ai
+-	gameLocal.AlertAI( owner.GetEntity() );
++	gameLocal.AlertAI( owner.GetEntity(), AI_HEARING_RANGE );
+ 	
+ 	// bind the projectile to the impact entity if necesary
+ 	if( gameLocal.entities[collision.c.entityNum] && spawnArgs.GetBool( ""bindOnImpact"" ) )"
+KozGit/DOOM-3-BFG-VR,97,54f5d6d203ef84a00f8abc6c1628dff27537720d,neo/d3xp/Weapon.cpp,modified,2,2,4,"@@ -4793,7 +4793,7 @@ void idWeapon::Event_LaunchProjectiles( int num_projectiles, float spread, float
+ 	if( !silent_fire )
+ 	{
+ 		// wake up nearby monsters
+-		gameLocal.AlertAI( owner );
++		gameLocal.AlertAI( owner, AI_HEARING_RANGE );
+ 	}
+ 	
+ 	// set the shader parm to the time of last projectile firing,
+@@ -5030,7 +5030,7 @@ void idWeapon::Event_LaunchProjectilesEllipse( int num_projectiles, float spread
+ 		if( !silent_fire )
+ 		{
+ 			// wake up nearby monsters
+-			gameLocal.AlertAI( owner );
++			gameLocal.AlertAI( owner, AI_HEARING_RANGE );
+ 		}
+ 		
+ 	}"
+KozGit/DOOM-3-BFG-VR,97,54f5d6d203ef84a00f8abc6c1628dff27537720d,neo/d3xp/ai/AI.cpp,modified,3,3,6,"@@ -3777,7 +3777,7 @@ bool idAI::Pain( idEntity* inflictor, idEntity* attacker, int damage, const idVe
+ 			actor = ( idActor* )attacker;
+ 			if( ReactionTo( actor ) & ATTACK_ON_DAMAGE )
+ 			{
+-				gameLocal.AlertAI( actor );
++				gameLocal.AlertAI( actor, AI_HEARING_RANGE );
+ 				SetEnemy( actor );
+ 			}
+ 		}
+@@ -3930,7 +3930,7 @@ void idAI::Killed( idEntity* inflictor, idEntity* attacker, int damage, const id
+ 	
+ 	if( attacker && attacker->IsType( idActor::Type ) )
+ 	{
+-		gameLocal.AlertAI( ( idActor* )attacker );
++		gameLocal.AlertAI( ( idActor* )attacker, AI_HEARING_RANGE );
+ 	}
+ 	
+ 	// activate targets
+@@ -4519,7 +4519,7 @@ void idAI::UpdateEnemyPosition()
+ 		if( enemyEnt == gameLocal.GetAlertEntity() )
+ 		{
+ 			float dist = ( enemyEnt->GetPhysics()->GetOrigin() - org ).LengthSqr();
+-			if( dist < Square( AI_HEARING_RANGE ) )
++			if( dist < gameLocal.lastAIAlertDistanceAudibleSquared )
+ 			{
+ 				SetEnemyPosition();
+ 			}"
+KozGit/DOOM-3-BFG-VR,97,54f5d6d203ef84a00f8abc6c1628dff27537720d,neo/d3xp/ai/AI_events.cpp,modified,1,1,2,"@@ -547,7 +547,7 @@ void idAI::Event_HeardSound( int ignore_team )
+ 		idVec3 pos = actor->GetPhysics()->GetOrigin();
+ 		idVec3 org = physicsObj.GetOrigin();
+ 		float dist = ( pos - org ).LengthSqr();
+-		if( dist < Square( AI_HEARING_RANGE ) )
++		if( dist < gameLocal.lastAIAlertDistanceAudibleSquared )
+ 		{
+ 			idThread::ReturnEntity( actor );
+ 			return;"
+KozGit/DOOM-3-BFG-VR,97,54f5d6d203ef84a00f8abc6c1628dff27537720d,neo/vr/Voice.cpp,modified,5,2,7,"@@ -106,7 +106,7 @@ iVoice::iVoice()
+ */
+ iVoice::iVoice()
+ {
+-	currentVolume = 0.0f;
++	maxVolume = currentVolume = 0.0f;
+ }
+ 
+ static bool in_phrase = false, spoke = false, listening = true;
+@@ -496,6 +496,7 @@ void iVoice::Event(WPARAM wParam, LPARAM lParam)
+ 				break;
+ 			case SPEI_SOUND_START:
+ 				in_phrase = false;
++				maxVolume = currentVolume;
+ 				MadeASound();
+ 				//common->Printf(""$ Sound start\n"");
+ 				break;
+@@ -532,7 +533,7 @@ void iVoice::Event(WPARAM wParam, LPARAM lParam)
+ 					const char* confidences[3] = { ""low"", ""medium"", ""high"" };
+ 					hr = recoResult->GetText(SP_GETWHOLEPHRASE, SP_GETWHOLEPHRASE, FALSE, &text, NULL);
+ 					if (vr_voiceRepeat.GetBool())
+-						voice.Say(""%s: %S."", confidences[confidence + 1], text);
++						voice.Say(""%s %d: %S."", confidences[confidence + 1], (int)(maxVolume * 100), text);
+ 					if (isLine)
+ 					{
+ 						if ( vr_flicksyncCharacter.GetInteger() )
+@@ -628,6 +629,8 @@ void iVoice::Event(WPARAM wParam, LPARAM lParam)
+ 				break;
+ 			case SPEI_SR_AUDIO_LEVEL:
+ 				currentVolume = event.wParam / 100.0f;
++				if ( currentVolume > maxVolume )
++					maxVolume = currentVolume;
+ 				//common->Printf(""$ SR Audio Level: %3d / 100\n"", event.wParam);
+ 				break;
+ 			case SPEI_SR_RETAINEDAUDIO:"
+KozGit/DOOM-3-BFG-VR,97,54f5d6d203ef84a00f8abc6c1628dff27537720d,neo/vr/Voice.h,modified,2,1,3,"@@ -60,7 +60,8 @@ class iVoice
+ 	void		AddFlicksyncLine(const char* line);
+ 	void		AddFlicksyncLine(const wchar_t* line);
+ 
+-	float currentVolume;
++	float currentVolume; // 0 to 1
++	float maxVolume; // max volume since sound started: 0 to 1
+ 	//---------------------------
+ private:
+ 	"
+KozGit/DOOM-3-BFG-VR,97,54f5d6d203ef84a00f8abc6c1628dff27537720d,neo/vr/Vr.cpp,modified,2,2,4,"@@ -87,8 +87,8 @@ idCVar vr_hudLowHealth( ""vr_hudLowHealth"", ""0"", CVAR_INTEGER | CVAR_GAME | CVAR_
+ 
+ idCVar vr_voiceRepeat( ""vr_voiceRepeat"", ""0"", CVAR_BOOL, ""1 = computer speaks back whatever commands or lines you say"" );
+ idCVar vr_voiceCommands( ""vr_voiceCommands"", ""2"", CVAR_INTEGER | CVAR_GAME | CVAR_ARCHIVE, ""Enable voice commands. 0 = none, 1 = menus, 2 = menus and weapons"", 0, 2 );
+-idCVar vr_talkWakeMonsters( ""vr_talkWakeMonsters"", ""1"", CVAR_BOOL | CVAR_GAME | CVAR_ARCHIVE, ""Talking wakes monsters. 0 = no, 1 = yes"", 0, 1 );
+-idCVar vr_talkWakeMonsterRadius( ""vr_talkWakeMonsterRadius"", ""120"", CVAR_FLOAT | CVAR_GAME | CVAR_ARCHIVE, ""Radius in inches within which talking can wake enemies."" );
++idCVar vr_talkWakeMonsters( ""vr_talkWakeMonsters"", ""1"", CVAR_INTEGER | CVAR_GAME | CVAR_ARCHIVE, ""Talking wakes monsters. 0 = no, 1 = both methods, 2 = like flashlight, 3 = like weapon"", 0, 3 );
++idCVar vr_talkWakeMonsterRadius( ""vr_talkWakeMonsterRadius"", ""120"", CVAR_FLOAT | CVAR_GAME | CVAR_ARCHIVE, ""Radius in inches within which talking quietly can wake enemies. Talking louder wakes monsters further than this."" );
+ idCVar vr_talkMode( ""vr_talkMode"", ""2"", CVAR_INTEGER | CVAR_GAME | CVAR_ARCHIVE, ""Talk to NPC 0 = buttons, 1 = buttons or voice, 2 = voice only, 3 = voice no cursor"", 0, 3 );
+ idCVar vr_tweakTalkCursor( ""vr_tweakTalkCursor"", ""25"", CVAR_FLOAT | CVAR_GAME | CVAR_ARCHIVE, ""Tweak talk cursor y pos in VR. % val"", 0, 99 );
+ "

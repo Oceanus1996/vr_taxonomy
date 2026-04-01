@@ -1,0 +1,904 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+unavi-xyz/unavi,333,e5128fa,apps/client/prisma/schema.prisma,modified,42,2,44,"@@ -9,10 +9,50 @@ datasource db {
+   referentialIntegrity = ""prisma""
+ }
+ 
++// Analytics
++model SpaceViewEvent {
++  id        Int      @id @default(autoincrement())
++  createdAt DateTime @default(now())
++
++  Space   Space  @relation(fields: [spaceId], references: [publicationId])
++  spaceId String
++}
++
++model Space {
++  id        Int      @id @default(autoincrement())
++  createdAt DateTime @default(now())
++  updatedAt DateTime @updatedAt
++
++  publicationId String @unique
++
++  views      SpaceViewEvent[]
++  viewsCount Int              @default(0)
++}
++
++model AvatarViewEvent {
++  id        Int      @id @default(autoincrement())
++  createdAt DateTime @default(now())
++
++  Avatar   Avatar @relation(fields: [avatarId], references: [publicationId])
++  avatarId String
++}
++
++model Avatar {
++  id        Int      @id @default(autoincrement())
++  createdAt DateTime @default(now())
++  updatedAt DateTime @updatedAt
++
++  publicationId String @unique
++
++  views      AvatarViewEvent[]
++  viewsCount Int               @default(0)
++}
++
++// Projects
+ model Project {
+   id        String   @id @default(uuid())
+   createdAt DateTime @default(now())
+-  updatedAt DateTime @default(now())
++  updatedAt DateTime @updatedAt
+ 
+   owner String
+ 
+@@ -28,7 +68,7 @@ model File {
+ 
+   storageKey String
+ 
+-  projectId String?
++  projectId String
+   Project   Project? @relation(fields: [projectId], references: [id])
+ }
+ "
+unavi-xyz/unavi,333,e5128fa,apps/client/src/app/hooks/useAnalytics.ts,added,20,0,20,"@@ -0,0 +1,20 @@
++import { useRouter } from ""next/router"";
++import { useSession } from ""next-auth/react"";
++import { useEffect } from ""react"";
++
++import { trpc } from ""../../client/trpc"";
++
++export function useAnalytics() {
++  const router = useRouter();
++  const id = router.query.id as string;
++
++  const { mutateAsync } = trpc.useMutation(""auth.space-view"");
++  const { status } = useSession();
++
++  useEffect(() => {
++    if (!id || status !== ""authenticated"") return;
++
++    // Send space view event
++    mutateAsync({ spaceId: id });
++  }, [mutateAsync, id, status]);
++}"
+unavi-xyz/unavi,333,e5128fa,apps/client/src/client/lens/hooks/useCreatePost.ts,modified,10,2,12,"@@ -1,3 +1,4 @@
++import { useConnectModal } from ""@rainbow-me/rainbowkit"";
+ import { useCreatePostTypedDataMutation } from ""@wired-labs/lens"";
+ import { LensHub__factory } from ""@wired-labs/lens/contracts"";
+ import { utils } from ""ethers"";
+@@ -13,9 +14,14 @@ export function useCreatePost(profileId: string) {
+   const { signTypedDataAsync } = useSignTypedData();
+   const { data: signer } = useSigner();
+   const { client } = useLens();
++  const { openConnectModal } = useConnectModal();
+ 
+-  async function createPost(contentURI: string) {
+-    if (!signer) throw new Error(""No signer"");
++  async function createPost(contentURI: string): Promise<boolean> {
++    if (!signer) {
++      if (openConnectModal) openConnectModal();
++      else throw new Error(""No signer"");
++      return false;
++    }
+ 
+     // Get typed data
+     const { data, error } = await createTypedData({
+@@ -73,6 +79,8 @@ export function useCreatePost(profileId: string) {
+ 
+     // Wait for indexing
+     await pollUntilIndexed(tx.hash, client);
++
++    return true;
+   }
+ 
+   return createPost;"
+unavi-xyz/unavi,333,e5128fa,apps/client/src/editor/components/EditorNavbar/PublishPage.tsx,modified,2,2,4,"@@ -200,10 +200,10 @@ export default function PublishPage() {
+     const contentURI = cdnMetadataURL(id);
+ 
+     // Create lens publication
+-    await createPost(contentURI);
++    const success = await createPost(contentURI);
+ 
+     // Redirect to profile
+-    router.push(`/user/${handle}`);
++    if (success) router.push(`/user/${handle}`);
+ 
+     setLoading(false);
+   }"
+unavi-xyz/unavi,333,e5128fa,apps/client/src/editor/components/InspectMenu/EntityComponents.tsx,modified,23,5,28,"@@ -16,42 +16,60 @@ export default function EntityComponents({ entityId }: Props) {
+   const mesh = useSubscribeValue(mesh$);
+ 
+   switch (mesh?.type) {
+-    case ""Box"":
++    case ""Box"": {
+       return (
+         <>
+           <BoxMeshComponent entityId={entityId} mesh={mesh} />
+           <MaterialComponent entityId={entityId} />
+           <PhysicsComponent entityId={entityId} />
+         </>
+       );
+-    case ""Sphere"":
++    }
++
++    case ""Sphere"": {
+       return (
+         <>
+           <SphereMeshComponent entityId={entityId} mesh={mesh} />
+           <MaterialComponent entityId={entityId} />
+           <PhysicsComponent entityId={entityId} />
+         </>
+       );
+-    case ""Cylinder"":
++    }
++
++    case ""Cylinder"": {
+       return (
+         <>
+           <CylinderMeshComponent entityId={entityId} mesh={mesh} />
+           <MaterialComponent entityId={entityId} />
+           <PhysicsComponent entityId={entityId} />
+         </>
+       );
+-    case ""glTF"":
++    }
++
++    case ""glTF"": {
+       return (
+         <>
+           <GLTFMeshComponent entityId={entityId} mesh={mesh} />
+           <PhysicsComponent entityId={entityId} />
+         </>
+       );
+-    default:
++    }
++
++    case ""Primitive"": {
++      return (
++        <>
++          <MaterialComponent entityId={entityId} />
++          <PhysicsComponent entityId={entityId} />
++        </>
++      );
++    }
++
++    default: {
+       return (
+         <>
+           <PhysicsComponent entityId={entityId} />
+         </>
+       );
++    }
+   }
+ }"
+unavi-xyz/unavi,333,e5128fa,apps/client/src/editor/components/InspectMenu/InspectMenu.tsx,modified,3,1,4,"@@ -13,7 +13,9 @@ export default function InspectMenu() {
+ 
+   return (
+     <div className=""space-y-4 p-4"" key={selectedId}>
+-      <div className=""flex justify-center text-2xl font-bold"">{name}</div>
++      <div className=""flex justify-center text-2xl font-bold"">
++        {name || selectedId.slice(0, 8)}
++      </div>
+       <div className=""space-y-8"">
+         <TransformComponent entityId={selectedId} />
+         <EntityComponents entityId={selectedId} />"
+unavi-xyz/unavi,333,e5128fa,apps/client/src/editor/components/InspectMenu/mesh/GLTFMeshComponent.tsx,modified,2,3,5,"@@ -25,9 +25,8 @@ export default function GLTFMeshComponent({ entityId, mesh }: Props) {
+           const file = e.target.files[0];
+           if (!file) return;
+ 
+-          const fileExtension = file.name.split(""."").pop();
+-          const type =
+-            fileExtension === ""glb"" ? ""model/gltf-binary"" : ""model/gltf+json"";
++          const isGlb = file.name.endsWith("".glb"");
++          const type = isGlb ? ""model/gltf-binary"" : ""model/gltf+json"";
+           const blob = new Blob([file], { type });
+ 
+           mesh.name = file.name;"
+unavi-xyz/unavi,333,e5128fa,apps/client/src/editor/components/TreeMenu/TreeMenuItem.tsx,modified,1,1,2,"@@ -120,7 +120,7 @@ export default function TreeMenuItem({ id }: Props) {
+             (open ? <IoMdArrowDropdown /> : <IoMdArrowDropright />)}
+         </div>
+ 
+-        <div>{name}</div>
++        <div>{name || id.slice(0, 8)}</div>
+       </div>
+ 
+       {open && hasChildren && ("
+unavi-xyz/unavi,333,e5128fa,apps/client/src/home/hooks/useCursor.ts,added,29,0,29,"@@ -0,0 +1,29 @@
++import { Dispatch, SetStateAction } from ""react"";
++
++export function useCursor(
++  itemCount: number,
++  pageSize: number,
++  cursor: number,
++  setCursor: Dispatch<SetStateAction<number>>
++) {
++  const limit = pageSize + itemCount * pageSize + 1;
++  const lastCursor = Math.floor(itemCount / pageSize);
++  const isLastPage =
++    (itemCount <= limit && cursor === lastCursor) || itemCount <= pageSize;
++
++  function next() {
++    if (isLastPage) return;
++    setCursor((prev) => prev + 1);
++  }
++
++  function back() {
++    if (cursor === 0) return;
++    setCursor((prev) => prev - 1);
++  }
++
++  return {
++    isLastPage,
++    next,
++    back,
++  };
++}"
+unavi-xyz/unavi,333,e5128fa,apps/client/src/home/layouts/NavbarLayout/NavbarTab.tsx,modified,2,2,4,"@@ -26,11 +26,11 @@ export default function NavbarTab({ href, text }: Props) {
+ 
+   return (
+     <Link href={href} passHref>
+-      <div
++      <button
+         className={`cursor-pointer rounded-lg px-4 py-1 font-bold transition ${selectedClass}`}
+       >
+         {text}
+-      </div>
++      </button>
+     </Link>
+   );
+ }"
+unavi-xyz/unavi,333,e5128fa,apps/client/src/home/layouts/NavbarLayout/ProfileButton.tsx,modified,27,18,45,"@@ -1,7 +1,10 @@
+ import { useState } from ""react"";
+ 
++import { useLens } from ""../../../client/lens/hooks/useLens"";
++import Button from ""../../../ui/Button"";
+ import Dialog from ""../../../ui/Dialog"";
+ import DropdownMenu from ""../../../ui/DropdownMenu"";
++import { useIsMobile } from ""../../../utils/useIsMobile"";
+ import ViewerProfilePicture from ""../../lens/ViewerProfilePicture"";
+ import ProfileMenu from ""./ProfileMenu"";
+ import SwitchProfilePage from ""./SwitchProfilePage"";
+@@ -10,6 +13,9 @@ export default function ProfileButton() {
+   const [openMenu, setOpenMenu] = useState(false);
+   const [openSwitchProfile, setOpenSwitchProfile] = useState(false);
+ 
++  const { handle } = useLens();
++  const isMobile = useIsMobile();
++
+   return (
+     <>
+       <Dialog
+@@ -19,26 +25,29 @@ export default function ProfileButton() {
+         <SwitchProfilePage onClose={() => setOpenSwitchProfile(false)} />
+       </Dialog>
+ 
+-      <div className=""flex items-center space-x-2"">
+-        <div className=""relative"">
+-          <div
+-            onClick={() => setOpenMenu((prev) => !prev)}
+-            className=""h-9 w-9 cursor-pointer rounded-full""
+-          >
+-            <ViewerProfilePicture circle draggable={false} />
+-          </div>
++      <div className=""relative"">
++        <Button
++          rounded={isMobile ? ""full"" : ""large""}
++          icon={isMobile}
++          onClick={() => setOpenMenu(true)}
++        >
++          <div className=""flex items-center justify-center space-x-4"">
++            {!isMobile && <div>@{handle}</div>}
+ 
+-          <div className=""mt-1"">
+-            <DropdownMenu
+-              placement=""right""
+-              open={openMenu}
+-              onClose={() => setOpenMenu(false)}
+-            >
+-              <ProfileMenu
+-                openSwitchProfile={() => setOpenSwitchProfile(true)}
+-              />
+-            </DropdownMenu>
++            <div className=""h-9 w-9 rounded-full"">
++              <ViewerProfilePicture circle draggable={false} />
++            </div>
+           </div>
++        </Button>
++
++        <div className=""mt-1"">
++          <DropdownMenu
++            placement=""right""
++            open={openMenu}
++            onClose={() => setOpenMenu(false)}
++          >
++            <ProfileMenu openSwitchProfile={() => setOpenSwitchProfile(true)} />
++          </DropdownMenu>
+         </div>
+       </div>
+     </>"
+unavi-xyz/unavi,333,e5128fa,apps/client/src/home/layouts/NavbarLayout/ProfileMenu.tsx,modified,7,7,14,"@@ -26,34 +26,34 @@ export default function ProfileMenu({
+   if (!handle) return null;
+ 
+   return (
+-    <div className=""space-y-1 p-2"">
+-      <button onClick={openSwitchProfile} className=""w-full"">
++    <div className=""flex flex-col space-y-1 p-2"">
++      <button onClick={openSwitchProfile}>
+         <ProfileMenuButton icon={<HiOutlineSwitchHorizontal />}>
+           Switch Profile
+         </ProfileMenuButton>
+       </button>
+ 
+       {includeExternal && (
+         <Link href={`/user/${handle}`} passHref>
+-          <div>
++          <button>
+             <ProfileMenuButton icon={<MdOutlinePersonOutline />}>
+               Your Profile
+             </ProfileMenuButton>
+-          </div>
++          </button>
+         </Link>
+       )}
+ 
+       {includeExternal && (
+         <Link href=""/settings"" passHref>
+-          <div>
++          <button>
+             <ProfileMenuButton icon={<MdOutlineSettings />}>
+               Settings
+             </ProfileMenuButton>
+-          </div>
++          </button>
+         </Link>
+       )}
+ 
+-      <button onClick={logout} className=""w-full"">
++      <button onClick={logout}>
+         <ProfileMenuButton icon={<MdLogout />}>Log Out</ProfileMenuButton>
+       </button>
+     </div>"
+unavi-xyz/unavi,333,e5128fa,apps/client/src/home/lens/SpaceIdCard.tsx,added,33,0,33,"@@ -0,0 +1,33 @@
++import { Post, useGetPublicationQuery } from ""@wired-labs/lens"";
++
++import SpaceCard from ""./SpaceCard"";
++
++interface Props {
++  spaceId: string;
++  sizes?: string;
++  animateEnter?: boolean;
++}
++
++export default function SpaceIdCard({
++  spaceId,
++  sizes,
++  animateEnter = false,
++}: Props) {
++  const [{ data }] = useGetPublicationQuery({
++    variables: {
++      request: {
++        publicationId: spaceId,
++      },
++    },
++  });
++
++  if (!data) return null;
++
++  return (
++    <SpaceCard
++      space={data.publication as Post}
++      sizes={sizes}
++      animateEnter={animateEnter}
++    />
++  );
++}"
+unavi-xyz/unavi,333,e5128fa,apps/client/src/pages/_app.tsx,modified,1,1,2,"@@ -37,7 +37,7 @@ const App: AppType<{ session: Session | null }> = ({
+       </Head>
+ 
+       <ClientSideProviders session={session}>
+-        <div className=""h-screen w-full snap-y snap-mandatory overflow-y-scroll"">
++        <div className=""h-screen w-full snap-y snap-mandatory overflow-y-auto"">
+           {getLayout(<Component {...pageProps} />)}
+         </div>
+       </ClientSideProviders>"
+unavi-xyz/unavi,333,e5128fa,apps/client/src/pages/app/[id].tsx,modified,2,0,2,"@@ -2,6 +2,7 @@ import { Entity, GLTFMesh } from ""@wired-labs/engine"";
+ import { NextPageContext } from ""next"";
+ import { useEffect, useMemo, useRef, useState } from ""react"";
+ 
++import { useAnalytics } from ""../../app/hooks/useAnalytics"";
+ import { useAppHotkeys } from ""../../app/hooks/useAppHotkeys"";
+ import { useLoadUser } from ""../../app/hooks/useLoadUser"";
+ import { useSetAvatar } from ""../../app/hooks/useSetAvatar"";
+@@ -48,6 +49,7 @@ export default function App({ id, metadata, publication }: Props) {
+ 
+   useLoadUser();
+   useAppHotkeys();
++  useAnalytics();
+ 
+   useEffect(() => {
+     if (!engine) return;"
+unavi-xyz/unavi,333,e5128fa,apps/client/src/pages/editor/[id]/index.tsx,modified,35,1,36,"@@ -1,3 +1,4 @@
++import { Entity, GLTFMesh } from ""@wired-labs/engine"";
+ import { useEffect, useMemo, useRef } from ""react"";
+ import { DndProvider } from ""react-dnd"";
+ import { HTML5Backend } from ""react-dnd-html5-backend"";
+@@ -110,7 +111,40 @@ export default function Editor() {
+       <MetaTags title=""Editor"" />
+ 
+       <DndProvider backend={HTML5Backend}>
+-        <div className=""flex h-full flex-col overflow-hidden"">
++        <div
++          className=""flex h-full flex-col overflow-hidden""
++          onDragOver={(e) => e.preventDefault()}
++          onDrop={(e) => {
++            const { engine } = useEditorStore.getState();
++            if (!engine) return;
++
++            e.preventDefault();
++
++            const item = e.dataTransfer.items[0];
++            if (item?.kind !== ""file"") return;
++
++            const file = item.getAsFile();
++            if (!file) return;
++
++            const isGLTF =
++              file.name.endsWith("".gltf"") || file.name.endsWith("".glb"");
++            if (!isGLTF) return;
++
++            // Create entity
++            const mesh = new GLTFMesh();
++            mesh.name = file.name;
++            mesh.uri = URL.createObjectURL(file);
++
++            const entity = new Entity();
++            entity.mesh = mesh;
++
++            const name = file.name.split(""."").slice(0, -1).join(""."");
++            entity.name = name;
++
++            // Add entity to scene
++            engine.scene.addEntity(entity);
++          }}
++        >
+           <div className=""z-10 h-14 w-full border-b"">
+             <EditorNavbar />
+           </div>"
+unavi-xyz/unavi,333,e5128fa,apps/client/src/pages/editor/[id]/preview.tsx,modified,2,2,4,"@@ -224,9 +224,9 @@ export default function Preview() {
+           className=""fixed top-0 right-0 p-6 text-2xl""
+         >
+           <Link href={`/editor/${id}`} passHref>
+-            <div className=""block cursor-pointer rounded-full bg-surface/40 p-2 text-onSurface backdrop-blur transition hover:shadow active:opacity-80 active:shadow-sm"">
++            <button className=""rounded-full bg-surface p-2 text-onSurface shadow transition hover:shadow-lg active:shadow"">
+               <MdClose />
+-            </div>
++            </button>
+           </Link>
+         </div>
+       </div>"
+unavi-xyz/unavi,333,e5128fa,apps/client/src/pages/explore.tsx,modified,53,7,60,"@@ -3,8 +3,11 @@ import Link from ""next/link"";
+ import { useState } from ""react"";
+ 
+ import { useExploreQuery } from ""../client/lens/hooks/useExploreQuery"";
++import { trpc } from ""../client/trpc"";
++import { useCursor } from ""../home/hooks/useCursor"";
+ import { getNavbarLayout } from ""../home/layouts/NavbarLayout/NavbarLayout"";
+ import SpaceCard from ""../home/lens/SpaceCard"";
++import SpaceIdCard from ""../home/lens/SpaceIdCard"";
+ import MetaTags from ""../home/MetaTags"";
+ import Carousel from ""../ui/Carousel"";
+ import { useIsMobile } from ""../utils/useIsMobile"";
+@@ -14,22 +17,38 @@ export default function Explore() {
+   const spaceLimit = isMobile ? 1 : 3;
+   // const avatarLimit = isMobile ? 1 : 5;
+ 
+-  const [monthAgo] = useState(Date.now() - 1000 * 60 * 60 * 24 * 30);
++  const [oneMonthAgo] = useState(Date.now() - 1000 * 60 * 60 * 24 * 30);
+ 
+   const latestSpaces = useExploreQuery(
+     spaceLimit,
+     [AppId.Space],
+     PublicationSortCriteria.Latest,
+-    monthAgo
++    oneMonthAgo
+   );
+ 
+   // const latestAvatars = useExploreQuery(
+   //   avatarLimit,
+   //   [AppId.Avatar],
+   //   PublicationSortCriteria.Latest,
+-  //   monthAgo
++  //   oneMonthAgo
+   // );
+ 
++  const [hotSpacesCursor, setHotSpacesCursor] = useState(0);
++
++  const { data: _hotSpaces } = trpc.useQuery([""public.hot-spaces""]);
++  const hotSpaces = _hotSpaces ?? [];
++
++  const {
++    next: hotSpacesNext,
++    back: hotSpacesBack,
++    isLastPage: isLastHotSpacesPage,
++  } = useCursor(
++    hotSpaces.length,
++    spaceLimit,
++    hotSpacesCursor,
++    setHotSpacesCursor
++  );
++
+   return (
+     <>
+       <MetaTags title=""Explore"" />
+@@ -38,12 +57,39 @@ export default function Explore() {
+         <div className=""max-w-content space-y-8"">
+           <div className=""flex justify-center text-3xl font-black"">Explore</div>
+ 
++          <Carousel
++            title=""🔥 Hot Spaces""
++            disableBack={hotSpacesCursor === 0}
++            disableNext={isLastHotSpacesPage}
++            onBack={hotSpacesBack}
++            onNext={hotSpacesNext}
++            height=""h-36 md:h-48""
++          >
++            {hotSpaces.map((spaceId) => {
++              const pageOffset = `-${hotSpacesCursor * spaceLimit}00%`;
++              const gapOffset = `-${hotSpacesCursor * spaceLimit * 12}px`;
++
++              return (
++                <Link key={spaceId} href={`/space/${spaceId}`} passHref>
++                  <div
++                    className=""h-32 transition duration-500 md:h-44""
++                    style={{
++                      transform: `translate(calc(${pageOffset} + ${gapOffset}))`,
++                    }}
++                  >
++                    <SpaceIdCard spaceId={spaceId} sizes=""293px"" animateEnter />
++                  </div>
++                </Link>
++              );
++            })}
++          </Carousel>
++
+           <Carousel
+             title=""🌱 Latest Spaces""
+             disableBack={latestSpaces.cursor === 0}
+-            disableForward={latestSpaces.isLastPage}
++            disableNext={latestSpaces.isLastPage}
+             onBack={latestSpaces.back}
+-            onForward={latestSpaces.next}
++            onNext={latestSpaces.next}
+             height=""h-36 md:h-48""
+           >
+             {latestSpaces.items.map((space) => {
+@@ -72,9 +118,9 @@ export default function Explore() {
+           {/* <Carousel
+             title=""🌱 Latest Avatars""
+             disableBack={latestAvatars.cursor === 0}
+-            disableForward={latestAvatars.isLastPage}
++            disableNext={latestAvatars.isLastPage}
+             onBack={latestAvatars.back}
+-            onForward={latestAvatars.next}
++            onNext={latestAvatars.next}
+             height=""h-72 md:h-80""
+           >
+             {latestAvatars.items.map((avatar) => {"
+unavi-xyz/unavi,333,e5128fa,apps/client/src/server/router/protected.ts,modified,50,5,55,"@@ -198,13 +198,9 @@ export const protectedRouter = createProtectedRouter()
+       name: z.string().max(PROJECT_NAME_LENGTH),
+     }),
+     async resolve({ ctx: { address }, input: { name } }) {
+-      const date = new Date();
+-
+       // Create project
+       const { id } = await prisma.project.create({
+         data: {
+-          createdAt: date,
+-          updatedAt: date,
+           owner: address,
+           name,
+         },
+@@ -253,7 +249,6 @@ export const protectedRouter = createProtectedRouter()
+           name,
+           description,
+           editorState: JSON.stringify(editorState),
+-          updatedAt: new Date(),
+         },
+       });
+     },
+@@ -344,4 +339,54 @@ export const protectedRouter = createProtectedRouter()
+ 
+       return url;
+     },
++  })
++
++  .mutation(""space-view"", {
++    input: z.object({
++      spaceId: z.string(),
++    }),
++    async resolve({ input: { spaceId } }) {
++      // Update space view count
++      await prisma.space.upsert({
++        create: { publicationId: spaceId, viewsCount: 1 },
++        where: { publicationId: spaceId },
++        update: {
++          viewsCount: {
++            increment: 1,
++          },
++        },
++      });
++
++      // Create space view event
++      await prisma.spaceViewEvent.create({
++        data: {
++          spaceId,
++        },
++      });
++    },
++  })
++
++  .mutation(""avatar-view"", {
++    input: z.object({
++      avatarId: z.string(),
++    }),
++    async resolve({ input: { avatarId } }) {
++      // Update avatar view count
++      await prisma.avatar.upsert({
++        create: { publicationId: avatarId, viewsCount: 1 },
++        where: { publicationId: avatarId },
++        update: {
++          viewsCount: {
++            increment: 1,
++          },
++        },
++      });
++
++      // Create avatar view event
++      await prisma.avatarViewEvent.create({
++        data: {
++          avatarId,
++        },
++      });
++    },
+   });"
+unavi-xyz/unavi,333,e5128fa,apps/client/src/server/router/public.ts,modified,34,8,42,"@@ -1,13 +1,39 @@
+ import { nanoid } from ""nanoid"";
+ 
++import { prisma } from ""../prisma"";
+ import { createTempFileUploadURL } from ""../s3"";
+ import { createRouter } from ""./context"";
+ 
+-export const publicRouter = createRouter().mutation(""get-temp-upload"", {
+-  async resolve() {
+-    // Get temp file upload URL from S3
+-    const fileId = nanoid();
+-    const url = await createTempFileUploadURL(fileId);
+-    return { url, fileId };
+-  },
+-});
++export const publicRouter = createRouter()
++  .mutation(""get-temp-upload"", {
++    async resolve() {
++      // Get temp file upload URL from S3
++      const fileId = nanoid();
++      const url = await createTempFileUploadURL(fileId);
++      return { url, fileId };
++    },
++  })
++
++  .query(""hot-spaces"", {
++    resolve: async () => {
++      const spaces = await prisma.space.findMany({
++        orderBy: { viewsCount: ""desc"" },
++        take: 10,
++      });
++
++      const spaceIds = spaces.map((space) => space.publicationId);
++      return spaceIds;
++    },
++  })
++
++  .query(""hot-avatars"", {
++    resolve: async () => {
++      const avatars = await prisma.avatar.findMany({
++        orderBy: { viewsCount: ""desc"" },
++        take: 10,
++      });
++
++      const avatarIds = avatars.map((avatar) => avatar.publicationId);
++      return avatarIds;
++    },
++  });"
+unavi-xyz/unavi,333,e5128fa,apps/client/src/ui/Button.tsx,modified,2,2,4,"@@ -67,9 +67,9 @@ export default function Button({
+       : null;
+ 
+   const disabledClass = loading
+-    ? ""bg-opacity-40 cursor-not-allowed bg-surfaceVariant""
++    ? ""bg-opacity-40 cursor-not-allowed bg-surfaceVariant hover:bg-surfaceVariant text-onSurfaceVariant""
+     : disabled
+-    ? ""opacity-40 cursor-not-allowed bg-surfaceVariant""
++    ? ""opacity-40 cursor-not-allowed bg-surfaceVariant hover:bg-surfaceVariant text-onSurfaceVariant""
+     : variant === ""text""
+     ? ""active:bg-opacity-75""
+     : variant === ""outlined"""
+unavi-xyz/unavi,333,e5128fa,apps/client/src/ui/Card.tsx,modified,4,4,8,"@@ -45,12 +45,12 @@ export default function Card({
+         />
+       )}
+ 
+-      <div className=""absolute top-0 left-0 flex h-full items-end px-3 pb-2 tracking-wide text-white"">
++      <div className=""absolute flex h-full w-full items-end px-3 pb-2 tracking-wide text-white"">
+         {text && (
+           <div
+-            className=""overflow-hidden text-xl font-black drop-shadow-dark""
++            className=""w-full overflow-hidden text-xl font-black drop-shadow-dark""
+             style={{
+-              textShadow: ""0 0 6px rgba(0, 0, 0, 0.2)"",
++              textShadow: ""0 0 6px rgba(0, 0, 0, 0.4)"",
+             }}
+           >
+             {text}
+@@ -60,7 +60,7 @@ export default function Card({
+           <div
+             className=""overflow-hidden text-lg drop-shadow-dark""
+             style={{
+-              textShadow: ""0 0 6px rgba(0, 0, 0, 0.2)"",
++              textShadow: ""0 0 6px rgba(0, 0, 0, 0.4)"",
+             }}
+           >
+             {subtext}"
+unavi-xyz/unavi,333,e5128fa,apps/client/src/ui/Carousel.tsx,modified,5,10,15,"@@ -6,19 +6,19 @@ interface Props {
+   children: React.ReactNode;
+   title?: string;
+   disableBack?: boolean;
+-  disableForward?: boolean;
++  disableNext?: boolean;
+   onBack?: () => void;
+-  onForward?: () => void;
++  onNext?: () => void;
+   height?: string;
+ }
+ 
+ export default function Carousel({
+   children,
+   title,
+   disableBack,
+-  disableForward,
++  disableNext,
+   onBack,
+-  onForward,
++  onNext,
+   height,
+ }: Props) {
+   return (
+@@ -38,12 +38,7 @@ export default function Carousel({
+         </div>
+ 
+         <div className=""flex items-center justify-center"">
+-          <Button
+-            variant=""tonal""
+-            icon
+-            disabled={disableForward}
+-            onClick={onForward}
+-          >
++          <Button variant=""tonal"" icon disabled={disableNext} onClick={onNext}>
+             <IoMdArrowRoundForward className=""text-lg"" />
+           </Button>
+         </div>"
+unavi-xyz/unavi,333,e5128fa,apps/client/src/ui/DropdownMenu.tsx,modified,1,1,2,"@@ -57,7 +57,7 @@ export default function DropdownMenu({
+     <div className=""relative"">
+       <div
+         ref={menuRef}
+-        className={`absolute z-10 w-full min-w-max scale-75 rounded-xl bg-surface text-onSurface opacity-0 shadow-xl transition ease-in-out ${placementClass}`}
++        className={`absolute z-10 w-full min-w-max scale-75 rounded-xl bg-surface text-onSurface opacity-0 shadow-xl ring-1 ring-neutral-100 transition ${placementClass}`}
+       >
+         {visible && children}
+       </div>"
+unavi-xyz/unavi,333,e5128fa,apps/examples/src/ExampleCanvas.tsx,modified,1,0,1,"@@ -76,6 +76,7 @@ export default function ExampleCanvas() {
+     return () => {
+       engine.destroy();
+       window.removeEventListener(""resize"", updateCanvasSize);
++      if (process.env.NODE_ENV === ""development"") window.location.reload();
+     };
+   }, [engine]);
+ "
+unavi-xyz/unavi,333,e5128fa,packages/engine/src/render/SceneLoader/SceneLoader.ts,modified,7,4,11,"@@ -135,10 +135,9 @@ export class SceneLoader {
+         // Add entities
+         if (data.scene.entities) {
+           const sortedEntities = sortEntities(data.scene.entities);
+-          sortedEntities.forEach((e) => {
+-            this.#map.entities.set(e.id, e);
+-            updateEntity(e.id, e, this.#map, this.visuals, this.#postMessage);
+-          });
++          sortedEntities.forEach((e) =>
++            addEntity(e, this.#map, this.visuals, this.#postMessage)
++          );
+         }
+ 
+         // Add animations
+@@ -294,5 +293,9 @@ export class SceneLoader {
+     this.#sun.shadow.camera.right = size.x / 2;
+     this.#sun.shadow.camera.top = size.z / 2;
+     this.#sun.shadow.camera.bottom = -size.z / 2;
++
++    this.#sun.shadow.bias = -0.0005;
++
++    this.#sun.shadow.camera.updateProjectionMatrix();
+   }
+ }"
+unavi-xyz/unavi,333,e5128fa,packages/engine/src/render/SceneLoader/entity/createMeshGeometry.ts,modified,6,3,9,"@@ -32,23 +32,26 @@ export function createMeshGeometry(json: MeshJSON, map: SceneMap) {
+   }
+ 
+   switch (json.type) {
+-    case ""Box"":
++    case ""Box"": {
+       return new BoxGeometry(json.width, json.height, json.depth);
++    }
+ 
+-    case ""Sphere"":
++    case ""Sphere"": {
+       return new SphereGeometry(
+         json.radius,
+         json.widthSegments,
+         json.heightSegments
+       );
++    }
+ 
+-    case ""Cylinder"":
++    case ""Cylinder"": {
+       return new CylinderGeometry(
+         json.radius,
+         json.radius,
+         json.height,
+         json.radialSegments
+       );
++    }
+ 
+     case ""Primitive"": {
+       const geometry = new BufferGeometry();"
+unavi-xyz/unavi,333,e5128fa,packages/lens/generated/graphql.tsx,modified,13,0,13,"@@ -1040,6 +1040,17 @@ export type FeeFollowModuleSettings = {
+   type: FollowModules;
+ };
+ 
++/** The feed event item filter types */
++export enum FeedEventItemType {
++  CollectComment = 'COLLECT_COMMENT',
++  CollectPost = 'COLLECT_POST',
++  Comment = 'COMMENT',
++  Mirror = 'MIRROR',
++  Post = 'POST',
++  ReactionComment = 'REACTION_COMMENT',
++  ReactionPost = 'REACTION_POST'
++}
++
+ export type FeedHighlightsRequest = {
+   cursor?: InputMaybe<Scalars['Cursor']>;
+   limit?: InputMaybe<Scalars['LimitScalar']>;
+@@ -1069,6 +1080,8 @@ export type FeedItemRoot = Comment | Post;
+ 
+ export type FeedRequest = {
+   cursor?: InputMaybe<Scalars['Cursor']>;
++  /** Filter your feed to whatever you wish */
++  feedEventItemTypes?: InputMaybe<Array<FeedEventItemType>>;
+   limit?: InputMaybe<Scalars['LimitScalar']>;
+   metadata?: InputMaybe<PublicationMetadataFilters>;
+   /** The profile id */"

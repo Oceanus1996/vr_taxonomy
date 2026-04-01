@@ -1,0 +1,419 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+Samsung/GearVRf,1444,5ba299f5db9be452d473437a48d6342bb3d059b7,GVRf/Framework/framework/src/main/jni/engine/renderer/gl_renderer.cpp,modified,4,1,5,"@@ -69,10 +69,13 @@ namespace gvr
+         rstate.shader_manager = shader_manager;
+         rstate.scene = scene;
+         rstate.render_mask = camera->render_mask();
++
++        if(is_multiview)
++            rstate.render_mask = RenderData::RenderMaskBit::Right | RenderData::RenderMaskBit::Left;
++
+         rstate.uniforms.u_right = rstate.render_mask & RenderData::RenderMaskBit::Right;
+ 
+         std::vector<PostEffectData*> post_effects = camera->post_effect_data();
+-
+         GL(glDepthMask(GL_TRUE));
+         GL(glEnable(GL_DEPTH_TEST));
+         GL(glDepthFunc(GL_LEQUAL));"
+Samsung/GearVRf,1444,5ba299f5db9be452d473437a48d6342bb3d059b7,GVRf/Framework/framework/src/main/jni/shaders/material/assimp_shader.h,modified,9,9,18,"@@ -63,17 +63,17 @@ class AssimpShader: public ShaderBase {
+ private:
+     GLProgram** program_list_;
+ 
+-    GLuint u_mvp_;
+-    GLuint u_texture_;
+-    GLuint u_diffuse_color_;
+-    GLuint u_ambient_color_;
+-    GLuint u_color_;
+-    GLuint u_opacity_;
++    GLint u_mvp_;
++    GLint u_texture_;
++    GLint u_diffuse_color_;
++    GLint u_ambient_color_;
++    GLint u_color_;
++    GLint u_opacity_;
+ 
+     // Bones
+-    GLuint a_bone_indices_;
+-    GLuint a_bone_weights_;
+-    GLuint u_bone_matrices_;
++    GLint a_bone_indices_;
++    GLint a_bone_weights_;
++    GLint u_bone_matrices_;
+ };
+ 
+ }"
+Samsung/GearVRf,1444,5ba299f5db9be452d473437a48d6342bb3d059b7,GVRf/Framework/framework/src/main/jni/shaders/material/bounding_box_shader.h,modified,1,1,2,"@@ -48,7 +48,7 @@ class BoundingBoxShader: public HybridObject {
+ 
+ private:
+     GLProgram* program_;
+-    GLuint u_mvp_;
++    GLint u_mvp_;
+ };
+ 
+ }"
+Samsung/GearVRf,1444,5ba299f5db9be452d473437a48d6342bb3d059b7,GVRf/Framework/framework/src/main/jni/shaders/material/cubemap_reflection_shader.h,modified,7,7,14,"@@ -39,13 +39,13 @@ class CubemapReflectionShader: public ShaderBase {
+     CubemapReflectionShader& operator=(CubemapReflectionShader&& cubemap_shader);
+ 
+ private:
+-    GLuint u_mv_;
+-    GLuint u_mv_it_;
+-    GLuint u_mvp_;
+-    GLuint u_view_i_;
+-    GLuint u_texture_;
+-    GLuint u_color_;
+-    GLuint u_opacity_;
++    GLint u_mv_;
++    GLint u_mv_it_;
++    GLint u_mvp_;
++    GLint u_view_i_;
++    GLint u_texture_;
++    GLint u_color_;
++    GLint u_opacity_;
+ };
+ 
+ }"
+Samsung/GearVRf,1444,5ba299f5db9be452d473437a48d6342bb3d059b7,GVRf/Framework/framework/src/main/jni/shaders/material/cubemap_shader.cpp,modified,9,4,13,"@@ -63,6 +63,7 @@ const std::string VERTEX_SHADER =
+         ""#ifdef HAS_MULTIVIEW\n""
+         ""#extension GL_OVR_multiview2 : enable\n""
+         ""layout(num_views = 2) in;\n""
++         ""uniform uint u_render_mask;\n""
+         ""uniform mat4 u_mvp_[2];\n""
+         ""#else\n""
+         ""uniform mat4 u_mvp;\n""
+@@ -76,9 +77,12 @@ const std::string VERTEX_SHADER =
+         ""  vec4 pos = vec4(a_position, 1.0);\n""
+         ""  v_tex_coord = normalize((u_model * pos).xyz);\n""
+         ""  v_tex_coord.z = -v_tex_coord.z;\n""
+-
+         ""#ifdef HAS_MULTIVIEW\n""
+-        ""  gl_Position = u_mvp_[gl_ViewID_OVR]  * pos;\n""
++        ""bool render_mask = (u_render_mask & (gl_ViewID_OVR + uint(1))) > uint(0) ? true : false;\n""
++        ""  mat4 mvp = u_mvp_[gl_ViewID_OVR];""
++        "" if(!render_mask)\n""
++                ""mvp = mat4(0.0);\n""     //  if render_mask is not set for particular eye, dont render that object
++        ""  gl_Position = mvp  * pos;\n""
+          ""#else\n""
+         ""  gl_Position = u_mvp  * pos;\n""
+         ""#endif\n""
+@@ -118,6 +122,7 @@ void CubemapShader::programInit(RenderState* rstate){
+     u_model_ = glGetUniformLocation(program_->id(), ""u_model"");
+ 
+     if(rstate->is_multiview) {
++        u_render_mask_ = glGetUniformLocation(program_->id(), ""u_render_mask"");
+         u_mvp_ = glGetUniformLocation(program_->id(), ""u_mvp_[0]"");
+     } else {
+         u_mvp_ = glGetUniformLocation(program_->id(), ""u_mvp"");
+@@ -135,8 +140,7 @@ CubemapShader::~CubemapShader() {
+     delete program_;
+ }
+ 
+-void CubemapShader::render(RenderState* rstate, RenderData*, Material* material) {
+-
++void CubemapShader::render(RenderState* rstate, RenderData* renderData, Material* material) {
+     if(program_ == nullptr) {
+         programInit(rstate);
+     }
+@@ -153,6 +157,7 @@ void CubemapShader::render(RenderState* rstate, RenderData*, Material* material)
+     GL(glUniformMatrix4fv(u_model_, 1, GL_FALSE, glm::value_ptr(rstate->uniforms.u_model)));
+ 
+     if(rstate->is_multiview) {
++        glUniform1ui(u_render_mask_, renderData->render_mask());
+         GL(glUniformMatrix4fv(u_mvp_, 2, GL_FALSE, glm::value_ptr(rstate->uniforms.u_mvp_[0])));
+     } else {
+         GL(glUniformMatrix4fv(u_mvp_, 1, GL_FALSE, glm::value_ptr(rstate->uniforms.u_mvp)));"
+Samsung/GearVRf,1444,5ba299f5db9be452d473437a48d6342bb3d059b7,GVRf/Framework/framework/src/main/jni/shaders/material/cubemap_shader.h,modified,6,5,11,"@@ -40,11 +40,12 @@ class CubemapShader: public ShaderBase {
+     CubemapShader& operator=(CubemapShader&& cubemap_shader);
+ 
+ private:
+-    GLuint u_model_;
+-    GLuint u_mvp_;
+-    GLuint u_texture_;
+-    GLuint u_color_;
+-    GLuint u_opacity_;
++    GLint  u_render_mask_;
++    GLint u_model_;
++    GLint u_mvp_;
++    GLint u_texture_;
++    GLint u_color_;
++    GLint u_opacity_;
+ };
+ 
+ }"
+Samsung/GearVRf,1444,5ba299f5db9be452d473437a48d6342bb3d059b7,GVRf/Framework/framework/src/main/jni/shaders/material/custom_shader.cpp,modified,3,0,3,"@@ -43,6 +43,7 @@ void CustomShader::initializeOnDemand(RenderState* rstate) {
+             u_view_ = glGetUniformLocation(program_->id(), ""u_view_[0]"");
+             u_mv_ = glGetUniformLocation(program_->id(), ""u_mv_[0]"");
+             u_mv_it_ = glGetUniformLocation(program_->id(), ""u_mv_it_[0]"");
++            u_render_mask_ = glGetUniformLocation(program_->id(), ""u_render_mask"");
+         }
+         else {
+             u_mvp_ = glGetUniformLocation(program_->id(), ""u_mvp"");
+@@ -301,6 +302,8 @@ void CustomShader::render(RenderState* rstate, RenderData* render_data, Material
+             }
+         }
+     }
++    if( u_render_mask_!= -1)
++        glUniform1ui(u_render_mask_,render_data->render_mask());
+ 
+     if (u_model_ != -1){
+     	glUniformMatrix4fv(u_model_, 1, GL_FALSE, glm::value_ptr(rstate->uniforms.u_model));"
+Samsung/GearVRf,1444,5ba299f5db9be452d473437a48d6342bb3d059b7,GVRf/Framework/framework/src/main/jni/shaders/material/custom_shader.h,modified,7,6,13,"@@ -108,12 +108,13 @@ class CustomShader: public ShaderBase {
+     };
+ 
+ private:
+-    GLuint u_mvp_;
+-    GLuint u_mv_;
+-    GLuint u_view_;
+-    GLuint u_mv_it_;
+-    GLuint u_right_;
+-    GLuint u_model_;
++    GLint u_render_mask_;
++    GLint u_mvp_;
++    GLint u_mv_;
++    GLint u_view_;
++    GLint u_mv_it_;
++    GLint u_right_;
++    GLint u_model_;
+     bool textureVariablesDirty_ = false;
+     std::mutex textureVariablesLock_;
+     std::set<Descriptor<TextureVariable>, DescriptorComparator<TextureVariable>> textureVariables_;"
+Samsung/GearVRf,1444,5ba299f5db9be452d473437a48d6342bb3d059b7,GVRf/Framework/framework/src/main/jni/shaders/material/error_shader.h,modified,2,2,4,"@@ -43,8 +43,8 @@ class ErrorShader: public ShaderBase {
+ 
+ private:
+     GLProgram* program_;
+-    GLuint u_mvp_;
+-    GLuint u_color_;
++    GLint u_mvp_;
++    GLint u_color_;
+ };
+ 
+ }"
+Samsung/GearVRf,1444,5ba299f5db9be452d473437a48d6342bb3d059b7,GVRf/Framework/framework/src/main/jni/shaders/material/lightmap_shader.h,modified,5,5,10,"@@ -38,11 +38,11 @@ class LightMapShader: public ShaderBase {
+     LightMapShader& operator=(LightMapShader&& lightmap_shader);
+ 
+ private:
+-    GLuint u_mvp_;
+-    GLuint u_texture_;
+-    GLuint u_lightmap_texture_;
+-    GLuint u_lightmap_offset_;
+-    GLuint u_lightmap_scale_;
++    GLint u_mvp_;
++    GLint u_texture_;
++    GLint u_lightmap_texture_;
++    GLint u_lightmap_offset_;
++    GLint u_lightmap_scale_;
+ };
+ 
+ }"
+Samsung/GearVRf,1444,5ba299f5db9be452d473437a48d6342bb3d059b7,GVRf/Framework/framework/src/main/jni/shaders/material/oes_horizontal_stereo_shader.h,modified,5,5,10,"@@ -49,11 +49,11 @@ class OESHorizontalStereoShader: public ShaderBase {
+             OESHorizontalStereoShader&& oes_horizontal_stereo_shader);
+ 
+ private:
+-    GLuint u_mvp_;
+-    GLuint u_texture_;
+-    GLuint u_color_;
+-    GLuint u_opacity_;
+-    GLuint u_right_;
++    GLint u_mvp_;
++    GLint u_texture_;
++    GLint u_color_;
++    GLint u_opacity_;
++    GLint u_right_;
+ };
+ 
+ }"
+Samsung/GearVRf,1444,5ba299f5db9be452d473437a48d6342bb3d059b7,GVRf/Framework/framework/src/main/jni/shaders/material/oes_shader.cpp,modified,8,2,10,"@@ -42,13 +42,18 @@ static const char VERTEX_SHADER_MULTIVIEW[] =
+         ""#version 300 es\n""
+         ""#extension GL_OVR_multiview2 : enable\n""
+         ""layout(num_views = 2) in;\n""
++        ""uniform uint u_render_mask;\n""
+         ""uniform mat4 u_mvp_[2];\n""
+         ""in vec3 a_position;\n""
+         ""in vec2 a_texcoord;\n""
+         ""out vec2 v_texcoord;\n""
+         ""void main() {\n""
+         ""  v_texcoord = a_texcoord.xy;\n""
+-        ""  gl_Position = u_mvp_[gl_ViewID_OVR] * vec4(a_position,1.0);\n""
++        ""  bool render_mask = (u_render_mask & (gl_ViewID_OVR + uint(1))) > uint(0) ? true : false;\n""
++        ""  mat4 mvp = u_mvp_[gl_ViewID_OVR];""
++        "" if(!render_mask)\n""
++                ""mvp = mat4(0.0);\n""     //  if render_mask is not set for particular eye, dont render that object
++         ""  gl_Position = mvp * vec4(a_position,1.0);\n""
+         ""}\n"";
+ 
+ static const char FRAGMENT_SHADER[] =
+@@ -83,8 +88,8 @@ void OESShader::programInit(RenderState* rstate) {
+ 
+         program_ = new GLProgram(VERTEX_SHADER_MULTIVIEW,FRAGMENT_SHADER);
+         u_mvp_ = glGetUniformLocation(program_->id(), ""u_mvp_[0]"");
++        u_render_mask_ = glGetUniformLocation(program_->id(), ""u_render_mask"");
+     } else {
+-        LOGE(""not a multiview"");
+         program_ = new GLProgram(VERTEX_SHADER, FRAGMENT_SHADER);
+         u_mvp_ = glGetUniformLocation(program_->id(), ""u_mvp"");
+     }
+@@ -114,6 +119,7 @@ void OESShader::render(RenderState* rstate, RenderData* render_data, Material* m
+     glUseProgram(program_->id());
+     if (rstate->is_multiview) {
+         glUniformMatrix4fv(u_mvp_, 2, GL_FALSE, glm::value_ptr(rstate->uniforms.u_mvp_[0]));
++        glUniform1ui(u_render_mask_,render_data->render_mask());
+     } else {
+         glUniformMatrix4fv(u_mvp_, 1, GL_FALSE, glm::value_ptr(rstate->uniforms.u_mvp));
+     }"
+Samsung/GearVRf,1444,5ba299f5db9be452d473437a48d6342bb3d059b7,GVRf/Framework/framework/src/main/jni/shaders/material/oes_shader.h,modified,1,0,1,"@@ -42,6 +42,7 @@ class OESShader: public ShaderBase {
+     void programInit(RenderState*);
+ 
+ private:
++    GLint u_render_mask_;
+     GLint u_mvp_;
+     GLint u_texture_;
+     GLint u_color_;"
+Samsung/GearVRf,1444,5ba299f5db9be452d473437a48d6342bb3d059b7,GVRf/Framework/framework/src/main/jni/shaders/material/texture_shader.cpp,modified,12,3,15,"@@ -49,6 +49,7 @@ static const char VERTEX_SHADER[] =
+         ""in vec2 a_texcoord;\n""
+ 
+         ""#ifdef MULTIVIEW\n""
++        ""uniform uint u_render_mask;\n""
+         ""uniform mat4 u_view_[2];\n""
+         ""#else\n""
+         ""uniform mat4 u_view;\n""
+@@ -85,7 +86,11 @@ static const char VERTEX_SHADER[] =
+             ""#endif\n""
+ 
+             ""#ifdef MULTIVIEW\n""
+-            ""mvp = u_proj * u_view_[gl_ViewID_OVR] * model_matrix; \n""
++            ""bool render_mask = (u_render_mask & (gl_ViewID_OVR + uint(1))) > uint(0) ? true : false;\n""
++            ""if(render_mask)\n""
++                ""mvp = u_proj * u_view_[gl_ViewID_OVR] * model_matrix; \n""
++            ""else\n""
++                ""mvp = mat4(0.0);\n""     //  if render_mask is not set for particular eye, dont render that object
+             ""#else\n""
+             ""mvp = u_proj * u_view * model_matrix; \n""
+             ""#endif\n""
+@@ -190,8 +195,10 @@ void TextureShader::initUniforms(int feature_set, GLuint program_id,uniforms& lo
+         locations.u_light_specular_intensity_ = glGetUniformLocation(program_id,
+                 ""lightSpecularIntensity"");
+     }
+-    if(feature_set & MULTIVIEW)
++    if(feature_set & MULTIVIEW) {
+         locations.u_view = glGetUniformLocation(program_id, ""u_view_[0]"");
++        locations.u_render_mask = glGetUniformLocation(program_id, ""u_render_mask"");
++    }
+     else
+         locations.u_view = glGetUniformLocation(program_id, ""u_view"");
+ 
+@@ -330,8 +337,10 @@ void TextureShader::programInit(RenderState* rstate, RenderData* render_data, Ma
+ 
+     }
+ 
+-    if(rstate->is_multiview)
++    if(rstate->is_multiview) {
+         glUniformMatrix4fv(uniform_locations.u_view, 2, GL_FALSE, glm::value_ptr(rstate->uniforms.u_view_[0]));
++        glUniform1ui(uniform_locations.u_render_mask,render_data->render_mask());
++    }
+     else
+         glUniformMatrix4fv(uniform_locations.u_view, 1, GL_FALSE, glm::value_ptr(rstate->uniforms.u_view));
+ "
+Samsung/GearVRf,1444,5ba299f5db9be452d473437a48d6342bb3d059b7,GVRf/Framework/framework/src/main/jni/shaders/material/texture_shader.h,modified,15,14,29,"@@ -45,20 +45,21 @@ class TextureShader: public ShaderBase {
+ 
+     std::unordered_map<int, GLProgram*>program_object_map_;
+     struct uniforms{
+-        GLuint u_model;
+-        GLuint u_texture;
+-        GLuint u_color;
+-        GLuint u_opacity;
+-        GLuint u_view;
+-        GLuint u_proj;
+-        GLuint u_light_pos;
+-        GLuint u_material_ambient_color_;
+-        GLuint u_material_diffuse_color_;
+-        GLuint u_material_specular_color_;
+-        GLuint u_material_specular_exponent_;
+-        GLuint u_light_ambient_intensity_;
+-        GLuint u_light_diffuse_intensity_;
+-        GLuint u_light_specular_intensity_;
++        GLint u_render_mask;
++        GLint u_model;
++        GLint u_texture;
++        GLint u_color;
++        GLint u_opacity;
++        GLint u_view;
++        GLint u_proj;
++        GLint u_light_pos;
++        GLint u_material_ambient_color_;
++        GLint u_material_diffuse_color_;
++        GLint u_material_specular_color_;
++        GLint u_material_specular_exponent_;
++        GLint u_light_ambient_intensity_;
++        GLint u_light_diffuse_intensity_;
++        GLint u_light_specular_intensity_;
+     };
+     std::unordered_map<int,uniforms> uniform_loc;
+ "
+Samsung/GearVRf,1444,5ba299f5db9be452d473437a48d6342bb3d059b7,GVRf/Framework/framework/src/main/jni/shaders/material/unlit_fbo_shader.h,modified,4,4,8,"@@ -37,10 +37,10 @@ class UnlitFboShader: public ShaderBase {
+     UnlitFboShader& operator=(UnlitFboShader&& fbo_shader);
+ 
+ private:
+-    GLuint u_mvp_;
+-    GLuint u_texture_;
+-    GLuint u_color_;
+-    GLuint u_opacity_;
++    GLint u_mvp_;
++    GLint u_texture_;
++    GLint u_color_;
++    GLint u_opacity_;
+ };
+ 
+ }"
+Samsung/GearVRf,1444,5ba299f5db9be452d473437a48d6342bb3d059b7,GVRf/Framework/framework/src/main/jni/shaders/material/unlit_horizontal_stereo_shader.h,modified,5,5,10,"@@ -44,11 +44,11 @@ class UnlitHorizontalStereoShader: public ShaderBase {
+             UnlitHorizontalStereoShader&& unlit_shader);
+ 
+ private:
+-    GLuint u_mvp_;
+-    GLuint u_texture_;
+-    GLuint u_color_;
+-    GLuint u_opacity_;
+-    GLuint u_right_;
++    GLint u_mvp_;
++    GLint u_texture_;
++    GLint u_color_;
++    GLint u_opacity_;
++    GLint u_right_;
+ };
+ 
+ }"
+Samsung/GearVRf,1444,5ba299f5db9be452d473437a48d6342bb3d059b7,GVRf/Framework/framework/src/main/jni/shaders/material/unlit_vertical_stereo_shader.h,modified,5,5,10,"@@ -43,11 +43,11 @@ class UnlitVerticalStereoShader: public ShaderBase {
+             UnlitVerticalStereoShader&& unlit_shader);
+ 
+ private:
+-    GLuint u_mvp_;
+-    GLuint u_texture_;
+-    GLuint u_color_;
+-    GLuint u_opacity_;
+-    GLuint u_right_;
++    GLint u_mvp_;
++    GLint u_texture_;
++    GLint u_color_;
++    GLint u_opacity_;
++    GLint u_right_;
+ };
+ 
+ }"
+Samsung/GearVRf,1444,5ba299f5db9be452d473437a48d6342bb3d059b7,GVRf/Framework/framework/src/main/res/raw/vertex_template_multitex.vsh,modified,6,1,7,"@@ -5,6 +5,7 @@ uniform mat4 u_view_[2];
+ uniform mat4 u_mvp_[2];
+ uniform mat4 u_mv_[2];
+ uniform mat4 u_mv_it_[2];
++uniform uint u_render_mask;
+ #else
+ uniform mat4 u_view;
+ uniform mat4 u_mvp;
+@@ -120,7 +121,11 @@ void main() {
+ 	viewspace_normal = vertex.viewspace_normal;
+ 	view_direction = vertex.view_direction;
+ #ifdef HAS_MULTIVIEW
+-	gl_Position = u_mvp_[gl_ViewID_OVR] * vertex.local_position;
++    bool render_mask = (u_render_mask & (gl_ViewID_OVR + uint(1))) > uint(0) ? true : false;
++    mat4 mvp = u_mvp_[gl_ViewID_OVR];
++    if(!render_mask)
++        mvp = mat4(0.0);
++	gl_Position = mvp * vertex.local_position;
+ #else
+ 	gl_Position = u_mvp * vertex.local_position;	
+ #endif	"

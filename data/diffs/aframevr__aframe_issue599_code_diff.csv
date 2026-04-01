@@ -1,0 +1,208 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe,599,78de79ae02852d44bda0d1cc3b97a5d246e60923,src/components/sound.js,modified,68,24,92,"@@ -1,82 +1,126 @@
++var debug = require('../utils/debug');
+ var diff = require('../utils').diff;
+ var registerComponent = require('../core/register-component').registerComponent;
+ var THREE = require('../../lib/three');
+ var utils = require('../utils');
+ 
+-var proto = {
++var warn = debug('components:sound:warn');
++
++/**
++ * Sound component.
++ *
++ * @param {bool} [autoplay=false]
++ * @param {string} on
++ * @param {bool} [loop=false]
++ * @param {number} [volume=1]
++ */
++module.exports.Component = registerComponent('sound', {
+   defaults: {
+     value: {
+-      on: 'click',
+       autoplay: false,
++      on: 'click',
+       loop: false,
+       volume: 1
+     }
+   },
+ 
++  init: {
++    value: function () {
++      this.listener = null;
++      this.sound = null;
++    }
++  },
++
+   update: {
+     value: function (oldData) {
+       var data = this.data;
+       var diffData = diff(oldData || {}, data);
++      var el = this.el;
++      var sound = this.sound;
+       var src = data.src;
+-      var sound = this.getSound();
++      var srcChanged = 'src' in diffData;
+ 
+-      if ('src' in diffData) {
++      // Create new sound if not yet created or changing `src`.
++      if (srcChanged) {
+         if (!src) {
+-          utils.warn('Sound src not specified');
++          warn('Audio source was not specified with `src`');
+           return;
+         }
+-        sound.load(src);
++        sound = this.setupSound();
+       }
+ 
+-      if ('autoplay' in diffData) {
++      if (srcChanged || 'autoplay' in diffData) {
+         sound.autoplay = data.autoplay;
+       }
+ 
+-      if ('loop' in diffData) {
++      if (srcChanged || 'loop' in diffData) {
+         sound.setLoop(data.loop);
+       }
+ 
+-      if ('volume' in diffData) {
++      if (srcChanged || 'volume' in diffData) {
+         sound.setVolume(data.volume);
+       }
++
++      if ('on' in diffData) {
++        if (oldData && oldData.on) {
++          el.removeEventListener(oldData.on);
++        }
++        el.addEventListener(data.on, this.play.bind(this));
++      }
++
++      // All sound values set. Load in `src.
++      if (srcChanged) {
++        sound.load(src);
++      }
+     }
+   },
+ 
+-  getSound: {
++  remove: {
+     value: function () {
+-      var el = this.el;
+-      var listener = this.listener = new THREE.AudioListener();
+-      var sound = this.sound = this.sound || new THREE.Audio(listener);
+-      el.object3D.add(sound);
+-      el.addEventListener(this.data.on, this.play.bind(this));
+-      return sound;
++      this.el.object3D.remove(this.sound);
+     }
+   },
+ 
+-  remove: {
++  /**
++   * Removes current sound object, creates new sound object, adds to entity.
++   *
++   * @returns {object} sound
++   */
++  setupSound: {
+     value: function () {
+-      this.el.object3D.remove(this.sound);
++      var el = this.el;
++      var listener;
++      var sound = this.sound;
++
++      if (sound) {
++        this.stop();
++        el.object3D.remove(sound);
++      }
++
++      listener = this.listener = new THREE.AudioListener();
++      sound = this.sound = new THREE.Audio(listener);
++      el.object3D.add(sound);
++      return sound;
+     }
+   },
+ 
+   play: {
+     value: function () {
+       this.sound.play();
+-    }
++    },
++    writable: window.debug
+   },
+ 
+   stop: {
+     value: function () {
+       this.sound.stop();
+-    }
++    },
++    writable: window.debug
+   },
+ 
+   pause: {
+     value: function () {
+       this.sound.pause();
+     }
+   }
+-
+-};
+-
+-module.exports.Component = registerComponent('sound', proto);
++});"
+aframevr/aframe,599,78de79ae02852d44bda0d1cc3b97a5d246e60923,tests/components/sound.test.js,modified,34,3,37,"@@ -1,21 +1,52 @@
+ /* global assert, process, setup, suite, test */
+ var entityFactory = require('../helpers').entityFactory;
++var Sound = require('components/sound').Component;
+ 
+ suite('sound', function () {
+   'use strict';
+ 
+   setup(function (done) {
+     var el = this.el = entityFactory();
+-    el.setAttribute('sound', 'src: base/examples/_sounds/click.ogg');
++    el.setAttribute('sound', 'src: mysoundfile.mp3; autoplay: true; loop: true');
+     el.addEventListener('loaded', function () {
+       done();
+     });
++
++    this.sinon.stub(Sound.prototype, 'play');
++    this.sinon.stub(Sound.prototype, 'stop');
+   });
+ 
+   suite('update', function () {
+     test('creates sound', function () {
+-      this.el.components.sound.update();
+-      assert.ok(this.el.components.sound.sound);
++      var audio = this.el.object3D.children[0];
++      assert.equal(audio.type, 'Audio');
++      assert.ok(audio.autoplay);
++      assert.ok(audio.getLoop());
++    });
++
++    test('re-creates sound when changing src', function () {
++      var el = this.el;
++      var oldAudio = el.object3D.children[0];
++      el.setAttribute('sound', 'src', 'anothersound.wav');
++      assert.notEqual(oldAudio.uuid, el.object3D.children[0].uuid);
++    });
++
++    test('can change src', function () {
++      var audio;
++      var el = this.el;
++
++      el.setAttribute('sound', 'src', 'anothersound.wav');
++      audio = el.object3D.children[0];
++      assert.equal(audio.type, 'Audio');
++      assert.ok(audio.autoplay);
++      assert.ok(audio.getLoop());
++    });
++
++    test('can change volume', function () {
++      var el = this.el;
++      var audio = el.object3D.children[0];
++      el.setAttribute('sound', 'volume', 0.75);
++      assert.equal(audio.getVolume(), 0.75);
+     });
+   });
+ });"

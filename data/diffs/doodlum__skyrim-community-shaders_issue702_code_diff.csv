@@ -1,0 +1,727 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+doodlum/skyrim-community-shaders,702,78c89f4a069f8664a719f94d560806109fa47377,features/Light Limit Fix/Shaders/LightLimitFix/Common.hlsli,modified,8,2,10,"@@ -7,8 +7,14 @@
+ #define GROUP_SIZE (NUMTHREAD_X * NUMTHREAD_Y * NUMTHREAD_Z)
+ #define MAX_CLUSTER_LIGHTS 128
+ 
+-#define Llf_PortalStrictLight (1 << 0)
+-#define Llf_ShadowLight (1 << 1)
++namespace LightFlags
++{
++	static const uint PortalStrict = (1 << 0);
++	static const uint Shadow = (1 << 1);
++	static const uint Simple = (1 << 2);
++	static const uint Particle = (1 << 3);
++	static const uint Billboard = (1 << 4);
++}
+ 
+ struct ClusterAABB
+ {"
+doodlum/skyrim-community-shaders,702,78c89f4a069f8664a719f94d560806109fa47377,features/Light Limit Fix/Shaders/LightLimitFix/LightLimitFix.hlsli,modified,1,1,2,"@@ -109,7 +109,7 @@ namespace LightLimitFix
+ 	bool IsLightIgnored(StructuredLight light)
+ 	{
+ 		bool lightIgnored = false;
+-		if ((light.lightFlags & Llf_PortalStrictLight) && strictLights[0].RoomIndex >= 0) {
++		if ((light.lightFlags & LightFlags::PortalStrict) && strictLights[0].RoomIndex >= 0) {
+ 			lightIgnored = true;
+ 			int roomIndex = strictLights[0].RoomIndex;
+ 			[unroll] for (int flagsIndex = 0; flagsIndex < 4; ++flagsIndex)"
+doodlum/skyrim-community-shaders,702,78c89f4a069f8664a719f94d560806109fa47377,package/Shaders/Effect.hlsl,modified,1,1,2,"@@ -629,7 +629,7 @@ PS_OUTPUT main(PS_INPUT input)
+ 			{
+ 				uint light_index = lightList[lightOffset + i];
+ 				StructuredLight light = lights[light_index];
+-				if (LightLimitFix::IsLightIgnored(light)) {
++				if (LightLimitFix::IsLightIgnored(light) || light.lightFlags & LightFlags::Shadow) {
+ 					continue;
+ 				}
+ 				float3 lightDirection = light.positionWS[eyeIndex].xyz - input.WorldPosition.xyz;"
+doodlum/skyrim-community-shaders,702,78c89f4a069f8664a719f94d560806109fa47377,package/Shaders/Lighting.hlsl,modified,18,8,26,"@@ -2116,7 +2116,7 @@ PS_OUTPUT main(PS_INPUT input, bool frontFace
+ 			uint clusteredLightIndex = lightList[lightOffset + (lightIndex - strictLights[0].NumStrictLights)];
+ 			light = lights[clusteredLightIndex];
+ 
+-			if (LightLimitFix::IsLightIgnored(light)) {
++			if (LightLimitFix::IsLightIgnored(light) || (!(PixelShaderDescriptor & _DefShadow) && light.lightFlags & LightFlags::Shadow)) {
+ 				continue;
+ 			}
+ 		}
+@@ -2129,19 +2129,24 @@ PS_OUTPUT main(PS_INPUT input, bool frontFace
+ 
+ 		float intensityMultiplier = 1 - intensityFactor * intensityFactor;
+ 		float3 lightColor = light.color.xyz * intensityMultiplier;
+-		float lightShadow = 1.f;
++		float lightShadow = 1.0;
+ 
+ 		float shadowComponent = 1.0;
+-		if ((PixelShaderDescriptor & _DefShadow) && (light.lightFlags & Llf_ShadowLight)) {
++		if (light.lightFlags & LightFlags::Shadow) {
+ 			shadowComponent = shadowColor[light.shadowLightIndex];
+ 			lightShadow *= shadowComponent;
+ 		}
+ 
+ 		float3 normalizedLightDirection = normalize(lightDirection);
+ 		float lightAngle = dot(worldSpaceNormal.xyz, normalizedLightDirection.xyz);
+ 
+-		float contactShadow = 1;
+-		[branch] if (inWorld && !FrameParams.z && lightLimitFixSettings.EnableContactShadows && shadowComponent != 0.0 && lightAngle > 0.0)
++		float contactShadow = 1.0;
++		[branch] if (
++			inWorld && !FrameParams.z &&
++			lightLimitFixSettings.EnableContactShadows &&
++			!(light.lightFlags & LightFlags::Simple) &&
++			shadowComponent != 0.0 &&
++			lightAngle > 0.0)
+ 		{
+ 			float3 normalizedLightDirectionVS = normalize(light.positionVS[eyeIndex].xyz - viewPosition.xyz);
+ 			contactShadow = LightLimitFix::ContactShadows(viewPosition, screenNoise, normalizedLightDirectionVS, contactShadowSteps, eyeIndex);
+@@ -2158,7 +2163,12 @@ PS_OUTPUT main(PS_INPUT input, bool frontFace
+ 		float parallaxShadow = 1;
+ 
+ #			if defined(EMAT)
+-		[branch] if (extendedMaterialSettings.EnableShadows && lightAngle > 0.0 && shadowComponent != 0.0 && contactShadow != 0.0)
++		[branch] if (
++			extendedMaterialSettings.EnableShadows &&
++			!(light.lightFlags & LightFlags::Simple) &&
++			lightAngle > 0.0 &&
++			shadowComponent != 0.0 &&
++			contactShadow != 0.0)
+ 		{
+ 			float3 lightDirectionTS = normalize(mul(refractedLightDirection, tbn).xyz);
+ #				if defined(PARALLAX)
+@@ -2192,9 +2202,9 @@ PS_OUTPUT main(PS_INPUT input, bool frontFace
+ #				endif
+ 		}
+ #			else
+-		lightColor *= parallaxShadow * lightShadow;
++		lightColor *= lightShadow;
+ 
+-		float3 lightDiffuseColor = lightColor * contactShadow * saturate(lightAngle.xxx);
++		float3 lightDiffuseColor = lightColor * contactShadow * parallaxShadow * saturate(lightAngle.xxx);
+ 
+ #				if defined(SOFT_LIGHTING) || defined(RIM_LIGHTING) || defined(BACK_LIGHTING)
+ 		float lightBacklighting = 1.0 + saturate(dot(worldSpaceViewDirection, -normalizedLightDirection.xyz));"
+doodlum/skyrim-community-shaders,702,78c89f4a069f8664a719f94d560806109fa47377,package/Shaders/Water.hlsl,modified,1,1,2,"@@ -868,7 +868,7 @@ PS_OUTPUT main(PS_INPUT input)
+ 		{
+ 			uint light_index = lightList[lightOffset + i];
+ 			StructuredLight light = lights[light_index];
+-			if (LightLimitFix::IsLightIgnored(light)) {
++			if (LightLimitFix::IsLightIgnored(light) || light.lightFlags & LightFlags::Shadow) {
+ 				continue;
+ 			}
+ "
+doodlum/skyrim-community-shaders,702,78c89f4a069f8664a719f94d560806109fa47377,src/Features/LightLimitFIx/ParticleLights.h,modified,0,6,6,"@@ -9,12 +9,6 @@ class ParticleLights
+ 		return &singleton;
+ 	}
+ 
+-	enum class Flicker
+-	{
+-		None = 0,
+-		Normal = 1
+-	};
+-
+ 	struct Config
+ 	{
+ 		bool cull = false;"
+doodlum/skyrim-community-shaders,702,78c89f4a069f8664a719f94d560806109fa47377,src/Features/LightLimitFix.cpp,modified,190,132,322,"@@ -15,7 +15,6 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(
+ 	EnableParticleLightsDetection,
+ 	ParticleLightsSaturation,
+ 	EnableParticleLightsOptimization,
+-	ParticleLightsOptimisationClusterRadius,
+ 	ParticleBrightness,
+ 	ParticleRadius,
+ 	BillboardBrightness,
+@@ -41,12 +40,9 @@ void LightLimitFix::DrawSettings()
+ 
+ 		ImGui::Checkbox(""Enable Optimization"", &settings.EnableParticleLightsOptimization);
+ 		if (auto _tt = Util::HoverTooltipWrapper()) {
+-			ImGui::Text(""Merges vertices which are close enough to each other to significantly improve performance."");
+-		}
+-		ImGui::SliderInt(""Optimisation Cluster Radius"", (int*)&settings.ParticleLightsOptimisationClusterRadius, 1, 64);
+-		if (auto _tt = Util::HoverTooltipWrapper()) {
+-			ImGui::Text(""Radius to use for clustering lights."");
++			ImGui::Text(""Merges vertices which are close enough to each other to improve performance."");
+ 		}
++
+ 		ImGui::Spacing();
+ 		ImGui::Spacing();
+ 
+@@ -109,7 +105,7 @@ void LightLimitFix::DrawSettings()
+ 
+ 	if (ImGui::TreeNodeEx(""Statistics"", ImGuiTreeNodeFlags_DefaultOpen)) {
+ 		ImGui::Text(std::format(""Clustered Light Count : {}"", lightCount).c_str());
+-		ImGui::Text(std::format(""Particle Lights Detection Count : {}"", particleLightsDetectionHits).c_str());
++		ImGui::Text(std::format(""Particle Lights Count : {}"", particleLights.size()).c_str());
+ 
+ 		ImGui::TreePop();
+ 	}
+@@ -125,6 +121,11 @@ LightLimitFix::PerFrame LightLimitFix::GetCommonBufferData()
+ 	return perFrame;
+ }
+ 
++void LightLimitFix::CleanupParticleLights(RE::NiNode* a_node)
++{
++	particleLightsReferences.erase(a_node);
++}
++
+ void LightLimitFix::SetupResources()
+ {
+ 	auto screenSize = Util::ConvertToDynamic(State::GetSingleton()->screenSize);
+@@ -249,12 +250,14 @@ void LightLimitFix::SetupResources()
+ void LightLimitFix::Reset()
+ {
+ 	for (auto& particleLight : particleLights) {
+-		if (const auto particleSystem = netimmerse_cast<RE::NiParticleSystem*>(particleLight.first)) {
+-			if (auto particleData = particleSystem->GetParticleRuntimeData().particleData.get()) {
+-				particleData->DecRefCount();
++		if (!particleLight.billboard) {
++			if (const auto particleSystem = static_cast<RE::NiParticleSystem*>(particleLight.node)) {
++				if (auto particleData = particleSystem->GetParticleRuntimeData().particleData.get()) {
++					particleData->DecRefCount();
++				}
+ 			}
+ 		}
+-		particleLight.first->DecRefCount();
++		particleLight.node->DecRefCount();
+ 	}
+ 	particleLights.clear();
+ 	std::swap(particleLights, queuedParticleLights);
+@@ -431,7 +434,7 @@ void LightLimitFix::AddParticleLightLuminance(RE::NiPoint3& targetPosition, int&
+ 		return;
+ 
+ 	std::lock_guard<std::shared_mutex> lk{ cachedParticleLightsMutex };
+-	particleLightsDetectionHits = 0;
++	int particleLightsDetectionHits = 0;
+ 	if (settings.EnableParticleLightsDetection) {
+ 		for (auto& light : cachedParticleLights) {
+ 			auto luminance = CalculateLuminance(light, targetPosition);
+@@ -494,43 +497,115 @@ std::string ExtractTextureStem(std::string_view a_path)
+ 	return textureName;
+ }
+ 
+-std::optional<LightLimitFix::ConfigPair> LightLimitFix::GetParticleLightConfigs(RE::BSRenderPass* a_pass)
++LightLimitFix::ParticleLightReference LightLimitFix::GetParticleLightConfigs(RE::BSRenderPass* a_pass)
+ {
+ 	// see https://www.nexusmods.com/skyrimspecialedition/articles/1391
+ 	if (settings.EnableParticleLights) {
+ 		if (auto shaderProperty = netimmerse_cast<RE::BSEffectShaderProperty*>(a_pass->shaderProperty)) {
+ 			if (!shaderProperty->lightData) {
+ 				if (auto material = shaderProperty->GetMaterial()) {
++					// Check if it's a valid particle light
++					bool billboard = false;
++					if (!netimmerse_cast<RE::NiParticleSystem*>(a_pass->geometry)) {
++						if (auto parent = a_pass->geometry->parent) {
++							if (auto billboardNode = netimmerse_cast<RE::NiBillboardNode*>(parent)) {
++								billboard = true;
++							} else {
++								return { false };
++							}
++						} else {
++							return { false };
++						}
++					}
++
++					// Already scanned
++					{
++						auto it = particleLightsReferences.find(reinterpret_cast<RE::NiNode*>(a_pass->geometry));
++						if (it != particleLightsReferences.end())
++							return (*it).second;
++					}
++
++					// Not scanned, scan now
++
+ 					if (!material->sourceTexturePath.empty()) {
+ 						std::string textureName = ExtractTextureStem(material->sourceTexturePath.c_str());
+-						if (textureName.size() < 1)
+-							return std::nullopt;
++						if (textureName.size() < 1) {
++							particleLightsReferences.insert({ (RE::NiNode*)a_pass->geometry, { false } });
++							return { false };
++						}
+ 
+ 						auto& configs = ParticleLights::GetSingleton()->particleLightConfigs;
+ 						auto it = configs.find(textureName);
+-						if (it == configs.end())
+-							return std::nullopt;
++						if (it == configs.end()) {
++							particleLightsReferences.insert({ (RE::NiNode*)a_pass->geometry, { false } });
++							return { false };
++						}
+ 
+ 						ParticleLights::Config* config = &it->second;
+ 						ParticleLights::GradientConfig* gradientConfig = nullptr;
+ 						if (!material->greyscaleTexturePath.empty()) {
+ 							textureName = ExtractTextureStem(material->greyscaleTexturePath.c_str());
+-							if (textureName.size() < 1)
+-								return std::nullopt;
++							if (textureName.size() < 1) {
++								particleLightsReferences.insert({ (RE::NiNode*)a_pass->geometry, { false } });
++								return { false };
++							}
+ 
+ 							auto& gradientConfigs = ParticleLights::GetSingleton()->particleLightGradientConfigs;
+ 							auto itGradient = gradientConfigs.find(textureName);
+-							if (itGradient == gradientConfigs.end())
+-								return std::nullopt;
++							if (itGradient == gradientConfigs.end()) {
++								particleLightsReferences.insert({ (RE::NiNode*)a_pass->geometry, { false } });
++								return { false };
++							}
+ 							gradientConfig = &itGradient->second;
+ 						}
+-						return std::make_pair(config, gradientConfig);
++
++						ParticleLightReference reference{ true };
++						reference.billboard = billboard;
++						reference.config = config;
++						reference.gradientConfig = gradientConfig;
++						reference.baseColor = { 1, 1, 1, 1 };
++
++						if (billboard) {
++							if (auto rendererData = a_pass->geometry->GetGeometryRuntimeData().rendererData) {
++								if (auto triShape = a_pass->geometry->AsTriShape()) {
++									uint32_t vertexSize = rendererData->vertexDesc.GetSize();
++									if (rendererData->vertexDesc.HasFlag(RE::BSGraphics::Vertex::Flags::VF_COLORS)) {
++										uint32_t offset = rendererData->vertexDesc.GetAttributeOffset(RE::BSGraphics::Vertex::Attribute::VA_COLOR);
++
++										uint8_t maxAlpha = 0u;
++										VertexColor* vertexColor = nullptr;
++
++										for (int v = 0; v < triShape->GetTrishapeRuntimeData().vertexCount; v++) {
++											if (VertexColor* vertex = reinterpret_cast<VertexColor*>(&rendererData->rawVertexData[vertexSize * v + offset])) {
++												uint8_t alpha = vertex->data[3];
++												if (alpha > maxAlpha) {
++													maxAlpha = alpha;
++													vertexColor = vertex;
++												}
++											}
++										}
++
++										if (vertexColor) {
++											reference.baseColor.red *= vertexColor->data[0] / 255.f;
++											reference.baseColor.green *= vertexColor->data[1] / 255.f;
++											reference.baseColor.blue *= vertexColor->data[2] / 255.f;
++											if (shaderProperty->flags.any(RE::BSShaderProperty::EShaderPropertyFlag::kVertexAlpha)) {
++												reference.baseColor.alpha *= vertexColor->data[3] / 255.f;
++											}
++										}
++									}
++								}
++							}
++						}
++
++						particleLightsReferences.insert({ reinterpret_cast<RE::NiNode*>(a_pass->geometry), reference });
++						return reference;
+ 					}
+ 				}
+ 			}
+ 		}
+ 	}
+-	return std::nullopt;
++	return { false };
+ }
+ 
+ bool LightLimitFix::CheckParticleLights(RE::BSRenderPass* a_pass, uint32_t)
+@@ -540,77 +615,44 @@ bool LightLimitFix::CheckParticleLights(RE::BSRenderPass* a_pass, uint32_t)
+ 	if (!shaderCache.IsEnabled())
+ 		return true;
+ 
+-	auto configs = GetParticleLightConfigs(a_pass);
+-	if (configs.has_value()) {
+-		if (AddParticleLight(a_pass, configs.value())) {
+-			return !(settings.EnableParticleLightsCulling && configs->first->cull);
++	auto reference = GetParticleLightConfigs(a_pass);
++	if (reference.valid) {
++		if (AddParticleLight(a_pass, reference)) {
++			return !(settings.EnableParticleLightsCulling && reference.config->cull);
+ 		}
+ 	}
+ 	return true;
+ }
+ 
+-bool LightLimitFix::AddParticleLight(RE::BSRenderPass* a_pass, LightLimitFix::ConfigPair a_config)
++bool LightLimitFix::AddParticleLight(RE::BSRenderPass* a_pass, ParticleLightReference a_reference)
+ {
+-	auto shaderProperty = netimmerse_cast<RE::BSEffectShaderProperty*>(a_pass->shaderProperty);
++	auto shaderProperty = static_cast<RE::BSEffectShaderProperty*>(a_pass->shaderProperty);
+ 	auto material = shaderProperty->GetMaterial();
+-	auto config = a_config.first;
+-	auto gradientConfig = a_config.second;
++	auto config = a_reference.config;
++	auto gradientConfig = a_reference.gradientConfig;
+ 
+ 	a_pass->geometry->IncRefCount();
+-	if (const auto particleSystem = netimmerse_cast<RE::NiParticleSystem*>(a_pass->geometry)) {
+-		if (auto particleData = particleSystem->GetParticleRuntimeData().particleData.get()) {
+-			particleData->IncRefCount();
++
++	if (!a_reference.billboard) {
++		if (auto particleSystem = static_cast<RE::NiParticleSystem*>(a_pass->geometry)) {
++			if (auto particleData = particleSystem->GetParticleRuntimeData().particleData.get()) {
++				particleData->IncRefCount();
++			}
+ 		}
+ 	}
+ 
+-	RE::NiColorA color;
+-	color.red = material->baseColor.red * material->baseColorScale;
+-	color.green = material->baseColor.green * material->baseColorScale;
+-	color.blue = material->baseColor.blue * material->baseColorScale;
+-	color.alpha = material->baseColor.alpha * shaderProperty->alpha;
++	RE::NiColorA color = a_reference.baseColor;
++	color.red *= material->baseColor.red * material->baseColorScale;
++	color.green *= material->baseColor.green * material->baseColorScale;
++	color.blue *= material->baseColor.blue * material->baseColorScale;
++	color.alpha *= material->baseColor.alpha * shaderProperty->alpha;
+ 
+ 	if (auto emittance = shaderProperty->unk88) {
+ 		color.red *= emittance->red;
+ 		color.green *= emittance->green;
+ 		color.blue *= emittance->blue;
+ 	}
+ 
+-	if (auto rendererData = a_pass->geometry->GetGeometryRuntimeData().rendererData) {
+-		if (auto triShape = a_pass->geometry->AsTriShape()) {
+-			uint32_t vertexSize = rendererData->vertexDesc.GetSize();
+-			if (rendererData->vertexDesc.HasFlag(RE::BSGraphics::Vertex::Flags::VF_COLORS)) {
+-				uint32_t offset = rendererData->vertexDesc.GetAttributeOffset(RE::BSGraphics::Vertex::Attribute::VA_COLOR);
+-
+-				uint8_t maxAlpha = 0u;
+-				VertexColor* vertexColor = nullptr;
+-				bool alphaOne = false;
+-				bool alphaZero = false;
+-
+-				for (int v = 0; v < triShape->GetTrishapeRuntimeData().vertexCount; v++) {
+-					if (VertexColor* vertex = reinterpret_cast<VertexColor*>(&rendererData->rawVertexData[vertexSize * v + offset])) {
+-						uint8_t alpha = vertex->data[3];
+-						alphaZero = alphaOne || alpha == 0;
+-						alphaOne = alphaOne || alpha == 255;
+-						if (alpha > maxAlpha) {
+-							maxAlpha = alpha;
+-							vertexColor = vertex;
+-						}
+-					}
+-				}
+-
+-				if (!vertexColor || !alphaZero || !alphaOne)
+-					return false;
+-
+-				color.red *= vertexColor->data[0] / 255.f;
+-				color.green *= vertexColor->data[1] / 255.f;
+-				color.blue *= vertexColor->data[2] / 255.f;
+-				if (shaderProperty->flags.any(RE::BSShaderProperty::EShaderPropertyFlag::kVertexAlpha)) {
+-					color.alpha *= vertexColor->data[3] / 255.f;
+-				}
+-			}
+-		}
+-	}
+-
+ 	if (gradientConfig) {
+ 		auto grey = float3(config->colorMult.red, config->colorMult.green, config->colorMult.blue).Dot(float3(0.3f, 0.59f, 0.11f));
+ 		color.red *= grey * gradientConfig->color.red;
+@@ -622,7 +664,14 @@ bool LightLimitFix::AddParticleLight(RE::BSRenderPass* a_pass, LightLimitFix::Co
+ 		color.blue *= config->colorMult.blue;
+ 	}
+ 
+-	queuedParticleLights.insert({ a_pass->geometry, { color, *config } });
++	color.alpha = config->radiusMult;
++
++	ParticleLightInfo info;
++	info.billboard = a_reference.billboard;
++	info.node = a_pass->geometry;
++	info.color = color;
++
++	queuedParticleLights.push_back(info);
+ 	return true;
+ }
+ 
+@@ -788,84 +837,91 @@ void LightLimitFix::UpdateLights()
+ 		auto eyePositionOffset = eyePositionCached[0] - eyePositionCached[1];
+ 
+ 		for (const auto& particleLight : particleLights) {
+-			if (const auto particleSystem = netimmerse_cast<RE::NiParticleSystem*>(particleLight.first);
+-				particleSystem && particleSystem->GetParticleRuntimeData().particleData.get()) {
+-				// Process BSGeometry
+-				auto particleData = particleSystem->GetParticleRuntimeData().particleData.get();
+-
+-				auto numVertices = particleData->GetActiveVertexCount();
+-				for (std::uint32_t p = 0; p < numVertices; p++) {
+-					float radius = particleData->GetParticlesRuntimeData().sizes[p] * 70.0f;
+-
+-					auto initialPosition = particleData->GetParticlesRuntimeData().positions[p];
+-					if (!particleSystem->GetParticleSystemRuntimeData().isWorldspace) {
+-						// Detect first-person meshes
+-						if ((particleLight.first->GetModelData().modelBound.radius * particleLight.first->world.scale) != particleLight.first->worldBound.radius)
+-							initialPosition += particleLight.first->worldBound.center;
+-						else
+-							initialPosition += particleLight.first->world.translate;
+-					}
++			if (!particleLight.billboard) {
++				auto particleSystem = static_cast<RE::NiParticleSystem*>(particleLight.node);
++				if (particleSystem && particleSystem->GetParticleRuntimeData().particleData.get()) {
++					// Process BSGeometry
++					auto particleData = particleSystem->GetParticleRuntimeData().particleData.get();
++
++					auto numVertices = particleData->GetActiveVertexCount();
++					for (std::uint32_t p = 0; p < numVertices; p++) {
++						float radius = particleData->GetParticlesRuntimeData().sizes[p] * 70.0f;
++
++						auto initialPosition = particleData->GetParticlesRuntimeData().positions[p];
++						if (!particleSystem->GetParticleSystemRuntimeData().isWorldspace) {
++							// Detect first-person meshes
++							if ((particleLight.node->GetModelData().modelBound.radius * particleLight.node->world.scale) != particleLight.node->worldBound.radius)
++								initialPosition += particleLight.node->worldBound.center;
++							else
++								initialPosition += particleLight.node->world.translate;
++						}
+ 
+-					RE::NiPoint3 positionWS = initialPosition - eyePositionCached[0];
++						RE::NiPoint3 positionWS = initialPosition - eyePositionCached[0];
+ 
+-					if (clusteredLights) {
+-						auto averageRadius = clusteredLight.radius / (float)clusteredLights;
+-						float radiusDiff = abs(averageRadius - radius);
++						if (clusteredLights) {
++							auto averageRadius = clusteredLight.radius / (float)clusteredLights;
++							float radiusDiff = abs(averageRadius - radius);
+ 
+-						auto averagePosition = clusteredLight.positionWS[0].data / (float)clusteredLights;
+-						float positionDiff = positionWS.GetDistance({ averagePosition.x, averagePosition.y, averagePosition.z });
++							auto averagePosition = clusteredLight.positionWS[0].data / (float)clusteredLights;
++							float positionDiff = positionWS.GetDistance({ averagePosition.x, averagePosition.y, averagePosition.z });
+ 
+-						if ((radiusDiff + positionDiff) > settings.ParticleLightsOptimisationClusterRadius || !settings.EnableParticleLightsOptimization) {
+-							clusteredLight.radius /= (float)clusteredLights;
+-							clusteredLight.positionWS[0].data /= (float)clusteredLights;
+-							clusteredLight.positionWS[1].data = clusteredLight.positionWS[0].data;
+-							if (eyeCount == 2) {
+-								clusteredLight.positionWS[1].data.x += eyePositionOffset.x / (float)clusteredLights;
+-								clusteredLight.positionWS[1].data.y += eyePositionOffset.y / (float)clusteredLights;
+-								clusteredLight.positionWS[1].data.z += eyePositionOffset.z / (float)clusteredLights;
+-							}
++							if ((radiusDiff + positionDiff) > 32.0f || !settings.EnableParticleLightsOptimization) {
++								clusteredLight.radius /= (float)clusteredLights;
++								clusteredLight.positionWS[0].data /= (float)clusteredLights;
++								clusteredLight.positionWS[1].data = clusteredLight.positionWS[0].data;
++								if (eyeCount == 2) {
++									clusteredLight.positionWS[1].data.x += eyePositionOffset.x / (float)clusteredLights;
++									clusteredLight.positionWS[1].data.y += eyePositionOffset.y / (float)clusteredLights;
++									clusteredLight.positionWS[1].data.z += eyePositionOffset.z / (float)clusteredLights;
++								}
++
++								clusteredLight.lightFlags.set(LightFlags::Simple);
++								clusteredLight.lightFlags.set(LightFlags::Particle);
+ 
+-							AddCachedParticleLights(lightsData, clusteredLight);
++								AddCachedParticleLights(lightsData, clusteredLight);
+ 
+-							clusteredLights = 0;
+-							clusteredLight.color = { 0, 0, 0 };
+-							clusteredLight.radius = 0;
+-							clusteredLight.positionWS[0].data = { 0, 0, 0 };
++								clusteredLights = 0;
++								clusteredLight.color = { 0, 0, 0 };
++								clusteredLight.radius = 0;
++								clusteredLight.positionWS[0].data = { 0, 0, 0 };
++							}
+ 						}
+-					}
+ 
+-					float alpha = particleLight.second.color.alpha * particleData->GetParticlesRuntimeData().color[p].alpha;
+-					float3 color;
+-					color.x = particleLight.second.color.red * particleData->GetParticlesRuntimeData().color[p].red;
+-					color.y = particleLight.second.color.green * particleData->GetParticlesRuntimeData().color[p].green;
+-					color.z = particleLight.second.color.blue * particleData->GetParticlesRuntimeData().color[p].blue;
+-					clusteredLight.color += Saturation(color, settings.ParticleLightsSaturation) * alpha * settings.ParticleBrightness;
++						float alpha = particleLight.color.alpha * particleData->GetParticlesRuntimeData().color[p].alpha;
++						float3 color;
++						color.x = particleLight.color.red * particleData->GetParticlesRuntimeData().color[p].red;
++						color.y = particleLight.color.green * particleData->GetParticlesRuntimeData().color[p].green;
++						color.z = particleLight.color.blue * particleData->GetParticlesRuntimeData().color[p].blue;
++						clusteredLight.color += Saturation(color, settings.ParticleLightsSaturation) * alpha * settings.ParticleBrightness;
+ 
+-					clusteredLight.radius += radius * settings.ParticleRadius * particleLight.second.config.radiusMult;
+-					clusteredLight.positionWS[0].data.x += positionWS.x;
+-					clusteredLight.positionWS[0].data.y += positionWS.y;
+-					clusteredLight.positionWS[0].data.z += positionWS.z;
++						clusteredLight.radius += radius * particleLight.color.alpha * settings.ParticleRadius;
++						clusteredLight.positionWS[0].data.x += positionWS.x;
++						clusteredLight.positionWS[0].data.y += positionWS.y;
++						clusteredLight.positionWS[0].data.z += positionWS.z;
+ 
+-					clusteredLights++;
++						clusteredLights++;
++					}
+ 				}
+-
+ 			} else {
+ 				// Process billboard
+ 				LightData light{};
+ 
+-				light.color.x = particleLight.second.color.red;
+-				light.color.y = particleLight.second.color.green;
+-				light.color.z = particleLight.second.color.blue;
++				light.color.x = particleLight.color.red;
++				light.color.y = particleLight.color.green;
++				light.color.z = particleLight.color.blue;
+ 
+ 				light.color = Saturation(light.color, settings.ParticleLightsSaturation);
+ 
+-				light.color *= particleLight.second.color.alpha * settings.BillboardBrightness;
+-				light.radius = particleLight.first->worldBound.radius * settings.BillboardRadius * particleLight.second.config.radiusMult;
++				light.color *= particleLight.color.alpha * settings.BillboardBrightness;
++				light.radius = particleLight.node->worldBound.radius * particleLight.color.alpha * settings.BillboardRadius;
+ 
+-				auto position = particleLight.first->world.translate;
++				auto position = particleLight.node->world.translate;
+ 
+ 				SetLightPosition(light, position);  // Light is complete for both eyes by now
+ 
++				light.lightFlags.set(LightFlags::Simple);
++				light.lightFlags.set(LightFlags::Billboard);
++
+ 				AddCachedParticleLights(lightsData, light);
+ 			}
+ 		}
+@@ -879,6 +935,8 @@ void LightLimitFix::UpdateLights()
+ 				clusteredLight.positionWS[1].data.y += eyePositionOffset.y / (float)clusteredLights;
+ 				clusteredLight.positionWS[1].data.z += eyePositionOffset.z / (float)clusteredLights;
+ 			}
++			clusteredLight.lightFlags.set(LightFlags::Simple);
++			clusteredLight.lightFlags.set(LightFlags::Particle);
+ 			AddCachedParticleLights(lightsData, clusteredLight);
+ 		}
+ 	}"
+doodlum/skyrim-community-shaders,702,78c89f4a069f8664a719f94d560806109fa47377,src/Features/LightLimitFix.h,modified,29,30,59,"@@ -29,6 +29,9 @@ struct LightLimitFix : Feature
+ 	{
+ 		PortalStrict = (1 << 0),
+ 		Shadow = (1 << 1),
++		Simple = (1 << 2),
++		Particle = (1 << 3),
++		Billboard = (1 << 4)
+ 	};
+ 
+ 	struct PositionOpt
+@@ -128,12 +131,25 @@ struct LightLimitFix : Feature
+ 
+ 	struct ParticleLightInfo
+ 	{
++		bool billboard;
++		RE::BSGeometry* node;
+ 		RE::NiColorA color;
+-		ParticleLights::Config& config;
+ 	};
+ 
+-	eastl::hash_map<RE::BSGeometry*, ParticleLightInfo> queuedParticleLights;
+-	eastl::hash_map<RE::BSGeometry*, ParticleLightInfo> particleLights;
++	struct ParticleLightReference
++	{
++		bool valid;
++		bool billboard;
++		ParticleLights::Config* config;
++		ParticleLights::GradientConfig* gradientConfig;
++		RE::NiColorA baseColor;
++	};
++
++	eastl::hash_map<RE::NiNode*, ParticleLightReference> particleLightsReferences;
++	eastl::vector<ParticleLightInfo> queuedParticleLights;
++	eastl::vector<ParticleLightInfo> particleLights;
++
++	void CleanupParticleLights(RE::NiNode* a_node);
+ 
+ 	RE::NiPoint3 eyePositionCached[2]{};
+ 	Matrix viewMatrixCached[2]{};
+@@ -176,16 +192,14 @@ struct LightLimitFix : Feature
+ 		float BillboardBrightness = 1.0f;
+ 		float BillboardRadius = 1.0f;
+ 		bool EnableParticleLightsOptimization = true;
+-		uint ParticleLightsOptimisationClusterRadius = 32;
+ 	};
+ 
+ 	uint clusterSize[3] = { 16 };
+ 
+ 	Settings settings;
+ 
+-	using ConfigPair = std::pair<ParticleLights::Config*, ParticleLights::GradientConfig*>;
+-	std::optional<ConfigPair> GetParticleLightConfigs(RE::BSRenderPass* a_pass);
+-	bool AddParticleLight(RE::BSRenderPass* a_pass, ConfigPair a_config);
++	ParticleLightReference GetParticleLightConfigs(RE::BSRenderPass* a_pass);
++	bool AddParticleLight(RE::BSRenderPass* a_pass, ParticleLightReference a_reference);
+ 	bool CheckParticleLights(RE::BSRenderPass* a_pass, uint32_t a_technique);
+ 
+ 	void BSLightingShader_SetupGeometry_Before(RE::BSRenderPass* a_pass);
+@@ -202,7 +216,6 @@ struct LightLimitFix : Feature
+ 
+ 	std::shared_mutex cachedParticleLightsMutex;
+ 	eastl::vector<CachedParticleLight> cachedParticleLights;
+-	std::uint32_t particleLightsDetectionHits = 0;
+ 
+ 	eastl::hash_map<RE::NiNode*, uint8_t> roomNodes;
+ 
+@@ -295,26 +308,12 @@ struct LightLimitFix : Feature
+ 			static inline REL::Relocation<decltype(thunk)> func;
+ 		};
+ 
+-		struct BSLightingShaderProperty_GetRenderPasses
++		struct NiNode_Destroy
+ 		{
+-			static RE::BSShaderProperty::RenderPassArray* thunk(RE::BSLightingShaderProperty* property, RE::BSGeometry* geometry, std::uint32_t renderFlags, RE::BSShaderAccumulator* accumulator)
++			static void thunk(RE::NiNode* This)
+ 			{
+-				auto renderPasses = func(property, geometry, renderFlags, accumulator);
+-				if (renderPasses == nullptr) {
+-					return renderPasses;
+-				}
+-
+-				auto currentPass = renderPasses->head;
+-				while (currentPass != nullptr) {
+-					if (currentPass->shader->shaderType == RE::BSShader::Type::Lighting) {
+-						constexpr uint32_t LightingTechniqueStart = 0x4800002D;
+-						// So that we always have shadow mask bound.
+-						currentPass->passEnum = ((currentPass->passEnum - LightingTechniqueStart) | static_cast<uint32_t>(SIE::ShaderCache::LightingShaderFlags::DefShadow)) + LightingTechniqueStart;
+-					}
+-					currentPass = currentPass->next;
+-				}
+-
+-				return renderPasses;
++				GetSingleton()->CleanupParticleLights(This);
++				func(This);
+ 			}
+ 			static inline REL::Relocation<decltype(thunk)> func;
+ 		};
+@@ -327,15 +326,15 @@ struct LightLimitFix : Feature
+ 
+ 			stl::write_thunk_call<AIProcess_CalculateLightValue_GetLuminance>(REL::RelocationID(38900, 39946).address() + REL::Relocate(0x1C9, 0x1D3));
+ 
+-			//stl::write_vfunc<0x2A, BSLightingShaderProperty_GetRenderPasses>(RE::VTABLE_BSLightingShaderProperty[0]);
+-
+ 			stl::write_vfunc<0x6, BSLightingShader_SetupGeometry>(RE::VTABLE_BSLightingShader[0]);
+ 			stl::write_vfunc<0x6, BSEffectShader_SetupGeometry>(RE::VTABLE_BSEffectShader[0]);
+ 			stl::write_vfunc<0x6, BSWaterShader_SetupGeometry>(RE::VTABLE_BSWaterShader[0]);
+ 
+-			logger::info(""[LLF] Installed hooks"");
+-
+ 			stl::write_thunk_call<BSLightingShader_SetupGeometry_GeometrySetupConstantPointLights>(REL::RelocationID(100565, 107300).address() + REL::Relocate(0x523, 0xB0E, 0x5fe));
++
++			stl::detour_thunk<NiNode_Destroy>(REL::RelocationID(68937, 70288));
++
++			logger::info(""[LLF] Installed hooks"");
+ 		}
+ 	};
+ "
+doodlum/skyrim-community-shaders,702,78c89f4a069f8664a719f94d560806109fa47377,src/XSEPlugin.cpp,modified,2,3,5,"@@ -1,6 +1,7 @@
+ #include ""Hooks.h""
+ 
+ #include ""Deferred.h""
++#include ""Feature.h""
+ #include ""FrameAnnotations.h""
+ #include ""Menu.h""
+ #include ""ShaderCache.h""
+@@ -9,9 +10,7 @@
+ #include ""Upscaling.h""
+ 
+ #include ""ENB/ENBSeriesAPI.h""
+-#include ""Features/ExtendedMaterials.h""
+-#include ""Features/LightLimitFIx/ParticleLights.h""
+-#include ""Features/LightLimitFix.h""
++
+ #define DLLEXPORT __declspec(dllexport)
+ 
+ std::list<std::string> errors;"

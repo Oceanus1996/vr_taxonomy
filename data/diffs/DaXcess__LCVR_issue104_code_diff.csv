@@ -1,0 +1,111 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+DaXcess/LCVR,104,e0ebcd76dcd05b77a1b536726fbf537480b0927f,Experiments/Experiments.cs,modified,36,13,49,"@@ -1,4 +1,6 @@
+-﻿using System.Linq;
++﻿using System.Collections.Generic;
++using System.Linq;
++using BepInEx.Logging;
+ using Unity.Netcode;
+ using UnityEngine;
+ 
+@@ -8,8 +10,16 @@ internal class Experiments
+     {
+         public static void RunExperiments()
+         {
+-            //SpawnShotgun();
+-            //SpawnJetpack();
++            // SpawnShotgun();
++            ShowMeTheMoney(10000);
++            // SpawnBuyableItem<JetpackItem>(""Jetpack"");
++            // SpawnBuyableItem<SprayPaintItem>(""Spray paint"");
++            SpawnBuyableItem<FlashlightItem>(""Flashlight"");
++            SpawnBuyableItem<FlashlightItem>(""Pro-flashlight"");
++            // SpawnBuyableItem<StunGrenadeItem>(""Stun grenade"");
++            SpawnBuyableItem<PatcherTool>(""Zap gun"");
++
++            SpawnNonBuyableItem([""Laser pointer""]);
+         }
+ 
+         private static void SpawnShotgun()
+@@ -24,20 +34,34 @@ private static void SpawnShotgun()
+             shotgun.shellsLoaded = 500;
+         }
+ 
+-        private static void SpawnJetpack()
++        // client side only
++        private static void ShowMeTheMoney(int amount)
+         {
+             var terminal = Object.FindObjectOfType<Terminal>();
+-            var jetpack = terminal.buyableItemsList.First((item) => item.itemName == ""Jetpack"");
+-
+-            SpawnObject<JetpackItem>(jetpack.spawnPrefab);
++            terminal.groupCredits = amount;
+         }
+ 
+-        private static void SpawnFlashlight()
++        private static void SpawnNonBuyableItem(List<string> @itemNames)
++        {
++            foreach (var item in StartOfRound.Instance.allItemsList.itemsList) 
++            {
++                Logger.LogInfo(""itemId:"" + item.itemId + ""-"" + item.itemName);
++                if (itemNames.Contains(item.itemName)) 
++                {
++                    SpawnObject<GrabbableObject>(item.spawnPrefab);
++                }
++            }
++        }
++        private static void SpawnBuyableItem<T>(string @itemName)
++            where T : GrabbableObject
+         {
+             var terminal = Object.FindObjectOfType<Terminal>();
+-            var flashlight = terminal.buyableItemsList.First((item) => item.itemName == ""Pro-flashlight"");
++            var i = terminal.buyableItemsList.First((item) => item.itemName == @itemName);
+ 
+-            SpawnObject<FlashlightItem>(flashlight.spawnPrefab);
++            if (i != null)
++            {
++                SpawnObject<T>(i.spawnPrefab);
++            }
+         }
+ 
+         private static T SpawnObject<T>(GameObject @object)
+@@ -49,9 +73,8 @@ private static T SpawnObject<T>(GameObject @object)
+             component.fallTime = 0f;
+             component.scrapValue = 10;
+ 
+-            var netComponent = gameObject.GetComponent<NetworkObject>();
+-            netComponent.Spawn(false);
+-
++            var netComponent = gameObject.GetComponent<NetworkObject>(); 
++            netComponent.Spawn(false); 
+             return component;
+         }
+     }"
+DaXcess/LCVR,104,e0ebcd76dcd05b77a1b536726fbf537480b0927f,UI/VRHUD.cs,modified,4,4,8,"@@ -183,7 +183,7 @@ public void Initialize(VRPlayer player)
+                 clock.transform.localScale = Vector3.one * 0.7f;
+             }
+ 
+-            // Battery: Attach to right hand
++            // Battery: Attach to right hand (next to knuckles)
+             var battery = GameObject.Find(""Batteries"");
+ 
+             if (Plugin.Config.DisableArmHUD.Value)
+@@ -202,8 +202,8 @@ public void Initialize(VRPlayer player)
+             else
+             {
+                 battery.transform.SetParent(rightHandCanvas.transform, false);
+-                battery.transform.localPosition = new Vector3(123, 60, -37);
+-                battery.transform.localRotation = Quaternion.Euler(356, 0, 229);
++                battery.transform.localPosition = new Vector3(12, 130, 40);
++                battery.transform.localRotation = Quaternion.Euler(0, 195, -35);
+                 battery.transform.localScale = Vector3.one * 2;
+ 
+                 battery.transform.Find(""BatteryIcon"").gameObject.SetActive(false);
+@@ -214,7 +214,7 @@ public void Initialize(VRPlayer player)
+             batteryMeter.localRotation = Quaternion.identity;
+             batteryMeter.localScale = Vector3.one;
+ 
+-            // Inventory: Attach to right hand
++            // Inventory: Attach to right hand (below knuckles)
+             var inventory = GameObject.Find(""Inventory"");
+ 
+             if (Plugin.Config.DisableArmHUD.Value)"

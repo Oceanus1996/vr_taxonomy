@@ -1,0 +1,94 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe,4743,41079d2aa6f9819423642e4cb94abd2b8531c187,docs/components/laser-controls.md,modified,1,1,2,"@@ -81,5 +81,5 @@ See [*Raycaster: Customizing the Line*][customize].
+ For example:
+ 
+ ```html
+-<a-entity laser-controls line=""color: red; opacity: 0.75""></a-entity>
++<a-entity laser-controls raycaster=""lineColor: red; lineOpacity: 0.5""></a-entity>
+ ```"
+aframevr/aframe,4743,41079d2aa6f9819423642e4cb94abd2b8531c187,docs/components/raycaster.md,modified,6,6,12,"@@ -14,7 +14,7 @@ examples: []
+ The raycaster component provides line-based intersection testing with a
+ [raycaster][wiki-raycasting]. Raycasting is the method of extending a line from
+ an origin towards a direction, and checking whether that line intersects with
+-other entites.
++other entities.
+ 
+ The raycaster component uses the [three.js raycaster][3ray]. The raycaster
+ checks for intersections at a certain interval against a list of objects, and
+@@ -65,8 +65,9 @@ AFRAME.registerComponent('collider-check', {
+ | enabled             | Whether raycaster is actively checking for intersections.                                                                                                                                                      | true          |
+ | far                 | Maximum distance under which resulting entities are returned. Cannot be lower than `near`.                                                                                                                     | Infinity      |
+ | interval            | Number of milliseconds to wait in between each intersection test. Lower number is better for faster updates. Higher number is better for performance. Intersection tests are performed at most once per frame. | 0             |
+-| lineColor             | Raycaster line color if showLine is enabled.                                                                                                                                                      | white          |
+-| near                | Minimum distance over which resuilting entities are returned. Cannot be lower than 0.                                                                                                                          | 0             |
++| lineColor           | Raycaster line color if showLine is enabled.                                                                                                                                                      | white          |
++| lineOpacity         | Raycaster line opacity if showLine is enabled.                                                                                                                                                      | white          |
++| near                | Minimum distance over which resulting entities are returned. Cannot be lower than 0.                                                                                                                          | 0             |
+ | objects             | Query selector to pick which objects to test for intersection. If not specified, all entities will be tested. Note that only objects attached via `.setObject3D` and their recursive children will be tested.                               | null          |
+ | origin              | Vector3 coordinate of where the ray should originate from relative to the entity's origin.                                                                                                                     | 0, 0, 0       |
+ | showLine            | Whether or not to display the raycaster visually with the [line component][line].                                                                                                                              | false         |
+@@ -205,11 +206,10 @@ mutations (e.g., some entity changes its `class`).
+ 
+ If `showLine` is set to `true`, the raycaster will configure the line given the
+ raycaster's `origin`, `direction`, and `far` properties. To customize the line
+-appearance provided by the `showLine: true` property, we configure the [line
+-component][line]:
++appearance provided by the `showLine: true` property, we can use the `lineColor` and `lineOpacity`:
+ 
+ ```html
+-<a-entity raycaster=""showLine: true; far: 100"" line=""color: orange; opacity: 0.5""></a-entity>
++<a-entity raycaster=""showLine: true; far: 100; lineColor: red; lineOpacity: 0.5""></a-entity>
+ ```
+ 
+ The line length is the raycaster's `far` property when the raycaster is not"
+aframevr/aframe,4743,41079d2aa6f9819423642e4cb94abd2b8531c187,src/components/raycaster.js,modified,4,2,6,"@@ -51,6 +51,7 @@ module.exports.Component = registerComponent('raycaster', {
+     origin: {type: 'vec3'},
+     showLine: {default: false},
+     lineColor: {default: 'white'},
++    lineOpacity: {default: 1},
+     useWorldCoordinates: {default: false}
+   },
+ 
+@@ -200,7 +201,7 @@ module.exports.Component = registerComponent('raycaster', {
+   },
+ 
+   /**
+-   * Raycast for intersections and emit events for current and cleared inersections.
++   * Raycast for intersections and emit events for current and cleared intersections.
+    */
+   checkIntersections: function () {
+     var clearedIntersectedEls = this.clearedIntersectedEls;
+@@ -378,6 +379,7 @@ module.exports.Component = registerComponent('raycaster', {
+     this.lineData.start = data.origin;
+     this.lineData.end = endVec3.copy(this.unitLineEndVec3).multiplyScalar(length);
+     this.lineData.color = data.lineColor;
++    this.lineData.opacity = data.lineOpacity;
+     el.setAttribute('line', this.lineData);
+   },
+ 
+@@ -386,7 +388,7 @@ module.exports.Component = registerComponent('raycaster', {
+    * Children are flattened by one level, removing the THREE.Group wrapper,
+    * so that non-recursive raycasting remains useful.
+    *
+-   * Only push children defined as component attachemnts (e.g., setObject3D),
++   * Only push children defined as component attachements (e.g., setObject3D),
+    * NOT actual children in the scene graph hierarchy.
+    *
+    * @param  {Array<Element>} els"
+aframevr/aframe,4743,41079d2aa6f9819423642e4cb94abd2b8531c187,tests/components/laser-controls.test.js,modified,5,3,8,"@@ -59,11 +59,13 @@ suite('laser-controls', function () {
+       });
+     });
+ 
+-    test('respects set line color', function (done) {
+-      el.setAttribute('line', 'color', 'white');
++    test('respects set line color and opacity', function (done) {
++      el.setAttribute('raycaster', 'lineColor', 'red');
++      el.setAttribute('raycaster', 'lineOpacity', '0.5');
+       el.emit('controllerconnected', {name: 'daydream-controls'});
+       setTimeout(() => {
+-        assert.equal(el.getAttribute('line').color, 'white');
++        assert.equal(el.getAttribute('raycaster').lineColor, 'red');
++        assert.equal(el.getAttribute('raycaster').lineOpacity, '0.5');
+         done();
+       });
+     });"

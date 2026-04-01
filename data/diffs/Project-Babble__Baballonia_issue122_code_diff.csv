@@ -1,0 +1,79 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+Project-Babble/Baballonia,122,e211c6fbd5d70b210687841df2424c99eb56c12d,src/Baballonia/ViewModels/SplitViewPane/HomePageViewModel.cs,modified,11,13,24,"@@ -92,11 +92,10 @@ private async Task InitializeAsync(string[] cameras)
+                 OverlayRectangle = CropManager.CropZone.GetRect();
+                 OnCropUpdated();
+ 
+-                IsInitialized.SetResult();
+                 switch (_processingPipeline.VideoSource)
+                 {
+                     case null:
+-                        return;
++                        break;
+                     case SingleCameraSource singleCamera:
+                         IsCameraRunning = true;
+                         StartButtonEnabled = false;
+@@ -107,17 +106,16 @@ private async Task InitializeAsync(string[] cameras)
+                         {
+                             case Camera.Left when dualCamera.LeftCam == null:
+                             case Camera.Right when dualCamera.RightCam == null:
+-                                return;
++                                break;
+                             default:
+                                 IsCameraRunning = true;
+                                 StartButtonEnabled = false;
+                                 StopButtonEnabled = true;
+                                 break;
+                         }
+-
+                         break;
+                 }
+-
++                IsInitialized.SetResult();
+             }, DispatcherPriority.Background);
+         }
+ 
+@@ -257,11 +255,6 @@ void UpdateBitmap(Mat image)
+             Bitmap = tmp;
+         }
+ 
+-        partial void OnBitmapChanged(WriteableBitmap? value)
+-        {
+-            // IsCameraRunning = value != null;
+-        }
+-
+         partial void OnFlipHorizontallyChanged(bool value)
+         {
+             var t = _processingPipeline.ImageTransformer;
+@@ -473,10 +466,13 @@ await Dispatcher.UIThread.InvokeAsync(() =>
+ 
+             await CamerasInitialized.Task;
+             await LeftCamera.IsInitialized.Task;
+-            await StartCameraAsync(LeftCamera);
++            if (!LeftCamera.IsCameraRunning)
++                await StartCameraAsync(LeftCamera);
+             await RightCamera.IsInitialized.Task;
+-            await StartCameraAsync(RightCamera);
+-            await FaceCamera.IsInitialized.Task;
++            if (!RightCamera.IsCameraRunning)
++                await StartCameraAsync(RightCamera);
++            if (!FaceCamera.IsCameraRunning)
++                await FaceCamera.IsInitialized.Task;
+             await StartCameraAsync(FaceCamera);
+         });
+ 
+@@ -540,6 +536,7 @@ private void PipelineExceptionEventHandler(Exception ex)
+                 if (testFrame != null)
+                     return cameraSource;
+             }
++
+             _logger.LogError(""No data was received from {}, closing..."", address);
+             cameraSource.Dispose();
+             return null;
+@@ -590,6 +587,7 @@ public void StopCamera(CameraControllerModel model)
+ 
+ 
+     private SemaphoreSlim _cameraStartLock = new(1, 1);
++
+     [RelayCommand(AllowConcurrentExecutions = true)]
+     public async Task StartCamera(CameraControllerModel model)
+     {"

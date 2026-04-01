@@ -1,0 +1,53 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/a-painter,135,9bf991e,index.html,modified,1,1,2,"@@ -27,7 +27,7 @@
+       <a-light type=""point"" light=""color: #fff; intensity:0.6"" position=""3 10 1""></a-light>
+       <a-light type=""point"" light=""color: #fff; intensity:0.2"" position=""-3 -10 0""></a-light>
+       <a-light type=""hemisphere"" groundColor=""#888"" intensity=""0.8""></a-light>
+-      <a-entity id=""logo"" obj-model=""obj: #logoobj; mtl: #logomtl"">
++      <a-entity id=""logo"" material=""side: double;"" obj-model=""obj: #logoobj; mtl: #logomtl"" obj-model-material-modifier=""side: double"">
+         <a-animation begin=""fadeout"" attribute=""material.opacity"" fill=""none"" from=""1"" to=""0"" dur=""3000""></a-animation>
+       </a-entity>
+       <a-entity id=""left-hand"""
+aframevr/a-painter,135,9bf991e,src/components/obj-model-material-modifier.js,added,34,0,34,"@@ -0,0 +1,34 @@
++/* globals AFRAME THREE */
++
++// Allow modifying the materials returned from obj-model loader .mtl files.
++// We can add any ThreeJS.Material specific options that .mtl doesn't support.
++AFRAME.registerComponent('obj-model-material-modifier', {
++  schema: {
++    side: {type: 'string'}
++  },
++
++  init: function () {
++    var that = this;
++    var el = this.el;
++    var side = this.sideToThreeSide(this.data.side)
++    if (!side) {
++      console.warn(""No options present on obj-model-material-modifier"");
++      return;
++    }
++    this.el.addEventListener('model-loaded', function(e) {
++      el.object3D.traverse(function (o) {
++        if (o instanceof THREE.Mesh) {
++          o.material.side = side
++        }
++      });
++    })
++  },
++  
++  sideToThreeSide: function(side) {
++    return {
++      ""double"": THREE.DoubleSide,
++      ""front"": THREE.FrontSide,
++      ""back"": THREE.BackSide
++    }[side];
++  }
++});"
+aframevr/a-painter,135,9bf991e,src/index.js,modified,1,0,1,"@@ -13,6 +13,7 @@ require('./components/if-no-vr-headset.js');
+ require('./components/json-model.js');
+ require('./components/line.js');
+ require('./components/look-controls-alt.js');
++require('./components/obj-model-material-modifier.js');
+ require('./components/orbit-controls.js');
+ require('./components/paint-controls.js');
+ require('./components/ui.js');"

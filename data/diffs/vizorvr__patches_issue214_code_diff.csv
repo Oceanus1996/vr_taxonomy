@@ -1,0 +1,224 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vizorvr/patches,214,cf0288c,browser/scripts/application.js,modified,29,0,29,"@@ -2026,6 +2026,35 @@ Application.prototype.start = function() {
+ 
+ 	E2.app.player.play() // autoplay
+ 	E2.app.changeControlState()
++
++	E2.app.showFirstTimeDialog()
++}
++
++Application.prototype.showFirstTimeDialog = function() {
++	if (!!Cookies.get('vizor'))
++		return;
++
++	Cookies.set('vizor', { seen: 1 })
++
++	var diag = bootbox.dialog({
++		title: '<h3>First time here?</h3>',
++		message: '<h4>Check out our '+
++			'<a href=""https://www.youtube.com/channel/UClYzX_mug6rxkCqlAKdDJFQ"">Youtube tutorials</a> '+
++			'or<br>'+
++			'drop by <a href=""http://slack.com/"">our public Slack</a> and say hello. </h4>',
++		onEscape: true,
++		html: true,
++		buttons: { Ok: function() {}}
++	})
++
++	diag.find('.modal-dialog').addClass('modal-sm')
++	diag.css({
++		top: '50%',
++		'margin-top': function () {
++			return -(diag.height() / 2);
++		}
++	});
++
+ }
+ 
+ /**"
+vizorvr/patches,214,cf0288c,browser/style/less.css,modified,28,37,65,"@@ -6899,38 +6899,8 @@ table {
+   cursor: no-drop !important;
+   pointer-events: none;
+ }
+-.remote-mouse-pointer {
+-  position: absolute;
+-  background-color: #fff;
+-  border-radius: 7px;
+-  z-index: 99;
+-  width: 14px;
+-  height: 14px;
+-  margin: -7px 0 0 -7px;
+-  pointer-events: none;
+-  transition: all 0.05s ease-out;
+-  opacity: 0.75;
+-}
+-.remote-mouse-pointer.inactive {
+-  opacity: 0.25;
+-  transition: all 1s ease-in-out;
+-}
+-.remote-mouse-pointer.outside {
+-  opacity: 0.5 !important;
+-  width: 24px;
+-  height: 24px;
+-  margin-left: -12px;
+-  margin-top: -12px;
+-  border-radius: 16px;
+-  -webkit-filter: blur(6px);
+-  -moz-filter: blur(6px);
+-  -o-filter: blur(6px);
+-  -ms-filter: blur(6px);
+-  filter: blur(6px);
+-}
+-.remote-mouse-pointer.clicked {
+-  transform: scale(2);
+-  opacity: 1.0;
++.bootbox-body h4 {
++  line-height: 2;
+ }
+ html,
+ body {
+@@ -7316,14 +7286,35 @@ li.active,
+ .remote-mouse-pointer {
+   position: absolute;
+   background-color: #fff;
+-  border-radius: 6px;
++  border-radius: 7px;
+   z-index: 99;
+-  width: 10px;
+-  height: 10px;
+-  transition: all 0.1s ease-in-out;
++  width: 14px;
++  height: 14px;
++  margin: -7px 0 0 -7px;
++  pointer-events: none;
++  transition: all 0.05s ease-out;
++  opacity: 0.75;
++}
++.remote-mouse-pointer.inactive {
++  opacity: 0.25;
++  transition: all 1s ease-in-out;
++}
++.remote-mouse-pointer.outside {
++  opacity: 0.5 !important;
++  width: 24px;
++  height: 24px;
++  margin-left: -12px;
++  margin-top: -12px;
++  border-radius: 16px;
++  -webkit-filter: blur(6px);
++  -moz-filter: blur(6px);
++  -o-filter: blur(6px);
++  -ms-filter: blur(6px);
++  filter: blur(6px);
+ }
+ .remote-mouse-pointer.clicked {
+-  transform: scale(3);
++  transform: scale(2);
++  opacity: 1.0;
+ }
+ .peopleList li button {
+   width: 100%;"
+vizorvr/patches,214,cf0288c,browser/vendor/js.cookie.min.js,added,9,0,9,"@@ -0,0 +1,9 @@
++/*!
++ * JavaScript Cookie v2.0.3
++ * https://github.com/js-cookie/js-cookie
++ *
++ * Copyright 2006, 2015 Klaus Hartl & Fagner Brack
++ * Released under the MIT license
++ */
++
++!function(a){if(""function""==typeof define&&define.amd)define(a);else if(""object""==typeof exports)module.exports=a();else{var b=window.Cookies,c=window.Cookies=a(window.jQuery);c.noConflict=function(){return window.Cookies=b,c}}}(function(){function a(){for(var a=0,b={};a<arguments.length;a++){var c=arguments[a];for(var d in c)b[d]=c[d]}return b}function b(c){function d(b,e,f){var g;if(arguments.length>1){if(f=a({path:""/""},d.defaults,f),""number""==typeof f.expires){var h=new Date;h.setMilliseconds(h.getMilliseconds()+864e5*f.expires),f.expires=h}try{g=JSON.stringify(e),/^[\{\[]/.test(g)&&(e=g)}catch(i){}return e=encodeURIComponent(String(e)),e=e.replace(/%(23|24|26|2B|3A|3C|3E|3D|2F|3F|40|5B|5D|5E|60|7B|7D|7C)/g,decodeURIComponent),b=encodeURIComponent(String(b)),b=b.replace(/%(23|24|26|2B|5E|60|7C)/g,decodeURIComponent),b=b.replace(/[\(\)]/g,escape),document.cookie=[b,""="",e,f.expires&&""; expires=""+f.expires.toUTCString(),f.path&&""; path=""+f.path,f.domain&&""; domain=""+f.domain,f.secure?""; secure"":""""].join("""")}b||(g={});for(var j=document.cookie?document.cookie.split(""; ""):[],k=/(%[0-9A-Z]{2})+/g,l=0;l<j.length;l++){var m=j[l].split(""=""),n=m[0].replace(k,decodeURIComponent),o=m.slice(1).join(""="");'""'===o.charAt(0)&&(o=o.slice(1,-1));try{if(o=c&&c(o,n)||o.replace(k,decodeURIComponent),this.json)try{o=JSON.parse(o)}catch(i){}if(b===n){g=o;break}b||(g[n]=o)}catch(i){}}return g}return d.get=d.set=d,d.getJSON=function(){return d.apply({json:!0},[].slice.call(arguments))},d.defaults={},d.remove=function(b,c){d(b,"""",a(c,{expires:-1}))},d.withConverter=b,d}return b()});"
+vizorvr/patches,214,cf0288c,less/core.less,modified,2,35,37,"@@ -552,39 +552,6 @@ table
+ 	pointer-events: none;
+ }
+ 
+-.remote-mouse-pointer {
+-	position: absolute;
+-	background-color: #fff;
+-	border-radius: 7px;
+-	z-index: 99;
+-	width: 14px;
+-	height: 14px;
+-	margin: -7px 0 0 -7px;
+-	pointer-events: none;
+-	transition: all .05s ease-out;
+-	opacity: 0.75;
+-}
+-
+-.remote-mouse-pointer.inactive {
+-	opacity: 0.25;
+-	transition: all 1s ease-in-out;
+-}
+-
+-.remote-mouse-pointer.outside {
+-	opacity: 0.5 !important;
+-	width: 24px;
+-	height: 24px;
+-	margin-left: -12px;
+-	margin-top: -12px;
+-	border-radius: 16px;
+-	-webkit-filter: blur(6px);
+-	-moz-filter: blur(6px);
+-	-o-filter: blur(6px);
+-	-ms-filter: blur(6px);
+-	filter: blur(6px);
+-}
+-
+-.remote-mouse-pointer.clicked {
+-	transform: scale(2.0);
+-	opacity: 1.0;
++.bootbox-body h4 {
++	line-height: 2;
+ }"
+vizorvr/patches,214,cf0288c,less/people.less,modified,27,5,32,"@@ -2,16 +2,38 @@
+ .remote-mouse-pointer {
+ 	position: absolute;
+ 	background-color: #fff;
+-	border-radius: 6px;
++	border-radius: 7px;
+ 	z-index: 99;
+-	width: 10px;
+-	height: 10px;
++	width: 14px;
++	height: 14px;
++	margin: -7px 0 0 -7px;
++	pointer-events: none;
++	transition: all .05s ease-out;
++	opacity: 0.75;
++}
++
++.remote-mouse-pointer.inactive {
++	opacity: 0.25;
++	transition: all 1s ease-in-out;
++}
+ 
+-	transition: all .1s ease-in-out;
++.remote-mouse-pointer.outside {
++	opacity: 0.5 !important;
++	width: 24px;
++	height: 24px;
++	margin-left: -12px;
++	margin-top: -12px;
++	border-radius: 16px;
++	-webkit-filter: blur(6px);
++	-moz-filter: blur(6px);
++	-o-filter: blur(6px);
++	-ms-filter: blur(6px);
++	filter: blur(6px);
+ }
+ 
+ .remote-mouse-pointer.clicked {
+-	transform: scale(3.0);
++	transform: scale(2.0);
++	opacity: 1.0;
+ }
+ 
+ .peopleList li button {"
+vizorvr/patches,214,cf0288c,views/layouts/spa.handlebars,modified,2,0,2,"@@ -19,6 +19,8 @@
+     <script type=""text/javascript"" src=""/vendor/jquery.mousewheel.js""></script>
+     <script type=""text/javascript"" src=""/vendor/bootstrap-3.1.1-dist/js/bootstrap.min.js""></script>
+ 
++    <script type=""text/javascript"" src=""/vendor/js.cookie.min.js""></script>
++
+     <script type=""text/javascript"" src=""/vendor/bootbox.min.js""></script>
+     <script type=""text/javascript"" src=""/node_modules/backbone/backbone-min.js""></script>
+ "

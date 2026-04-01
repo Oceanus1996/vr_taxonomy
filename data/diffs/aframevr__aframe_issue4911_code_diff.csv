@@ -1,0 +1,100 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe,4911,0dd84abe8fd25367d87da207ed9e4bbcd6f9d92d,src/core/scene/a-scene.js,modified,43,25,68,"@@ -804,10 +804,46 @@ module.exports.AScene = registerElement('a-scene', {
+   })
+ });
+ 
++/**
++ * Return size constrained to maxSize - maintaining aspect ratio.
++ *
++ * @param {object} size - size parameters (width and height).
++ * @param {object} maxSize - Max size parameters (width and height).
++ * @returns {object} Width and height.
++ */
++function constrainSizeTo (size, maxSize) {
++  var aspectRatio;
++  var pixelRatio = window.devicePixelRatio;
++
++  if (!maxSize || (maxSize.width === -1 && maxSize.height === -1)) {
++    return size;
++  }
++
++  if (size.width * pixelRatio < maxSize.width &&
++    size.height * pixelRatio < maxSize.height) {
++    return size;
++  }
++
++  aspectRatio = size.width / size.height;
++
++  if ((size.width * pixelRatio) > maxSize.width && maxSize.width !== -1) {
++    size.width = Math.round(maxSize.width / pixelRatio);
++    size.height = Math.round(maxSize.width / aspectRatio / pixelRatio);
++  }
++
++  if ((size.height * pixelRatio) > maxSize.height && maxSize.height !== -1) {
++    size.height = Math.round(maxSize.height / pixelRatio);
++    size.width = Math.round(maxSize.height * aspectRatio / pixelRatio);
++  }
++
++  return size;
++}
++
+ /**
+  * Return the canvas size where the scene will be rendered.
+  * Will be always the window size except when the scene is embedded.
+- * The parent size (less than max size) will be returned in that case.
++ * The parent size will be returned in that case.
++ * the returned size will be constrained to the maxSize maintaining aspect ratio.
+  *
+  * @param {object} canvasEl - the canvas element
+  * @param {boolean} embedded - Is the scene embedded?
+@@ -817,10 +853,12 @@ module.exports.AScene = registerElement('a-scene', {
+ function getCanvasSize (canvasEl, embedded, maxSize, isVR) {
+   if (!canvasEl.parentElement) { return {height: 0, width: 0}; }
+   if (embedded) {
+-    return {
++    var size;
++    size = {
+       height: canvasEl.parentElement.offsetHeight,
+       width: canvasEl.parentElement.offsetWidth
+     };
++    return constrainSizeTo(size, maxSize);
+   }
+   return getMaxSize(maxSize, isVR);
+ }
+@@ -835,33 +873,13 @@ function getCanvasSize (canvasEl, embedded, maxSize, isVR) {
+  * @returns {object} Width and height.
+  */
+ function getMaxSize (maxSize, isVR) {
+-  var aspectRatio;
+   var size;
+-  var pixelRatio = window.devicePixelRatio;
+-
+   size = {height: document.body.offsetHeight, width: document.body.offsetWidth};
+-  if (!maxSize || isVR || (maxSize.width === -1 && maxSize.height === -1)) {
++  if (isVR) {
+     return size;
++  } else {
++    return constrainSizeTo(size, maxSize);
+   }
+-
+-  if (size.width * pixelRatio < maxSize.width &&
+-    size.height * pixelRatio < maxSize.height) {
+-    return size;
+-  }
+-
+-  aspectRatio = size.width / size.height;
+-
+-  if ((size.width * pixelRatio) > maxSize.width && maxSize.width !== -1) {
+-    size.width = Math.round(maxSize.width / pixelRatio);
+-    size.height = Math.round(maxSize.width / aspectRatio / pixelRatio);
+-  }
+-
+-  if ((size.height * pixelRatio) > maxSize.height && maxSize.height !== -1) {
+-    size.height = Math.round(maxSize.height / pixelRatio);
+-    size.width = Math.round(maxSize.height * aspectRatio / pixelRatio);
+-  }
+-
+-  return size;
+ }
+ 
+ function requestFullscreen (canvas) {"

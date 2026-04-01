@@ -1,0 +1,492 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vircadia/vircadia-native-core,302,90efffa,interface/resources/qml/controlsUit/ComboBox.qml,modified,2,2,4,"@@ -50,8 +50,8 @@ FocusScope {
+ 
+         function previousItem() { root.currentHighLightedIndex = (root.currentHighLightedIndex + comboBox.count - 1) % comboBox.count; }
+         function nextItem() { root.currentHighLightedIndex = (root.currentHighLightedIndex + comboBox.count + 1) % comboBox.count; }
+-        function selectCurrentItem() { root.currentIndex = root.currentHighLightedIndex; close(); /*hideList();*/ }
+-        function selectSpecificItem(index) { root.currentIndex = index; close();/*hideList();*/ }
++        function selectCurrentItem() { root.currentIndex = root.currentHighLightedIndex; /*hideList();*/ }
++        function selectSpecificItem(index) { root.currentIndex = index; /*hideList();*/ }
+ 
+         Keys.onUpPressed: previousItem();
+         Keys.onDownPressed: nextItem();"
+vircadia/vircadia-native-core,302,90efffa,interface/resources/qml/hifi/dialogs/graphics/GraphicsSettings.qml,modified,112,12,124,"@@ -155,7 +155,7 @@ Item {
+                             text: ""Full World Detail""
+                         }
+                     }
+-                
++
+                     HifiControlsUit.ComboBox {
+                         id: worldDetailDropdown
+                         enabled: performanceCustom.checked
+@@ -175,7 +175,7 @@ Item {
+                         Component.onCompleted: {
+                             worldDetailDropdown.refreshWorldDetailDropdown();
+                         }
+-                        
++
+                         onCurrentIndexChanged: {
+                             LODManager.worldDetailQuality = currentIndex;
+                             worldDetailDropdown.displayText = model.get(currentIndex).text;
+@@ -337,7 +337,7 @@ Item {
+                             refreshRatePreset: 2 // RefreshRateProfile::REALTIME
+                         }
+                     }
+-                
++
+                     HifiControlsUit.ComboBox {
+                         id: refreshRateDropdown
+                         enabled: performanceCustom.checked
+@@ -363,7 +363,7 @@ Item {
+                         Component.onCompleted: {
+                             refreshRateDropdown.refreshRefreshRateDropdownDisplay();
+                         }
+-                        
++
+                         onCurrentIndexChanged: {
+                             Performance.setRefreshRateProfile(model.get(currentIndex).refreshRatePreset);
+                             refreshRateDropdown.displayText = model.get(currentIndex).text;
+@@ -386,14 +386,14 @@ Item {
+                         size: 16
+                         color: ""#FFFFFF""
+                     }
+-                
++
+                     HifiControlsUit.Slider {
+                         id: resolutionScaleSlider
+                         enabled: performanceCustom.checked
+                         anchors.left: resolutionHeader.right
+                         anchors.leftMargin: 57
+                         anchors.top: parent.top
+-                        width: 150 
++                        width: 150
+                         height: parent.height
+                         colorScheme: hifi.colorSchemes.dark
+                         minimumValue: 0.25
+@@ -424,11 +424,11 @@ Item {
+                 Layout.topMargin: 20
+                 Layout.preferredWidth: parent.width
+                 spacing: 0
+-    
++
+                 Item {
+                     Layout.preferredWidth: parent.width
+                     Layout.preferredHeight: 35
+-    
++
+                     HifiStylesUit.RalewayRegular {
+                         id: antialiasingHeader
+                         text: ""Anti-aliasing""
+@@ -454,7 +454,7 @@ Item {
+                             text: ""FXAA""
+                         }
+                     }
+-    
++
+                     HifiControlsUit.ComboBox {
+                         id: antialiasingDropdown
+                         anchors.left: antialiasingHeader.right
+@@ -465,22 +465,122 @@ Item {
+                         colorScheme: hifi.colorSchemes.dark
+                         model: antialiasingModel
+                         currentIndex: -1
+-    
++
+                         function refreshAntialiasingDropdown() {
+                             antialiasingDropdown.currentIndex = Render.antialiasingMode;
+                         }
+-    
++
+                         Component.onCompleted: {
+                             antialiasingDropdown.refreshAntialiasingDropdown();
+                         }
+-    
++
+                         onCurrentIndexChanged: {
+                             Render.antialiasingMode = currentIndex;
+                             antialiasingDropdown.displayText = model.get(currentIndex).text;
+                         }
+                     }
+                 }
+             }
++
++            ColumnLayout {
++                Layout.topMargin: 20
++                Layout.preferredWidth: parent.width
++                spacing: 0
++
++                Item {
++                    Layout.preferredWidth: parent.width
++                    Layout.preferredHeight: 35
++
++                    HifiStylesUit.RalewayRegular {
++                        id: fullScreenDisplayHeader
++                        text: ""Full screen display""
++                        anchors.left: parent.left
++                        anchors.top: parent.top
++                        width: 130
++                        height: parent.height
++                        size: 16
++                        color: ""#FFFFFF""
++                    }
++
++                    ListModel {
++                        id: fullScreenDisplayModel
++
++                        ListElement {
++                            text: ""Screen 1""
++                        }
++
++                        function refreshScreens() {
++                            fullScreenDisplayModel.clear();
++                            Render.getScreens().forEach(function(screen) {
++                                fullScreenDisplayModel.append({""text"" : screen});
++                            });
++                        }
++
++                        Component.onCompleted: {
++                            fullScreenDisplayModel.refreshScreens();
++                        }
++                    }
++
++                    HifiControlsUit.ComboBox {
++                        id: fullScreenDisplayDropdown
++                        anchors.left: fullScreenDisplayHeader.right
++                        anchors.leftMargin: 20
++                        anchors.top: parent.top
++                        width: 280
++                        height: parent.height
++                        colorScheme: hifi.colorSchemes.dark
++                        model: fullScreenDisplayModel
++                        currentIndex: 0
++
++                        function refreshFullScreenDisplayDropdown() {
++                            var screens = Render.getScreens();
++                            var selected = Render.getFullScreenScreen();
++
++                            for(let idx = 0; idx < screens.length; idx++) {
++                                if (screens[idx] == selected) {
++                                    fullScreenDisplayDropdown.currentIndex = idx;
++                                    return;
++                                }
++                            }
++
++                            console.log(""Selected full screen screen"", selected, ""not found, falling back to primary screen"");
++                            console.log(""List of screens is:"", screens);
++                            fullScreenDisplayDropdown.currentIndex = 0;
++                        }
++
++                        Component.onCompleted: {
++                            model.refreshScreens();
++                            fullScreenDisplayDropdown.refreshFullScreenDisplayDropdown();
++                            fullScreenDisplayDropdown.displayText = model.get(currentIndex).text;
++                        }
++
++                        onCurrentIndexChanged: {
++                            if (currentIndex >= 0) {
++                                // Somehow, we end up going through here twice on every change of the combo box.
++                                // The first one is with the new selected index, and the second one is with the
++                                // index at -1.
++                                //
++                                // The first one comes from a sensible stack of:
++                                //     onCurrentIndexChanged (qrc:/qml/hifi/dialogs/graphics/GraphicsSettings.qml:559)
++                                //     refreshScreens (qrc:/qml/hifi/dialogs/graphics/GraphicsSettings.qml:514)
++                                //     onCompleted (qrc:/qml/hifi/dialogs/graphics/GraphicsSettings.qml:553)
++                                //     load (qrc:/qml/hifi/tablet/WindowRoot.qml:170)
++                                //     loadSource (qrc:/qml/hifi/tablet/WindowRoot.qml:63)
++                                //
++                                // The second seems to be called out of nowhere. This likely indicates some sort of bug.
++                                // Might be related to Wayland?
++
++                                Render.setFullScreenScreen(model.get(currentIndex).text);
++                                fullScreenDisplayDropdown.displayText = model.get(currentIndex).text;
++                            } else {
++                                console.log(""Called with currentIndex ="", currentIndex);
++                                console.trace();
++                            }
++                        }
++                    }
++                }
++            }
++
+         }
+     }
+ "
+vircadia/vircadia-native-core,302,90efffa,interface/src/scripting/RenderScriptingInterface.cpp,modified,48,0,48,"@@ -8,6 +8,8 @@
+ #include ""RenderScriptingInterface.h""
+ 
+ #include ""LightingModel.h""
++#include <QScreen>
++#include ""ScreenName.h""
+ 
+ 
+ RenderScriptingInterface* RenderScriptingInterface::getInstance() {
+@@ -23,6 +25,7 @@ RenderScriptingInterface::RenderScriptingInterface() {
+     });
+ }
+ 
++
+ void RenderScriptingInterface::loadSettings() {
+     _renderSettingLock.withReadLock([&] {
+         _renderMethod = (_renderMethodSetting.get());
+@@ -31,7 +34,17 @@ void RenderScriptingInterface::loadSettings() {
+         //_antialiasingMode = (_antialiasingModeSetting.get());
+         _antialiasingMode = static_cast<AntialiasingConfig::Mode>(_antialiasingModeSetting.get());
+         _viewportResolutionScale = (_viewportResolutionScaleSetting.get());
++        _fullScreenScreen = (_fullScreenScreenSetting.get());
+     });
++
++    // If full screen screen is not initialized, or set to an invalid value,
++    // set to the first screen.
++    auto screens = getScreens();
++    if (std::find(screens.begin(), screens.end(), _fullScreenScreen) == screens.end()) {
++        setFullScreenScreen(screens.first());
++    }
++
++
+     forceRenderMethod((RenderMethod)_renderMethod);
+     forceShadowsEnabled(_shadowsEnabled);
+     forceAmbientOcclusionEnabled(_ambientOcclusionEnabled);
+@@ -193,6 +206,41 @@ void RenderScriptingInterface::setViewportResolutionScale(float scale) {
+     }
+ }
+ 
++QStringList RenderScriptingInterface::getScreens() const {
++    QStringList screens;
++
++    for(QScreen *screen : qApp->screens()) {
++        screens << ScreenName::getNameForScreen(screen);
++    }
++
++    return screens;
++}
++
++bool RenderScriptingInterface::setFullScreenScreen(QString name) {
++    auto screens = getScreens();
++
++    if (std::find(screens.begin(), screens.end(), name) == screens.end()) {
++        // Screens can come and go and don't have a stable opaque ID, so we
++        // go by model here. For multiple screens with the same model we get names
++        // that include a serial number, so it works.
++        return false;
++    }
++
++    _renderSettingLock.withWriteLock([&] {
++        _fullScreenScreen = name;
++        _fullScreenScreenSetting.set(name);
++    });
++
++    emit settingsChanged();
++
++    return true;
++}
++
++QString RenderScriptingInterface::getFullScreenScreen() const {
++    return _fullScreenScreen;
++}
++
++
+ void RenderScriptingInterface::forceViewportResolutionScale(float scale) {
+     // just not negative values or zero
+     if (scale <= 0.f) {"
+vircadia/vircadia-native-core,302,90efffa,interface/src/scripting/RenderScriptingInterface.h,modified,33,5,38,"@@ -14,7 +14,7 @@
+ 
+ #include ""RenderForward.h""
+ #include ""AntialiasingEffect.h""
+-
++#include <QScreen>
+ 
+ /*@jsdoc
+  * The <code>Render</code> API enables you to configure the graphics engine.
+@@ -27,7 +27,7 @@
+  *
+  * @property {Render.RenderMethod} renderMethod - The render method being used.
+  * @property {boolean} shadowsEnabled - <code>true</code> if shadows are enabled, <code>false</code> if they're disabled.
+- * @property {boolean} ambientOcclusionEnabled - <code>true</code> if ambient occlusion is enabled, <code>false</code> if it's 
++ * @property {boolean} ambientOcclusionEnabled - <code>true</code> if ambient occlusion is enabled, <code>false</code> if it's
+  *     disabled.
+  * @property {integer} antialiasingMode - The active anti-aliasing mode.
+  * @property {number} viewportResolutionScale - The view port resolution scale, <code>&gt; 0.0</code>.
+@@ -52,9 +52,9 @@ class RenderScriptingInterface : public QObject {
+      *     <tr><th>Value</th><th>Name</th><th>Description</th>
+      *   </thead>
+      *   <tbody>
+-     *     <tr><td><code>0</code></td><td>DEFERRED</td><td>More complex rendering pipeline where lighting is applied to the 
++     *     <tr><td><code>0</code></td><td>DEFERRED</td><td>More complex rendering pipeline where lighting is applied to the
+      *       scene as a whole after all objects have been rendered.</td></tr>
+-     *     <tr><td><code>1</code></td><td>FORWARD</td><td>Simpler rendering pipeline where each object in the scene, in turn, 
++     *     <tr><td><code>1</code></td><td>FORWARD</td><td>Simpler rendering pipeline where each object in the scene, in turn,
+      *       is rendered and has lighting applied.</td></tr>
+      *   </tbody>
+      * </table>
+@@ -74,6 +74,7 @@ class RenderScriptingInterface : public QObject {
+     // Need to be called on start up to re-initialize the runtime to the saved setting states
+     void loadSettings();
+ 
++
+ public slots:
+     /*@jsdoc
+      * Gets the configuration for a rendering job by name.
+@@ -172,8 +173,32 @@ public slots:
+      */
+     void setViewportResolutionScale(float resolutionScale);
+ 
++    /*@jsdoc
++     * Returns the list of screens
++     * @function Render.getScreens
++     * @returns {string[]} The names of the available screens
++     */
++    QStringList getScreens() const;
++
++    /*@jsdoc
++     * Gets the screen used when switching to full screen mode
++     * @function Render.getFullScreenScreen
++     * @returns {string} The name of the screen used for full screen mode
++     */
++    QString getFullScreenScreen() const;
++
++    /*@jsdoc
++     * Sets the screen used when switching to full screen mode
++     * This function will only succeed if the name passed is one of the entries from Render.getScreens.
++     * Otherwise, it will return False and have no effect.
++     *
++     * @function Render.setFullScreenScreen
++     * @returns {bool} True if the setting was successful
++     */
++    bool setFullScreenScreen(QString name);
++
+ signals:
+-    
++
+     /*@jsdoc
+      * Triggered when one of the <code>Render</code> API's properties changes.
+      * @function Render.settingsChanged
+@@ -196,6 +221,8 @@ public slots:
+     bool _ambientOcclusionEnabled{ false };
+     AntialiasingConfig::Mode _antialiasingMode{ AntialiasingConfig::Mode::NONE };
+     float _viewportResolutionScale{ 1.0f };
++    QString _fullScreenScreen;
++
+ 
+     // Actual settings saved on disk
+     Setting::Handle<int> _renderMethodSetting { ""renderMethod"", RENDER_FORWARD ? render::Args::RenderMethod::FORWARD : render::Args::RenderMethod::DEFERRED };
+@@ -204,6 +231,7 @@ public slots:
+     //Setting::Handle<AntialiasingConfig::Mode> _antialiasingModeSetting { ""antialiasingMode"", AntialiasingConfig::Mode::TAA };
+     Setting::Handle<int> _antialiasingModeSetting { ""antialiasingMode"", AntialiasingConfig::Mode::NONE };
+     Setting::Handle<float> _viewportResolutionScaleSetting { ""viewportResolutionScale"", 1.0f };
++    Setting::Handle<QString> _fullScreenScreenSetting { ""fullScreenScreen"", """" };
+ 
+     // Force assign both setting AND runtime value to the parameter value
+     void forceRenderMethod(RenderMethod renderMethod);"
+vircadia/vircadia-native-core,302,90efffa,libraries/display-plugins/src/display-plugins/Basic2DWindowOpenGLDisplayPlugin.cpp,modified,13,1,14,"@@ -18,6 +18,9 @@
+ 
+ #include <ui-plugins/PluginContainer.h>
+ #include <PathUtils.h>
++#include ""SettingHandle.h""
++#include ""ScreenName.h""
++
+ 
+ const QString Basic2DWindowOpenGLDisplayPlugin::NAME(""Desktop"");
+ 
+@@ -165,8 +168,17 @@ bool Basic2DWindowOpenGLDisplayPlugin::isThrottled() const {
+     return _isThrottled;
+ }
+ 
+-// FIXME target the screen the window is currently on
+ QScreen* Basic2DWindowOpenGLDisplayPlugin::getFullscreenTarget() {
++    Setting::Handle<QString> _fullScreenScreenSetting { ""fullScreenScreen"", """" };
++    QString selectedModel = _fullScreenScreenSetting.get();
++
++    for(QScreen *screen : qApp->screens()) {
++        if (ScreenName::getNameForScreen(screen) == selectedModel) {
++            return screen;
++        }
++    }
++
++    qWarning() << ""Failed to find selected screen"" << selectedModel << ""for full screen mode, using primary screen"";
+     return qApp->primaryScreen();
+ }
+ "
+vircadia/vircadia-native-core,302,90efffa,libraries/ui/src/ScreenName.cpp,added,49,0,49,"@@ -0,0 +1,49 @@
++//
++//  Created by Dale Glass on 7/01/2023
++//  Copyright 2023 Overte e.V.
++//
++//  Distributed under the Apache License, Version 2.0.
++//  See the accompanying file LICENSE or http://www.apache.org/licenses/LICENSE-2.0.html
++//
++
++#include ""ScreenName.h""
++
++QString ScreenName::getNameForScreen(QScreen *screen) {
++    // The data provided by QScreen isn't as convenient as it could be.
++    // So far testing shows:
++    //
++    // Windows:
++    //      model() returns an empty string
++    //      name() returns something like \\.\DISPLAY1
++    //
++    // Linux:
++    //      model() returns a name, like ""LG Ultra HD/525000""
++    //      name() returns the output's name, like ""HDMI1""
++
++    // So we try to assemble something unique and readable from all the possibilities.
++
++    QString ret;
++    bool addParens = false;
++
++    ret.append(screen->manufacturer());
++
++    if (!ret.isEmpty()) {
++        ret.append("" - "");
++    }
++    ret.append(screen->model());
++
++    addParens = !ret.isEmpty();
++
++    if(addParens) {
++        ret.append("" ("");
++    }
++
++    ret.append(screen->name().replace(QString(""\\\\.\\""), QString("""")));
++
++
++    if(addParens) {
++        ret.append("")"");
++    }
++
++    return ret;
++}"
+vircadia/vircadia-native-core,302,90efffa,libraries/ui/src/ScreenName.h,added,32,0,32,"@@ -0,0 +1,32 @@
++//
++//  Created by Dale Glass on 7/01/2023
++//  Copyright 2023 Overte e.V.
++//
++//  Distributed under the Apache License, Version 2.0.
++//  See the accompanying file LICENSE or http://www.apache.org/licenses/LICENSE-2.0.html
++//
++
++#include <QScreen>
++#include <QString>
++#pragma once
++
++/**
++ * @brief Screen naming
++ *
++ * This class exists because display-plugins and interface need to share the same,
++ * fairly involved rule for converting QScreen data to user-facing text.
++ */
++class ScreenName {
++    public:
++    /**
++     * @brief Get a descriptive name for a screen
++     *
++     * This is used in the graphics settings, to name monitors. This function tries to generate
++     * human friendly and unique, even if two identical monitors are present.
++     *
++     * @param screen Screen to provide a name for
++     * @return QString Descriptive name for the screen
++     */
++    static QString getNameForScreen(QScreen *screen);
++
++};"

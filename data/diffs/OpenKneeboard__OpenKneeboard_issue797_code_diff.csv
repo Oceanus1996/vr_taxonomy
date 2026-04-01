@@ -1,0 +1,94 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+OpenKneeboard/OpenKneeboard,797,0478a93,src/app/app-common/WGCRenderer.cpp,modified,2,0,2,"@@ -111,6 +111,8 @@ task<void> WGCRenderer::Init() {
+     this->GetPixelFormat(),
+     WGCRenderer::SwapchainLength,
+     size);
++  mSwapchainDimensions
++    = {static_cast<uint32_t>(size.Width), static_cast<uint32_t>(size.Height)};
+ 
+   mCaptureSession = mFramePool.CreateCaptureSession(item);
+   mCaptureSession.IsCursorCaptureEnabled(mOptions.mCaptureCursor);"
+OpenKneeboard/OpenKneeboard,797,749d88b,src/app/app-common/WGCRenderer.cpp,modified,8,19,27,"@@ -155,10 +155,7 @@ task<void> WGCRenderer::DisposeAsync() noexcept {
+     mCaptureSession.Close();
+   }
+   disown_later(
+-    std::move(mCaptureItem),
+-    std::move(mNextFrame),
+-    std::move(mCaptureSession),
+-    std::move(mFramePool));
++    std::move(mCaptureItem), std::move(mCaptureSession), std::move(mFramePool));
+ 
+   mTexture = nullptr;
+ }
+@@ -186,9 +183,6 @@ void WGCRenderer::Render(RenderTarget* rt, const PixelRect& rect) {
+   }
+ 
+   auto d3d = rt->d3d();
+-  if (mNextFrame) {
+-    this->OnWGCFrame();
+-  }
+   if (!mTexture) {
+     return;
+   }
+@@ -214,20 +208,13 @@ void WGCRenderer::Render(RenderTarget* rt, const PixelRect& rect) {
+   mNeedsRepaint = false;
+ }
+ 
+-void WGCRenderer::OnWGCFrame() {
++void WGCRenderer::OnWGCFrame(
++  winrt::Windows::Graphics::Capture::Direct3D11CaptureFrame frame) {
+   OPENKNEEBOARD_TraceLoggingScopedActivity(
+     activity, ""WGCRenderer::OnWGCFrame()"");
+ 
+   const auto keepAlive = shared_from_this();
+ 
+-  auto frame = mNextFrame;
+-  mNextFrame = {nullptr};
+-  if (!frame) {
+-    activity.StopWithResult(""No Frame"");
+-    return;
+-  }
+-  TraceLoggingWriteTagged(activity, ""WGCRenderer::OnWGCFrame()/HaveFrame"");
+-
+   auto wgdxSurface = frame.Surface();
+   auto interopSurface = wgdxSurface.as<
+     ::Windows::Graphics::DirectX::Direct3D11::IDirect3DDxgiInterfaceAccess>();
+@@ -307,15 +294,17 @@ void WGCRenderer::OnWGCFrame() {
+ 
+   mDXR->mD3D11ImmediateContext->CopySubresourceRegion(
+     mTexture.get(), 0, 0, 0, 0, d3dSurface.get(), 0, nullptr);
++  this->evNeedsRepaintEvent.Emit();
+ }
+ 
+ void WGCRenderer::PreOKBFrame() {
+   if (!mFramePool) {
+     return;
+   }
+-  mNextFrame = mFramePool.TryGetNextFrame();
+-  if (mNextFrame) {
+-    evNeedsRepaintEvent.Emit();
++
++  auto frame = mFramePool.TryGetNextFrame();
++  if (frame) {
++    this->OnWGCFrame(std::move(frame));
+   }
+ }
+ "
+OpenKneeboard/OpenKneeboard,797,749d88b,src/app/app-common/include/OpenKneeboard/WGCRenderer.hpp,modified,1,3,4,"@@ -98,7 +98,7 @@ class WGCRenderer : public virtual EventReceiver,
+   WGCRenderer() = delete;
+ 
+   void PreOKBFrame();
+-  void OnWGCFrame();
++  void OnWGCFrame(winrt::Windows::Graphics::Capture::Direct3D11CaptureFrame);
+ 
+   DisposalState mDisposal;
+   winrt::apartment_context mUIThread;
+@@ -116,8 +116,6 @@ class WGCRenderer : public virtual EventReceiver,
+   winrt::Windows::Graphics::Capture::GraphicsCaptureSession mCaptureSession {
+     nullptr};
+   winrt::Windows::Graphics::Capture::GraphicsCaptureItem mCaptureItem {nullptr};
+-  winrt::Windows::Graphics::Capture::Direct3D11CaptureFrame mNextFrame {
+-    nullptr};
+ 
+   PixelSize mCaptureSize {};
+   winrt::com_ptr<ID3D11Texture2D> mTexture;"

@@ -1,0 +1,120 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vrm-c/UniVRM,1400,dd17da4151fe244ca24f36d6bfe532ce85d3ee82,Assets/VRM10/Runtime/Migration/Materials/MigrationMToonMaterial.cs,modified,3,1,4,"@@ -298,7 +298,9 @@ public static void Migrate(glTF gltf, JsonNode vrm0)
+                         break;
+                     case OutlineWidthMode.ScreenCoordinates:
+                         dst.OutlineWidthMode = UniGLTF.Extensions.VRMC_materials_mtoon.OutlineWidthMode.screenCoordinates;
+-                        dst.OutlineWidthFactor = mtoon.Definition.Outline.OutlineWidthValue * oneHundredth;
++                        // NOTE: 従来は、縦幅の半分を 100% としたときの % の値だった。
++                        //       1.0 では縦幅を 1 としたときの値とするので、 1/200 する。
++                        dst.OutlineWidthFactor = mtoon.Definition.Outline.OutlineWidthValue * oneHundredth * 0.5f;
+                         break;
+                     default:
+                         throw new ArgumentOutOfRangeException($""OutlineWidthMode: {(int)mtoon.Definition.Outline.OutlineWidthMode}"");"
+vrm-c/UniVRM,1400,dd17da4151fe244ca24f36d6bfe532ce85d3ee82,Assets/VRMShaders/VRM10/MToon10/Resources/VRM10/vrmc_materials_mtoon_define.hlsl,modified,10,0,10,"@@ -138,4 +138,14 @@ inline bool MToon_IsOutlineModeDisabled()
+ #endif
+ }
+ 
++// Compile-time constant
++inline bool MToon_UseStrictMode()
++{
++ #if defined(_MTOON_USE_STRICT_MODE)
++    return true;
++#else
++    return false;
++#endif
++}
++
+ #endif"
+vrm-c/UniVRM,1400,dd17da4151fe244ca24f36d6bfe532ce85d3ee82,Assets/VRMShaders/VRM10/MToon10/Resources/VRM10/vrmc_materials_mtoon_geometry_vertex.hlsl,modified,28,5,33,"@@ -24,13 +24,33 @@ inline half MToon_GetOutlineVertex_OutlineWidth(const float2 uv)
+     }
+ }
+ 
++inline float MToon_GetOutlineVertex_ScreenCoordinatesWidthMultiplier(const float4 positionCS)
++{
++    // NOTE: VRM 1.0 の仕様にはない実装なので、ユーザが任意で機能を外せるようにする.
++    if (MToon_UseStrictMode())
++    {
++        return 1.0f;
++    }
++    else
++    {
++        const float maxViewFrustumPlaneHeight = 2.0f;
++        const float invTangentHalfVerticalFov = unity_CameraProjection[1][1];
++        // NOTE: viewFrustumPlaneHeight = tan(halfFov) * viewDirDistance * 2.0
++        //           -> viewDirDistance = viewFrustumPlaneHeight / (tan(halfFov) * 2.0)
++        const float widthScaledMaxDistance = maxViewFrustumPlaneHeight * invTangentHalfVerticalFov * 0.5f;
++        // NOTE: VR などの高視野角カメラでは、純粋な実装では太くなりすぎる.
++        //       よってある距離での視錐台平面が高さ 2m 以上になったらスケールをやめる.
++        return min(positionCS.w, widthScaledMaxDistance);
++    }
++}
++
+ inline VertexPositionInfo MToon_GetOutlineVertex(const float3 positionOS, const half3 normalOS, const float2 uv)
+ {
+     if (MToon_IsOutlineModeWorldCoordinates())
+     {
+         const float3 positionWS = mul(unity_ObjectToWorld, float4(positionOS, 1)).xyz;
+-        const half outlineWidth = MToon_GetOutlineVertex_OutlineWidth(uv);
+         const half3 normalWS = UnityObjectToWorldNormal(normalOS);
++        const half outlineWidth = MToon_GetOutlineVertex_OutlineWidth(uv);
+ 
+         VertexPositionInfo output;
+         output.positionWS = float4(positionWS + normalWS * outlineWidth, 1);
+@@ -45,17 +65,20 @@ inline VertexPositionInfo MToon_GetOutlineVertex(const float3 positionOS, const
+         const float4 nearUpperRight = mul(unity_CameraInvProjection, float4(1, 1, UNITY_NEAR_CLIP_VALUE, _ProjectionParams.y));
+         const half aspect = abs(nearUpperRight.y / nearUpperRight.x);
+ 
+-        float4 positionCS = UnityObjectToClipPos(positionOS);
++        const float4 positionCS = UnityObjectToClipPos(positionOS);
+         const half3 normalVS = MToon_GetObjectToViewNormal(normalOS);
+         const half3 normalCS = TransformViewToProjection(normalVS.xyz);
++
+         half2 normalProjectedCS = normalize(normalCS.xy);
+-        normalProjectedCS *= positionCS.w;
++        const float clipSpaceHeight = 2.0f;
++        normalProjectedCS *= clipSpaceHeight * outlineWidth * MToon_GetOutlineVertex_ScreenCoordinatesWidthMultiplier(positionCS);
+         normalProjectedCS.x *= aspect;
+-        positionCS.xy += outlineWidth * normalProjectedCS.xy * saturate(1 - abs(normalVS.z)); // ignore offset when normal toward camera
++        // NOTE: カメラ方向軸を向く法線を持つ頂点が XY 方向にだけずれると困るので、それを抑制する.
++        normalProjectedCS.xy *= saturate(1 - normalVS.z * normalVS.z);
+ 
+         VertexPositionInfo output;
+         output.positionWS = float4(positionWS, 1);
+-        output.positionCS = positionCS;
++        output.positionCS = float4(positionCS.xy + normalProjectedCS.xy, positionCS.zw);
+         return output;
+     }
+     else"
+vrm-c/UniVRM,1400,dd17da4151fe244ca24f36d6bfe532ce85d3ee82,Assets/VRMShaders/VRM10/MToon10/Resources/VRM10/vrmc_materials_mtoon_utility.hlsl,modified,19,0,19,"@@ -7,6 +7,11 @@
+ static const float PI_2 = 6.28318530718;
+ static const float EPS_COL = 0.00001;
+ 
++inline half mtoon_linearstep(const half start, const half end, const half t)
++{
++    return min(max((t - start) / (end - start), 0.0), 1.0);
++}
++
+ inline half3 mtoon_linearstep(const half3 start, const half3 end, const half t)
+ {
+     return min(max((t - start) / (end - start), 0.0), 1.0);
+@@ -17,6 +22,20 @@ inline bool MToon_IsPerspective()
+     return unity_OrthoParams.w != 1.0;
+ }
+ 
++inline float3 MToon_GetWorldSpaceViewDir(const float3 positionWS)
++{
++    if (MToon_IsPerspective())
++    {
++        return _WorldSpaceCameraPos.xyz - positionWS;
++    }
++    else
++    {
++        const float3 cameraForwardWS = normalize(UNITY_MATRIX_V[2].xyz);
++        const float3 viewDirWS = _WorldSpaceCameraPos.xyz - positionWS;
++        return cameraForwardWS * dot(cameraForwardWS, viewDirWS);
++    }
++}
++
+ inline float3 MToon_GetWorldSpaceNormalizedViewDir(const float3 positionWS)
+ {
+     if (MToon_IsPerspective())"

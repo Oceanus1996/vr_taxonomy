@@ -1,0 +1,1281 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+SlimeVR/SlimeVR-Server,1243,99c15ec,gui/public/i18n/en/translation.ftl,modified,5,0,5,"@@ -403,6 +403,11 @@ settings-general-tracker_mechanics-use_mag_on_all_trackers-description =
+     Uses magnetometer on all trackers that have a compatible firmware for it, reducing drift in stable magnetic environments.
+     Can be disabled per tracker in the tracker's settings. <b>Please don't shutdown any of the trackers while toggling this!</b>
+ settings-general-tracker_mechanics-use_mag_on_all_trackers-label = Use magnetometer on trackers
++settings-general-tracker_mechanics-spine_yaw_compensation = Keep Spine Aligned
++settings-general-tracker_mechanics-spine_yaw_compensation-description =
++    Prevents the spine trackers from drifting, by nudging them to stay aligned to the headset.
++    Players are usually standing facing forwards or walking forwards, where the spine trackers are aligned to the yaw of the headset. However due to yaw drift, the spine trackers will eventually rotate to the side, requiring a reset. This feature adds a small centering rotation to compensate for the yaw drift. (For now, this compensation only activates when your trackers are pointing ""up"", e.g. when you're standing or sitting straight up.)
++    The correction amount should be approximately the maximum yaw drift of your gyroscope (0.3 degrees/sec is a good default).
+ 
+ ## FK/Tracking settings
+ settings-general-fk_settings = Tracking settings"
+SlimeVR/SlimeVR-Server,1243,99c15ec,gui/src/components/settings/pages/GeneralSettings.tsx,modified,46,0,46,"@@ -16,6 +16,7 @@ import {
+   SettingsResponseT,
+   SteamVRTrackersSettingT,
+   TapDetectionSettingsT,
++  YawCorrectionSettingsT,
+ } from 'solarxr-protocol';
+ import { useConfig } from '@/hooks/config';
+ import { useWebsocketAPI } from '@/hooks/websocket-api';
+@@ -101,6 +102,9 @@ interface SettingsForm {
+     saveMountingReset: boolean;
+     resetHmdPitch: boolean;
+   };
++  yawCorrectionSettings: {
++    amountInDegPerSec: number;
++  };
+ }
+ 
+ const defaultValues: SettingsForm = {
+@@ -165,6 +169,9 @@ const defaultValues: SettingsForm = {
+     saveMountingReset: false,
+     resetHmdPitch: false,
+   },
++  yawCorrectionSettings: {
++    amountInDegPerSec: 0.0,
++  },
+ };
+ 
+ export function GeneralSettings() {
+@@ -184,6 +191,10 @@ export function GeneralSettings() {
+     unitDisplay: 'narrow',
+     maximumFractionDigits: 2,
+   });
++  const degreeFormat = new Intl.NumberFormat(currentLocales, {
++    style: 'unit',
++    unit: 'degree',
++  })
+ 
+   const { sendRPCPacket, useRPCPacket } = useWebsocketAPI();
+   const { reset, control, watch, handleSubmit, getValues, setValue } =
+@@ -291,6 +302,10 @@ export function GeneralSettings() {
+     driftCompensation.maxResets = values.driftCompensation.maxResets;
+     settings.driftCompensation = driftCompensation;
+ 
++    const yawCorrectionSettings = new YawCorrectionSettingsT()
++    yawCorrectionSettings.amountInDegPerSec = values.yawCorrectionSettings.amountInDegPerSec;
++    settings.yawCorrectionSettings = yawCorrectionSettings
++
+     if (values.resetsSettings) {
+       const resetsSettings = new ResetsSettingsT();
+       resetsSettings.resetMountingFeet =
+@@ -414,6 +429,10 @@ export function GeneralSettings() {
+       formData.resetsSettings = settings.resetsSettings;
+     }
+ 
++    if (settings.yawCorrectionSettings) {
++      formData.yawCorrectionSettings = settings.yawCorrectionSettings;
++    }
++
+     reset({ ...getValues(), ...formData });
+   });
+ 
+@@ -813,6 +832,33 @@ export function GeneralSettings() {
+               settingType=""general""
+               id=""mechanics-magnetometer""
+             />
++            <div className=""flex flex-col pt-4 pb-4""></div>
++            <Typography bold>{l10n.getString(
++                'settings-general-tracker_mechanics-spine_yaw_compensation'
++              )}
++            </Typography>
++            <div className=""flex flex-col pt-2 pb-4"">
++              {l10n
++                .getString(
++                  'settings-general-tracker_mechanics-spine_yaw_compensation-description'
++                )
++                .split('\n')
++                .map((line, i) => (
++                  <Typography color=""secondary"" key={i}>
++                    {line}
++                  </Typography>
++                ))}
++            </div>
++            <div className=""flex md:flex-row flex-col"">
++              <NumberSelector
++                control={control}
++                name=""yawCorrectionSettings.amountInDegPerSec""
++                valueLabelFormat={(value) => degreeFormat.format(value)}
++                min={0.0}
++                max={2.0}
++                step={0.1}
++              />
++            </div>
+           </>
+         </SettingsPagePaneLayout>
+         <SettingsPagePaneLayout"
+SlimeVR/SlimeVR-Server,1243,99c15ec,server/core/src/main/java/dev/slimevr/config/VRConfig.kt,modified,2,0,2,"@@ -40,6 +40,8 @@ class VRConfig {
+ 
+ 	val resetsConfig: ResetsConfig = ResetsConfig()
+ 
++	val yawCorrectionConfig = YawCorrectionConfig()
++
+ 	@JsonDeserialize(using = TrackerConfigMapDeserializer::class)
+ 	@JsonSerialize(keyUsing = StdKeySerializers.StringKeySerializer::class)
+ 	private val trackers: MutableMap<String, TrackerConfig> = HashMap()"
+SlimeVR/SlimeVR-Server,1243,99c15ec,server/core/src/main/java/dev/slimevr/config/YawCorrectionConfig.kt,added,9,0,9,"@@ -0,0 +1,9 @@
++package dev.slimevr.config
++
++class YawCorrectionConfig {
++	private var _amountInDegPerSec = 0.0f
++
++	var amountInDegPerSec: Float
++		get() = _amountInDegPerSec
++		set(value) { _amountInDegPerSec = if (value > 0.0f) value else 0.0f }
++}"
+SlimeVR/SlimeVR-Server,1243,99c15ec,server/core/src/main/java/dev/slimevr/protocol/rpc/settings/RPCSettingsBuilder.java,modified,16,0,16,"@@ -349,6 +349,17 @@ public static int createArmsResetModeSettings(
+ 			);
+ 	}
+ 
++	public static int createYawCorrectionSettings(
++		FlatBufferBuilder fbb,
++		YawCorrectionConfig yawCorrectionConfig
++	) {
++		return YawCorrectionSettings
++			.createYawCorrectionSettings(
++				fbb,
++				yawCorrectionConfig.getAmountInDegPerSec()
++			);
++	}
++
+ 	public static int createSettingsResponse(FlatBufferBuilder fbb, VRServer server) {
+ 		ISteamVRBridge bridge = server.getVRBridge(ISteamVRBridge.class);
+ 
+@@ -401,6 +412,11 @@ public static int createSettingsResponse(FlatBufferBuilder fbb, VRServer server)
+ 					.createArmsResetModeSettings(
+ 						fbb,
+ 						server.configManager.getVrConfig().getResetsConfig()
++					),
++				RPCSettingsBuilder
++					.createYawCorrectionSettings(
++						fbb,
++						server.configManager.getVrConfig().getYawCorrectionConfig()
+ 					)
+ 			);
+ 	}"
+SlimeVR/SlimeVR-Server,1243,99c15ec,server/core/src/main/java/dev/slimevr/protocol/rpc/settings/RPCSettingsHandler.kt,modified,9,1,10,"@@ -345,6 +345,14 @@ class RPCSettingsHandler(var rpcHandler: RPCHandler, var api: ProtocolAPI) {
+ 			resetsConfig.updateTrackersResetsSettings()
+ 		}
+ 
++		if (req.yawCorrectionSettings() != null) {
++			val yawCorrectionConfig = api.server.configManager
++				.vrConfig
++				.yawCorrectionConfig
++			yawCorrectionConfig.amountInDegPerSec = req.yawCorrectionSettings().amountInDegPerSec()
++			api.server.humanPoseManager.setYawCorrectionInDegPerSec(yawCorrectionConfig.amountInDegPerSec)
++		}
++
+ 		api.server.configManager.saveConfig()
+ 	}
+ 
+@@ -361,7 +369,7 @@ class RPCSettingsHandler(var rpcHandler: RPCHandler, var api: ProtocolAPI) {
+ 			val settings = SettingsResponse
+ 				.createSettingsResponse(
+ 					fbb,
+-					RPCSettingsBuilder.createSteamVRSettings(fbb, bridge), 0, 0, 0, 0, 0, 0, 0, 0, 0,
++					RPCSettingsBuilder.createSteamVRSettings(fbb, bridge), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+ 				)
+ 			val outbound =
+ 				rpcHandler.createRPCMessage(fbb, RpcMessage.SettingsResponse, settings)"
+SlimeVR/SlimeVR-Server,1243,99c15ec,server/core/src/main/java/dev/slimevr/tracking/processor/HumanPoseManager.kt,modified,5,0,5,"@@ -286,6 +286,7 @@ class HumanPoseManager(val server: VRServer?) {
+ 
+ 	fun loadFromConfig(configManager: ConfigManager) {
+ 		skeletonConfigManager.loadFromConfig(configManager)
++		skeleton.yawCorrectionInDegPerSec = configManager.vrConfig.yawCorrectionConfig.amountInDegPerSec
+ 	}
+ 
+ 	@VRServerThread
+@@ -663,6 +664,10 @@ class HumanPoseManager(val server: VRServer?) {
+ 		}
+ 	}
+ 
++	fun setYawCorrectionInDegPerSec(value: Float) {
++		skeleton.yawCorrectionInDegPerSec = value
++	}
++
+ 	fun setLegTweaksStateTemp(
+ 		skatingCorrection: Boolean,
+ 		floorClip: Boolean,"
+SlimeVR/SlimeVR-Server,1243,99c15ec,server/core/src/main/java/dev/slimevr/tracking/processor/skeleton/HumanSkeleton.kt,modified,75,0,75,"@@ -13,6 +13,8 @@ import dev.slimevr.tracking.trackers.TrackerRole
+ import dev.slimevr.tracking.trackers.TrackerUtils.getFirstAvailableTracker
+ import dev.slimevr.tracking.trackers.TrackerUtils.getTrackerForSkeleton
+ import dev.slimevr.util.ann.VRServerThread
++import io.eiren.math.FloatMath.toDegrees
++import io.eiren.math.FloatMath.toRad
+ import io.eiren.util.ann.ThreadSafe
+ import io.eiren.util.collections.FastList
+ import io.eiren.util.logging.LogManager
+@@ -28,6 +30,7 @@ import io.github.axisangles.ktmath.Vector3.Companion.NULL
+ import io.github.axisangles.ktmath.Vector3.Companion.POS_Y
+ import solarxr_protocol.rpc.StatusData
+ import java.lang.IllegalArgumentException
++import kotlin.math.*
+ import kotlin.properties.Delegates
+ 
+ class HumanSkeleton(
+@@ -201,6 +204,7 @@ class HumanSkeleton(
+ 
+ 	// Others
+ 	private var pauseTracking = false // Pauses skeleton tracking if true, resumes skeleton tracking if false
++	var yawCorrectionInDegPerSec = 0.0f
+ 
+ 	// Modules
+ 	var legTweaks = LegTweaks(this)
+@@ -497,6 +501,7 @@ class HumanSkeleton(
+ 	fun updatePose() {
+ 		tapDetectionManager.update()
+ 
++		updateTrackerYawCorrections()
+ 		updateTransforms()
+ 		updateBones()
+ 		updateComputedTrackers()
+@@ -519,6 +524,72 @@ class HumanSkeleton(
+ 		if (isTrackingRightArmFromController) rightHandTrackerBone.update()
+ 	}
+ 
++	private fun updateTrackerYawCorrections() {
++		val trackersToAlign = listOf(
++			headTracker,
++			upperChestTracker,
++			chestTracker,
++			waistTracker,
++			hipTracker
++		);
++
++		var parentTracker: Tracker? = null;
++		for (tracker in trackersToAlign) {
++			if (tracker == null) {
++				continue;
++			}
++
++			if (parentTracker == null) {
++				parentTracker = tracker;
++				continue;
++			}
++
++			updateTrackerYawCorrection(tracker, parentTracker);
++			parentTracker = tracker;
++		}
++	}
++
++	private fun isTrackerPointingUp(trackerRot: Quaternion, maxDeviationInRad: Float): Boolean {
++		val trackerUp = trackerRot.sandwich(POS_Y)
++		return trackerUp.angleTo(POS_Y) < maxDeviationInRad;
++	}
++
++	private fun updateTrackerYawCorrection(tracker: Tracker, parentTracker: Tracker) {
++		val trackerRot = tracker.getRotation()
++		val parentTrackerRot = parentTracker.getRotation()
++
++		// For now, we only handle trackers which are relatively ""upright"", i.e. in the
++		// standing position, or sitting position for trackers that are high up on the
++		// spine. When someone is lying down, they could be curled up such that the yaws
++		// don't necessarily align.
++		val maxDeviationInRad = toRad(30.0f)
++		if (!isTrackerPointingUp(trackerRot, maxDeviationInRad) ||
++			!isTrackerPointingUp(parentTrackerRot, maxDeviationInRad)) {
++			return;
++		}
++
++		val deltaRot = trackerRot * parentTrackerRot.inv()
++		val deltaYawInRad = deltaRot.toEulerAngles(EulerOrder.YZX).y
++
++		// Amount of yaw should be roughly the maximum yaw bias of the gyroscope. If it
++		// is too small, the gyroscope will overpower the correction and the skeleton
++		// will drift. If it is too big, the player will notice that the skeleton is
++		// rotating when the player doesn't face forward for a long time.
++		val serverUpdateFreqInHz = 1000.0f; // FIXME: Use actual server update rate
++		val adjustYawInRad = -sign(deltaYawInRad) * toRad(yawCorrectionInDegPerSec) / serverUpdateFreqInHz
++
++		// Adjust the tracker's yaw towards the parent tracker's yaw
++		tracker.yawCorrectionInRad += adjustYawInRad
++	}
++
++	private fun resetTrackerYawCorrections() {
++		for (tracker in trackersToReset) {
++			if (tracker != null) {
++				tracker.yawCorrectionInRad = 0.0f
++			}
++		}
++	}
++
+ 	/**
+ 	 * Update all the bones' transforms from trackers
+ 	 */
+@@ -1488,6 +1559,7 @@ class HumanSkeleton(
+ 		}
+ 		legTweaks.resetBuffer()
+ 		localizer.reset()
++		resetTrackerYawCorrections();
+ 		LogManager.info(""[HumanSkeleton] Reset: full ($resetSourceName)"")
+ 	}
+ 
+@@ -1509,6 +1581,7 @@ class HumanSkeleton(
+ 			}
+ 		}
+ 		legTweaks.resetBuffer()
++		resetTrackerYawCorrections();
+ 		LogManager.info(""[HumanSkeleton] Reset: yaw ($resetSourceName)"")
+ 	}
+ 
+@@ -1537,6 +1610,7 @@ class HumanSkeleton(
+ 		}
+ 		legTweaks.resetBuffer()
+ 		localizer.reset()
++		resetTrackerYawCorrections();
+ 		LogManager.info(""[HumanSkeleton] Reset: mounting ($resetSourceName)"")
+ 	}
+ 
+@@ -1553,6 +1627,7 @@ class HumanSkeleton(
+ 			}
+ 		}
+ 		legTweaks.resetBuffer()
++		resetTrackerYawCorrections();
+ 		LogManager.info(""[HumanSkeleton] Clear: mounting ($resetSourceName)"")
+ 	}
+ "
+SlimeVR/SlimeVR-Server,1243,99c15ec,server/core/src/main/java/dev/slimevr/tracking/trackers/Tracker.kt,modified,7,0,7,"@@ -6,6 +6,8 @@ import dev.slimevr.tracking.trackers.TrackerPosition.Companion.getByDesignation
+ import dev.slimevr.tracking.trackers.udp.IMUType
+ import dev.slimevr.tracking.trackers.udp.MagnetometerStatus
+ import io.eiren.util.BufferedTimer
++import io.github.axisangles.ktmath.EulerAngles
++import io.github.axisangles.ktmath.EulerOrder
+ import io.github.axisangles.ktmath.Quaternion
+ import io.github.axisangles.ktmath.Vector3
+ import solarxr_protocol.datatypes.DeviceIdT
+@@ -83,6 +85,7 @@ class Tracker @JvmOverloads constructor(
+ 	var customName: String? = null
+ 	var magStatus: MagnetometerStatus = magStatus
+ 		private set
++	var yawCorrectionInRad: Float = 0.0f
+ 
+ 	/**
+ 	 * If the tracker has gotten disconnected after it was initialized first time
+@@ -327,6 +330,8 @@ class Tracker @JvmOverloads constructor(
+ 			filteringHandler.getTrackedRotation()
+ 		}
+ 
++		rot = EulerAngles(EulerOrder.YZX, 0.0f, yawCorrectionInRad, 0.0f).toQuaternion() * rot
++
+ 		// Reset if needed and is not computed and internal
+ 		if (needsReset && !(isComputed && isInternal)) {
+ 			// Adjust to reset, mounting and drift compensation
+@@ -359,6 +364,8 @@ class Tracker @JvmOverloads constructor(
+ 			filteringHandler.getTrackedRotation()
+ 		}
+ 
++		rot = EulerAngles(EulerOrder.YZX, 0.0f, yawCorrectionInRad, 0.0f).toQuaternion() * rot
++
+ 		// Reset if needed or is a computed tracker besides head
+ 		if (needsReset && !(isComputed && trackerPosition != TrackerPosition.HEAD)) {
+ 			// Adjust to reset and mounting"
+SlimeVR/SlimeVR-Server,1243,99c15ec,solarxr-protocol,modified,1,1,2,"@@ -1 +1 @@
+-Subproject commit 863a38fa2bf5cec6580008068e8630374d185d9b
++Subproject commit ea861b900fa4ab000d4ec15bda7d4814c164e124"
+SlimeVR/SlimeVR-Server,1243,4d632d3,gui/public/i18n/en/translation.ftl,modified,5,0,5,"@@ -403,6 +403,11 @@ settings-general-tracker_mechanics-use_mag_on_all_trackers-description =
+     Uses magnetometer on all trackers that have a compatible firmware for it, reducing drift in stable magnetic environments.
+     Can be disabled per tracker in the tracker's settings. <b>Please don't shutdown any of the trackers while toggling this!</b>
+ settings-general-tracker_mechanics-use_mag_on_all_trackers-label = Use magnetometer on trackers
++settings-general-tracker_mechanics-spine_yaw_compensation = Keep Spine Aligned
++settings-general-tracker_mechanics-spine_yaw_compensation-description =
++    Prevents the spine trackers from drifting, by nudging them to stay aligned to the headset.
++    Players are usually standing facing forwards or walking forwards, where the spine trackers are aligned to the yaw of the headset. However due to yaw drift, the spine trackers will eventually rotate to the side, requiring a reset. This feature adds a small centering rotation to compensate for the yaw drift. (For now, this compensation only activates when your trackers are pointing ""up"", e.g. when you're standing or sitting straight up.)
++    The correction amount should be approximately the maximum yaw drift of your gyroscope (0.3 degrees/sec is a good default).
+ 
+ ## FK/Tracking settings
+ settings-general-fk_settings = Tracking settings"
+SlimeVR/SlimeVR-Server,1243,4d632d3,gui/src/components/settings/pages/GeneralSettings.tsx,modified,46,0,46,"@@ -16,6 +16,7 @@ import {
+   SettingsResponseT,
+   SteamVRTrackersSettingT,
+   TapDetectionSettingsT,
++  YawCorrectionSettingsT,
+ } from 'solarxr-protocol';
+ import { useConfig } from '@/hooks/config';
+ import { useWebsocketAPI } from '@/hooks/websocket-api';
+@@ -101,6 +102,9 @@ interface SettingsForm {
+     saveMountingReset: boolean;
+     resetHmdPitch: boolean;
+   };
++  yawCorrectionSettings: {
++    amountInDegPerSec: number;
++  };
+ }
+ 
+ const defaultValues: SettingsForm = {
+@@ -165,6 +169,9 @@ const defaultValues: SettingsForm = {
+     saveMountingReset: false,
+     resetHmdPitch: false,
+   },
++  yawCorrectionSettings: {
++    amountInDegPerSec: 0.0,
++  },
+ };
+ 
+ export function GeneralSettings() {
+@@ -184,6 +191,10 @@ export function GeneralSettings() {
+     unitDisplay: 'narrow',
+     maximumFractionDigits: 2,
+   });
++  const degreeFormat = new Intl.NumberFormat(currentLocales, {
++    style: 'unit',
++    unit: 'degree',
++  })
+ 
+   const { sendRPCPacket, useRPCPacket } = useWebsocketAPI();
+   const { reset, control, watch, handleSubmit, getValues, setValue } =
+@@ -291,6 +302,10 @@ export function GeneralSettings() {
+     driftCompensation.maxResets = values.driftCompensation.maxResets;
+     settings.driftCompensation = driftCompensation;
+ 
++    const yawCorrectionSettings = new YawCorrectionSettingsT()
++    yawCorrectionSettings.amountInDegPerSec = values.yawCorrectionSettings.amountInDegPerSec;
++    settings.yawCorrectionSettings = yawCorrectionSettings
++
+     if (values.resetsSettings) {
+       const resetsSettings = new ResetsSettingsT();
+       resetsSettings.resetMountingFeet =
+@@ -414,6 +429,10 @@ export function GeneralSettings() {
+       formData.resetsSettings = settings.resetsSettings;
+     }
+ 
++    if (settings.yawCorrectionSettings) {
++      formData.yawCorrectionSettings = settings.yawCorrectionSettings;
++    }
++
+     reset({ ...getValues(), ...formData });
+   });
+ 
+@@ -813,6 +832,33 @@ export function GeneralSettings() {
+               settingType=""general""
+               id=""mechanics-magnetometer""
+             />
++            <div className=""flex flex-col pt-4 pb-4""></div>
++            <Typography bold>{l10n.getString(
++                'settings-general-tracker_mechanics-spine_yaw_compensation'
++              )}
++            </Typography>
++            <div className=""flex flex-col pt-2 pb-4"">
++              {l10n
++                .getString(
++                  'settings-general-tracker_mechanics-spine_yaw_compensation-description'
++                )
++                .split('\n')
++                .map((line, i) => (
++                  <Typography color=""secondary"" key={i}>
++                    {line}
++                  </Typography>
++                ))}
++            </div>
++            <div className=""flex md:flex-row flex-col"">
++              <NumberSelector
++                control={control}
++                name=""yawCorrectionSettings.amountInDegPerSec""
++                valueLabelFormat={(value) => degreeFormat.format(value)}
++                min={0.0}
++                max={2.0}
++                step={0.1}
++              />
++            </div>
+           </>
+         </SettingsPagePaneLayout>
+         <SettingsPagePaneLayout"
+SlimeVR/SlimeVR-Server,1243,4d632d3,server/core/src/main/java/dev/slimevr/config/VRConfig.kt,modified,2,0,2,"@@ -40,6 +40,8 @@ class VRConfig {
+ 
+ 	val resetsConfig: ResetsConfig = ResetsConfig()
+ 
++	val yawCorrectionConfig = YawCorrectionConfig()
++
+ 	@JsonDeserialize(using = TrackerConfigMapDeserializer::class)
+ 	@JsonSerialize(keyUsing = StdKeySerializers.StringKeySerializer::class)
+ 	private val trackers: MutableMap<String, TrackerConfig> = HashMap()"
+SlimeVR/SlimeVR-Server,1243,4d632d3,server/core/src/main/java/dev/slimevr/config/YawCorrectionConfig.kt,added,9,0,9,"@@ -0,0 +1,9 @@
++package dev.slimevr.config
++
++class YawCorrectionConfig {
++	private var _amountInDegPerSec = 0.0f
++
++	var amountInDegPerSec: Float
++		get() = _amountInDegPerSec
++		set(value) { _amountInDegPerSec = if (value > 0.0f) value else 0.0f }
++}"
+SlimeVR/SlimeVR-Server,1243,4d632d3,server/core/src/main/java/dev/slimevr/protocol/rpc/settings/RPCSettingsBuilder.java,modified,16,0,16,"@@ -349,6 +349,17 @@ public static int createArmsResetModeSettings(
+ 			);
+ 	}
+ 
++	public static int createYawCorrectionSettings(
++		FlatBufferBuilder fbb,
++		YawCorrectionConfig yawCorrectionConfig
++	) {
++		return YawCorrectionSettings
++			.createYawCorrectionSettings(
++				fbb,
++				yawCorrectionConfig.getAmountInDegPerSec()
++			);
++	}
++
+ 	public static int createSettingsResponse(FlatBufferBuilder fbb, VRServer server) {
+ 		ISteamVRBridge bridge = server.getVRBridge(ISteamVRBridge.class);
+ 
+@@ -401,6 +412,11 @@ public static int createSettingsResponse(FlatBufferBuilder fbb, VRServer server)
+ 					.createArmsResetModeSettings(
+ 						fbb,
+ 						server.configManager.getVrConfig().getResetsConfig()
++					),
++				RPCSettingsBuilder
++					.createYawCorrectionSettings(
++						fbb,
++						server.configManager.getVrConfig().getYawCorrectionConfig()
+ 					)
+ 			);
+ 	}"
+SlimeVR/SlimeVR-Server,1243,4d632d3,server/core/src/main/java/dev/slimevr/protocol/rpc/settings/RPCSettingsHandler.kt,modified,9,1,10,"@@ -345,6 +345,14 @@ class RPCSettingsHandler(var rpcHandler: RPCHandler, var api: ProtocolAPI) {
+ 			resetsConfig.updateTrackersResetsSettings()
+ 		}
+ 
++		if (req.yawCorrectionSettings() != null) {
++			val yawCorrectionConfig = api.server.configManager
++				.vrConfig
++				.yawCorrectionConfig
++			yawCorrectionConfig.amountInDegPerSec = req.yawCorrectionSettings().amountInDegPerSec()
++			api.server.humanPoseManager.setYawCorrectionInDegPerSec(yawCorrectionConfig.amountInDegPerSec)
++		}
++
+ 		api.server.configManager.saveConfig()
+ 	}
+ 
+@@ -361,7 +369,7 @@ class RPCSettingsHandler(var rpcHandler: RPCHandler, var api: ProtocolAPI) {
+ 			val settings = SettingsResponse
+ 				.createSettingsResponse(
+ 					fbb,
+-					RPCSettingsBuilder.createSteamVRSettings(fbb, bridge), 0, 0, 0, 0, 0, 0, 0, 0, 0,
++					RPCSettingsBuilder.createSteamVRSettings(fbb, bridge), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+ 				)
+ 			val outbound =
+ 				rpcHandler.createRPCMessage(fbb, RpcMessage.SettingsResponse, settings)"
+SlimeVR/SlimeVR-Server,1243,4d632d3,server/core/src/main/java/dev/slimevr/tracking/processor/HumanPoseManager.kt,modified,5,0,5,"@@ -286,6 +286,7 @@ class HumanPoseManager(val server: VRServer?) {
+ 
+ 	fun loadFromConfig(configManager: ConfigManager) {
+ 		skeletonConfigManager.loadFromConfig(configManager)
++		skeleton.yawCorrectionInDegPerSec = configManager.vrConfig.yawCorrectionConfig.amountInDegPerSec
+ 	}
+ 
+ 	@VRServerThread
+@@ -663,6 +664,10 @@ class HumanPoseManager(val server: VRServer?) {
+ 		}
+ 	}
+ 
++	fun setYawCorrectionInDegPerSec(value: Float) {
++		skeleton.yawCorrectionInDegPerSec = value
++	}
++
+ 	fun setLegTweaksStateTemp(
+ 		skatingCorrection: Boolean,
+ 		floorClip: Boolean,"
+SlimeVR/SlimeVR-Server,1243,4d632d3,server/core/src/main/java/dev/slimevr/tracking/processor/skeleton/HumanSkeleton.kt,modified,75,0,75,"@@ -13,6 +13,8 @@ import dev.slimevr.tracking.trackers.TrackerRole
+ import dev.slimevr.tracking.trackers.TrackerUtils.getFirstAvailableTracker
+ import dev.slimevr.tracking.trackers.TrackerUtils.getTrackerForSkeleton
+ import dev.slimevr.util.ann.VRServerThread
++import io.eiren.math.FloatMath.toDegrees
++import io.eiren.math.FloatMath.toRad
+ import io.eiren.util.ann.ThreadSafe
+ import io.eiren.util.collections.FastList
+ import io.eiren.util.logging.LogManager
+@@ -28,6 +30,7 @@ import io.github.axisangles.ktmath.Vector3.Companion.NULL
+ import io.github.axisangles.ktmath.Vector3.Companion.POS_Y
+ import solarxr_protocol.rpc.StatusData
+ import java.lang.IllegalArgumentException
++import kotlin.math.*
+ import kotlin.properties.Delegates
+ 
+ class HumanSkeleton(
+@@ -201,6 +204,7 @@ class HumanSkeleton(
+ 
+ 	// Others
+ 	private var pauseTracking = false // Pauses skeleton tracking if true, resumes skeleton tracking if false
++	var yawCorrectionInDegPerSec = 0.0f
+ 
+ 	// Modules
+ 	var legTweaks = LegTweaks(this)
+@@ -497,6 +501,7 @@ class HumanSkeleton(
+ 	fun updatePose() {
+ 		tapDetectionManager.update()
+ 
++		updateTrackerYawCorrections()
+ 		updateTransforms()
+ 		updateBones()
+ 		updateComputedTrackers()
+@@ -519,6 +524,72 @@ class HumanSkeleton(
+ 		if (isTrackingRightArmFromController) rightHandTrackerBone.update()
+ 	}
+ 
++	private fun updateTrackerYawCorrections() {
++		val trackersToAlign = listOf(
++			headTracker,
++			upperChestTracker,
++			chestTracker,
++			waistTracker,
++			hipTracker
++		);
++
++		var parentTracker: Tracker? = null;
++		for (tracker in trackersToAlign) {
++			if (tracker == null) {
++				continue;
++			}
++
++			if (parentTracker == null) {
++				parentTracker = tracker;
++				continue;
++			}
++
++			updateTrackerYawCorrection(tracker, parentTracker);
++			parentTracker = tracker;
++		}
++	}
++
++	private fun isTrackerPointingUp(trackerRot: Quaternion, maxDeviationInRad: Float): Boolean {
++		val trackerUp = trackerRot.sandwich(POS_Y)
++		return trackerUp.angleTo(POS_Y) < maxDeviationInRad;
++	}
++
++	private fun updateTrackerYawCorrection(tracker: Tracker, parentTracker: Tracker) {
++		val trackerRot = tracker.getRotation()
++		val parentTrackerRot = parentTracker.getRotation()
++
++		// For now, we only handle trackers which are relatively ""upright"", i.e. in the
++		// standing position, or sitting position for trackers that are high up on the
++		// spine. When someone is lying down, they could be curled up such that the yaws
++		// don't necessarily align.
++		val maxDeviationInRad = toRad(30.0f)
++		if (!isTrackerPointingUp(trackerRot, maxDeviationInRad) ||
++			!isTrackerPointingUp(parentTrackerRot, maxDeviationInRad)) {
++			return;
++		}
++
++		val deltaRot = trackerRot * parentTrackerRot.inv()
++		val deltaYawInRad = deltaRot.toEulerAngles(EulerOrder.YZX).y
++
++		// Amount of yaw should be roughly the maximum yaw bias of the gyroscope. If it
++		// is too small, the gyroscope will overpower the correction and the skeleton
++		// will drift. If it is too big, the player will notice that the skeleton is
++		// rotating when the player doesn't face forward for a long time.
++		val serverUpdateFreqInHz = 1000.0f; // FIXME: Use actual server update rate
++		val adjustYawInRad = -sign(deltaYawInRad) * toRad(yawCorrectionInDegPerSec) / serverUpdateFreqInHz
++
++		// Adjust the tracker's yaw towards the parent tracker's yaw
++		tracker.yawCorrectionInRad += adjustYawInRad
++	}
++
++	private fun resetTrackerYawCorrections() {
++		for (tracker in trackersToReset) {
++			if (tracker != null) {
++				tracker.yawCorrectionInRad = 0.0f
++			}
++		}
++	}
++
+ 	/**
+ 	 * Update all the bones' transforms from trackers
+ 	 */
+@@ -1488,6 +1559,7 @@ class HumanSkeleton(
+ 		}
+ 		legTweaks.resetBuffer()
+ 		localizer.reset()
++		resetTrackerYawCorrections();
+ 		LogManager.info(""[HumanSkeleton] Reset: full ($resetSourceName)"")
+ 	}
+ 
+@@ -1509,6 +1581,7 @@ class HumanSkeleton(
+ 			}
+ 		}
+ 		legTweaks.resetBuffer()
++		resetTrackerYawCorrections();
+ 		LogManager.info(""[HumanSkeleton] Reset: yaw ($resetSourceName)"")
+ 	}
+ 
+@@ -1537,6 +1610,7 @@ class HumanSkeleton(
+ 		}
+ 		legTweaks.resetBuffer()
+ 		localizer.reset()
++		resetTrackerYawCorrections();
+ 		LogManager.info(""[HumanSkeleton] Reset: mounting ($resetSourceName)"")
+ 	}
+ 
+@@ -1553,6 +1627,7 @@ class HumanSkeleton(
+ 			}
+ 		}
+ 		legTweaks.resetBuffer()
++		resetTrackerYawCorrections();
+ 		LogManager.info(""[HumanSkeleton] Clear: mounting ($resetSourceName)"")
+ 	}
+ "
+SlimeVR/SlimeVR-Server,1243,4d632d3,server/core/src/main/java/dev/slimevr/tracking/trackers/Tracker.kt,modified,7,0,7,"@@ -6,6 +6,8 @@ import dev.slimevr.tracking.trackers.TrackerPosition.Companion.getByDesignation
+ import dev.slimevr.tracking.trackers.udp.IMUType
+ import dev.slimevr.tracking.trackers.udp.MagnetometerStatus
+ import io.eiren.util.BufferedTimer
++import io.github.axisangles.ktmath.EulerAngles
++import io.github.axisangles.ktmath.EulerOrder
+ import io.github.axisangles.ktmath.Quaternion
+ import io.github.axisangles.ktmath.Vector3
+ import solarxr_protocol.datatypes.DeviceIdT
+@@ -83,6 +85,7 @@ class Tracker @JvmOverloads constructor(
+ 	var customName: String? = null
+ 	var magStatus: MagnetometerStatus = magStatus
+ 		private set
++	var yawCorrectionInRad: Float = 0.0f
+ 
+ 	/**
+ 	 * If the tracker has gotten disconnected after it was initialized first time
+@@ -327,6 +330,8 @@ class Tracker @JvmOverloads constructor(
+ 			filteringHandler.getTrackedRotation()
+ 		}
+ 
++		rot = EulerAngles(EulerOrder.YZX, 0.0f, yawCorrectionInRad, 0.0f).toQuaternion() * rot
++
+ 		// Reset if needed and is not computed and internal
+ 		if (needsReset && !(isComputed && isInternal)) {
+ 			// Adjust to reset, mounting and drift compensation
+@@ -359,6 +364,8 @@ class Tracker @JvmOverloads constructor(
+ 			filteringHandler.getTrackedRotation()
+ 		}
+ 
++		rot = EulerAngles(EulerOrder.YZX, 0.0f, yawCorrectionInRad, 0.0f).toQuaternion() * rot
++
+ 		// Reset if needed or is a computed tracker besides head
+ 		if (needsReset && !(isComputed && trackerPosition != TrackerPosition.HEAD)) {
+ 			// Adjust to reset and mounting"
+SlimeVR/SlimeVR-Server,1243,4d632d3,solarxr-protocol,modified,1,1,2,"@@ -1 +1 @@
+-Subproject commit 863a38fa2bf5cec6580008068e8630374d185d9b
++Subproject commit c87d450da7358616ec8c9af1ebcdd4b2c4d2445a"
+SlimeVR/SlimeVR-Server,1243,7f7da7e,gui/public/i18n/en/translation.ftl,modified,7,0,7,"@@ -373,6 +373,13 @@ settings-general-tracker_mechanics-use_mag_on_all_trackers-description =
+     Uses magnetometer on all trackers that have a compatible firmware for it, reducing drift in stable magnetic environments.
+     Can be disabled per tracker in the tracker's settings. <b>Please don't shutdown any of the trackers while toggling this!</b>
+ settings-general-tracker_mechanics-use_mag_on_all_trackers-label = Use magnetometer on trackers
++settings-general-tracker_mechanics-spine_yaw_correction = Keep Spine Aligned
++settings-general-tracker_mechanics-spine_yaw_correction-description =
++    Prevents the spine trackers from drifting, by nudging them to stay aligned to the headset.
++    Players are usually standing facing forwards or walking forwards, where the spine trackers are aligned to the yaw of the headset. However due to yaw drift, the spine trackers will eventually rotate to the side, requiring a reset. This feature adds a small centering rotation to compensate for the yaw drift. (For now, this compensation only activates when your trackers are pointing ""up"", e.g. when you're standing or sitting straight up.)
++settings-general-tracker_mechanics-spine_yaw_correction-enabled-label = Enabled
++settings-general-tracker_mechanics-spine_yaw_correction-amount-label = Amount
++settings-general-tracker_mechanics-spine_yaw_correction-amount-description = The correction amount should be approximately the maximum yaw drift of your gyroscope (0.3 degrees/sec is a good default).
+ 
+ ## FK/Tracking settings
+ settings-general-fk_settings = Tracking settings"
+SlimeVR/SlimeVR-Server,1243,7f7da7e,gui/src/components/settings/pages/GeneralSettings.tsx,modified,72,0,72,"@@ -16,6 +16,7 @@ import {
+   SettingsResponseT,
+   SteamVRTrackersSettingT,
+   TapDetectionSettingsT,
++  YawCorrectionSettingsT,
+ } from 'solarxr-protocol';
+ import { useConfig } from '@/hooks/config';
+ import { useWebsocketAPI } from '@/hooks/websocket-api';
+@@ -101,6 +102,10 @@ interface SettingsForm {
+     saveMountingReset: boolean;
+     resetHmdPitch: boolean;
+   };
++  yawCorrectionSettings: {
++    enabled: boolean;
++    amountInDegPerSec: number;
++  };
+ }
+ 
+ const defaultValues: SettingsForm = {
+@@ -165,6 +170,10 @@ const defaultValues: SettingsForm = {
+     saveMountingReset: false,
+     resetHmdPitch: false,
+   },
++  yawCorrectionSettings: {
++    enabled: false,
++    amountInDegPerSec: 0.0,
++  },
+ };
+ 
+ export function GeneralSettings() {
+@@ -184,6 +193,10 @@ export function GeneralSettings() {
+     unitDisplay: 'narrow',
+     maximumFractionDigits: 2,
+   });
++  const degreeFormat = new Intl.NumberFormat(currentLocales, {
++    style: 'unit',
++    unit: 'degree',
++  });
+ 
+   const { sendRPCPacket, useRPCPacket } = useWebsocketAPI();
+   const { reset, control, watch, handleSubmit, getValues, setValue } =
+@@ -291,6 +304,12 @@ export function GeneralSettings() {
+     driftCompensation.maxResets = values.driftCompensation.maxResets;
+     settings.driftCompensation = driftCompensation;
+ 
++    const yawCorrectionSettings = new YawCorrectionSettingsT();
++    yawCorrectionSettings.enabled = values.yawCorrectionSettings.enabled;
++    yawCorrectionSettings.amountInDegPerSec =
++      values.yawCorrectionSettings.amountInDegPerSec;
++    settings.yawCorrectionSettings = yawCorrectionSettings;
++
+     if (values.resetsSettings) {
+       const resetsSettings = new ResetsSettingsT();
+       resetsSettings.resetMountingFeet =
+@@ -414,6 +433,10 @@ export function GeneralSettings() {
+       formData.resetsSettings = settings.resetsSettings;
+     }
+ 
++    if (settings.yawCorrectionSettings) {
++      formData.yawCorrectionSettings = settings.yawCorrectionSettings;
++    }
++
+     reset({ ...getValues(), ...formData });
+   });
+ 
+@@ -813,6 +836,55 @@ export function GeneralSettings() {
+               settingType=""general""
+               id=""mechanics-magnetometer""
+             />
++            <div className=""flex flex-col pt-4 pb-4""></div>
++            <Typography bold>
++              {l10n.getString(
++                'settings-general-tracker_mechanics-spine_yaw_correction'
++              )}
++            </Typography>
++            <div className=""flex flex-col pt-2 pb-4"">
++              {l10n
++                .getString(
++                  'settings-general-tracker_mechanics-spine_yaw_correction-description'
++                )
++                .split('\n')
++                .map((line, i) => (
++                  <Typography color=""secondary"" key={i}>
++                    {line}
++                  </Typography>
++                ))}
++            </div>
++            <div className=""grid sm:grid-cols-1 gap-3 pb-4"">
++              <CheckBox
++                variant=""toggle""
++                outlined
++                control={control}
++                name=""yawCorrectionSettings.enabled""
++                label={l10n.getString(
++                  'settings-general-tracker_mechanics-spine_yaw_correction-enabled-label'
++                )}
++              />
++              <div>
++                <Typography bold>
++                  {l10n.getString(
++                    'settings-general-tracker_mechanics-spine_yaw_correction-amount-label'
++                  )}
++                </Typography>
++                <Typography color=""secondary"">
++                  {l10n.getString(
++                    'settings-general-tracker_mechanics-spine_yaw_correction-amount-description'
++                  )}
++                </Typography>
++                <NumberSelector
++                  control={control}
++                  name=""yawCorrectionSettings.amountInDegPerSec""
++                  valueLabelFormat={(value) => degreeFormat.format(value)}
++                  min={0.0}
++                  max={2.0}
++                  step={0.05}
++                />
++              </div>
++            </div>
+           </>
+         </SettingsPagePaneLayout>
+         <SettingsPagePaneLayout"
+SlimeVR/SlimeVR-Server,1243,7f7da7e,server/core/src/main/java/dev/slimevr/config/VRConfig.kt,modified,2,0,2,"@@ -40,6 +40,8 @@ class VRConfig {
+ 
+ 	val resetsConfig: ResetsConfig = ResetsConfig()
+ 
++	val yawCorrectionConfig = YawCorrectionConfig()
++
+ 	@JsonDeserialize(using = TrackerConfigMapDeserializer::class)
+ 	@JsonSerialize(keyUsing = StdKeySerializers.StringKeySerializer::class)
+ 	private val trackers: MutableMap<String, TrackerConfig> = HashMap()"
+SlimeVR/SlimeVR-Server,1243,7f7da7e,server/core/src/main/java/dev/slimevr/config/YawCorrectionConfig.kt,added,8,0,8,"@@ -0,0 +1,8 @@
++package dev.slimevr.config
++
++class YawCorrectionConfig {
++
++	var enabled = false
++
++	var amountInDegPerSec = 0.3f
++}"
+SlimeVR/SlimeVR-Server,1243,7f7da7e,server/core/src/main/java/dev/slimevr/protocol/rpc/settings/RPCSettingsBuilder.java,modified,17,0,17,"@@ -349,6 +349,18 @@ public static int createArmsResetModeSettings(
+ 			);
+ 	}
+ 
++	public static int createYawCorrectionSettings(
++		FlatBufferBuilder fbb,
++		YawCorrectionConfig yawCorrectionConfig
++	) {
++		return YawCorrectionSettings
++			.createYawCorrectionSettings(
++				fbb,
++				yawCorrectionConfig.getEnabled(),
++				yawCorrectionConfig.getAmountInDegPerSec()
++			);
++	}
++
+ 	public static int createSettingsResponse(FlatBufferBuilder fbb, VRServer server) {
+ 		ISteamVRBridge bridge = server.getVRBridge(ISteamVRBridge.class);
+ 
+@@ -401,6 +413,11 @@ public static int createSettingsResponse(FlatBufferBuilder fbb, VRServer server)
+ 					.createArmsResetModeSettings(
+ 						fbb,
+ 						server.configManager.getVrConfig().getResetsConfig()
++					),
++				RPCSettingsBuilder
++					.createYawCorrectionSettings(
++						fbb,
++						server.configManager.getVrConfig().getYawCorrectionConfig()
+ 					)
+ 			);
+ 	}"
+SlimeVR/SlimeVR-Server,1243,7f7da7e,server/core/src/main/java/dev/slimevr/protocol/rpc/settings/RPCSettingsHandler.kt,modified,10,1,11,"@@ -345,6 +345,15 @@ class RPCSettingsHandler(var rpcHandler: RPCHandler, var api: ProtocolAPI) {
+ 			resetsConfig.updateTrackersResetsSettings()
+ 		}
+ 
++		if (req.yawCorrectionSettings() != null) {
++			val yawCorrectionConfig = api.server.configManager
++				.vrConfig
++				.yawCorrectionConfig
++			yawCorrectionConfig.enabled = req.yawCorrectionSettings().enabled()
++			yawCorrectionConfig.amountInDegPerSec = req.yawCorrectionSettings().amountInDegPerSec()
++			api.server.humanPoseManager.setYawCorrection(yawCorrectionConfig)
++		}
++
+ 		api.server.configManager.saveConfig()
+ 	}
+ 
+@@ -361,7 +370,7 @@ class RPCSettingsHandler(var rpcHandler: RPCHandler, var api: ProtocolAPI) {
+ 			val settings = SettingsResponse
+ 				.createSettingsResponse(
+ 					fbb,
+-					RPCSettingsBuilder.createSteamVRSettings(fbb, bridge), 0, 0, 0, 0, 0, 0, 0, 0, 0,
++					RPCSettingsBuilder.createSteamVRSettings(fbb, bridge), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+ 				)
+ 			val outbound =
+ 				rpcHandler.createRPCMessage(fbb, RpcMessage.SettingsResponse, settings)"
+SlimeVR/SlimeVR-Server,1243,7f7da7e,server/core/src/main/java/dev/slimevr/tracking/processor/HumanPoseManager.kt,modified,6,0,6,"@@ -4,6 +4,7 @@ import com.jme3.math.FastMath
+ import dev.slimevr.VRServer
+ import dev.slimevr.VRServer.Companion.getNextLocalTrackerId
+ import dev.slimevr.config.ConfigManager
++import dev.slimevr.config.YawCorrectionConfig
+ import dev.slimevr.tracking.processor.config.SkeletonConfigManager
+ import dev.slimevr.tracking.processor.config.SkeletonConfigOffsets
+ import dev.slimevr.tracking.processor.config.SkeletonConfigToggles
+@@ -286,6 +287,7 @@ class HumanPoseManager(val server: VRServer?) {
+ 
+ 	fun loadFromConfig(configManager: ConfigManager) {
+ 		skeletonConfigManager.loadFromConfig(configManager)
++		skeleton.setYawCorrectionConfig(configManager.vrConfig.yawCorrectionConfig)
+ 	}
+ 
+ 	@VRServerThread
+@@ -663,6 +665,10 @@ class HumanPoseManager(val server: VRServer?) {
+ 		}
+ 	}
+ 
++	fun setYawCorrection(yawCorrectionConfig: YawCorrectionConfig) {
++		skeleton.setYawCorrectionConfig(yawCorrectionConfig)
++	}
++
+ 	fun setLegTweaksStateTemp(
+ 		skatingCorrection: Boolean,
+ 		floorClip: Boolean,"
+SlimeVR/SlimeVR-Server,1243,7f7da7e,server/core/src/main/java/dev/slimevr/tracking/processor/skeleton/HumanSkeleton.kt,modified,10,0,10,"@@ -2,6 +2,7 @@ package dev.slimevr.tracking.processor.skeleton
+ 
+ import com.jme3.math.FastMath
+ import dev.slimevr.VRServer
++import dev.slimevr.config.YawCorrectionConfig
+ import dev.slimevr.tracking.processor.Bone
+ import dev.slimevr.tracking.processor.BoneType
+ import dev.slimevr.tracking.processor.HumanPoseManager
+@@ -141,12 +142,14 @@ class HumanSkeleton(
+ 
+ 	// Others
+ 	private var pauseTracking = false // Pauses skeleton tracking if true, resumes skeleton tracking if false
++	var yawCorrectionInDegPerSec = 0.0f
+ 
+ 	// Modules
+ 	var legTweaks = LegTweaks(this)
+ 	var tapDetectionManager = TapDetectionManager(this)
+ 	var viveEmulation = ViveEmulation(this)
+ 	var localizer = Localizer(this)
++	var spineYawCorrection = SpineYawCorrection(this, YawCorrectionConfig())
+ 
+ 	// Constructors
+ 	init {
+@@ -360,6 +363,9 @@ class HumanSkeleton(
+ 	fun updatePose() {
+ 		tapDetectionManager.update()
+ 
++		// Need to update tracker rotations before we calculate the new skeleton poses
++		spineYawCorrection.updateTrackers()
++
+ 		updateTransforms()
+ 		updateBones()
+ 		updateComputedTrackers()
+@@ -1239,6 +1245,10 @@ class HumanSkeleton(
+ 		return newState
+ 	}
+ 
++	fun setYawCorrectionConfig(config: YawCorrectionConfig) {
++		spineYawCorrection = SpineYawCorrection(this, config)
++	}
++
+ 	companion object {
+ 		val FORWARD_QUATERNION = EulerAngles(
+ 			EulerOrder.YZX,"
+SlimeVR/SlimeVR-Server,1243,7f7da7e,server/core/src/main/java/dev/slimevr/tracking/processor/skeleton/SpineYawCorrection.kt,added,76,0,76,"@@ -0,0 +1,76 @@
++package dev.slimevr.tracking.processor.skeleton
++
++import com.jme3.math.FastMath
++import dev.slimevr.VRServer
++import dev.slimevr.config.YawCorrectionConfig
++import dev.slimevr.tracking.trackers.Tracker
++import io.github.axisangles.ktmath.EulerOrder
++import io.github.axisangles.ktmath.Quaternion
++import io.github.axisangles.ktmath.Vector3.Companion.POS_Y
++import kotlin.math.*
++
++class SpineYawCorrection(
++	val skeleton: HumanSkeleton,
++	private val yawCorrectionConfig: YawCorrectionConfig,
++) {
++
++	private val upperBodyTrackers = filterImuTrackers(
++		skeleton.headTracker,
++		skeleton.neckTracker,
++		skeleton.upperChestTracker,
++		skeleton.chestTracker,
++		skeleton.waistTracker,
++		skeleton.hipTracker,
++	)
++
++	fun updateTrackers() {
++		if (!yawCorrectionConfig.enabled) {
++			return
++		}
++
++		updateTrackers(upperBodyTrackers)
++	}
++
++	private fun updateTrackers(trackers: List<Tracker>) {
++		for ((parentTracker, tracker) in trackers.zipWithNext()) {
++			updateTracker(tracker, parentTracker)
++		}
++	}
++
++	private fun updateTracker(tracker: Tracker, parentTracker: Tracker) {
++		val trackerRot = tracker.getRotation()
++		val parentTrackerRot = parentTracker.getRotation()
++
++		// For now, we only handle trackers which are relatively ""upright"", i.e. in the
++		// standing position, or sitting position for trackers that are high up on the
++		// spine. When someone is lying down, they could be curled up such that the yaws
++		// don't necessarily align.
++		val maxDeviationInRad = 30.0f * FastMath.DEG_TO_RAD
++		if (!isTrackerPointingUp(trackerRot, maxDeviationInRad) ||
++			!isTrackerPointingUp(parentTrackerRot, maxDeviationInRad)
++		) {
++			return
++		}
++
++		val deltaRot = trackerRot * parentTrackerRot.inv()
++		val deltaYawInRad = deltaRot.toEulerAngles(EulerOrder.YZX).y
++
++		// Amount of yaw should be roughly the maximum yaw bias of the gyroscope. If it
++		// is too small, the gyroscope will overpower the correction and the skeleton
++		// will drift. If it is too big, the player will notice that the skeleton is
++		// rotating when the player doesn't face forward for a long time.
++		val adjustYawInRad = -sign(deltaYawInRad) * (yawCorrectionConfig.amountInDegPerSec * FastMath.DEG_TO_RAD) * VRServer.instance.fpsTimer.timePerFrame
++
++		// Adjust the tracker's yaw towards the parent tracker's yaw
++		tracker.resetsHandler.spineYawCorrectionInRad += adjustYawInRad
++	}
++
++	private fun isTrackerPointingUp(trackerRot: Quaternion, maxDeviationInRad: Float): Boolean {
++		val trackerUp = trackerRot.sandwich(POS_Y)
++		return trackerUp.angleTo(POS_Y) < maxDeviationInRad
++	}
++
++	companion object {
++		private fun filterImuTrackers(vararg trackers: Tracker?): List<Tracker> = trackers.filterNotNull().filter { it.isImu() }.toList()
++	}
++}"
+SlimeVR/SlimeVR-Server,1243,7f7da7e,server/core/src/main/java/dev/slimevr/tracking/trackers/Tracker.kt,modified,4,0,4,"@@ -333,6 +333,8 @@ class Tracker @JvmOverloads constructor(
+ 			rot = resetsHandler.getReferenceAdjustedDriftRotationFrom(rot)
+ 		}
+ 
++		rot = resetsHandler.applySpineYawCorrection(rot)
++
+ 		return rot
+ 	}
+ 
+@@ -365,6 +367,8 @@ class Tracker @JvmOverloads constructor(
+ 			rot = resetsHandler.getIdentityAdjustedDriftRotationFrom(rot)
+ 		}
+ 
++		rot = resetsHandler.applySpineYawCorrection(rot)
++
+ 		return rot
+ 	}
+ "
+SlimeVR/SlimeVR-Server,1243,7f7da7e,server/core/src/main/java/dev/slimevr/tracking/trackers/TrackerResetsHandler.kt,modified,17,0,17,"@@ -74,6 +74,14 @@ class TrackerResetsHandler(val tracker: Tracker) {
+ 	private var yawFixZeroReference = Quaternion.IDENTITY
+ 	private var tposeDownFix = Quaternion.IDENTITY
+ 
++	// Spine yaw compensation
++	var spineYawCorrectionInRad: Float = 0.0f
++		set(value) {
++			field = value
++			spineYawCorrectionRot = EulerAngles(EulerOrder.YZX, 0.0f, value, 0.0f).toQuaternion()
++		}
++	private var spineYawCorrectionRot = Quaternion.IDENTITY
++
+ 	/**
+ 	 * Reads/loads drift compensation settings from given config
+ 	 */
+@@ -152,6 +160,11 @@ class TrackerResetsHandler(val tracker: Tracker) {
+ 	 */
+ 	fun getReferenceAdjustedAccel(rawRot: Quaternion, accel: Vector3): Vector3 = (adjustToReference(rawRot) / yawFix).sandwich(accel)
+ 
++	/**
++	 * Gets the rotation after applying spine yaw correction
++	 */
++	fun applySpineYawCorrection(rotation: Quaternion): Quaternion = spineYawCorrectionRot * rotation
++
+ 	/**
+ 	 * Converts raw or filtered rotation into reference- and
+ 	 * mounting-reset-adjusted by applying quaternions produced after
+@@ -274,6 +287,8 @@ class TrackerResetsHandler(val tracker: Tracker) {
+ 			yawResetSmoothTimeRemain = 0.0f
+ 		}
+ 
++		spineYawCorrectionInRad = 0.0f
++
+ 		calculateDrift(oldRot)
+ 
+ 		if (this.tracker.lastResetStatus != 0u) {
+@@ -299,6 +314,8 @@ class TrackerResetsHandler(val tracker: Tracker) {
+ 
+ 		makeIdentityAdjustmentQuatsYaw()
+ 
++		spineYawCorrectionInRad = 0.0f
++
+ 		calculateDrift(oldRot)
+ 
+ 		// Start at yaw before reset if smoothing enabled"
+SlimeVR/SlimeVR-Server,1243,7f7da7e,solarxr-protocol,modified,1,1,2,"@@ -1 +1 @@
+-Subproject commit 73fca6300d70ee5e73258ce98a7dbae4d63b9cc8
++Subproject commit 69bbc920355c04b8d41a5b6fac3f85f867815ee0"
+SlimeVR/SlimeVR-Server,1243,69ac737,server/core/src/main/java/dev/slimevr/tracking/processor/HumanPoseManager.kt,modified,2,2,4,"@@ -287,7 +287,7 @@ class HumanPoseManager(val server: VRServer?) {
+ 
+ 	fun loadFromConfig(configManager: ConfigManager) {
+ 		skeletonConfigManager.loadFromConfig(configManager)
+-		skeleton.setYawCorrectionConfig(configManager.vrConfig.yawCorrectionConfig)
++		skeleton.spineYawCorrection.setConfig(configManager.vrConfig.yawCorrectionConfig)
+ 	}
+ 
+ 	@VRServerThread
+@@ -666,7 +666,7 @@ class HumanPoseManager(val server: VRServer?) {
+ 	}
+ 
+ 	fun setYawCorrection(yawCorrectionConfig: YawCorrectionConfig) {
+-		skeleton.setYawCorrectionConfig(yawCorrectionConfig)
++		skeleton.spineYawCorrection.setConfig(yawCorrectionConfig)
+ 	}
+ 
+ 	fun setLegTweaksStateTemp("
+SlimeVR/SlimeVR-Server,1243,69ac737,server/core/src/main/java/dev/slimevr/tracking/processor/skeleton/HumanSkeleton.kt,modified,4,6,10,"@@ -2,7 +2,6 @@ package dev.slimevr.tracking.processor.skeleton
+ 
+ import com.jme3.math.FastMath
+ import dev.slimevr.VRServer
+-import dev.slimevr.config.YawCorrectionConfig
+ import dev.slimevr.tracking.processor.Bone
+ import dev.slimevr.tracking.processor.BoneType
+ import dev.slimevr.tracking.processor.HumanPoseManager
+@@ -208,7 +207,7 @@ class HumanSkeleton(
+ 	var tapDetectionManager = TapDetectionManager(this)
+ 	var viveEmulation = ViveEmulation(this)
+ 	var localizer = Localizer(this)
+-	var spineYawCorrection = SpineYawCorrection(this, YawCorrectionConfig())
++	val spineYawCorrection = SpineYawCorrection()
+ 
+ 	// Constructors
+ 	init {
+@@ -443,6 +442,9 @@ class HumanSkeleton(
+ 
+ 		// Update tap detection's trackers
+ 		tapDetectionManager.updateConfig(trackers)
++
++		// Update Spine Yaw Correction
++		spineYawCorrection.setTrackers(this)
+ 	}
+ 
+ 	/**
+@@ -1654,10 +1656,6 @@ class HumanSkeleton(
+ 		return newState
+ 	}
+ 
+-	fun setYawCorrectionConfig(config: YawCorrectionConfig) {
+-		spineYawCorrection = SpineYawCorrection(this, config)
+-	}
+-
+ 	companion object {
+ 		val FORWARD_QUATERNION = EulerAngles(
+ 			EulerOrder.YZX,"
+SlimeVR/SlimeVR-Server,1243,69ac737,server/core/src/main/java/dev/slimevr/tracking/processor/skeleton/SpineYawCorrection.kt,modified,20,14,34,"@@ -9,22 +9,28 @@ import io.github.axisangles.ktmath.Quaternion
+ import io.github.axisangles.ktmath.Vector3.Companion.POS_Y
+ import kotlin.math.*
+ 
+-class SpineYawCorrection(
+-	val skeleton: HumanSkeleton,
+-	private val yawCorrectionConfig: YawCorrectionConfig,
+-) {
++class SpineYawCorrection {
+ 
+-	private val upperBodyTrackers = filterImuTrackers(
+-		skeleton.headTracker,
+-		skeleton.neckTracker,
+-		skeleton.upperChestTracker,
+-		skeleton.chestTracker,
+-		skeleton.waistTracker,
+-		skeleton.hipTracker,
+-	)
++	private var config = YawCorrectionConfig()
++	private var upperBodyTrackers: List<Tracker> = listOf()
++
++	fun setTrackers(skeleton: HumanSkeleton) {
++		upperBodyTrackers = filterImuTrackers(
++			skeleton.headTracker,
++			skeleton.neckTracker,
++			skeleton.upperChestTracker,
++			skeleton.chestTracker,
++			skeleton.waistTracker,
++			skeleton.hipTracker,
++		)
++	}
++
++	fun setConfig(config: YawCorrectionConfig) {
++		this.config = config
++	}
+ 
+ 	fun updateTrackers() {
+-		if (!yawCorrectionConfig.enabled) {
++		if (!config.enabled) {
+ 			return
+ 		}
+ 
+@@ -59,7 +65,7 @@ class SpineYawCorrection(
+ 		// is too small, the gyroscope will overpower the correction and the skeleton
+ 		// will drift. If it is too big, the player will notice that the skeleton is
+ 		// rotating when the player doesn't face forward for a long time.
+-		val adjustYawInRad = -sign(deltaYawInRad) * (yawCorrectionConfig.amountInDegPerSec * FastMath.DEG_TO_RAD) * VRServer.instance.fpsTimer.timePerFrame
++		val adjustYawInRad = -sign(deltaYawInRad) * (config.amountInDegPerSec * FastMath.DEG_TO_RAD) * VRServer.instance.fpsTimer.timePerFrame
+ 
+ 		// Adjust the tracker's yaw towards the parent tracker's yaw
+ 		tracker.resetsHandler.spineYawCorrectionInRad += adjustYawInRad"

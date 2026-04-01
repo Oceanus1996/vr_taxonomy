@@ -1,0 +1,203 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch,gpt_bug_detection
+leetvr/hotham,311,336eecd,hotham-simulator/src/simulator.rs,modified,15,10,25,"@@ -1033,7 +1033,8 @@ unsafe fn build_swapchain(state: &mut MutexGuard<State>) -> vk::SwapchainKHR {
+     let close_window = state.close_window.clone();
+ 
+     let (swapchain_tx, swapchain_rx) = channel();
+-    let (event_tx, event_rx) = channel();
++    let (mouse_event_tx, mouse_event_rx) = channel();
++    let (keyboard_event_tx, keyboard_event_rx) = channel();
+     let window_thread_handle = thread::spawn(move || {
+         let mut event_loop: EventLoop<()> = EventLoop::new_any_thread();
+         let visible = true;
+@@ -1111,6 +1112,9 @@ unsafe fn build_swapchain(state: &mut MutexGuard<State>) -> vk::SwapchainKHR {
+                             *control_flow = ControlFlow::Exit
+                         }
+                     }
++                    WindowEvent::KeyboardInput { input, .. } => {
++                        keyboard_event_tx.send(input).unwrap()
++                    }
+                     WindowEvent::MouseInput {
+                         button: MouseButton::Left,
+                         state,
+@@ -1125,16 +1129,14 @@ unsafe fn build_swapchain(state: &mut MutexGuard<State>) -> vk::SwapchainKHR {
+                     window.request_redraw();
+                 }
+                 Event::RedrawRequested(_window_id) => {}
+-                Event::DeviceEvent { event, .. } => match event {
+-                    DeviceEvent::Key(_) => event_tx.send(event).unwrap(),
+ 
+-                    DeviceEvent::MouseMotion { .. } => {
+-                        if mouse_pressed {
+-                            event_tx.send(event).unwrap()
++                Event::DeviceEvent { event, .. } => {
++                    if mouse_pressed {
++                        if let DeviceEvent::MouseMotion { delta } = event {
++                            mouse_event_tx.send(delta).unwrap();
+                         }
+                     }
+-                    _ => {}
+-                },
++                }
+                 _ => (),
+             }
+         });
+@@ -1147,7 +1149,8 @@ unsafe fn build_swapchain(state: &mut MutexGuard<State>) -> vk::SwapchainKHR {
+     let instance = state.vulkan_instance.as_ref().unwrap().clone();
+     let swapchain_ext = khr::Swapchain::new(&instance, device);
+ 
+-    state.event_rx = Some(event_rx);
++    state.mouse_event_rx = Some(mouse_event_rx);
++    state.keyboard_event_rx = Some(keyboard_event_rx);
+     state.surface = surface;
+     state.window_thread_handle = Some(window_thread_handle);
+     state.internal_swapchain = swapchain;
+@@ -1510,7 +1513,9 @@ pub unsafe extern ""system"" fn sync_actions(
+     _session: Session,
+     _sync_info: *const ActionsSyncInfo,
+ ) -> Result {
+-    STATE.lock().unwrap().update_camera();
++    let mut state = STATE.lock().unwrap();
++    state.update_camera_rotation();
++    state.update_camera_position();
+ 
+     Result::SUCCESS
+ }","{""has_bug"": true, ""bugs"": [{""line_start"": 130, ""line_end"": 130, ""description"": ""Potential null dereference when calling unwrap() on pfn_get_instance_proc_addr."", ""buggy_code"": ""let get_instance_proc_addr = (*create_info).pfn_get_instance_proc_addr.unwrap();""}, {""line_start"": 188, ""line_end"": 188, ""description"": ""Using transmute to convert a raw pointer to a mutable reference can lead to undefined behavior if the pointer is null or invalid."", ""buggy_code"": ""let create_info: &mut DeviceCreateInfo = transmute((*create_info).vulkan_create_info);""}, {""line_start"": 199, ""line_end"": 199, ""description"": ""The line is incomplete and may lead to a compilation error or undefined behavior due to missing code."", ""buggy_code"": ""create_info.pp_enabled_ext""}]}"
+leetvr/hotham,311,336eecd,hotham-simulator/src/state.rs,modified,45,40,85,"@@ -6,7 +6,7 @@ use ash::{
+ 
+ use nalgebra::{Quaternion, Unit, UnitQuaternion, Vector3};
+ use openxr_sys::{Path, Posef, SessionState, Space, Vector3f};
+-use winit::event::DeviceEvent;
++use winit::event::KeyboardInput;
+ 
+ use std::{
+     collections::HashMap,
+@@ -60,7 +60,8 @@ pub struct State {
+     pub left_hand_space: u64,
+     pub right_hand_space: u64,
+     pub view_poses: Vec<Posef>,
+-    pub event_rx: Option<Receiver<DeviceEvent>>,
++    pub keyboard_event_rx: Option<Receiver<KeyboardInput>>,
++    pub mouse_event_rx: Option<Receiver<(f64, f64)>>,
+     pub input_state: Inputs,
+     pub last_frame_time: Instant,
+     pub camera: Camera,
+@@ -112,7 +113,8 @@ impl Default for State {
+             spaces: Default::default(),
+             left_hand_space: 0,
+             right_hand_space: 0,
+-            event_rx: None,
++            mouse_event_rx: None,
++            keyboard_event_rx: None,
+             input_state: Inputs::default(),
+             last_frame_time: Instant::now(),
+             view_poses: (0..NUM_VIEWS)
+@@ -202,62 +204,30 @@ impl State {
+         println!(""[HOTHAM_SIMULATOR] All things are now destroyed"");
+     }
+ 
+-    /// Updates the OpenXR camera Position & Rotation
+-    /// Tries to emulate a simple first person floating camera to help navigate the scene
+-    pub fn update_camera(&mut self) -> Option<()> {
+-        let mut x_rot = 0f32;
+-        let mut y_rot = 0f32;
+-
++    pub fn update_camera_position(&mut self) -> Option<()> {
+         // We need to adjust the speed value so its always the same speed even if the frame rate isn't consistent
+         // The delta time is the the current time - last frame time
+         let now = Instant::now();
+         let delta = now - self.last_frame_time;
+         self.last_frame_time = now;
+-
+         let dt = delta.as_secs_f32();
+-        let movement_speed = 2f32 * dt;
+-        let mouse_sensitivity = 0.2 * std::f32::consts::TAU / 360f32;
+ 
+-        while let Ok(input_event) = self.event_rx.as_ref()?.try_recv() {
+-            match input_event {
+-                DeviceEvent::Key(keyboard_input) => self.input_state.process_event(keyboard_input),
+-                DeviceEvent::MouseMotion { delta: (x, y) } => {
+-                    x_rot -= x as f32;
+-                    y_rot -= y as f32;
+-                }
+-                _ => {}
+-            }
++        while let Ok(keyboard_input) = self.keyboard_event_rx.as_ref()?.try_recv() {
++            self.input_state.process_event(keyboard_input)
+         }
+ 
+         // Camera position & Rotation
+         let pose = &mut self.view_poses[0];
+ 
+-        // Update Rotation
+-        let orientation = &mut pose.orientation;
+-
+-        self.camera.yaw += x_rot * mouse_sensitivity;
+-        self.camera.pitch += y_rot * mouse_sensitivity;
+-
+-        // I think I'm converting these two types incorrectly but it seems to work and I'm too scared to break it lol
+-        let rotation: Unit<Quaternion<f32>> =
+-            UnitQuaternion::from_euler_angles(self.camera.pitch, self.camera.yaw, 0f32);
+-
+-        orientation.x = rotation.i;
+-        orientation.y = rotation.j;
+-        orientation.z = rotation.k;
+-        orientation.w = rotation.w;
+-
+-        // Update Position
+-
+         let position = &mut pose.position;
+-
++        let orientation = &pose.orientation;
+         // get the forward vector rotated by the camera rotation quaternion
+         let forward = rotate_vector_by_quaternion(Vector3::new(0f32, 0f32, 1f32), *orientation);
+         // get the right vector rotated by the camera rotation quaternion
+         let right = rotate_vector_by_quaternion(Vector3::new(1f32, 0f32, 0f32), *orientation);
+ 
+         let up = Vector3::new(0f32, 1f32, 0f32);
+-
++        let movement_speed = 2f32 * dt;
+         for pressed in self.input_state.pressed.iter() {
+             match pressed {
+                 winit::event::VirtualKeyCode::W => {
+@@ -294,6 +264,41 @@ impl State {
+             }
+         }
+ 
++        self.view_poses[1] = self.view_poses[0];
++        Some(())
++    }
++
++    /// Updates the OpenXR camera Position & Rotation
++    /// Tries to emulate a simple first person floating camera to help navigate the scene
++    pub fn update_camera_rotation(&mut self) -> Option<()> {
++        let mut x_rot = 0f32;
++        let mut y_rot = 0f32;
++
++        while let Ok((x, y)) = self.mouse_event_rx.as_ref()?.try_recv() {
++            x_rot -= x as f32;
++            y_rot -= y as f32;
++        }
++
++        // Camera position & Rotation
++        let pose = &mut self.view_poses[0];
++
++        // Update Rotation
++        let orientation = &mut pose.orientation;
++
++        let mouse_sensitivity = 0.2 * std::f32::consts::TAU / 360f32;
++
++        self.camera.yaw += x_rot * mouse_sensitivity;
++        self.camera.pitch += y_rot * mouse_sensitivity;
++
++        // I think I'm converting these two types incorrectly but it seems to work and I'm too scared to break it lol
++        let rotation: Unit<Quaternion<f32>> =
++            UnitQuaternion::from_euler_angles(self.camera.pitch, self.camera.yaw, 0f32);
++
++        orientation.x = rotation.i;
++        orientation.y = rotation.j;
++        orientation.z = rotation.k;
++        orientation.w = rotation.w;
++
+         // let left_hand = self.left_hand_space;
+         // let right_hand = self.right_hand_space;
+         // self.spaces.get_mut(&left_hand).unwrap().position.z += z_delta;","{""has_bug"": true, ""bugs"": [{""line_start"": 111, ""line_end"": 111, ""description"": ""Using a potentially invalid reference for reference_space. Space::NULL may not be a valid state."", ""buggy_code"": ""pub reference_space: Space::NULL,""}, {""line_start"": 156, ""line_end"": 156, ""description"": ""Potential resource leak if device_wait_idle fails. The function should handle the error case."", ""buggy_code"": ""device.device_wait_idle().unwrap();""}, {""line_start"": 158, ""line_end"": 158, ""description"": ""Potential panic if window_thread_handle is None. The unwrap() could lead to a runtime error."", ""buggy_code"": ""self.window_thread_handle.take().unwrap().join().unwrap();""}, {""line_start"": 166, ""line_end"": 166, ""description"": ""Commented out code suggests that resources may not be properly cleaned up, leading to resource leaks."", ""buggy_code"": ""// device.queue_wait_idle(self.present_queue).unwrap();""}, {""line_start"": 170, ""line_end"": 170, ""description"": ""Commented out code indicates that the fence may not be destroyed, leading to resource leaks."", ""buggy_code"": ""// device.destroy_fence(self.swapchain_fence, None);""}, {""line_start"": 188, ""line_end"": 188, ""description"": ""Commented out code indicates that the pipeline layout may not be destroyed, leading to resource leaks."", ""buggy_code"": ""// device.destroy_pipeline_layout(self.pipeline_layout, None);""}]}"

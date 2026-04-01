@@ -1,0 +1,191 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe,1724,679a5d9fa501e81f5fdfa36d162580a116946fd1,src/core/a-entity.js,modified,22,20,42,"@@ -1,14 +1,12 @@
+ /* global HTMLElement */
+ var ANode = require('./a-node');
+ var components = require('./component').components;
+-var re = require('./a-register-element');
++var registerElement = require('./a-register-element').registerElement;
+ var THREE = require('../lib/three');
+ var utils = require('../utils/');
+ 
+ var AEntity;
+-var isNode = re.isNode;
+ var debug = utils.debug('core:a-entity:debug');
+-var registerElement = re.registerElement;
+ 
+ var MULTIPLE_COMPONENT_DELIMITER = '__';
+ 
+@@ -41,6 +39,7 @@ var proto = Object.create(ANode.prototype, {
+       this.object3D = new THREE.Group();
+       this.object3D.el = this;
+       this.object3DMap = {};
++      this.parentEl = null;
+       this.states = [];
+     }
+   },
+@@ -206,7 +205,11 @@ var proto = Object.create(ANode.prototype, {
+       return object3D;
+     }
+   },
+-
++   /**
++   * Add child entity.
++   *
++   * @param {Element} el - Child entity.
++   */
+   add: {
+     value: function (el) {
+       if (!el.object3D) {
+@@ -217,24 +220,18 @@ var proto = Object.create(ANode.prototype, {
+     }
+   },
+ 
++  /**
++   * Tell parentNode to add this entity to itself.
++   */
+   addToParent: {
+     value: function () {
+-      var self = this;
+-      var parent = this.parentEl = this.parentNode;
+-      var attachedToParent = this.attachedToParent;
+-      if (!parent || attachedToParent) { return; }
+-      if (isNode(parent)) {
+-        attach();
+-        return;
+-      }
+-      parent.addEventListener('nodeready', attach);
+-      function attach () {
+-        // To prevent an object to attach itself multiple times to the parent.
+-        self.attachedToParent = true;
+-        if (parent.add) {
+-          parent.add(self);
+-        }
+-      }
++      var parentNode = this.parentEl = this.parentNode;
++
++      // `!parentNode` check primarily for unit tests.
++      if (!parentNode || !parentNode.add || this.attachedToParent) { return; }
++
++      parentNode.add(this);
++      this.attachedToParent = true;  // To prevent multiple attachments to same parent.
+     }
+   },
+ 
+@@ -265,6 +262,11 @@ var proto = Object.create(ANode.prototype, {
+     writable: window.debug
+   },
+ 
++  /**
++   * Remove child entity.
++   *
++   * @param {Element} el - Child entity.
++   */
+   remove: {
+     value: function (el) {
+       this.object3D.remove(el.object3D);"
+aframevr/aframe,1724,679a5d9fa501e81f5fdfa36d162580a116946fd1,src/systems/camera.js,modified,10,10,20,"@@ -15,35 +15,35 @@ module.exports.System = registerSystem('camera', {
+   },
+ 
+   /**
+-   * Creates a default camera if user has not added one during the initial scene traversal.
++   * Create a default camera if user has not added one during the initial scene traversal.
+    *
+-   * Default camera height is at human level (~1.8m) and back such that
+-   * entities at the origin (0, 0, 0) are well-centered.
++   * Default camera offset height is at average eye level (~1.6m).
+    */
+   setupDefaultCamera: function () {
+     var self = this;
+     var sceneEl = this.sceneEl;
+     var defaultCameraEl;
+-    // setTimeout in case the camera is being set dynamically with a setAttribute.
+-    setTimeout(checkForCamera);
+-    function checkForCamera () {
++
++    // Wait for all entities to fully load before checking for existence of camera.
++    // Since entities wait for <a-assets> to load, any cameras attaching to the scene
++    // will do so asynchronously.
++    sceneEl.addEventListener('loaded', function checkForCamera () {
+       var currentCamera = sceneEl.camera;
+       if (currentCamera) {
+-        sceneEl.emit('camera-ready', { cameraEl: currentCamera.el });
++        sceneEl.emit('camera-ready', {cameraEl: currentCamera.el});
+         return;
+       }
+       defaultCameraEl = document.createElement('a-entity');
+       defaultCameraEl.setAttribute('position', '0 0 0');
+       defaultCameraEl.setAttribute(DEFAULT_CAMERA_ATTR, '');
+-      defaultCameraEl.setAttribute('camera',
+-        {active: true, userHeight: DEFAULT_USER_HEIGHT});
++      defaultCameraEl.setAttribute('camera', {active: true, userHeight: DEFAULT_USER_HEIGHT});
+       defaultCameraEl.setAttribute('wasd-controls', '');
+       defaultCameraEl.setAttribute('look-controls', '');
+       sceneEl.appendChild(defaultCameraEl);
+       sceneEl.addEventListener('enter-vr', self.removeDefaultOffset);
+       sceneEl.addEventListener('exit-vr', self.addDefaultOffset);
+       sceneEl.emit('camera-ready', {cameraEl: defaultCameraEl});
+-    }
++    });
+   },
+ 
+   /**"
+aframevr/aframe,1724,679a5d9fa501e81f5fdfa36d162580a116946fd1,tests/core/a-entity.test.js,modified,2,2,4,"@@ -357,15 +357,15 @@ suite('a-entity', function () {
+       var parentEl = entityFactory();
+       var el = document.createElement('a-entity');
+ 
+-      parentEl.appendChild(el);
+-
+       el.addEventListener('loaded', function () {
+         parentEl.removeChild(el);
+         process.nextTick(function () {
+           assert.equal(parentEl.object3D.children.length, 0);
+           done();
+         });
+       });
++
++      parentEl.appendChild(el);
+     });
+ 
+     test('removes itself from scene parent', function (done) {"
+aframevr/aframe,1724,679a5d9fa501e81f5fdfa36d162580a116946fd1,tests/systems/camera.test.js,modified,35,0,35,"@@ -10,6 +10,41 @@ suite('camera system', function () {
+     });
+   });
+ 
++  suite('setupDefaultCamera', function () {
++    test('uses defined camera if defined', function (done) {
++      var assetsEl;
++      var imgEl;  // Image that will never load.
++      var cameraEl;
++      var sceneEl;
++
++      // Create assets.
++      assetsEl = document.createElement('a-assets');
++      imgEl = document.createElement('img');
++      imgEl.setAttribute('src', 'neverloadlalala5.gif');
++      assetsEl.appendChild(imgEl);
++
++      // Create scene.
++      sceneEl = document.createElement('a-scene');
++      sceneEl.appendChild(assetsEl);
++
++      // Create camera.
++      cameraEl = document.createElement('a-entity');
++      cameraEl.setAttribute('camera', '');
++      sceneEl.appendChild(cameraEl);
++
++      sceneEl.addEventListener('loaded', function () {
++        assert.equal(sceneEl.camera.el, cameraEl);
++        done();
++      });
++
++      document.body.appendChild(sceneEl);
++
++      // Trigger scene load through assets. Camera will be waiting for assets.
++      // Add `setTimeout` to mimic asynchrony of asset loading.
++      setTimeout(function () { assetsEl.load(); });
++    });
++  });
++
+   suite('setActiveCamera', function () {
+     test('sets new active camera on scene', function () {
+       var el = this.el;"

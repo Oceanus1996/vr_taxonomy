@@ -1,0 +1,211 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+secondlife/viewer,182,95d07cc,indra/newview/lldrawpool.cpp,modified,27,30,57,"@@ -452,21 +452,26 @@ void LLRenderPass::pushGLTFBatches(U32 type)
+         LLDrawInfo& params = **i;
+         LLCullResult::increment_iterator(i, end);
+ 
+-        auto& mat = params.mGLTFMaterial;
++        pushGLTFBatch(params);
++    }
++}
+ 
+-        mat->bind(params.mTexture);
++void LLRenderPass::pushGLTFBatch(LLDrawInfo& params)
++{
++    auto& mat = params.mGLTFMaterial;
+ 
+-        LLGLDisable cull_face(mat->mDoubleSided ? GL_CULL_FACE : 0);
++    mat->bind(params.mTexture);
+ 
+-        setup_texture_matrix(params);
+-        
+-        applyModelMatrix(params);
++    LLGLDisable cull_face(mat->mDoubleSided ? GL_CULL_FACE : 0);
+ 
+-        params.mVertexBuffer->setBuffer();
+-        params.mVertexBuffer->drawRange(LLRender::TRIANGLES, params.mStart, params.mEnd, params.mCount, params.mOffset);
++    setup_texture_matrix(params);
++    
++    applyModelMatrix(params);
+ 
+-        teardown_texture_matrix(params);
+-    }
++    params.mVertexBuffer->setBuffer();
++    params.mVertexBuffer->drawRange(LLRender::TRIANGLES, params.mStart, params.mEnd, params.mCount, params.mOffset);
++
++    teardown_texture_matrix(params);
+ }
+ 
+ void LLRenderPass::pushRiggedGLTFBatches(U32 type)
+@@ -483,28 +488,20 @@ void LLRenderPass::pushRiggedGLTFBatches(U32 type)
+         LLDrawInfo& params = **i;
+         LLCullResult::increment_iterator(i, end);
+ 
+-        auto& mat = params.mGLTFMaterial;
+-
+-        mat->bind(params.mTexture);
+-
+-        LLGLDisable cull_face(mat->mDoubleSided ? GL_CULL_FACE : 0);
+-
+-        setup_texture_matrix(params);
+-
+-        applyModelMatrix(params);
+-
+-        if (params.mAvatar.notNull() && (lastAvatar != params.mAvatar || lastMeshId != params.mSkinInfo->mHash))
+-        {
+-            uploadMatrixPalette(params);
+-            lastAvatar = params.mAvatar;
+-            lastMeshId = params.mSkinInfo->mHash;
+-        }
+-
+-        params.mVertexBuffer->setBuffer();
+-        params.mVertexBuffer->drawRange(LLRender::TRIANGLES, params.mStart, params.mEnd, params.mCount, params.mOffset);
++        pushRiggedGLTFBatch(params, lastAvatar, lastMeshId);
++    }
++}
+ 
+-        teardown_texture_matrix(params);
++void LLRenderPass::pushRiggedGLTFBatch(LLDrawInfo& params, LLVOAvatar*& lastAvatar, U64& lastMeshId)
++{
++    if (params.mAvatar.notNull() && (lastAvatar != params.mAvatar || lastMeshId != params.mSkinInfo->mHash))
++    {
++        uploadMatrixPalette(params);
++        lastAvatar = params.mAvatar;
++        lastMeshId = params.mSkinInfo->mHash;
+     }
++
++    pushGLTFBatch(params);
+ }
+ 
+ void LLRenderPass::pushBatches(U32 type, bool texture, bool batch_textures)"
+secondlife/viewer,182,95d07cc,indra/newview/lldrawpool.h,modified,6,0,6,"@@ -329,6 +329,10 @@ class LLRenderPass : public LLDrawPool
+                 return ""PASS_GLTF_PBR"";
+             case PASS_GLTF_PBR_RIGGED:
+                 return ""PASS_GLTF_PBR_RIGGED"";
++            case PASS_GLTF_PBR_ALPHA_MASK:
++                return ""PASS_GLTF_PBR_ALPHA_MASK"";
++            case PASS_GLTF_PBR_ALPHA_MASK_RIGGED:
++                return ""PASS_GLTF_PBR_ALPHA_MASK_RIGGED"";
+             default:
+                 return ""Unknown pass"";
+         }
+@@ -348,7 +352,9 @@ class LLRenderPass : public LLDrawPool
+ 	virtual void pushBatches(U32 type, bool texture = true, bool batch_textures = false);
+     virtual void pushRiggedBatches(U32 type, bool texture = true, bool batch_textures = false);
+     void pushGLTFBatches(U32 type);
++    void pushGLTFBatch(LLDrawInfo& params);
+     void pushRiggedGLTFBatches(U32 type);
++    void pushRiggedGLTFBatch(LLDrawInfo& params, LLVOAvatar*& lastAvatar, U64& lastMeshId);
+ 	virtual void pushMaskBatches(U32 type, bool texture = true, bool batch_textures = false);
+     virtual void pushRiggedMaskBatches(U32 type, bool texture = true, bool batch_textures = false);
+ 	virtual void pushBatch(LLDrawInfo& params, bool texture, bool batch_textures = false);"
+secondlife/viewer,182,95d07cc,indra/newview/llfetchedgltfmaterial.cpp,modified,8,5,13,"@@ -70,13 +70,16 @@ void LLFetchedGLTFMaterial::bind(LLViewerTexture* media_tex)
+     LLViewerTexture* baseColorTex = media_tex ? media_tex : mBaseColorTexture;
+     LLViewerTexture* emissiveTex = media_tex ? media_tex : mEmissiveTexture;
+ 
+-    if (mAlphaMode == LLGLTFMaterial::ALPHA_MODE_MASK)
++    if (!LLPipeline::sShadowRender || (mAlphaMode == LLGLTFMaterial::ALPHA_MODE_MASK))
+     {
+-        // dividing the alpha cutoff by transparency here allows the shader to compare against
+-        // the alpha value of the texture without needing the transparency value
+-        min_alpha = mAlphaCutoff/mBaseColor.mV[3];
++        if (mAlphaMode == LLGLTFMaterial::ALPHA_MODE_MASK)
++        {
++            // dividing the alpha cutoff by transparency here allows the shader to compare against
++            // the alpha value of the texture without needing the transparency value
++            min_alpha = mAlphaCutoff/mBaseColor.mV[3];
++        }
++        shader->uniform1f(LLShaderMgr::MINIMUM_ALPHA, min_alpha);
+     }
+-    shader->uniform1f(LLShaderMgr::MINIMUM_ALPHA, min_alpha);
+ 
+     if (baseColorTex != nullptr)
+     {"
+secondlife/viewer,182,95d07cc,indra/newview/pipeline.cpp,modified,27,6,33,"@@ -6751,7 +6751,8 @@ void LLPipeline::renderShadowSimple(U32 type)
+     gGLLastMatrix = NULL;
+ }
+ 
+-void LLPipeline::renderAlphaObjects(bool texture, bool batch_texture, bool rigged)
++// Currently only used for shadows -Cosmic,2023-04-19
++void LLPipeline::renderAlphaObjects(bool rigged)
+ {
+     LL_PROFILE_ZONE_SCOPED_CATEGORY_PIPELINE;
+     assertInitialized();
+@@ -6768,9 +6769,20 @@ void LLPipeline::renderAlphaObjects(bool texture, bool batch_texture, bool rigge
+         LLDrawInfo* pparams = *i;
+         LLCullResult::increment_iterator(i, end);
+ 
++        if (rigged != (pparams->mAvatar != nullptr))
++        {
++            // Pool contains both rigged and non-rigged DrawInfos. Only draw
++            // the objects we're interested in in this pass.
++            continue;
++        }
++
+         if (rigged)
+         {
+-            if (pparams->mAvatar != nullptr)
++            if (pparams->mGLTFMaterial)
++            {
++                mSimplePool->pushRiggedGLTFBatch(*pparams, lastAvatar, lastMeshId);
++            }
++            else
+             {
+                 if (lastAvatar != pparams->mAvatar || lastMeshId != pparams->mSkinInfo->mHash)
+                 {
+@@ -6779,19 +6791,27 @@ void LLPipeline::renderAlphaObjects(bool texture, bool batch_texture, bool rigge
+                     lastMeshId = pparams->mSkinInfo->mHash;
+                 }
+ 
+-                mSimplePool->pushBatch(*pparams, texture, batch_texture);
++                mSimplePool->pushBatch(*pparams, true, true);
+             }
+         }
+-        else if (pparams->mAvatar == nullptr)
++        else
+         {
+-            mSimplePool->pushBatch(*pparams, texture, batch_texture);
++            if (pparams->mGLTFMaterial)
++            {
++                mSimplePool->pushGLTFBatch(*pparams);
++            }
++            else
++            {
++                mSimplePool->pushBatch(*pparams, true, true);
++            }
+         }
+     }
+ 
+     gGL.loadMatrix(gGLModelView);
+     gGLLastMatrix = NULL;
+ }
+ 
++// Currently only used for shadows -Cosmic,2023-04-19
+ void LLPipeline::renderMaskedObjects(U32 type, bool texture, bool batch_texture, bool rigged)
+ {
+ 	assertInitialized();
+@@ -6809,6 +6829,7 @@ void LLPipeline::renderMaskedObjects(U32 type, bool texture, bool batch_texture,
+ 	gGLLastMatrix = NULL;		
+ }
+ 
++// Currently only used for shadows -Cosmic,2023-04-19
+ void LLPipeline::renderFullbrightMaskedObjects(U32 type, bool texture, bool batch_texture, bool rigged)
+ {
+ 	assertInitialized();
+@@ -8885,7 +8906,7 @@ void LLPipeline::renderShadow(glh::matrix4f& view, glh::matrix4f& proj, LLCamera
+                 LL_PROFILE_ZONE_NAMED_CATEGORY_PIPELINE(""shadow alpha blend"");
+                 LL_PROFILE_GPU_ZONE(""shadow alpha blend"");
+                 LLGLSLShader::sCurBoundShaderPtr->setMinimumAlpha(0.598f);
+-                renderAlphaObjects(true, true, rigged);
++                renderAlphaObjects(rigged);
+             }
+ 
+             {"
+secondlife/viewer,182,95d07cc,indra/newview/pipeline.h,modified,1,1,2,"@@ -273,7 +273,7 @@ class LLPipeline
+     void renderObjects(U32 type, bool texture = true, bool batch_texture = false, bool rigged = false);
+     void renderShadowSimple(U32 type);
+ 
+-    void renderAlphaObjects(bool texture = true, bool batch_texture = false, bool rigged = false);
++    void renderAlphaObjects(bool rigged = false);
+ 	void renderMaskedObjects(U32 type, bool texture = true, bool batch_texture = false, bool rigged = false);
+     void renderFullbrightMaskedObjects(U32 type, bool texture = true, bool batch_texture = false, bool rigged = false);
+ "

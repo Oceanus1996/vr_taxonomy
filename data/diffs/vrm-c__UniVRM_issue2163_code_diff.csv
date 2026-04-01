@@ -1,0 +1,145 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vrm-c/UniVRM,2163,18285bf4e8f0ee4ebe536277ed6feaadbfc79774,Assets/VRM10/Runtime/Components/LookAt/LookAtEyeDirection.cs,modified,10,1,11,"@@ -2,10 +2,19 @@
+ {
+     public readonly struct LookAtEyeDirection
+     {
++        /// <summary>
++        /// Positive is right.
++        /// Negative is left.
++        ///
++        /// </summary>
+         public float Yaw { get; }
+ 
+         /// <summary>
+-        /// Pitch of LeftEye
++        /// Positive is upper.
++        /// Negative is lower.
++        ///
++        /// Usually in z-forward y-up left coordinates, positive is lower.
++        /// This is inverted because of following the vrm-1.0 specification.
+         /// </summary>
+         public float Pitch { get; }
+ "
+vrm-c/UniVRM,2163,18285bf4e8f0ee4ebe536277ed6feaadbfc79774,Assets/VRM10/Runtime/Components/LookAt/LookAtEyeDirectionApplicableToBone.cs,modified,43,37,80,"@@ -3,13 +3,18 @@
+ 
+ namespace UniVRM10
+ {
++    /// <summary>
++    /// Apply eye direction to bone transforms.
++    /// </summary>
+     internal sealed class LookAtEyeDirectionApplicableToBone : ILookAtEyeDirectionApplicable
+     {
+         private readonly Transform _leftEye;
+-        private readonly Matrix4x4 _leftInit;
++        private readonly Quaternion _leftEyePreMultiplyRotation;
++        private readonly Quaternion _leftEyePostMultiplyRotation;
+ 
+         private readonly Transform _rightEye;
+-        private readonly Matrix4x4 _rightInit;
++        private readonly Quaternion _rightEyePreMultiplyRotation;
++        private readonly Quaternion _rightEyePostMultiplyRotation;
+ 
+         private readonly CurveMapper _horizontalOuter;
+         private readonly CurveMapper _horizontalInner;
+@@ -20,65 +25,66 @@ public LookAtEyeDirectionApplicableToBone(Transform leftEye, Transform rightEye,
+             CurveMapper horizontalOuter, CurveMapper horizontalInner, CurveMapper verticalDown, CurveMapper verticalUp)
+         {
+             _leftEye = leftEye;
+-            _leftInit = Matrix4x4.Rotate(leftEye.localRotation);
++            var leftEyeRotation = _leftEye.rotation;
++            _leftEyePreMultiplyRotation = _leftEye.localRotation * Quaternion.Inverse(leftEyeRotation);
++            _leftEyePostMultiplyRotation = leftEyeRotation;
++
+             _rightEye = rightEye;
+-            _rightInit = Matrix4x4.Rotate(rightEye.localRotation);
++            var rightEyeRotation = _rightEye.rotation;
++            _rightEyePreMultiplyRotation = _rightEye.localRotation * Quaternion.Inverse(rightEyeRotation);
++            _rightEyePostMultiplyRotation = rightEyeRotation;
++
+             _horizontalOuter = horizontalOuter;
+             _horizontalInner = horizontalInner;
+             _verticalDown = verticalDown;
+             _verticalUp = verticalUp;
+         }
+         
+-        /// <summary>
+-        /// LeftEyeボーンとRightEyeボーンに回転を適用する
+-        /// </summary>
+         public void Apply(LookAtEyeDirection eyeDirection, Dictionary<ExpressionKey, float> actualWeights)
+         {
+-            // FIXME
+-            var yaw = eyeDirection.Yaw;
+-            var pitch = eyeDirection.Pitch;
++            SetYawPitchToBones(eyeDirection);
++        }
++
++        public void Restore()
++        {
++            SetYawPitchToBones(new LookAtEyeDirection(0, 0));
++        }
+ 
+-            // horizontal
++        private void SetYawPitchToBones(LookAtEyeDirection eyeDirection)
++        {
+             float leftYaw, rightYaw;
+-            if (yaw < 0)
++            if (eyeDirection.Yaw < 0)
+             {
+-                leftYaw = -_horizontalOuter.Map(-yaw);
+-                rightYaw = -_horizontalInner.Map(-yaw);
++                leftYaw = -_horizontalOuter.Map(-eyeDirection.Yaw);
++                rightYaw = -_horizontalInner.Map(-eyeDirection.Yaw);
+             }
+             else
+             {
+-                rightYaw = _horizontalOuter.Map(yaw);
+-                leftYaw = _horizontalInner.Map(yaw);
++                leftYaw = _horizontalInner.Map(eyeDirection.Yaw);
++                rightYaw = _horizontalOuter.Map(eyeDirection.Yaw);
+             }
+ 
+-            // vertical
+-            if (pitch < 0)
++            float pitch;
++            if (eyeDirection.Pitch < 0)
+             {
+-                pitch = -_verticalDown.Map(-pitch);
++                pitch = _verticalDown.Map(-eyeDirection.Pitch);
+             }
+             else
+             {
+-                pitch = _verticalUp.Map(pitch);
++                pitch = -_verticalUp.Map(eyeDirection.Pitch);
+             }
+ 
+-            // Apply
+-            // 現状、右目左目を個別に動かす機能は無い。
+-            // 特に BlendShape 型に対して実装と、Asset のセットアップが煩雑になるので見送っている。
+-            // 代表して左を採用。
+-            SetYawPitchToBones(new LookAtEyeDirection(leftYaw, pitch));
+-        }
+-
+-        public void Restore()
+-        {
+-            SetYawPitchToBones(new LookAtEyeDirection(0, 0));
+-        }
+-
+-        private void SetYawPitchToBones(LookAtEyeDirection actualEyeDirection)
+-        {
+-            if (_leftEye != null && _rightEye != null)
++            if (_leftEye != null)
++            {
++                _leftEye.localRotation = _leftEyePreMultiplyRotation *
++                                         Quaternion.Euler(pitch, leftYaw, 0) *
++                                         _leftEyePostMultiplyRotation;
++            }
++            if (_rightEye != null)
+             {
+-                _leftEye.localRotation = _leftInit.rotation * Matrix4x4.identity.YawPitchRotation(actualEyeDirection.Yaw, actualEyeDirection.Pitch);
+-                _rightEye.localRotation = _rightInit.rotation * Matrix4x4.identity.YawPitchRotation(actualEyeDirection.Yaw, actualEyeDirection.Pitch);
++                _rightEye.localRotation = _rightEyePreMultiplyRotation *
++                                         Quaternion.Euler(pitch, rightYaw, 0) *
++                                         _rightEyePostMultiplyRotation;
+             }
+         }
+     }"

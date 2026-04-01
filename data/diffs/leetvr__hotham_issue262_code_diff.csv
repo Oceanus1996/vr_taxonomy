@@ -1,0 +1,431 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+leetvr/hotham,262,e1d081f,examples/simple-scene/src/lib.rs,modified,8,1,9,"@@ -36,6 +36,7 @@ pub fn real_main() -> HothamResult<()> {
+ 
+ fn init(engine: &mut Engine) -> Result<World, hotham::HothamError> {
+     let render_context = &mut engine.render_context;
++
+     let vulkan_context = &mut engine.vulkan_context;
+     let physics_context = &mut engine.physics_context;
+     let mut world = World::default();
+@@ -71,7 +72,7 @@ fn add_helmet(
+         .expect(""Could not find Damaged Helmet"");
+     let mut transform = world.get_mut::<Transform>(helmet).unwrap();
+     transform.translation.z = -1.;
+-    transform.translation.y = 0.6;
++    transform.translation.y = 1.4;
+     transform.scale = [0.5, 0.5, 0.5].into();
+     let position = transform.position();
+     drop(transform);
+@@ -122,7 +123,9 @@ fn tick(
+             &mut queries.roots_query,
+             world,
+         );
++
+         debug_system(xr_context, render_context, state);
++
+         skinning_system(&mut queries.skins_query, world, render_context);
+     }
+ 
+@@ -149,7 +152,11 @@ struct DebugState {
+     button_pressed_last_frame: bool,
+ }
+ 
++#[allow(unused)]
+ fn debug_system(xr_context: &mut XrContext, render_context: &mut RenderContext, state: &mut State) {
++    #[cfg(not(target_os = ""android""))]
++    return;
++
+     let input = &xr_context.input;
+     let pressed = xr::ActionInput::get(
+         &input.y_button_action,"
+leetvr/hotham,262,e1d081f,hotham/src/rendering/material.rs,modified,6,10,16,"@@ -3,7 +3,7 @@ use nalgebra::{vector, Vector4};
+ 
+ use crate::{
+     asset_importer::ImportContext,
+-    rendering::texture::{Texture, NO_TEXTURE},
++    rendering::texture::{Texture, TextureUsage, NO_TEXTURE},
+ };
+ 
+ /// Tells the fragment shader to use the PBR Metalic Roughness workflow
+@@ -75,40 +75,38 @@ impl Default for Material {
+ impl Material {
+     /// Load a material from a glTF document
+     pub(crate) fn load(material: MaterialData, import_context: &mut ImportContext) {
+-        let material_name = material.name().unwrap_or(""<unnamed>"");
+-
+         let pbr_metallic_roughness = material.pbr_metallic_roughness();
+         let pbr_specular_glossiness = material.pbr_specular_glossiness();
+ 
+         // Base Color
+         let base_color_texture_info = pbr_metallic_roughness.base_color_texture();
+         let base_color_texture_set = base_color_texture_info
+-            .map(|i| Texture::load(i.texture(), import_context))
++            .map(|i| Texture::load(i.texture(), TextureUsage::BaseColor, import_context))
+             .unwrap_or(NO_TEXTURE);
+         let base_color_factor = Vector4::from(pbr_metallic_roughness.base_color_factor());
+ 
+         // Metallic Roughness
+         let metallic_roughness_texture_info = pbr_metallic_roughness.metallic_roughness_texture();
+         let metallic_roughness_texture_set = metallic_roughness_texture_info
+-            .map(|i| Texture::load(i.texture(), import_context))
++            .map(|i| Texture::load(i.texture(), TextureUsage::MetallicRoughness, import_context))
+             .unwrap_or(NO_TEXTURE);
+ 
+         // Normal map
+         let normal_texture_info = material.normal_texture();
+         let normal_texture_set = normal_texture_info
+-            .map(|i| Texture::load(i.texture(), import_context))
++            .map(|i| Texture::load(i.texture(), TextureUsage::Normal, import_context))
+             .unwrap_or(NO_TEXTURE);
+ 
+         // Occlusion
+         let occlusion_texture_info = material.occlusion_texture();
+         let occlusion_texture_set = occlusion_texture_info
+-            .map(|i| Texture::load(i.texture(), import_context))
++            .map(|i| Texture::load(i.texture(), TextureUsage::Occlusion, import_context))
+             .unwrap_or(NO_TEXTURE);
+ 
+         // Emission
+         let emissive_texture_info = material.emissive_texture();
+         let emissive_texture_set = emissive_texture_info
+-            .map(|i| Texture::load(i.texture(), import_context))
++            .map(|i| Texture::load(i.texture(), TextureUsage::Emission, import_context))
+             .unwrap_or(NO_TEXTURE);
+ 
+         // Factors
+@@ -157,8 +155,6 @@ impl Material {
+             alpha_mask_cutoff,
+         };
+ 
+-        println!(""Imported material {:?} - {}"", material, material_name);
+-
+         // Then push it into the materials buffer
+         unsafe {
+             import_context"
+leetvr/hotham,262,e1d081f,hotham/src/rendering/texture.rs,modified,89,7,96,"@@ -16,9 +16,27 @@ pub struct Texture {
+     pub image: Image,
+     /// Index in the shader
+     pub index: u32,
++    /// How the texture will be used
++    pub texture_usage: TextureUsage,
+ }
+ 
+-const TEXTURE_FORMAT: vk::Format = vk::Format::R8G8B8A8_UNORM;
++/// Describes how this texture will be used by the fragment shader.
++/// Corresponds to the glTF PBR model: https://www.khronos.org/registry/glTF/specs/2.0/glTF-2.0.html#materials
++#[derive(Debug, Clone)]
++pub enum TextureUsage {
++    /// The base color of the material
++    BaseColor,
++    /// A tangent space normal texture
++    Normal,
++    /// The color and intensity of the light being emitted by the material
++    Emission,
++    /// The metalness and roughness of the material
++    MetallicRoughness,
++    /// Indicates areas that receive less less indirect light from ambient sources
++    Occlusion,
++    /// A non PBR texture
++    Other,
++}
+ 
+ /// Texture index to indicate to the shader that this material does not have a texture of the given type
+ pub static NO_TEXTURE: u32 = std::u32::MAX;
+@@ -32,26 +50,38 @@ impl Texture {
+         image_buf: &[u8],
+         extent: &vk::Extent2D,
+         format: vk::Format,
++        texture_usage: TextureUsage,
+     ) -> Self {
++        let component_mapping = get_component_mapping(&format, &texture_usage);
++
+         let image = vulkan_context
+-            .create_image(
++            .create_image_with_component_mapping(
+                 format,
+                 extent,
+                 vk::ImageUsageFlags::SAMPLED | vk::ImageUsageFlags::TRANSFER_DST,
+                 1,
+                 1,
++                component_mapping,
+             )
+             .unwrap();
+ 
+         let index = render_context
+             .create_texture_image(name, vulkan_context, image_buf, 1, vec![0], &image)
+             .unwrap();
+ 
+-        Texture { image, index }
++        Texture {
++            image,
++            index,
++            texture_usage,
++        }
+     }
+ 
+     /// Load a texture from a glTF document. Returns the texture ID
+-    pub(crate) fn load(texture: gltf::texture::Texture, import_context: &mut ImportContext) -> u32 {
++    pub(crate) fn load(
++        texture: gltf::texture::Texture,
++        texture_usage: TextureUsage,
++        import_context: &mut ImportContext,
++    ) -> u32 {
+         let texture_name = &format!(""Texture {}"", texture.name().unwrap_or(""""));
+ 
+         let texture = match texture.source().source() {
+@@ -70,13 +100,15 @@ impl Texture {
+                         import_context.vulkan_context,
+                         import_context.render_context,
+                         bytes,
++                        texture_usage,
+                     ),
+                     _ => Texture::from_uncompressed(
+                         texture_name,
+                         mime_type,
+                         import_context.vulkan_context,
+                         import_context.render_context,
+                         bytes,
++                        texture_usage,
+                     ),
+                 }
+             }
+@@ -107,7 +139,11 @@ impl Texture {
+             .create_texture_image(""Empty Texture"", vulkan_context, &[], 1, vec![0], &image)
+             .unwrap();
+ 
+-        Texture { image, index }
++        Texture {
++            image,
++            index,
++            texture_usage: TextureUsage::Other,
++        }
+     }
+ 
+     /// Create a texture from a ktx2 container.
+@@ -119,6 +155,7 @@ impl Texture {
+         vulkan_context: &VulkanContext,
+         render_context: &mut RenderContext,
+         ktx2_data: &[u8],
++        texture_usage: TextureUsage,
+     ) -> Self {
+         let ktx2_reader = ktx2::Reader::new(ktx2_data).unwrap();
+         let header = ktx2_reader.header();
+@@ -146,6 +183,7 @@ impl Texture {
+             image_bytes,
+             &extent,
+             format,
++            texture_usage,
+         )
+     }
+ 
+@@ -159,8 +197,9 @@ impl Texture {
+         vulkan_context: &VulkanContext,
+         render_context: &mut RenderContext,
+         data: &[u8],
++        texture_usage: TextureUsage,
+     ) -> Self {
+-        #[cfg(not(target_os = ""android""))]
++        #[cfg(target_os = ""android"")]
+         println!(""[HOTHAM_TEXTURE] - @@ WARNING: Non-optimal image format detected. For best performance, compress your images into ktx2 using Squisher: https://github.com/leetvr/squisher. @@"");
+ 
+         print!(""[HOTHAM_TEXTURE] - Decompresing image. This may take some time.."");
+@@ -175,6 +214,11 @@ impl Texture {
+             height: image.height(),
+         };
+ 
++        let format = match texture_usage {
++            TextureUsage::BaseColor | TextureUsage::Emission => vk::Format::R8G8B8A8_SRGB,
++            _ => vk::Format::R8G8B8A8_UNORM,
++        };
++
+         println!("" ..done!"");
+ 
+         Texture::new(
+@@ -183,11 +227,49 @@ impl Texture {
+             render_context,
+             &image.into_raw(),
+             &extent,
+-            TEXTURE_FORMAT,
++            format,
++            texture_usage,
+         )
+     }
+ }
+ 
++fn get_component_mapping(
++    format: &vk::Format,
++    texture_usage: &TextureUsage,
++) -> vk::ComponentMapping {
++    let uncompressed =
++        *format == vk::Format::R8G8B8A8_SRGB || *format == vk::Format::R8G8B8A8_UNORM;
++    match (uncompressed, texture_usage) {
++        (true, TextureUsage::Normal) => vk::ComponentMapping {
++            r: vk::ComponentSwizzle::ZERO,
++            g: vk::ComponentSwizzle::R,
++            b: vk::ComponentSwizzle::ZERO,
++            a: vk::ComponentSwizzle::B,
++        },
++        (true, TextureUsage::MetallicRoughness) => vk::ComponentMapping {
++            r: vk::ComponentSwizzle::ZERO,
++            g: vk::ComponentSwizzle::G,
++            b: vk::ComponentSwizzle::ZERO,
++            a: vk::ComponentSwizzle::B,
++        },
++        (true, TextureUsage::Occlusion) => vk::ComponentMapping {
++            r: vk::ComponentSwizzle::ZERO,
++            g: vk::ComponentSwizzle::R,
++            b: vk::ComponentSwizzle::ZERO,
++            a: vk::ComponentSwizzle::ZERO,
++        },
++        _ => DEFAULT_COMPONENT_MAPPING,
++    }
++}
++
++/// The identity swizzle
++pub const DEFAULT_COMPONENT_MAPPING: vk::ComponentMapping = vk::ComponentMapping {
++    r: vk::ComponentSwizzle::IDENTITY,
++    g: vk::ComponentSwizzle::IDENTITY,
++    b: vk::ComponentSwizzle::IDENTITY,
++    a: vk::ComponentSwizzle::IDENTITY,
++};
++
+ fn get_format_from_mime_type(mime_type: &str) -> image::ImageFormat {
+     match mime_type {
+         ""image/png"" => image::ImageFormat::Png,"
+leetvr/hotham,262,e1d081f,hotham/src/resources/render_context.rs,modified,3,1,4,"@@ -17,7 +17,8 @@ pub static CLEAR_VALUES: [vk::ClearValue; 2] = [
+ use crate::{
+     rendering::{
+         camera::Camera, descriptors::Descriptors, frame::Frame, image::Image, resources::Resources,
+-        scene_data::SceneData, swapchain::Swapchain, vertex::Vertex,
++        scene_data::SceneData, swapchain::Swapchain, texture::DEFAULT_COMPONENT_MAPPING,
++        vertex::Vertex,
+     },
+     resources::{VulkanContext, XrContext},
+     COLOR_FORMAT, DEPTH_ATTACHMENT_USAGE_FLAGS, DEPTH_FORMAT, VIEW_COUNT,
+@@ -463,6 +464,7 @@ fn create_frames(
+                 vk::ImageViewType::TYPE_2D_ARRAY,
+                 2,
+                 1,
++                DEFAULT_COMPONENT_MAPPING,
+             )
+         })
+         .map(|i| {"
+leetvr/hotham,262,e1d081f,hotham/src/resources/vulkan_context.rs,modified,33,9,42,"@@ -1,7 +1,9 @@
+ #![allow(deprecated)]
+ 
+ use crate::{
+-    hotham_error::HothamError, rendering::image::Image, DEPTH_ATTACHMENT_USAGE_FLAGS, DEPTH_FORMAT,
++    hotham_error::HothamError,
++    rendering::{image::Image, texture::DEFAULT_COMPONENT_MAPPING},
++    DEPTH_ATTACHMENT_USAGE_FLAGS, DEPTH_FORMAT,
+ };
+ use anyhow::{anyhow, Result};
+ use ash::{
+@@ -243,6 +245,7 @@ impl VulkanContext {
+         view_type: vk::ImageViewType,
+         layer_count: u32,
+         mip_levels: u32,
++        component_mapping: vk::ComponentMapping,
+     ) -> Result<vk::ImageView> {
+         let aspect_mask = get_aspect_mask(format);
+         let create_info = vk::ImageViewCreateInfo::builder()
+@@ -255,12 +258,7 @@ impl VulkanContext {
+                 base_array_layer: 0,
+                 layer_count,
+             })
+-            .components(vk::ComponentMapping {
+-                r: vk::ComponentSwizzle::R,
+-                g: vk::ComponentSwizzle::G,
+-                b: vk::ComponentSwizzle::B,
+-                a: vk::ComponentSwizzle::A,
+-            })
++            .components(component_mapping)
+             .image(*image);
+         unsafe { self.device.create_image_view(&create_info, None) }.map_err(Into::into)
+     }
+@@ -272,6 +270,26 @@ impl VulkanContext {
+         usage: vk::ImageUsageFlags,
+         array_layers: u32,
+         mip_levels: u32,
++    ) -> Result<Image> {
++        self.create_image_with_component_mapping(
++            format,
++            extent,
++            usage,
++            array_layers,
++            mip_levels,
++            DEFAULT_COMPONENT_MAPPING,
++        )
++    }
++
++    // TODO: Move this to `Image::new`
++    pub fn create_image_with_component_mapping(
++        &self,
++        format: vk::Format,
++        extent: &vk::Extent2D,
++        usage: vk::ImageUsageFlags,
++        array_layers: u32,
++        mip_levels: u32,
++        component_mapping: vk::ComponentMapping,
+     ) -> Result<Image> {
+         let tiling = vk::ImageTiling::OPTIMAL;
+         let (flags, image_view_type) = if array_layers == 1 {
+@@ -317,8 +335,14 @@ impl VulkanContext {
+ 
+         unsafe { self.device.bind_image_memory(image, device_memory, 0) }?;
+ 
+-        let image_view =
+-            self.create_image_view(&image, format, image_view_type, array_layers, mip_levels)?;
++        let image_view = self.create_image_view(
++            &image,
++            format,
++            image_view_type,
++            array_layers,
++            mip_levels,
++            component_mapping,
++        )?;
+ 
+         Ok(Image::new(
+             image,"
+leetvr/hotham,262,e1d081f,hotham/src/shaders/pbr.frag,modified,6,6,12,"@@ -199,7 +199,7 @@ void main()
+ 			perceptualRoughness = clamp(perceptualRoughness, c_MinRoughness, 1.0);
+ 			metallic = clamp(metallic, 0.0, 1.0);
+ 		} else {
+-			// Roughness is stored in the 'g' channel, metallic is stored in the 'b' channel, as per
++			// Roughness is stored in the 'g' channel, metallic is stored in the 'a' channel, as per
+ 			// https://github.com/ARM-software/astc-encoder/blob/main/Docs/Encoding.md#encoding-1-4-component-data
+ 			vec4 mrSample = texture(textures[material.physicalDescriptorTextureID], inUV);
+ 
+@@ -294,7 +294,6 @@ void main()
+ 	color += getIBLContribution(pbrInputs, n, reflection) * DEFAULT_IBL_SCALE;
+ 
+ 	const float u_OcclusionStrength = 1.0f;
+-
+ 	// Apply optional PBR terms for additional (optional) shading
+ 	if (material.occlusionTextureID != NO_TEXTURE) {
+ 		// Occlusion is stored in the 'g' channel as per:
+@@ -326,19 +325,20 @@ void main()
+ 				outColor.rgba = baseColor;
+ 				break;
+ 			case 2:
+-				outColor.rgb = (material.normalTextureID == NO_TEXTURE) ? normalize(inNormal) : texture(textures[material.normalTextureID], inUV).rgb;
++				outColor.rg = (material.normalTextureID == NO_TEXTURE) ? normalize(inNormal).xy : texture(textures[material.normalTextureID], inUV).ga;
++				outColor.b = 0.0;
+ 				break;
+ 			case 3:
+-				outColor.rgb = (material.occlusionTextureID == NO_TEXTURE) ? vec3(0.0f) : texture(textures[material.occlusionTextureID], inUV).rrr;
++				outColor.rgb = (material.occlusionTextureID == NO_TEXTURE) ? vec3(0.0f) : texture(textures[material.occlusionTextureID], inUV).ggg;
+ 				break;
+ 			case 4:
+ 				outColor.rgb = (material.emissiveTextureID == NO_TEXTURE) ?  vec3(0.0f) : texture(textures[material.emissiveTextureID], inUV).rgb;
+ 				break;
+ 			case 5:
+-				outColor.rgb = (material.physicalDescriptorTextureID == NO_TEXTURE) ? vec3(0.0) : texture(textures[material.physicalDescriptorTextureID], inUV).bbb;
++				outColor.rgb = (material.physicalDescriptorTextureID == NO_TEXTURE) ? vec3(0.0) : texture(textures[material.physicalDescriptorTextureID], inUV).ggg;
+ 				break;
+ 			case 6:
+-				outColor.rgb = (material.physicalDescriptorTextureID == NO_TEXTURE) ? vec3(0.0) : texture(textures[material.physicalDescriptorTextureID], inUV).ggg;
++				outColor.rgb = (material.physicalDescriptorTextureID == NO_TEXTURE) ? vec3(0.0) : texture(textures[material.physicalDescriptorTextureID], inUV).aaa;
+ 				break;
+ 		}
+ 		outColor = outColor;"

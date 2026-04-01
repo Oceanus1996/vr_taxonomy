@@ -1,0 +1,406 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+Supreeeme/xrizer,146,0997ff6,src/input.rs,modified,30,2,32,"@@ -23,8 +23,7 @@ use log::{debug, info, trace, warn};
+ use openvr::{self as vr, space_relation_to_openvr_pose};
+ use openxr as xr;
+ use slotmap::{new_key_type, Key, KeyData, SecondaryMap, SlotMap};
+-use std::collections::HashMap;
+-use std::collections::VecDeque;
++use std::collections::{HashMap, HashSet, VecDeque};
+ use std::ffi::{c_char, CStr, CString};
+ use std::mem::ManuallyDrop;
+ use std::ops::Deref;
+@@ -1035,6 +1034,34 @@ impl<C: openxr_data::Compositor> vr::IVRInput010_Interface for Input<C> {
+             data.session.sync_actions(&sync_sets).unwrap();
+         }
+ 
++        let left_profile = self.openxr.left_hand.profile_path.load();
++        let right_profile = self.openxr.right_hand.profile_path.load();
++        for key in &actions.dpad_actions {
++            let unsync_dpad_actions = |key, profile| {
++                if profile == xr::Path::NULL {
++                    return;
++                }
++
++                let Some(bindings) = actions
++                    .per_profile_bindings
++                    .get(&profile)
++                    .and_then(|map| map.get(key))
++                else {
++                    return;
++                };
++
++                for binding in bindings {
++                    if let BindingData::Dpad(data, _) = binding {
++                        data.unsynced();
++                    }
++                }
++            };
++            unsync_dpad_actions(*key, left_profile);
++            if left_profile != right_profile {
++                unsync_dpad_actions(*key, right_profile);
++            }
++        }
++
+         vr::EVRInputError::None
+     }
+ 
+@@ -1483,6 +1510,7 @@ struct ManifestLoadedActions {
+     sets: SecondaryMap<ActionSetKey, xr::ActionSet>,
+     actions: SecondaryMap<ActionKey, ActionData>,
+     extra_actions: SecondaryMap<ActionKey, ExtraActionData>,
++    dpad_actions: HashSet<ActionKey>,
+     per_profile_pose_bindings: HashMap<xr::Path, SecondaryMap<ActionKey, BoundPose>>,
+     per_profile_bindings: HashMap<xr::Path, SecondaryMap<ActionKey, Vec<BindingData>>>,
+     info_set: xr::ActionSet,"
+Supreeeme/xrizer,146,0997ff6,src/input/action_manifest.rs,modified,28,3,31,"@@ -23,7 +23,7 @@ use serde::{
+     Deserialize,
+ };
+ use slotmap::{SecondaryMap, SlotMap};
+-use std::collections::HashMap;
++use std::collections::{HashMap, HashSet};
+ use std::path::{Path, PathBuf};
+ use std::str::FromStr;
+ use std::{cell::LazyCell, env::current_dir};
+@@ -190,9 +190,34 @@ impl<C: openxr_data::Compositor> Input<C> {
+         let actions = action_map_to_secondary(&mut act_guard, actions);
+         let extra_actions = action_map_to_secondary(&mut act_guard, extra_actions);
+ 
++        let mut dpad_actions = HashSet::new();
+         let per_profile_bindings = per_profile_bindings
+             .into_iter()
+-            .map(|(k, v)| (k, action_map_to_secondary(&mut act_guard, v)))
++            .map(|(k, v)| {
++                (k, {
++                    v.into_iter()
++                        .map(|(name, actions)| {
++                            let key = act_guard
++                                .iter()
++                                .find_map(|(key, super::Action { path })| {
++                                    (*path == name).then_some(key)
++                                })
++                                .unwrap_or_else(|| {
++                                    act_guard.insert(super::Action { path: name.clone() })
++                                });
++
++                            if actions
++                                .iter()
++                                .any(|data| matches!(*data, super::BindingData::Dpad(..)))
++                            {
++                                dpad_actions.insert(key);
++                            }
++
++                            (key, actions)
++                        })
++                        .collect()
++                })
++            })
+             .collect();
+ 
+         let per_profile_pose_bindings = per_profile_pose_bindings
+@@ -203,6 +228,7 @@ impl<C: openxr_data::Compositor> Input<C> {
+         let loaded = super::ManifestLoadedActions {
+             sets,
+             actions,
++            dpad_actions,
+             extra_actions,
+             per_profile_bindings,
+             per_profile_pose_bindings,
+@@ -999,7 +1025,6 @@ impl<C: openxr_data::Compositor> Input<C> {
+     }
+ }
+ 
+-/// Returns a tuple of a parent action index and a path for its bindng
+ fn handle_dpad_binding(
+     string_to_path: impl Fn(&str) -> Option<xr::Path>,
+     parent_path: &str,"
+Supreeeme/xrizer,146,0997ff6,src/input/custom_bindings.rs,modified,132,5,137,"@@ -138,9 +138,12 @@ pub(super) struct DpadBindingParams {
+ }
+ 
+ pub(super) struct DpadData {
+-    dpad_actions: DpadActions,
++    actions: DpadActions,
+     direction: DpadDirection,
+     last_state: AtomicBool,
++    active: AtomicBool,
++    changed: AtomicBool,
++    synced: AtomicBool,
+ }
+ 
+ impl DpadData {
+@@ -149,6 +152,10 @@ impl DpadData {
+     // Thresholds for force-activated dpads, experimentally chosen to match SteamVR
+     const DPAD_CLICK_THRESHOLD: f32 = 0.33;
+     const DPAD_RELEASE_THRESHOLD: f32 = 0.2;
++
++    pub fn unsynced(&self) {
++        self.synced.store(false, Ordering::Relaxed);
++    }
+ }
+ 
+ impl CustomBinding for DpadData {
+@@ -170,20 +177,36 @@ impl CustomBinding for DpadData {
+         let DpadBindingParams { actions, direction } = params.unwrap();
+         BindingData::Dpad(
+             DpadData {
+-                dpad_actions: actions.clone(),
++                actions: actions.clone(),
+                 direction: *direction,
+                 last_state: false.into(),
++                active: false.into(),
++                changed: false.into(),
++                synced: false.into(),
+             },
+             hand,
+         )
+     }
++
+     fn state(
+         &self,
+         _: &(),
+         session: &xr::Session<xr::AnyGraphics>,
+         subaction_path: xr::Path,
+     ) -> xr::Result<Option<xr::ActionState<bool>>> {
+-        let action = &self.dpad_actions;
++        if self.synced.swap(true, Ordering::Relaxed) {
++            return Ok(self
++                .active
++                .load(Ordering::Relaxed)
++                .then(|| xr::ActionState {
++                    current_state: self.last_state.load(Ordering::Relaxed),
++                    last_change_time: xr::Time::from_nanos(0),
++                    changed_since_last_sync: self.changed.load(Ordering::Relaxed),
++                    is_active: true,
++                }));
++        }
++
++        let action = &self.actions;
+         let parent_state = action.xy.state(session, subaction_path)?;
+         let mut ret_state = xr::ActionState {
+             current_state: false,
+@@ -212,7 +235,12 @@ impl CustomBinding for DpadData {
+             .unwrap_or(Ok(true))?;
+ 
+         if !active {
+-            self.last_state.store(false, Ordering::Relaxed);
++            let changed = self
++                .last_state
++                .compare_exchange(true, false, Ordering::Relaxed, Ordering::Relaxed)
++                .is_ok();
++            self.changed.store(changed, Ordering::Relaxed);
++            self.active.store(false, Ordering::Relaxed);
+             return Ok(None);
+         }
+ 
+@@ -261,6 +289,10 @@ impl CustomBinding for DpadData {
+             }
+         }
+ 
++        self.changed
++            .store(ret_state.changed_since_last_sync, Ordering::Relaxed);
++        self.active.store(true, Ordering::Relaxed);
++
+         Ok(Some(ret_state))
+     }
+ }
+@@ -715,6 +747,7 @@ mod tests {
+     use fakexr::ActionState;
+     use fakexr::UserPath::*;
+     use openvr as vr;
++    use slotmap::Key;
+ 
+     macro_rules! get_toggle_action {
+         ($fixture:expr, $handle:expr, $toggle_data:ident) => {
+@@ -759,7 +792,7 @@ mod tests {
+                 panic!(""Got {} dpad bindings when one was expected"", bindings.len());
+             }
+ 
+-            let $dpad_data = &bindings[0].dpad_actions;
++            let $dpad_data = &bindings[0].actions;
+         };
+     }
+ 
+@@ -801,6 +834,7 @@ mod tests {
+             ulActionSet: set1,
+             ..Default::default()
+         });
++        f.input.openxr.poll_events();
+ 
+         let state = f.get_bool_state(boolact).unwrap();
+         assert!(state.bActive);
+@@ -916,6 +950,7 @@ mod tests {
+             ulActionSet: set1,
+             ..Default::default()
+         });
++        f.input.openxr.poll_events();
+ 
+         let state = f.get_bool_state(boolact).unwrap();
+         assert!(state.bActive);
+@@ -932,6 +967,7 @@ mod tests {
+             ulActionSet: set1,
+             ..Default::default()
+         });
++        f.input.openxr.poll_events();
+ 
+         // Any input on touchpad shouldn't trigger thumbstick dpad
+         let state = f.get_bool_state(boolact).unwrap();
+@@ -960,6 +996,7 @@ mod tests {
+             ulActionSet: set1,
+             ..Default::default()
+         });
++        f.input.openxr.poll_events();
+ 
+         // Verify action state stickiness across interaction profiles that this test assumes
+         let state = f.get_bool_state(boolact).unwrap();
+@@ -985,6 +1022,96 @@ mod tests {
+         assert!(state.bChanged);
+     }
+ 
++    #[test]
++    fn dpad_input_same_action_on_different_inputs() {
++        let f = Fixture::new();
++        let set1 = f.get_action_set_handle(c""/actions/set1"");
++        let boolact = f.get_action_handle(c""/actions/set1/in/boolact"");
++        f.load_actions(c""actions_dpad_two_inputs.json"");
++
++        f.set_interaction_profile(&Touch, LeftHand);
++        let data = f.input.openxr.session_data.get();
++        let actions = data.input_data.get_loaded_actions().unwrap();
++        let path = f
++            .input
++            .openxr
++            .instance
++            .string_to_path(Touch.profile_path())
++            .unwrap();
++        let bindings = actions.try_get_bindings(boolact, path).unwrap();
++
++        let bindings: Vec<(&DpadData, xr::Path)> = bindings
++            .iter()
++            .filter_map(|x| match x {
++                BindingData::Dpad(a, hand) => Some((a, *hand)),
++                _ => None,
++            })
++            .collect();
++
++        assert_eq!(bindings.len(), 2);
++        let left_binding = bindings
++            .iter()
++            .find_map(|(data, path)| {
++                (*path == f.input.openxr.left_hand.subaction_path).then_some(*data)
++            })
++            .unwrap();
++        let right_binding = bindings
++            .iter()
++            .find_map(|(data, path)| {
++                (*path == f.input.openxr.right_hand.subaction_path).then_some(*data)
++            })
++            .unwrap();
++        assert!(!std::ptr::eq(left_binding, right_binding));
++
++        fakexr::set_action_state(
++            left_binding.actions.xy.as_raw(),
++            ActionState::Vector2(1.0, 0.0),
++            LeftHand,
++        );
++
++        f.sync(vr::VRActiveActionSet_t {
++            ulActionSet: set1,
++            ..Default::default()
++        });
++        f.input.openxr.poll_events();
++
++        let s = f.get_bool_state(boolact).unwrap();
++        assert!(s.bActive);
++        assert!(s.bState);
++        assert!(s.bChanged);
++
++        let s = f
++            .get_bool_state_hand(boolact, f.input.left_hand_key.data().as_ffi())
++            .unwrap();
++        assert!(s.bActive);
++        assert!(s.bState);
++        assert!(s.bChanged);
++
++        let s = f
++            .get_bool_state_hand(boolact, f.input.right_hand_key.data().as_ffi())
++            .unwrap();
++        assert!(!s.bActive);
++        assert!(!s.bState);
++        assert!(!s.bChanged);
++
++        f.sync(vr::VRActiveActionSet_t {
++            ulActionSet: set1,
++            ..Default::default()
++        });
++
++        let s = f.get_bool_state(boolact).unwrap();
++        assert!(s.bActive);
++        assert!(s.bState);
++        assert!(!s.bChanged);
++
++        let s = f
++            .get_bool_state_hand(boolact, f.input.left_hand_key.data().as_ffi())
++            .unwrap();
++        assert!(s.bActive);
++        assert!(s.bState);
++        assert!(!s.bChanged);
++    }
++
+     #[test]
+     fn grab_binding() {
+         let f = Fixture::new();"
+Supreeeme/xrizer,146,0997ff6,tests/input_data/actions_dpad_two_inputs.json,added,22,0,22,"@@ -0,0 +1,22 @@
++{
++	""action_sets"": [
++		{
++			""name"": ""/actions/set1"",
++			""usage"": ""leftright""
++		}
++	],
++	""actions"": [
++		{
++			""name"": ""/actions/set1/in/boolact"",
++			""requirement"": ""mandatory"",
++			""type"": ""boolean""
++		}
++	],
++	""default_bindings"": [
++		{
++			""binding_url"": ""touch_dpad_two_inputs.json"",
++			""controller_type"": ""oculus_touch""
++		}
++	],
++	""localization"": []
++}"
+Supreeeme/xrizer,146,0997ff6,tests/input_data/touch_dpad_two_inputs.json,added,32,0,32,"@@ -0,0 +1,32 @@
++{
++	""bindings"": {
++		""/actions/set1"": {
++			""sources"": [
++				{
++					""inputs"": {
++						""east"": {
++							""output"": ""/actions/set1/in/boolact""
++						}
++					},
++					""mode"": ""dpad"",
++					""path"": ""/user/hand/left/input/thumbstick"",
++					""parameters"": {
++						""sub_mode"": ""touch""
++					}
++				},
++				{
++					""inputs"": {
++						""east"": {
++							""output"": ""/actions/set1/in/boolact""
++						}
++					},
++					""mode"": ""dpad"",
++					""path"": ""/user/hand/right/input/thumbstick"",
++					""parameters"": {
++						""sub_mode"": ""touch""
++					}
++				}
++			]
++		}
++	}
++}"

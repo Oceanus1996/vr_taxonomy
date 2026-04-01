@@ -1,0 +1,205 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+hammy275/immersive-mc,368,f6e6b9e15cca7b75b9b4d5140ea0e84122bdee32,common/src/main/java/com/hammy275/immersivemc/client/immersive/AbstractImmersive.java,modified,1,1,2,"@@ -167,7 +167,7 @@ public void handleTriggerHitboxRightClick(InfoTriggerHitboxes info, Player playe
+     public void onRemove(I info) {}
+ 
+     protected boolean slotHelpBoxIsSelected(I info, int slotNum) {
+-        return info.slotHovered == slotNum;
++        return info.slotHovered(slotNum);
+     }
+ 
+     public abstract void processStorageFromNetwork(AbstractImmersiveInfo info, NetworkStorage storage);"
+hammy275/immersive-mc,368,f6e6b9e15cca7b75b9b4d5140ea0e84122bdee32,common/src/main/java/com/hammy275/immersivemc/client/immersive/BuiltImmersive.java,modified,1,1,2,"@@ -102,7 +102,7 @@ protected void render(BuiltImmersiveInfo info, PoseStack stack, boolean isInVR)
+             if (hitbox.holdsItems && hitbox.renderItem) {
+                 int spinDegrees = hitbox.itemSpins ? (int) (info.ticksActive % 100d * 3.6d) : -1;
+                 renderItem(hitbox.item, stack, hitbox.getPos(),
+-                        info.slotHovered == i ? size * 1.25f * hitbox.itemRenderSizeMultiplier : size * hitbox.itemRenderSizeMultiplier,
++                        slotHelpBoxIsSelected(info, i) ? size * 1.25f * hitbox.itemRenderSizeMultiplier : size * hitbox.itemRenderSizeMultiplier,
+                         info.immersiveDir, hitbox.getUpDownRenderDir(), hitbox.getAABB(), hitbox.renderItemCount, spinDegrees, info.light);
+             } else {
+                 renderHitbox(stack, hitbox.getAABB(), hitbox.getPos());"
+hammy275/immersive-mc,368,f6e6b9e15cca7b75b9b4d5140ea0e84122bdee32,common/src/main/java/com/hammy275/immersivemc/client/immersive/ImmersiveBackpack.java,modified,0,9,9,"@@ -15,7 +15,6 @@
+ import com.hammy275.immersivemc.common.network.packet.BackpackInteractPacket;
+ import com.hammy275.immersivemc.common.network.packet.FetchBackpackStoragePacket;
+ import com.hammy275.immersivemc.common.network.packet.InventorySwapPacket;
+-import com.hammy275.immersivemc.common.util.Util;
+ import com.hammy275.immersivemc.common.vr.VRPlugin;
+ import com.hammy275.immersivemc.common.vr.VRPluginVerify;
+ import com.hammy275.immersivemc.server.swap.Swap;
+@@ -41,7 +40,6 @@
+ import org.joml.Vector3f;
+ 
+ import java.util.List;
+-import java.util.Optional;
+ 
+ /**
+  * This uses a hack when rendering where we re-calculate all the positions and hitboxes
+@@ -81,13 +79,6 @@ protected void renderTick(BackpackInfo info, boolean isInVR) {
+                 VRPlugin.API.getVRPlayer(Minecraft.getInstance().player) :
+                 VRPlugin.API.getRenderVRPlayer();
+         calculatePositions(info, vrPlayer);
+-        Optional<Integer> hitboxIntersect = Util.getFirstIntersect(vrPlayer.getController0().position(),
+-                info.getAllHitboxes());
+-        if (hitboxIntersect.isPresent()) {
+-            info.slotHovered = hitboxIntersect.get();
+-        } else {
+-            info.slotHovered = -1;
+-        }
+     }
+ 
+     @Override"
+hammy275/immersive-mc,368,f6e6b9e15cca7b75b9b4d5140ea0e84122bdee32,common/src/main/java/com/hammy275/immersivemc/client/immersive/ImmersiveBeacon.java,modified,1,1,2,"@@ -62,7 +62,7 @@ public ImmersiveHandler getHandler() {
+     protected void render(BeaconInfo info, PoseStack stack, boolean isInVR) {
+         float itemSize = ClientConstants.itemScaleSizeBeacon / info.getItemTransitionCountdown();
+ 
+-        renderItem(info.items[0], stack, info.getPosition(0), info.slotHovered == 0 ? itemSize * 1.25f : itemSize,
++        renderItem(info.items[0], stack, info.getPosition(0), slotHelpBoxIsSelected(info, 0) ? itemSize * 1.25f : itemSize,
+                 info.lastPlayerDir.getOpposite(), null, info.getHitbox(0),
+                 false, -1, info.light);
+         for (int i = 0; i < info.triggerBoxes.length; i++) {"
+hammy275/immersive-mc,368,f6e6b9e15cca7b75b9b4d5140ea0e84122bdee32,common/src/main/java/com/hammy275/immersivemc/client/immersive/ImmersiveChest.java,modified,2,2,4,"@@ -239,7 +239,7 @@ protected void render(ChestInfo info, PoseStack stack, boolean isInVR) {
+                 int startTop = 9 * info.getRowNum();
+                 int endTop = startTop + 9;
+                 boolean showCount = i >= startTop && i <= endTop;
+-                float renderSize = info.slotHovered == i ? itemSize * 1.25f : itemSize;
++                float renderSize = slotHelpBoxIsSelected(info, i) ? itemSize * 1.25f : itemSize;
+                 renderItem(info.items[i], stack, info.getPosition(i),
+                         renderSize, forward, Direction.UP, info.getHitbox(i), showCount, -1, info.light);
+             }
+@@ -249,7 +249,7 @@ protected void render(ChestInfo info, PoseStack stack, boolean isInVR) {
+                     int startTop = 9 * info.getRowNum() + 27;
+                     int endTop = startTop + 9 + 27;
+                     boolean showCount = i >= startTop && i <= endTop;
+-                    float renderSize = info.slotHovered == i ? itemSize * 1.25f : itemSize;
++                    float renderSize = info.slotHovered(i) ? itemSize * 1.25f : itemSize;
+                     renderItem(info.items[i], stack, info.getPosition(i),
+                             renderSize, forward, Direction.UP, info.getHitbox(i), showCount, -1, info.light);
+                 }"
+hammy275/immersive-mc,368,f6e6b9e15cca7b75b9b4d5140ea0e84122bdee32,common/src/main/java/com/hammy275/immersivemc/client/immersive/Immersives.java,modified,3,3,6,"@@ -147,7 +147,7 @@ public class Immersives {
+             }, ClientConstants.itemScaleSizeETable).holdsItems(true).textSupplier((info) -> {
+                 EnchantingData.ETableData data = ((EnchantingData) info.getExtraData()).weakData;
+                 List<Pair<Component, Vec3>> texts = new ArrayList<>();
+-                if (info.slotHovered != 1) {
++                if (!info.slotHovered(1)) {
+                     return null;
+                 }
+                 if (data.isPresent()) {
+@@ -164,7 +164,7 @@ public class Immersives {
+             }, ClientConstants.itemScaleSizeETable).holdsItems(true).textSupplier((info) -> {
+                 EnchantingData.ETableData data = ((EnchantingData) info.getExtraData()).midData;
+                 List<Pair<Component, Vec3>> texts = new ArrayList<>();
+-                if (info.slotHovered != 2) {
++                if (!info.slotHovered(2)) {
+                     return null;
+                 }
+                 if (data.isPresent()) {
+@@ -181,7 +181,7 @@ public class Immersives {
+             }, ClientConstants.itemScaleSizeETable).holdsItems(true).textSupplier((info) -> {
+                 EnchantingData.ETableData data = ((EnchantingData) info.getExtraData()).strongData;
+                 List<Pair<Component, Vec3>> texts = new ArrayList<>();
+-                if (info.slotHovered != 3) {
++                if (!info.slotHovered(3)) {
+                     return null;
+                 }
+                 if (data.isPresent()) {"
+hammy275/immersive-mc,368,f6e6b9e15cca7b75b9b4d5140ea0e84122bdee32,common/src/main/java/com/hammy275/immersivemc/client/immersive/info/AbstractImmersiveInfo.java,modified,5,10,15,"@@ -13,24 +13,19 @@ public abstract class AbstractImmersiveInfo {
+     public boolean initCompleted = false;
+     protected AABB[] inputHitboxes = null;
+     public int light = AbstractImmersive.maxLight;
+-    /*
+-    This variable is used in ONLY two spots:
+-        - By BackpackInfo to determine which hitbox is hovered over for trigger presses*
+-        - By desktop users to determine which hitbox is moused over
+-    Don't re-use this variable for other purposes unless you factor in the above! Mainly how that in VR,
+-    this variable will ONLY be updated for BackpackInfo instances.
+-
+-    * - This was done because backpacks were implemented before the InfoTriggerHitboxes system.
+-     */
+     public int slotHovered = -1;
+-    public int triggerHitboxSlotHovered = -1; // Same warnings as above
++    public int slotHovered2 = -1; // Only used in VR for secondary hand slot hovering.
++    public int triggerHitboxSlotHovered = -1;
+ 
+     public AbstractImmersiveInfo(int ticksToExist) {
+         this.ticksLeft = ticksToExist;
+     }
+ 
+     public abstract void setInputSlots();
+ 
++    public boolean slotHovered(int slot) {
++        return slot == slotHovered || slot == slotHovered2;
++    }
+     /**
+      * Gets all the slot IDs that represent inputs. Used for guiding.
+      * @return An array of all hitboxes that represent inputs"
+hammy275/immersive-mc,368,f6e6b9e15cca7b75b9b4d5140ea0e84122bdee32,common/src/main/java/com/hammy275/immersivemc/client/subscribe/ClientLogicSubscriber.java,modified,29,14,43,"@@ -3,10 +3,7 @@
+ import com.hammy275.immersivemc.ImmersiveMC;
+ import com.hammy275.immersivemc.client.ClientUtil;
+ import com.hammy275.immersivemc.client.config.screen.ConfigScreen;
+-import com.hammy275.immersivemc.client.immersive.AbstractImmersive;
+-import com.hammy275.immersivemc.client.immersive.ImmersiveBackpack;
+-import com.hammy275.immersivemc.client.immersive.ImmersiveChest;
+-import com.hammy275.immersivemc.client.immersive.Immersives;
++import com.hammy275.immersivemc.client.immersive.*;
+ import com.hammy275.immersivemc.client.immersive.info.*;
+ import com.hammy275.immersivemc.client.immersive_item.AbstractItemImmersive;
+ import com.hammy275.immersivemc.client.immersive_item.ItemImmersives;
+@@ -19,6 +16,7 @@
+ import com.hammy275.immersivemc.common.vr.VRPluginVerify;
+ import com.hammy275.immersivemc.server.ChestToOpenSet;
+ import net.blf02.vrapi.api.data.IVRData;
++import net.blf02.vrapi.api.data.IVRPlayer;
+ import net.minecraft.client.Minecraft;
+ import net.minecraft.client.multiplayer.ClientLevel;
+ import net.minecraft.core.BlockPos;
+@@ -224,16 +222,33 @@ protected static <I extends AbstractImmersiveInfo> void tickInfos(AbstractImmers
+                     info.remove();
+                 }
+                 if (info.hasHitboxes()) {
+-                    Tuple<Vec3, Vec3> startAndEnd = ClientUtil.getStartAndEndOfLookTrace(player);
+-                    Optional<Integer> closest = Util.rayTraceClosest(startAndEnd.getA(), startAndEnd.getB(),
+-                            info.getAllHitboxes());
+-                    info.slotHovered = closest.orElse(-1);
+-                    if (info.slotHovered == -1 && info instanceof InfoTriggerHitboxes tInfo) {
+-                        closest = Util.rayTraceClosest(startAndEnd.getA(), startAndEnd.getB(),
+-                                tInfo.getTriggerHitboxes());
+-                        info.triggerHitboxSlotHovered = closest.orElse(-1);
++                    if (VRPluginVerify.clientInVR()) {
++                        IVRPlayer vrPlayer = VRPlugin.API.getVRPlayer(Minecraft.getInstance().player);
++                        info.slotHovered = Util.getFirstIntersect(vrPlayer.getController0().position(),
++                                info.getAllHitboxes()).orElse(-1);
++                        info.slotHovered2 = Util.getFirstIntersect(vrPlayer.getController1().position(),
++                                info.getAllHitboxes()).orElse(-1);
++                        if (!(singleton instanceof BuiltImmersive)) {
++                            if (info instanceof InfoTriggerHitboxes tInfo) {
++                                info.triggerHitboxSlotHovered = Util.getFirstIntersect(vrPlayer.getController(tInfo.getVRControllerNum()).position(),
++                                        tInfo.getTriggerHitboxes()).orElse(-1);
++                            } else {
++                                info.triggerHitboxSlotHovered = -1;
++                            }
++                        }
+                     } else {
+-                        info.triggerHitboxSlotHovered = -1;
++                        Tuple<Vec3, Vec3> startAndEnd = ClientUtil.getStartAndEndOfLookTrace(player);
++                        info.slotHovered = Util.rayTraceClosest(startAndEnd.getA(), startAndEnd.getB(),
++                                info.getAllHitboxes()).orElse(-1);
++                        info.slotHovered2 = -1;
++                        if (!(singleton instanceof BuiltImmersive)) {
++                            if (info.slotHovered == -1 && info instanceof InfoTriggerHitboxes tInfo) {
++                                info.triggerHitboxSlotHovered = Util.rayTraceClosest(startAndEnd.getA(), startAndEnd.getB(),
++                                        tInfo.getTriggerHitboxes()).orElse(-1);
++                            } else {
++                                info.triggerHitboxSlotHovered = -1;
++                            }
++                        }
+                     }
+                 }
+                 if (info.getTicksLeft() <= 0) {
+@@ -338,7 +353,7 @@ public static boolean handleLeftClick(Player player) {
+         // Just before returning false, see if we're in a hitbox, so we can do a full stack place and return true
+         for (AbstractImmersive<?> immersive : Immersives.IMMERSIVES) {
+             for (AbstractImmersiveInfo info : immersive.getTrackedObjects()) {
+-                if (info.slotHovered != -1) {
++                if (info.slotHovered != -1 || info.slotHovered2 != -1) {
+                     return true;
+                 }
+             }"

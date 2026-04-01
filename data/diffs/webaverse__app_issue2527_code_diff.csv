@@ -1,0 +1,110 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+webaverse/app,2527,4823fb4507ba8f53935b0a99712fb536b87eddd4,game.js,modified,2,2,4,"@@ -509,15 +509,15 @@ const _gameUpdate = (timestamp, timeDiff) => {
+   const _updateGrab = () => {
+     // moveMesh.visible = false;
+ 
++    const renderer = getRenderer();
+     const _isWear = o => localPlayer.findAction(action => action.type === 'wear' && action.instanceId === o.instanceId);
+ 
+     for (let i = 0; i < 2; i++) {
+       const grabAction = _getGrabAction(i);
+       const grabbedObject = _getGrabbedObject(i);
+       if (grabbedObject && !_isWear(grabbedObject)) {
+-        const {position, quaternion} = localPlayer.hands[i];
++        const {position, quaternion} = renderer.xr.getSession() ? localPlayer[hand === 'left' ? 'leftHand' : 'rightHand'] : camera;
+         localMatrix.compose(position, quaternion, localVector.set(1, 1, 1));
+-        
+         grabbedObject.updateMatrixWorld();
+ 
+         /* const {handSnap} = */updateGrabbedObject(grabbedObject, localMatrix, localMatrix3.fromArray(grabAction.matrix), {"
+webaverse/app,2527,4823fb4507ba8f53935b0a99712fb536b87eddd4,io-manager.js,modified,28,28,56,"@@ -387,20 +387,6 @@ ioManager.keydown = e => {
+       lastWASDDownTime.keyA = 0;
+       break;
+     }
+-    case 82: { // R
+-      if (cameraManager.pointerLockElement) {
+-        if (game.canRotate()) {
+-          game.menuRotate(1);
+-        } else {
+-          game.dropSelectedApp();
+-        }
+-      } else {
+-        // if (!game.dragging) {
+-          // _setTransformMode('rotate');
+-        // }
+-      }
+-      break;
+-    }
+     case 70: { // F
+       e.preventDefault();
+       e.stopPropagation();
+@@ -481,6 +467,16 @@ ioManager.keydown = e => {
+       // }
+       break;
+     }
++    case 69: { // E
++      // if (cameraManager.pointerLockElement) {
++        if (game.canRotate()) {
++          game.menuRotate(-1);
++        } else {
++          game.menuActivateDown();
++        }
++      // }
++      break;
++    }
+     case 84: { // T
+       e.preventDefault();
+       e.stopPropagation();
+@@ -498,6 +494,20 @@ ioManager.keydown = e => {
+       // game.menuPhysics();
+       break;
+     }
++    case 82: { // R
++      if (cameraManager.pointerLockElement) {
++        if (game.canRotate()) {
++          game.menuRotate(1);
++        } else {
++          game.dropSelectedApp();
++        }
++      } else {
++        // if (!game.dragging) {
++          // _setTransformMode('rotate');
++        // }
++      }
++      break;
++    }
+     case 16: { // shift
+       ioManager.keys.shift = true;
+       break;
+@@ -527,20 +537,6 @@ ioManager.keydown = e => {
+       }
+       break;
+     }
+-    case 69: { // E
+-      // if (cameraManager.pointerLockElement) {
+-        if (game.canRotate()) {
+-          game.menuRotate(-1);
+-        } else {
+-          game.menuActivateDown();
+-        }
+-      // }
+-      break;
+-    }
+-    case 192: { // tilde
+-      game.toggleEditMode();
+-      break;
+-    }
+     /* case 13: { // enter
+       game.enter();
+       break;
+@@ -562,6 +558,10 @@ ioManager.keydown = e => {
+       debug.toggle();
+       break;
+     }
++    case 192: { // tilde
++      game.toggleEditMode();
++      break;
++    }
+   }
+ };
+ ioManager.keypress = e => {"

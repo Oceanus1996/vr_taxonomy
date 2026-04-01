@@ -1,0 +1,297 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+secondlife/viewer,1474,ae6a402,doc/testplans/pbr_terrain_appearance.md,modified,2,0,2,"@@ -2,6 +2,8 @@
+ 
+ ## Tiling
+ 
++The southwest corner of a region with PBR materials should exactly match up with the bottom left corner of the material texture(s).
++
+ If two adjacent regions have the same PBR terrain settings, then:
+ 
+ - There should not be seams between the two regions at their shared border"
+secondlife/viewer,1474,ae6a402,indra/newview/app_settings/shaders/class1/deferred/pbrterrainV.glsl,modified,7,7,14,"@@ -50,8 +50,8 @@ out vec3 vary_position;
+ // tangent_space_transform below.
+ uniform vec4[2] texture_base_color_transform;
+ 
+-vec2 texture_transform(vec2 vertex_texcoord, vec4[2] khr_gltf_transform, mat4 sl_animation_transform);
+-vec3 tangent_space_transform(vec4 vertex_tangent, vec3 vertex_normal, vec4[2] khr_gltf_transform, mat4 sl_animation_transform);
++vec2 terrain_texture_transform(vec2 vertex_texcoord, vec4[2] khr_gltf_transform);
++vec3 terrain_tangent_space_transform(vec4 vertex_tangent, vec3 vertex_normal, vec4[2] khr_gltf_transform);
+ 
+ void main()
+ {
+@@ -70,7 +70,7 @@ void main()
+     // *HACK: Should be using texture_normal_transform here. The KHR texture
+     // transform spec requires handling texture transforms separately for each
+     // individual texture.
+-    vary_tangent = normalize(tangent_space_transform(vec4(t, tangent.w), n, texture_base_color_transform, texture_matrix0));
++    vary_tangent = normalize(terrain_tangent_space_transform(vec4(t, tangent.w), n, texture_base_color_transform));
+     vary_sign = tangent.w;
+     vary_normal = normalize(n);
+ 
+@@ -80,13 +80,13 @@ void main()
+     // separately for each individual texture.
+ #if TERRAIN_PLANAR_TEXTURE_SAMPLE_COUNT == 3
+     // xy
+-    vary_coords[0].xy = texture_transform(position.xy, texture_base_color_transform, texture_matrix0);
++    vary_coords[0].xy = terrain_texture_transform(position.xy, texture_base_color_transform);
+     // yz
+-    vary_coords[0].zw = texture_transform(position.yz, texture_base_color_transform, texture_matrix0);
++    vary_coords[0].zw = terrain_texture_transform(position.yz, texture_base_color_transform);
+     // (-x)z
+-    vary_coords[1].xy = texture_transform(position.xz * vec2(-1, 1), texture_base_color_transform, texture_matrix0);
++    vary_coords[1].xy = terrain_texture_transform(position.xz * vec2(-1, 1), texture_base_color_transform);
+ #elif TERRAIN_PLANAR_TEXTURE_SAMPLE_COUNT == 1
+-    vary_texcoord0.xy = texture_transform(position.xy, texture_base_color_transform, texture_matrix0);
++    vary_texcoord0.xy = terrain_texture_transform(position.xy, texture_base_color_transform);
+ #endif
+     
+     vec4 tc = vec4(texcoord1,0,1);"
+secondlife/viewer,1474,ae6a402,indra/newview/app_settings/shaders/class1/deferred/textureUtilV.glsl,modified,35,0,35,"@@ -77,6 +77,19 @@ vec2 texture_transform(vec2 vertex_texcoord, vec4[2] khr_gltf_transform, mat4 sl
+     return texcoord;
+ }
+ 
++// Similar to texture_transform but no offset during coordinate system
++// conversion, and no texture animation support.
++vec2 terrain_texture_transform(vec2 vertex_texcoord, vec4[2] khr_gltf_transform)
++{
++    vec2 texcoord = vertex_texcoord;
++
++    texcoord.y = -texcoord.y;
++    texcoord = khr_texture_transform(texcoord, khr_gltf_transform[0].xy, khr_gltf_transform[0].z, khr_gltf_transform[1].xy);
++    texcoord.y = -texcoord.y;
++
++    return texcoord;
++}
++
+ // Take the rotation only from both transforms and apply to the tangent. This
+ // accounts for the change of the topology of the normal texture when a texture
+ // rotation is applied to it.
+@@ -120,3 +133,25 @@ vec3 tangent_space_transform(vec4 vertex_tangent, vec3 vertex_normal, vec4[2] kh
+ 
+     return (weights.x * vertex_binormal.xyz) + (weights.y * vertex_tangent.xyz);
+ }
++
++// Similar to tangent_space_transform but no no texture animation support.
++vec3 terrain_tangent_space_transform(vec4 vertex_tangent, vec3 vertex_normal, vec4[2] khr_gltf_transform)
++{
++    // Immediately convert to left-handed coordinate system ((0,1) -> (0, -1))
++    vec2 weights = vec2(0, -1);
++
++    // Apply KHR_texture_transform (rotation only)
++    float khr_rotation = khr_gltf_transform[0].z;
++    mat2 khr_rotation_mat = mat2(
++        cos(khr_rotation),-sin(khr_rotation),
++        sin(khr_rotation), cos(khr_rotation)
++    );
++    weights = khr_rotation_mat * weights;
++
++    // Convert back to right-handed coordinate system
++    weights.y = -weights.y;
++
++    vec3 vertex_binormal = vertex_tangent.w * cross(vertex_normal, vertex_tangent.xyz);
++
++    return (weights.x * vertex_binormal.xyz) + (weights.y * vertex_tangent.xyz);
++}"
+secondlife/viewer,1474,ae6a402,indra/newview/lldrawpoolterrain.cpp,modified,1,9,10,"@@ -431,18 +431,10 @@ void LLDrawPoolTerrain::renderFullShaderPBR(BOOL local_materials)
+ 
+ 	LLGLSLShader* shader = LLGLSLShader::sCurBoundShaderPtr;
+ 	llassert(shader);
+-		
+-
+-    // *TODO: Figure out why this offset is *sometimes* producing seams at the
+-    // region edge, and repeat jumps when crossing regions, when
+-    // RenderTerrainPBRScale is not a factor of the region scale.
+-	LLVector3d region_origin_global = gAgent.getRegion()->getOriginGlobal();
+-	F32 offset_x = (F32)fmod(region_origin_global.mdV[VX], 1.0/(F64)sPBRDetailScale)*sPBRDetailScale;
+-	F32 offset_y = (F32)fmod(region_origin_global.mdV[VY], 1.0/(F64)sPBRDetailScale)*sPBRDetailScale;
+ 
+     LLGLTFMaterial::TextureTransform base_color_transform;
+     base_color_transform.mScale = LLVector2(sPBRDetailScale, sPBRDetailScale);
+-    base_color_transform.mOffset = LLVector2(offset_x, offset_y);
++    // *TODO: mOffset and mRotation left at defaults for now. (per-material texture transforms are implemented in another branch)
+     F32 base_color_packed[8];
+     base_color_transform.getPacked(base_color_packed);
+     // *HACK: Use the same texture repeats for all PBR terrain textures for now"
+secondlife/viewer,1474,1cca0d7,doc/testplans/pbr_terrain_appearance.md,modified,2,0,2,"@@ -2,6 +2,8 @@
+ 
+ ## Tiling
+ 
++The southwest corner of a region with PBR materials should exactly match up with the bottom left corner of the material texture(s).
++
+ If two adjacent regions have the same PBR terrain settings, then:
+ 
+ - There should not be seams between the two regions at their shared border"
+secondlife/viewer,1474,1cca0d7,indra/newview/app_settings/shaders/class1/deferred/pbrterrainV.glsl,modified,7,7,14,"@@ -50,8 +50,8 @@ out vec3 vary_position;
+ // tangent_space_transform below.
+ uniform vec4[2] texture_base_color_transform;
+ 
+-vec2 texture_transform(vec2 vertex_texcoord, vec4[2] khr_gltf_transform, mat4 sl_animation_transform);
+-vec3 tangent_space_transform(vec4 vertex_tangent, vec3 vertex_normal, vec4[2] khr_gltf_transform, mat4 sl_animation_transform);
++vec2 terrain_texture_transform(vec2 vertex_texcoord, vec4[2] khr_gltf_transform);
++vec3 terrain_tangent_space_transform(vec4 vertex_tangent, vec3 vertex_normal, vec4[2] khr_gltf_transform);
+ 
+ void main()
+ {
+@@ -70,7 +70,7 @@ void main()
+     // *HACK: Should be using texture_normal_transform here. The KHR texture
+     // transform spec requires handling texture transforms separately for each
+     // individual texture.
+-    vary_tangent = normalize(tangent_space_transform(vec4(t, tangent.w), n, texture_base_color_transform, texture_matrix0));
++    vary_tangent = normalize(terrain_tangent_space_transform(vec4(t, tangent.w), n, texture_base_color_transform));
+     vary_sign = tangent.w;
+     vary_normal = normalize(n);
+ 
+@@ -80,13 +80,13 @@ void main()
+     // separately for each individual texture.
+ #if TERRAIN_PLANAR_TEXTURE_SAMPLE_COUNT == 3
+     // xy
+-    vary_coords[0].xy = texture_transform(position.xy, texture_base_color_transform, texture_matrix0);
++    vary_coords[0].xy = terrain_texture_transform(position.xy, texture_base_color_transform);
+     // yz
+-    vary_coords[0].zw = texture_transform(position.yz, texture_base_color_transform, texture_matrix0);
++    vary_coords[0].zw = terrain_texture_transform(position.yz, texture_base_color_transform);
+     // (-x)z
+-    vary_coords[1].xy = texture_transform(position.xz * vec2(-1, 1), texture_base_color_transform, texture_matrix0);
++    vary_coords[1].xy = terrain_texture_transform(position.xz * vec2(-1, 1), texture_base_color_transform);
+ #elif TERRAIN_PLANAR_TEXTURE_SAMPLE_COUNT == 1
+-    vary_texcoord0.xy = texture_transform(position.xy, texture_base_color_transform, texture_matrix0);
++    vary_texcoord0.xy = terrain_texture_transform(position.xy, texture_base_color_transform);
+ #endif
+     
+     vec4 tc = vec4(texcoord1,0,1);"
+secondlife/viewer,1474,1cca0d7,indra/newview/app_settings/shaders/class1/deferred/textureUtilV.glsl,modified,35,0,35,"@@ -77,6 +77,19 @@ vec2 texture_transform(vec2 vertex_texcoord, vec4[2] khr_gltf_transform, mat4 sl
+     return texcoord;
+ }
+ 
++// Similar to texture_transform but no offset during coordinate system
++// conversion, and no texture animation support.
++vec2 terrain_texture_transform(vec2 vertex_texcoord, vec4[2] khr_gltf_transform)
++{
++    vec2 texcoord = vertex_texcoord;
++
++    texcoord.y = -texcoord.y;
++    texcoord = khr_texture_transform(texcoord, khr_gltf_transform[0].xy, khr_gltf_transform[0].z, khr_gltf_transform[1].xy);
++    texcoord.y = -texcoord.y;
++
++    return texcoord;
++}
++
+ // Take the rotation only from both transforms and apply to the tangent. This
+ // accounts for the change of the topology of the normal texture when a texture
+ // rotation is applied to it.
+@@ -120,3 +133,25 @@ vec3 tangent_space_transform(vec4 vertex_tangent, vec3 vertex_normal, vec4[2] kh
+ 
+     return (weights.x * vertex_binormal.xyz) + (weights.y * vertex_tangent.xyz);
+ }
++
++// Similar to tangent_space_transform but no no texture animation support.
++vec3 terrain_tangent_space_transform(vec4 vertex_tangent, vec3 vertex_normal, vec4[2] khr_gltf_transform)
++{
++    // Immediately convert to left-handed coordinate system ((0,1) -> (0, -1))
++    vec2 weights = vec2(0, -1);
++
++    // Apply KHR_texture_transform (rotation only)
++    float khr_rotation = khr_gltf_transform[0].z;
++    mat2 khr_rotation_mat = mat2(
++        cos(khr_rotation),-sin(khr_rotation),
++        sin(khr_rotation), cos(khr_rotation)
++    );
++    weights = khr_rotation_mat * weights;
++
++    // Convert back to right-handed coordinate system
++    weights.y = -weights.y;
++
++    vec3 vertex_binormal = vertex_tangent.w * cross(vertex_normal, vertex_tangent.xyz);
++
++    return (weights.x * vertex_binormal.xyz) + (weights.y * vertex_tangent.xyz);
++}"
+secondlife/viewer,1474,1cca0d7,indra/newview/lldrawpoolterrain.cpp,modified,1,9,10,"@@ -431,18 +431,10 @@ void LLDrawPoolTerrain::renderFullShaderPBR(BOOL local_materials)
+ 
+ 	LLGLSLShader* shader = LLGLSLShader::sCurBoundShaderPtr;
+ 	llassert(shader);
+-		
+-
+-    // *TODO: Figure out why this offset is *sometimes* producing seams at the
+-    // region edge, and repeat jumps when crossing regions, when
+-    // RenderTerrainPBRScale is not a factor of the region scale.
+-	LLVector3d region_origin_global = gAgent.getRegion()->getOriginGlobal();
+-	F32 offset_x = (F32)fmod(region_origin_global.mdV[VX], 1.0/(F64)sPBRDetailScale)*sPBRDetailScale;
+-	F32 offset_y = (F32)fmod(region_origin_global.mdV[VY], 1.0/(F64)sPBRDetailScale)*sPBRDetailScale;
+ 
+     LLGLTFMaterial::TextureTransform base_color_transform;
+     base_color_transform.mScale = LLVector2(sPBRDetailScale, sPBRDetailScale);
+-    base_color_transform.mOffset = LLVector2(offset_x, offset_y);
++    // *TODO: mOffset and mRotation left at defaults for now. (per-material texture transforms are implemented in another branch)
+     F32 base_color_packed[8];
+     base_color_transform.getPacked(base_color_packed);
+     // *HACK: Use the same texture repeats for all PBR terrain textures for now"
+secondlife/viewer,1474,28563eb,indra/newview/app_settings/shaders/class1/deferred/pbrterrainF.glsl,modified,2,2,4,"@@ -195,18 +195,18 @@ void main()
+ 
+     PBRMix mix = init_pbr_mix();
+     PBRMix mix2;
++    TerrainCoord terrain_texcoord;
+     switch (tm.type & MIX_X)
+     {
+     case MIX_X:
+ #if TERRAIN_PLANAR_TEXTURE_SAMPLE_COUNT == 3
+-        TerrainCoord terrain_texcoord;
+         terrain_texcoord[0].xy = vary_coords[0].xy;
+         terrain_texcoord[0].zw = vary_coords[0].zw;
+         terrain_texcoord[1].xy = vary_coords[1].xy;
+         terrain_texcoord[1].zw = vary_coords[1].zw;
+         terrain_texcoord[2].xy = vary_coords[2].xy;
+ #elif TERRAIN_PLANAR_TEXTURE_SAMPLE_COUNT == 1
+-        TerrainCoord terrain_texcoord = vary_coords[0].xy;
++        terrain_texcoord = vary_coords[0].xy;
+ #endif
+         mix2 = terrain_sample_and_multiply_pbr(
+             terrain_texcoord"
+secondlife/viewer,1474,6e501c5,indra/newview/app_settings/shaders/class1/deferred/textureUtilV.glsl,modified,2,4,6,"@@ -84,11 +84,9 @@ vec2 terrain_texture_transform(vec2 vertex_texcoord, vec4[2] khr_gltf_transform)
+ {
+     vec2 texcoord = vertex_texcoord;
+ 
+-    texcoord.y = 1.0 - texcoord.y;
+-    //texcoord.y = -texcoord.y;
++    texcoord.y = -texcoord.y;
+     texcoord = khr_texture_transform(texcoord, khr_gltf_transform[0].xy, khr_gltf_transform[0].z, khr_gltf_transform[1].xy);
+-    texcoord.y = 1.0 - texcoord.y;
+-    //texcoord.y = -texcoord.y;
++    texcoord.y = -texcoord.y;
+ 
+     return texcoord;
+ }"
+secondlife/viewer,1474,6252449,indra/newview/app_settings/shaders/class1/deferred/pbrterrainF.glsl,modified,2,2,4,"@@ -195,18 +195,18 @@ void main()
+ 
+     PBRMix mix = init_pbr_mix();
+     PBRMix mix2;
++    TerrainCoord terrain_texcoord;
+     switch (tm.type & MIX_X)
+     {
+     case MIX_X:
+ #if TERRAIN_PLANAR_TEXTURE_SAMPLE_COUNT == 3
+-        TerrainCoord terrain_texcoord;
+         terrain_texcoord[0].xy = vary_coords[0].xy;
+         terrain_texcoord[0].zw = vary_coords[0].zw;
+         terrain_texcoord[1].xy = vary_coords[1].xy;
+         terrain_texcoord[1].zw = vary_coords[1].zw;
+         terrain_texcoord[2].xy = vary_coords[2].xy;
+ #elif TERRAIN_PLANAR_TEXTURE_SAMPLE_COUNT == 1
+-        TerrainCoord terrain_texcoord = vary_coords[0].xy;
++        terrain_texcoord = vary_coords[0].xy;
+ #endif
+         mix2 = terrain_sample_and_multiply_pbr(
+             terrain_texcoord"
+secondlife/viewer,1474,6252449,indra/newview/app_settings/shaders/class1/deferred/textureUtilV.glsl,modified,2,4,6,"@@ -84,11 +84,9 @@ vec2 terrain_texture_transform(vec2 vertex_texcoord, vec4[2] khr_gltf_transform)
+ {
+     vec2 texcoord = vertex_texcoord;
+ 
+-    texcoord.y = 1.0 - texcoord.y;
+-    //texcoord.y = -texcoord.y;
++    texcoord.y = -texcoord.y;
+     texcoord = khr_texture_transform(texcoord, khr_gltf_transform[0].xy, khr_gltf_transform[0].z, khr_gltf_transform[1].xy);
+-    texcoord.y = 1.0 - texcoord.y;
+-    //texcoord.y = -texcoord.y;
++    texcoord.y = -texcoord.y;
+ 
+     return texcoord;
+ }"

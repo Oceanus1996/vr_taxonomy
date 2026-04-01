@@ -1,0 +1,244 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe,4355,5a96662974018fd7b98551a07924140ce2252ac5,src/components/look-controls.js,modified,27,6,33,"@@ -1,8 +1,8 @@
++/* global DeviceOrientationEvent  */
+ var registerComponent = require('../core/component').registerComponent;
+ var THREE = require('../lib/three');
+ var utils = require('../utils/');
+ var bind = utils.bind;
+-var PolyfillControls = require('../utils').device.PolyfillControls;
+ 
+ // To avoid recalculation at every mouse movement tick
+ var PI_2 = Math.PI / 2;
+@@ -30,8 +30,7 @@ module.exports.Component = registerComponent('look-controls', {
+     // To save / restore camera pose
+     this.savedRotation = new THREE.Vector3();
+     this.savedPosition = new THREE.Vector3();
+-    this.polyfillObject = new THREE.Object3D();
+-    this.polyfillControls = new PolyfillControls(this.polyfillObject);
++    this.magicWindowObject = new THREE.Object3D();
+     this.rotation = {};
+     this.deltaRotation = {};
+     this.savedPose = null;
+@@ -41,6 +40,8 @@ module.exports.Component = registerComponent('look-controls', {
+     this.el.object3D.matrixAutoUpdate = false;
+     this.el.object3D.updateMatrix();
+ 
++    this.setupMagicWindowControls();
++
+     this.savedPose = {
+       position: new THREE.Vector3(),
+       rotation: new THREE.Euler()
+@@ -50,6 +51,24 @@ module.exports.Component = registerComponent('look-controls', {
+     if (this.el.sceneEl.is('vr-mode')) { this.onEnterVR(); }
+   },
+ 
++  setupMagicWindowControls: function () {
++    var magicWindowControls;
++    // Only on mobile devices and only enabled if DeviceOrientation permission has been granted.
++    if (utils.device.isMobile()) {
++      magicWindowControls = this.magicWindowControls = new THREE.DeviceOrientationControls(this.magicWindowObject);
++      if (typeof DeviceOrientationEvent === 'undefined' && DeviceOrientationEvent.requestPermission) {
++        magicWindowControls.enabled = false;
++        if (this.el.sceneEl.components['device-orientation-permission-ui'].premissionGranted) {
++          magicWindowControls.enabled = true;
++        } else {
++          this.el.scenEl.addEventListener('deviceorientationpermissiongranted', function () {
++            magicWindowControls.enabled = true;
++          });
++        }
++      }
++    }
++  },
++
+   update: function (oldData) {
+     var data = this.data;
+ 
+@@ -208,9 +227,11 @@ module.exports.Component = registerComponent('look-controls', {
+ 
+       // In VR mode, THREE is in charge of updating the camera rotation.
+       if (sceneEl.is('vr-mode') && sceneEl.checkHeadsetConnected()) { return; }
+-      // Calculate polyfilled HMD quaternion.
+-      this.polyfillControls.update();
+-      hmdEuler.setFromQuaternion(this.polyfillObject.quaternion, 'YXZ');
++      // Calculate magic window HMD quaternion.
++      if (this.magicWindowControls && this.magicWindowControls.enabled) {
++        this.magicWindowControls.update();
++        hmdEuler.setFromQuaternion(this.magicWindowObject.quaternion, 'YXZ');
++      }
+ 
+       // On mobile, do camera rotation with touch events and sensors.
+       object3D.rotation.x = hmdEuler.x + pitchObject.rotation.x;"
+aframevr/aframe,4355,5a96662974018fd7b98551a07924140ce2252ac5,src/components/scene/device-orientation-permission-ui.js,modified,7,1,8,"@@ -30,7 +30,11 @@ module.exports.Component = registerComponent('device-orientation-permission-ui',
+     if (utils.device.isMobileDeviceRequestingDesktopSite()) { this.showMobileDesktopModeAlert(); }
+ 
+     // Browser doesn't support or doesn't require permission to DeviceOrientationEvent API.
+-    if (typeof DeviceOrientationEvent === 'undefined' || !DeviceOrientationEvent.requestPermission) { return; }
++    if (typeof DeviceOrientationEvent === 'undefined' || !DeviceOrientationEvent.requestPermission) {
++      this.permissionGranted = true;
++      return;
++    }
++
+     this.onDeviceMotionDialogAllowClicked = bind(this.onDeviceMotionDialogAllowClicked, this);
+     this.onDeviceMotionDialogDenyClicked = bind(this.onDeviceMotionDialogDenyClicked, this);
+     // Show dialog only if permission has not yet been granted.
+@@ -42,6 +46,7 @@ module.exports.Component = registerComponent('device-orientation-permission-ui',
+       self.el.appendChild(self.devicePermissionDialogEl);
+     }).then(function () {
+       self.el.emit('deviceorientationpermissiongranted');
++      self.permissionGranted = true;
+     });
+   },
+ 
+@@ -71,6 +76,7 @@ module.exports.Component = registerComponent('device-orientation-permission-ui',
+     DeviceOrientationEvent.requestPermission().then(function (response) {
+       if (response === 'granted') {
+         self.el.emit('deviceorientationpermissiongranted');
++        self.permissionGranted = true;
+       } else {
+         self.el.emit('deviceorientationpermissionrejected');
+       }"
+aframevr/aframe,4355,5a96662974018fd7b98551a07924140ce2252ac5,src/lib/three.js,modified,1,0,1,"@@ -19,6 +19,7 @@ if (THREE.Cache) {
+ }
+ 
+ // TODO: Eventually include these only if they are needed by a component.
++require('../../vendor/DeviceOrientationControls'); // THREE.DeviceOrientationControls
+ require('super-three/examples/js/loaders/DRACOLoader');  // THREE.DRACOLoader
+ require('super-three/examples/js/loaders/GLTFLoader');  // THREE.GLTFLoader
+ require('super-three/examples/js/loaders/OBJLoader');  // THREE.OBJLoader"
+aframevr/aframe,4355,5a96662974018fd7b98551a07924140ce2252ac5,src/utils/device.js,modified,0,23,23,"@@ -182,26 +182,3 @@ module.exports.isBrowserEnvironment = !!(!process || process.browser);
+  * Check if running in node on the server.
+  */
+ module.exports.isNodeEnvironment = !module.exports.isBrowserEnvironment;
+-
+-/**
+- * Update an Object3D pose if a polyfilled vrDisplay is present.
+- */
+-module.exports.PolyfillControls = function PolyfillControls (object) {
+-  var frameData;
+-  var vrDisplay = window.webvrpolyfill && window.webvrpolyfill.getPolyfillDisplays()[0];
+-  if (window.VRFrameData) { frameData = new window.VRFrameData(); }
+-  this.update = function () {
+-    var pose;
+-    if (!vrDisplay) { return; }
+-    vrDisplay.getFrameData(frameData);
+-    pose = frameData.pose;
+-    if (pose.orientation !== null) {
+-      object.quaternion.fromArray(pose.orientation);
+-    }
+-    if (pose.position !== null) {
+-      object.position.fromArray(pose.position);
+-    } else {
+-      object.position.set(0, 0, 0);
+-    }
+-  };
+-};"
+aframevr/aframe,4355,5a96662974018fd7b98551a07924140ce2252ac5,vendor/DeviceOrientationControls.js,added,109,0,109,"@@ -0,0 +1,109 @@
++/**
++ * @author richt / http://richt.me
++ * @author WestLangley / http://github.com/WestLangley
++ *
++ * W3C Device Orientation control (http://w3c.github.io/deviceorientation/spec-source-orientation.html)
++ */
++
++THREE.DeviceOrientationControls = function ( object ) {
++
++  var scope = this;
++
++  this.object = object;
++  this.object.rotation.reorder( 'YXZ' );
++
++  this.enabled = true;
++
++  this.deviceOrientation = {};
++  this.screenOrientation = 0;
++
++  this.alphaOffset = 0; // radians
++
++  var onDeviceOrientationChangeEvent = function ( event ) {
++
++    scope.deviceOrientation = event;
++
++  };
++
++  var onScreenOrientationChangeEvent = function () {
++
++    scope.screenOrientation = window.orientation || 0;
++
++  };
++
++  // The angles alpha, beta and gamma form a set of intrinsic Tait-Bryan angles of type Z-X'-Y''
++
++  var setObjectQuaternion = function () {
++
++    var zee = new THREE.Vector3( 0, 0, 1 );
++
++    var euler = new THREE.Euler();
++
++    var q0 = new THREE.Quaternion();
++
++    var q1 = new THREE.Quaternion( - Math.sqrt( 0.5 ), 0, 0, Math.sqrt( 0.5 ) ); // - PI/2 around the x-axis
++
++    return function ( quaternion, alpha, beta, gamma, orient ) {
++
++      euler.set( beta, alpha, - gamma, 'YXZ' ); // 'ZXY' for the device, but 'YXZ' for us
++
++      quaternion.setFromEuler( euler ); // orient the device
++
++      quaternion.multiply( q1 ); // camera looks out the back of the device, not the top
++
++      quaternion.multiply( q0.setFromAxisAngle( zee, - orient ) ); // adjust for screen orientation
++
++    };
++
++  }();
++
++  this.connect = function () {
++ 
++    window.addEventListener( 'orientationchange', onScreenOrientationChangeEvent, false );
++    window.addEventListener( 'deviceorientation', onDeviceOrientationChangeEvent, false );
++
++    scope.enabled = true;
++
++  };
++
++  this.disconnect = function () {
++
++    window.removeEventListener( 'orientationchange', onScreenOrientationChangeEvent, false );
++    window.removeEventListener( 'deviceorientation', onDeviceOrientationChangeEvent, false );
++
++    scope.enabled = false;
++
++  };
++
++  this.update = function () {
++
++    if ( scope.enabled === false ) return;
++
++    var device = scope.deviceOrientation;
++
++    if ( device ) {
++
++      var alpha = device.alpha ? THREE.Math.degToRad( device.alpha ) + scope.alphaOffset : 0; // Z
++
++      var beta = device.beta ? THREE.Math.degToRad( device.beta ) : 0; // X'
++
++      var gamma = device.gamma ? THREE.Math.degToRad( device.gamma ) : 0; // Y''
++
++      var orient = scope.screenOrientation ? THREE.Math.degToRad( scope.screenOrientation ) : 0; // O
++
++      setObjectQuaternion( scope.object.quaternion, alpha, beta, gamma, orient );
++
++    }
++
++
++  };
++
++  this.dispose = function () {
++
++    scope.disconnect();
++
++  };
++
++  this.connect();
++
++};"

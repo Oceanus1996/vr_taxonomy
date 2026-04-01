@@ -1,0 +1,195 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aardvarkxr/aardvark,139,a8cefb1eb1c332d1923a305c7e975c1a14dbbdd5,packages/aardvark-react/src/api_gadgetlist.tsx,modified,11,1,12,"@@ -7,7 +7,7 @@ export const k_GadgetListInterface = ""api-gadgetlist@1"";
+ export enum GadgetListEventType
+ {
+ 	AddFavorite = ""add_favorite"",
+-	AddFavoriteResponse = ""add_favorite_response"",
++	StartGadget = ""start_gadget"",
+ }
+ 
+ export enum GadgetListResult
+@@ -16,6 +16,7 @@ export enum GadgetListResult
+ 	AlreadyAdded = 1,
+ 	UserDeniedRequest = 2,
+ 	NotConnected = 3,
++	GadgetStartFailed = 4,
+ }
+ 
+ 
+@@ -34,6 +35,15 @@ export class AvGadgetList extends React.Component
+ 			GadgetListEventType.AddFavorite, true, gadgetUrl );
+ 	}
+ 
++	public startGadget( gadgetUrl: string )
++	{
++		if( !this.apiInterface.current || !this.apiInterface.current.connected )
++			return GadgetListResult.NotConnected;
++
++		return this.apiInterface.current.sendRequestAndWaitForResponse<GadgetListResult>( 
++			GadgetListEventType.StartGadget, true, gadgetUrl );
++	}
++
+ 	public render()
+ 	{
+ 		return <AvApiInterface ref={ this.apiInterface } apiName={ k_GadgetListInterface }/>"
+aardvarkxr/aardvark,139,a8cefb1eb1c332d1923a305c7e975c1a14dbbdd5,packages/aardvark-react/src/default_landing_page.tsx,modified,43,0,43,"@@ -102,6 +102,48 @@ export class DefaultLanding extends React.Component<DefaultLandingProps, Default
+ 
+ 	}
+ 
++	@bind
++	private async onStartGadget()
++	{
++		try
++		{
++			let promResult = this.gadgetList.current.startGadget( this.gadgetUrl );
++			let result = await promResult;
++			let text: string;
++
++			switch( result )
++			{
++				case GadgetListResult.Success:
++					text = ""Started"";
++					break;
++
++				case GadgetListResult.NotConnected:
++					text = ""Not connected"";
++					break;
++				
++
++				case GadgetListResult.UserDeniedRequest:
++					text = ""User denied request"";
++					break;
++
++				case GadgetListResult.GadgetStartFailed:
++					text = ""Gadget failed to start"";
++					break;
++
++				default:
++					text = ""Unknown result "" + result;
++					break;
++			}
++
++			this.setState( { addResult: text } );
++		}
++		catch( e )
++		{
++			this.setState( { addResult: String( e ) } );
++		}
++
++	}
++
+ 	private renderFavorite()
+ 	{
+ 		if( !this.state.connected )
+@@ -112,6 +154,7 @@ export class DefaultLanding extends React.Component<DefaultLandingProps, Default
+ 
+ 		return <>
+ 			<div className=""LandingButton"" onClick={ this.onAddFavorite }>Add to Favorites</div>
++			<div className=""LandingButton"" onClick={ this.onStartGadget }>Start Gadget</div>
+ 			{ this.state.addResult &&
+ 				<div style={ { fontSize: ""medium"" }}>{ this.state.addResult }</div> }
+ 			</>;"
+aardvarkxr/aardvark,139,a8cefb1eb1c332d1923a305c7e975c1a14dbbdd5,websrc/gadget_menu/src/gadget_menu_main.tsx,modified,67,7,74,"@@ -302,13 +302,17 @@ class ControlPanel extends React.Component< {}, ControlPanelState >
+ 
+ 	private requestManifest( url: string )
+ 	{
+-		AvGadget.instance().loadManifest( url )
+-		.then( ( manifest: AardvarkManifest ) =>
++		return new Promise<AardvarkManifest>( ( resolve, reject )=>
+ 		{
+-			// all we do here is stuff the manifest into the map.
+-			// This will be populated into the UI itself next time the UI is 
+-			// rendered
+-			this.manifestsByUrl.set( url, manifest );
++			AvGadget.instance().loadManifest( url )
++			.then( ( manifest: AardvarkManifest ) =>
++			{
++				// all we do here is stuff the manifest into the map.
++				// This will be populated into the UI itself next time the UI is 
++				// rendered
++				this.manifestsByUrl.set( url, manifest );
++				resolve( manifest );
++			} );	
+ 		} );
+ 	}
+ 
+@@ -877,8 +881,10 @@ class ControlPanel extends React.Component< {}, ControlPanelState >
+ 	{
+ 		let [ gadgetUrl ] = args;
+ 
++		let manifest = await this.requestManifest( gadgetUrl );
++
+ 		// ask the user if they want this favorite
+-		let answer = await this.messagebox.current.showPrompt( `Add gadget ${ gadgetUrl } to favorites?`, 
++		let answer = await this.messagebox.current.showPrompt( `Add gadget ${ manifest.name } (${ gadgetUrl }) to favorites?`, 
+ 		[
+ 			{
+ 				text: ""No"",
+@@ -899,6 +905,59 @@ class ControlPanel extends React.Component< {}, ControlPanelState >
+ 		return [ result ];
+ 	}
+ 
++	@bind
++	private async onGadgetList_StartGadget( sender: ApiInterfaceSender, args: any[] ) 
++		: Promise< [ GadgetListResult, number ] >
++	{
++		let [ gadgetUrl ] = args;
++
++		let manifest = await this.requestManifest( gadgetUrl );
++
++		// ask the user if they want this favorite
++		let key = ""savedResponse:"" + gadgetUrl;
++		let answer = localStorage.getItem( key );
++
++		if( !answer) 
++		{
++			answer = await this.messagebox.current.showPrompt( 
++				`Start gadget ${ manifest.name } (${ gadgetUrl })?`, 
++			[
++				{
++					text: ""Never"",
++					name: ""never"",
++				},
++				{
++					text: ""No"",
++					name: ""no"",
++				},
++				{
++					text: ""Yes"",
++					name: ""yes"",
++				},
++				{
++					text: ""Always"",
++					name: ""always"",
++				}
++			] );
++
++			if( answer == ""always"" || answer == ""never"" )
++			{
++				localStorage.setItem( key, answer );
++			}
++		}
++
++		let result = GadgetListResult.UserDeniedRequest;
++		let gadgetId: number;
++		if( answer == ""yes"" || answer == ""always"" )
++		{
++			let res = await AvGadget.instance().startGadget( gadgetUrl, [] );
++			result = res.success ? GadgetListResult.Success : GadgetListResult.GadgetStartFailed;
++			gadgetId = res.startedGadgetEndpointId;
++		}
++
++		return [ result, gadgetId ];
++	}
++
+ 	private renderGadgetScanner()
+ 	{
+ 		return (
+@@ -963,6 +1022,7 @@ class ControlPanel extends React.Component< {}, ControlPanelState >
+ 	{
+ 		let gadgetListHandlers:  { [ msgType:string ] : ApiInterfaceHandler } = {};
+ 		gadgetListHandlers[ GadgetListEventType.AddFavorite ] = this.onGadgetList_AddFavorite;
++		gadgetListHandlers[ GadgetListEventType.StartGadget ] = this.onGadgetList_StartGadget;
+ 
+ 		return (
+ 			<AvOrigin path=""/space/stage"">"

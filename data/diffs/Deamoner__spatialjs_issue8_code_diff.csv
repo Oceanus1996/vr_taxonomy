@@ -1,0 +1,209 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+Deamoner/spatialjs,8,db20001,package.json,modified,1,1,2,"@@ -1,6 +1,6 @@
+ {
+   ""name"": ""@spatialjs/core"",
+-  ""version"": ""0.0.4"",
++  ""version"": ""0.0.5"",
+   ""main"": ""./dist/spatialjs.es.js"",
+   ""module"": ""./dist/spatialjs.es.js"",
+   ""types"": ""./dist/index.d.ts"","
+Deamoner/spatialjs,8,db20001,src/Utils/tileModes.ts,modified,18,12,30,"@@ -1,9 +1,9 @@
+-import { Camera, Vector3, Quaternion, Euler } from 'three';
+-import { WindowInf } from '../stores/windowStore';
++import { Camera, Vector3, Quaternion, Euler } from ""three"";
++import { WindowInf } from ""../stores/windowStore"";
+ 
+ export function calculateTilePositions(
+   windowIds: string[],
+-  mode: 'grid' | 'around' | 'cockpit',
++  mode: ""grid"" | ""around"" | ""cockpit"",
+   windows: Record<string, WindowInf>,
+   camera: Camera,
+   adjustScale: boolean
+@@ -23,18 +23,17 @@ export function calculateTilePositions(
+     return position.applyQuaternion(cameraQuaternion).add(camera.position);
+   };
+ 
+-  if (mode === 'grid') {
++  if (mode === ""grid"") {
+     const cols = Math.ceil(Math.sqrt(count));
+     const rows = Math.ceil(count / cols);
+-    const baseZ = -4; // Base distance from the camera
++    const baseZ = -3; // Base distance from the camera
+     const spacing = 2; // Spacing between windows
+ 
+     windowIds.forEach((id, index) => {
+-      
+       const window = windows[id];
+       const col = index % cols;
+       const row = Math.floor(index / cols);
+-      const x = ((col - (cols - 1) / 2) * spacing) ;
++      const x = (col - (cols - 1) / 2) * spacing;
+       const y = ((rows - 1) / 2 - row) * spacing;
+       const z = baseZ - Math.abs(x) * 0.1 - Math.abs(y) * 0.1; // Curve the grid slightly
+       newPositions[id] = rotatePosition(new Vector3(x, y, z));
+@@ -44,7 +43,7 @@ export function calculateTilePositions(
+         newScales[id] = targetSize.clone();
+       }
+     });
+-  } else if (mode === 'around') {
++  } else if (mode === ""around"") {
+     const radius = 5;
+     const verticalOffset = 1; // Offset to raise windows slightly
+     windowIds.forEach((id, index) => {
+@@ -60,8 +59,13 @@ export function calculateTilePositions(
+         newScales[id] = targetSize.clone();
+       }
+     });
+-  } else if (mode === 'cockpit') {
+-    ({ newPositions, newScales } = cockpit(windowIds, windows, camera, adjustScale));
++  } else if (mode === ""cockpit"") {
++    ({ newPositions, newScales } = cockpit(
++      windowIds,
++      windows,
++      camera,
++      adjustScale
++    ));
+   }
+ 
+   return { newPositions, newScales };
+@@ -72,7 +76,10 @@ function cockpit(
+   windows: Record<string, WindowInf>,
+   camera: Camera,
+   adjustScale: boolean
+-): { newPositions: Record<string, Vector3>; newScales: Record<string, Vector3> } {
++): {
++  newPositions: Record<string, Vector3>;
++  newScales: Record<string, Vector3>;
++} {
+   const newPositions: Record<string, Vector3> = {};
+   const newScales: Record<string, Vector3> = {};
+   // @ts-ignore
+@@ -113,4 +120,3 @@ function cockpit(
+ 
+   return { newPositions, newScales };
+ }
+-"
+Deamoner/spatialjs,8,db20001,src/components/BaseWindow.tsx,modified,9,16,25,"@@ -41,6 +41,7 @@ export const Window: React.FC<BaseWindowProps> = ({
+   }));
+ 
+   const {
++    followCamera,
+     title,
+     subtitle,
+     icon,
+@@ -58,7 +59,6 @@ export const Window: React.FC<BaseWindowProps> = ({
+     close,
+     currentTileMode,
+     opacity,
+-    followCamera,
+     rotation,
+     selectedWindow,
+     setSelectedWindow,
+@@ -87,18 +87,11 @@ export const Window: React.FC<BaseWindowProps> = ({
+     setSelected(selectedWindow === id);
+   }, [selectedWindow, id]);
+ 
+-  const { spring } = useSpring({
+-    spring: position.toArray(),
+-    config: { mass: 1, tension: 280, friction: 60 },
+-  });
+-
+-  const { spring: springScale } = useSpring({
+-    spring: scale.toArray(),
+-    config: { mass: 1, tension: 280, friction: 60 },
+-  });
+-
+-  const { spring: springRotation } = useSpring({
+-    spring: [rotation.x, rotation.y, rotation.z],
++  const spring = useSpring({
++    position: position ? position.toArray() : [0, 0, 0],
++    scale: scale.toArray(),
++    rotation: rotation ? [rotation.x, rotation.y, rotation.z] : [0, 0, 0],
++    followCamera,
+     config: { mass: 1, tension: 280, friction: 60 },
+   });
+ 
+@@ -130,9 +123,9 @@ export const Window: React.FC<BaseWindowProps> = ({
+   return (
+     <a.group
+       ref={groupRef}
+-      position={spring}
+-      scale={springScale}
+-      rotation={followCamera ? undefined : (springRotation as any)}
++      position={spring.position}
++      scale={spring.scale}
++      rotation={spring.rotation}
+       castShadow
+     >
+       <Root>"
+Deamoner/spatialjs,8,db20001,src/components/WindowManager.tsx,modified,18,2,20,"@@ -1,15 +1,19 @@
+ import React, { useEffect, useCallback } from ""react"";
+ import { Window } from ""./BaseWindow"";
+ import { useWindowStore } from ""../stores/windowStore"";
+-import { useThree } from ""@react-three/fiber"";
++import { useFrame, useThree } from ""@react-three/fiber"";
+ 
+ interface WindowManagerProps {
+   children?: React.ReactNode;
+ }
+ 
+ export const WindowManager: React.FC<WindowManagerProps> = () => {
++  const { camera, gl } = useThree();
+   const windows = useWindowStore((state) => state.windows);
+   const setCamera = useWindowStore((state) => state.setCamera);
++  const recalculateTilePositions = useWindowStore(
++    (state) => state.recalculateTilePositions
++  );
+ 
+   const three = useThree((state) => ({ camera: state.camera }));
+ 
+@@ -20,9 +24,21 @@ export const WindowManager: React.FC<WindowManagerProps> = () => {
+   }, [three, setCamera]);
+ 
+   // When XR camera is set, set the camera in the store
++  let readNextFrame = false;
++  useEffect(() => {
++    readNextFrame = true;
++  }, [camera]);
++  useFrame(() => {
++    if (!readNextFrame) return;
++    console.log(""camera update"");
++    setCamera(three.camera);
++    recalculateTilePositions();
++    readNextFrame = false;
++  });
+   useEffect(() => {
+     setCamera(three.camera);
+-  }, [three.camera]);
++    recalculateTilePositions();
++  }, [camera]);
+ 
+   return (
+     <>"
+Deamoner/spatialjs,8,db20001,src/index.ts,modified,1,1,2,"@@ -1,6 +1,6 @@
+ import { WindowManager } from ""./components/WindowManager"";
+ import { Window } from ""./components/BaseWindow"";
+-import { useWindowStore } from ""./stores/windowStore"";
++import { useWindowStore, WindowStore } from ""./stores/windowStore"";
+ import { createWindow, createWindowComponent } from ""./Utils/createWindow"";
+ 
+ export {"
+Deamoner/spatialjs,8,db20001,src/stores/windowStore.ts,modified,2,2,4,"@@ -43,7 +43,7 @@ export interface WindowInf {
+   };
+ }
+ 
+-interface WindowStore {
++export interface WindowStore {
+   windows: Record<string, WindowInf>;
+   defaultTileDistance: number;
+   defaultFocusDistance: number;
+@@ -79,7 +79,7 @@ interface WindowStore {
+   debug: boolean;
+   setDebug: (value: boolean) => void;
+   selectedWindow: string | undefined;
+-  setSelectedWindow: (id: string) => void;
++  setSelectedWindow: (id: string | undefined) => void;
+ }
+ 
+ const createWindowStore = create<WindowStore>((set, get) => ({"

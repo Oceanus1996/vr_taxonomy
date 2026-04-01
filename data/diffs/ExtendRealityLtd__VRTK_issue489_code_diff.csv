@@ -1,0 +1,114 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+ExtendRealityLtd/VRTK,489,02c140e,Assets/VRTK/Scripts/VRTK_HeightAdjustTeleport.cs,modified,47,31,78,"@@ -18,6 +18,7 @@ public class VRTK_HeightAdjustTeleport : VRTK_BasicTeleport
+         public bool useGravity = true;
+         public float gravityFallHeight = 1.0f;
+         public float blinkYThreshold = 0.1f;
++        public float floorHeightTolerance = 0.001f;
+ 
+         private float currentRayDownY = 0f;
+         private GameObject currentFloor = null;
+@@ -128,50 +129,65 @@ private bool FloorIsGrabbedObject(RaycastHit collidedObj)
+             return (collidedObj.transform.GetComponent<VRTK_InteractableObject>() && collidedObj.transform.GetComponent<VRTK_InteractableObject>().IsGrabbed());
+         }
+ 
++        private bool FloorHeightChanged(float currentY)
++        {
++            var yDelta = Mathf.Abs(currentY - previousFloorY);
++            return (yDelta > floorHeightTolerance || yDelta < -floorHeightTolerance);
++        }
++
++        private bool ValidDrop(bool rayHit, RaycastHit rayCollidedWith, float floorY)
++        {
++            return (rayHit && ValidLocation(rayCollidedWith.transform, rayCollidedWith.point) && !FloorIsGrabbedObject(rayCollidedWith) && FloorHeightChanged(floorY));
++        }
++
++        private bool UsePhysicsFall(bool useGravityFall, float floorY)
++        {
++            float fallDistance = transform.position.y - floorY;
++            return (useGravityFall && (playerPresence.IsFalling() || fallDistance > gravityFallHeight));
++        }
++
++        private void TeleportFall(bool withBlink, float floorY, RaycastHit rayCollidedWith)
++        {
++            var floorDelta = currentRayDownY - floorY;
++            currentFloor = rayCollidedWith.transform.gameObject;
++            currentRayDownY = floorY;
++            var newPosition = new Vector3(transform.position.x, floorY, transform.position.z);
++
++            var teleportArgs = new DestinationMarkerEventArgs
++            {
++                destinationPosition = newPosition,
++                distance = rayCollidedWith.distance,
++                enableTeleport = true,
++                target = currentFloor.transform
++            };
++
++            OnTeleporting(gameObject, teleportArgs);
++            if (withBlink && (floorDelta > blinkYThreshold || floorDelta < -blinkYThreshold))
++            {
++                Blink(blinkTransitionSpeed);
++            }
++            SetNewPosition(newPosition, currentFloor.transform);
++            OnTeleported(gameObject, teleportArgs);
++        }
++
+         private void DropToNearestFloor(bool withBlink, bool useGravityFall)
+         {
+             if (enableTeleport && eyeCamera.transform.position.y > transform.position.y)
+             {
+-                //send a ray down to find the closest object to stand on
+                 Ray ray = new Ray(eyeCamera.transform.position, -transform.up);
+                 RaycastHit rayCollidedWith;
+                 bool rayHit = Physics.Raycast(ray, out rayCollidedWith);
+                 float floorY = eyeCamera.transform.position.y - rayCollidedWith.distance;
+ 
+-                if (rayHit && ValidLocation(rayCollidedWith.transform, rayCollidedWith.point) && !FloorIsGrabbedObject(rayCollidedWith))
++                if (ValidDrop(rayHit, rayCollidedWith, floorY))
+                 {
+-                    var floorDelta = currentRayDownY - floorY;
+-                    currentFloor = rayCollidedWith.transform.gameObject;
+-                    currentRayDownY = floorY;
+-
+-                    float fallDistance = transform.position.y - floorY;
+-                    bool shouldDoGravityFall = useGravityFall && (playerPresence.IsFalling() || fallDistance > gravityFallHeight);
+-
+-                    if (withBlink && !shouldDoGravityFall && (floorDelta > blinkYThreshold || floorDelta < -blinkYThreshold))
++                    if (UsePhysicsFall(useGravityFall, floorY))
+                     {
+-                        Blink(blinkTransitionSpeed);
++                        playerPresence.StartPhysicsFall(Vector3.zero);
+                     }
+-
+-                    if (floorY != previousFloorY)
++                    else
+                     {
+-                        if (shouldDoGravityFall)
+-                        {
+-                            playerPresence.StartPhysicsFall(Vector3.zero);
+-                        }
+-                        else // teleport fall
+-                        {
+-                            Vector3 newPosition = new Vector3(transform.position.x, floorY, transform.position.z);
+-                            var teleportArgs = new DestinationMarkerEventArgs
+-                            {
+-                                destinationPosition = newPosition,
+-                                distance = rayCollidedWith.distance,
+-                                enableTeleport = true,
+-                                target = currentFloor.transform
+-                            };
+-                            OnTeleporting(gameObject, teleportArgs);
+-                            SetNewPosition(newPosition, currentFloor.transform);
+-                            OnTeleported(gameObject, teleportArgs);
+-                        }
++                        TeleportFall(withBlink, floorY, rayCollidedWith);
+                     }
+                 }
+                 previousFloorY = floorY;"
+ExtendRealityLtd/VRTK,489,02c140e,DOCUMENTATION.md,modified,1,0,1,"@@ -964,6 +964,7 @@ Like the basic teleporter the Height Adjust Teleport script is attached to the `
+   * **Use Gravity**: allows for gravity based falling when the distance is greater than `Gravity Fall Height`.
+   * **Gravity Fall Height**: Fall distance needed before gravity based falling can be triggered.
+   * **Blink Y Threshold:** The `y` distance between the floor and the headset that must change before the fade transition is initiated. If the new user location is at a higher distance than the threshold then the headset blink transition will activate on teleport. If the new user location is within the threshold then no blink transition will happen, which is useful for walking up slopes, meshes and terrains where constant blinking would be annoying.
++  * **Floor Height Tolerance:** The amount the `y` position needs to change by between the current floor `y` position and the previous floor `y` position before a change in floor height is considered to have occurred. A higher value here will mean that a `Drop To Floor` teleport event will be less likely to happen if the `y` of the floor beneath the user hasn't changed as much as the given threshold.
+ 
+ ### Example
+ "

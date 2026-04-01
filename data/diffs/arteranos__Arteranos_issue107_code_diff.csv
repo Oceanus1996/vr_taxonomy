@@ -1,0 +1,532 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+arteranos/Arteranos,107,4ebe798,Assets/Arteranos/Scripts/Avatar/AvatarLoader.cs,modified,2,0,2,"@@ -79,8 +79,10 @@ IEnumerator AvatarDownloaderCoroutine()
+                         InstallMouthAnimation = true,
+                         InstallFootIK = isOwned,
+                         InstallFootIKCollider = isOwned,
++                        ReadFootJoints = true,
+                         InstallHandIK = isOwned,
+                         InstallHandIKController = isOwned,
++                        ReadHandJoints = true,
+                     });
+ 
+                 Task t = ao.ExecuteAsync(co);"
+arteranos/Arteranos,107,4ebe798,Assets/Arteranos/Scripts/Core/Operations/AvatarDownloader.cs,modified,20,6,26,"@@ -39,9 +39,6 @@ internal class BoneTranslations
+ 
+     internal class InstallAnimController : IAsyncOperation<Context>
+     {
+-        const string controllerResource = ""AvatarAnim/AvatarAnimationController"";
+-        const string RPMBoneTranslation = ""AvatarAnim/RPMBoneTranslations"";
+-
+         public int Timeout { get; set; }
+         public float Weight { get; set; } = 0.01f;
+         public string Caption { get; set; } = ""Installing animation controller"";
+@@ -132,6 +129,12 @@ public Task<Context> ExecuteAsync(Context _context, CancellationToken token)
+                 }
+             }
+ 
++            if(context.ReadFootJoints)
++            {
++                foreach (FootIKData foot in context.Feet)
++                    ReadJointNames(foot.FootTransform, context.JointNames);
++            }
++
+             if (context.InstallHandIK)
+             {
+                 Transform handHandle;
+@@ -153,6 +156,12 @@ public Task<Context> ExecuteAsync(Context _context, CancellationToken token)
+                 }
+             }
+ 
++            if(context.ReadHandJoints)
++            {
++                ReadJointNames(context.LeftHand, context.JointNames);
++                ReadJointNames(context.RightHand, context.JointNames);
++            }
++
+             return Task.FromResult<Context>(context);
+         }
+ 
+@@ -162,7 +171,7 @@ private Transform RigIK(Transform limb, Transform at, List<string> jointNames, V
+ 
+             Transform pole = null;
+ 
+-            if(poleOffset != null)
++            if (poleOffset != null)
+             {
+                 pole = new GameObject($""Pole_{limb.name}"").transform;
+                 pole.SetPositionAndRotation(
+@@ -181,15 +190,18 @@ private Transform RigIK(Transform limb, Transform at, List<string> jointNames, V
+             limbIK.Target = handle;
+             limbIK.Pole = pole;
+ 
++            return handle;
++        }
++
++        private static void ReadJointNames(Transform limb, List<string> jointNames, int bones = 2)
++        {
+             // For Network IK, note down all of the affected joints
+             Transform bone = limb;
+             for (int i = 0; i <= bones; i++)
+             {
+                 jointNames.Add(bone.name);
+                 bone = bone.parent;
+             }
+-
+-            return handle;
+         }
+     }
+ 
+@@ -439,6 +451,8 @@ public static (AsyncOperationExecutor<Context>, Context) PrepareDownloadAvatar(C
+                 InstallFootIKCollider = options?.InstallFootIKCollider ?? false,
+                 InstallHandIKController = options?.InstallHandIKController ?? false,
+                 InstallHandIK = options?.InstallHandIK ?? false,
++                ReadFootJoints = options?.ReadFootJoints ?? false,
++                ReadHandJoints = options?.ReadHandJoints ?? false,
+                 DesiredHeight = options?.DesiredHeight ?? 0,
+             };
+ "
+arteranos/Arteranos,107,4ebe798,Assets/Arteranos/Scripts/Core/Operations/OperationContexts.cs,modified,9,3,12,"@@ -32,9 +32,11 @@ public interface IAvatarDownloaderOptions
+         bool InstallMouthAnimation { get; set; }
+         bool InstallAnimController { get; set; }
+         bool InstallFootIK { get; set; }
++        bool InstallHandIK { get; set; }
+         bool InstallFootIKCollider { get; set; }
+         bool InstallHandIKController { get; set; }
+-        bool InstallHandIK { get; set; }
++        bool ReadFootJoints { get; set; }
++        bool ReadHandJoints { get; set; }
+         float DesiredHeight { get; set; }
+     }
+ 
+@@ -44,9 +46,11 @@ public class AvatarDownloaderOptions : IAvatarDownloaderOptions
+         public bool InstallMouthAnimation { get; set; }
+         public bool InstallAnimController { get; set; }
+         public bool InstallFootIK { get; set; }
++        public bool InstallHandIK { get; set; }
+         public bool InstallFootIKCollider { get; set; }
+         public bool InstallHandIKController { get; set; }
+-        public bool InstallHandIK { get; set; }
++        public bool ReadFootJoints { get; set; }
++        public bool ReadHandJoints { get; set; }
+         public float DesiredHeight { get; set; }
+     }
+ 
+@@ -56,9 +60,11 @@ internal class AvatarDownloaderContext : AssetDownloaderContext, IAvatarDownload
+         public bool InstallMouthAnimation { get; set; } = false;
+         public bool InstallAnimController { get; set; } = false;
+         public bool InstallFootIK { get; set; } = false;
++        public bool InstallHandIK { get; set; } = false;
+         public bool InstallFootIKCollider { get; set; } = false;
+         public bool InstallHandIKController { get; set; } = false;
+-        public bool InstallHandIK { get; set; } = false;
++        public bool ReadFootJoints { get; set; } = false;
++        public bool ReadHandJoints { get; set; } = false;
+         public float DesiredHeight { get; set; } = 0.0f;
+ 
+         public bool? SidedCapitalized = null; // 'left' or 'Left' ?"
+arteranos/Arteranos,107,4ebe798,Assets/Arteranos/_Test/6394c1e69ef842b3a5112221.glb,added,0,0,0,
+arteranos/Arteranos,107,4ebe798,Assets/Arteranos/_Test/6394c1e69ef842b3a5112221.glb.meta,renamed,1,1,2,"@@ -1,5 +1,5 @@
+ fileFormatVersion: 2
+-guid: cfc52fe5deb08cd4aa4351f86a2511a8
++guid: 19c8f14c1cc75504e8e8432850fe2cf2
+ ScriptedImporter:
+   internalIDToNameTable: []
+   externalObjects: {}"
+arteranos/Arteranos,107,4ebe798,Assets/Arteranos/_Test/Arteranos_PlayTest/Web/AvatarDownloaderTest.cs,modified,25,1,26,"@@ -23,7 +23,7 @@ namespace Arteranos.PlayTest.Web
+ {
+     public class AvatarDownloaderTest
+     {
+-        private const string Asset_iws = ""file:///Assets/Arteranos/_Test/Iwontsay.glb"";
++        private const string Asset_iws = ""file:///Assets/Arteranos/_Test/6394c1e69ef842b3a5112221.glb"";
+ 
+ 
+         IPFSServiceImpl srv = null;
+@@ -239,6 +239,30 @@ public IEnumerator InstallIK()
+ 
+             IAvatarMeasures am = AvatarDownloader.GetAvatarMeasures(co);
+ 
++            // Read*Joints is false, no joints transmission
++            Assert.AreEqual(0, am.JointNames.Count);
++            // yield return UnityPAK();
++        }
++
++        [UnityTest]
++        public IEnumerator ReadRemoteJointNames()
++        {
++            (AsyncOperationExecutor<Context> ao, Context co) =
++                AvatarDownloader.PrepareDownloadAvatar(AvatarCid, new AvatarDownloaderOptions()
++                {
++                    ReadFootJoints = true,
++                    ReadHandJoints = true
++                });
++
++            Task t = ao.ExecuteAsync(co);
++
++            while (!t.IsCompleted) yield return new WaitForEndOfFrame();
++
++            GameObject avatar = AvatarDownloader.GetLoadedAvatar(co);
++            avatar.SetActive(true);
++
++            IAvatarMeasures am = AvatarDownloader.GetAvatarMeasures(co);
++
+             Assert.AreEqual(12, am.JointNames.Count);
+             // yield return UnityPAK();
+         }"
+arteranos/Arteranos,107,4ebe798,Assets/Arteranos/_Test/Iwontsay.glb,removed,0,0,0,
+arteranos/Arteranos,107,a75c266,Assets/Arteranos/Scripts/Avatar/NetworkPose.cs,modified,1,1,2,"@@ -268,7 +268,7 @@ void UpdateClient()
+             }
+         }
+ 
+-        void Update()
++        void LateUpdate()
+         {
+             // if server then always sync to others.
+             if      (isServer) UpdateServer();"
+arteranos/Arteranos,107,a75c266,Assets/Arteranos/Scripts/Core/Operations/AvatarDownloader.cs,modified,4,4,8,"@@ -118,7 +118,7 @@ public Task<Context> ExecuteAsync(Context _context, CancellationToken token)
+ 
+                 foreach(FootIKData foot in context.Feet)
+                 {
+-                    footHandle = RigIK(foot.FootTransform, avatarTransform, context.JointNames, new Vector3(0, 0, 2));
++                    footHandle = RigIK(foot.FootTransform, avatarTransform, new Vector3(0, 0, 2));
+                     if(context.InstallFootIKCollider)
+                     {
+                         footIK = footHandle.gameObject.AddComponent<FootIKCollider>();
+@@ -139,15 +139,15 @@ public Task<Context> ExecuteAsync(Context _context, CancellationToken token)
+             {
+                 Transform handHandle;
+                 HandIKController handIK;
+-                handHandle = RigIK(context.LeftHand, avatarTransform, context.JointNames);
++                handHandle = RigIK(context.LeftHand, avatarTransform);
+                 if(context.InstallHandIKController)
+                 {
+                     handIK = handHandle.gameObject.AddComponent<HandIKController>();
+                     handIK.RightSide = false;
+                     handIK.AvatarMeasures = context;
+                 }
+ 
+-                handHandle = RigIK(context.RightHand, avatarTransform, context.JointNames);
++                handHandle = RigIK(context.RightHand, avatarTransform);
+                 if(context.InstallHandIKController)
+                 {
+                     handIK = handHandle.gameObject.AddComponent<HandIKController>();
+@@ -165,7 +165,7 @@ public Task<Context> ExecuteAsync(Context _context, CancellationToken token)
+             return Task.FromResult<Context>(context);
+         }
+ 
+-        private Transform RigIK(Transform limb, Transform at, List<string> jointNames, Vector3? poleOffset = null, int bones = 2)
++        private Transform RigIK(Transform limb, Transform at, Vector3? poleOffset = null, int bones = 2)
+         {
+             if (!limb) return null;
+ "
+arteranos/Arteranos,107,e389a27,Assets/Arteranos/Prefabs/Avatar/Avatar.prefab,modified,2,2,4,"@@ -55,6 +55,8 @@ MonoBehaviour:
+   syncDirection: 0
+   syncMode: 0
+   syncInterval: 0.1
++  animMoveDirection: {x: 0, y: 0}
++  animMoveSpeed: 1
+ --- !u!114 &244397833489866318
+ MonoBehaviour:
+   m_ObjectHideFlags: 0
+@@ -67,8 +69,6 @@ MonoBehaviour:
+   m_Script: {fileID: 11500000, guid: f3d04faf237846a428aa61df13cce2f0, type: 3}
+   m_Name: 
+   m_EditorClassIdentifier: 
+-  m_GalleryModeURL: 
+-  animator: {fileID: 0}
+ --- !u!114 &2032202113796676651
+ MonoBehaviour:
+   m_ObjectHideFlags: 0"
+arteranos/Arteranos,107,e389a27,Assets/Arteranos/Scripts/Avatar/AvatarPoseDriver.cs,modified,45,22,67,"@@ -10,26 +10,34 @@
+ using Arteranos.NetworkIO;
+ using Arteranos.XR;
+ using Arteranos.Core;
++using Mirror;
+ 
+ namespace Arteranos.Avatar
+ {
+ 
+-    public class AvatarPoseDriver : MonoBehaviour
++    public class AvatarPoseDriver : NetworkBehaviour
+     {
+         private IAvatarMeasures AvatarMeasures = null;
+         private NetworkPose NetworkPose = null;
++        private Animator anim = null;
+ 
+-        private AvatarBrain AvatarBrain = null;
+-        public bool isOwned => AvatarBrain?.isOwned ?? false;
++        [SyncVar]
++        public Vector2 animMoveDirection = Vector2.zero;
++
++        [SyncVar]
++        public float animMoveSpeed = 1.0f;
+ 
+         private void Awake()
+         {
+             NetworkPose = GetComponent<NetworkPose>();
+-            AvatarBrain = GetComponent<AvatarBrain>();
++            syncDirection = SyncDirection.ClientToServer;
++            syncInterval = 0;
+         }
+ 
+-        private void Start()
++        public override void OnStartClient()
+         {
++            base.OnStartClient();
++
+             if(isOwned)
+             {
+                 SettingsManager.Client.OnVRModeChanged += OnXRChanged;
+@@ -38,10 +46,12 @@ private void Start()
+ 
+         }
+ 
+-        private void OnDestroy()
++        public override void OnStopClient()
+         {
+             if(isOwned)
+                 SettingsManager.Client.OnVRModeChanged -= OnXRChanged;
++
++            base.OnStopClient();
+         }
+ 
+         private void OnXRChanged(bool useXR)
+@@ -68,6 +78,9 @@ public void UpdateAvatarMeasures(IAvatarMeasures am)
+ 
+                 xrc.ReconfigureXRRig();
+             }
++
++            // The user got a new body in general, even if it's not yet active.
++            anim = GetComponentInChildren<Animator>(true);
+         }
+ 
+         // --------------------------------------------------------------------
+@@ -89,27 +102,31 @@ public void UpdateOwnPose()
+             // VR + 2D: Walking animation (only with loaded avatars)
+             GameObject xro = XRControl.Instance.rigTransform.gameObject;
+             CharacterController cc = xro.GetComponent<CharacterController>();
+-            Animator anim = GetComponentInChildren<Animator>();
+ 
+-            if(anim != null)
+-            {
+-                // The direction...
+-                Vector3 moveSpeed = Quaternion.Inverse(transform.rotation) * cc.velocity;
++            Vector3 moveSpeed = Quaternion.Inverse(transform.rotation) * cc.velocity;
+ 
+-                int frontBack = 0;
+-                if (moveSpeed.z < -0.5f) frontBack = -1;
+-                if (moveSpeed.z >  0.5f) frontBack = 1;
++            Vector2 newMoveDirection = Vector2.zero;
+ 
+-                int leftRight = 0;
+-                if (moveSpeed.x < -0.5f) leftRight = -1;
+-                if (moveSpeed.x >  0.5f) leftRight = 1;
++            if (moveSpeed.z < -0.5f) newMoveDirection.y = -1;
++            if (moveSpeed.z > 0.5f) newMoveDirection.y = 1;
+ 
+-                anim.SetInteger(""IntWalkFrontBack"", frontBack);
+-                anim.SetInteger(""IntWalkLeftRight"", leftRight);
++            if (moveSpeed.x < -0.5f) newMoveDirection.x = -1;
++            if (moveSpeed.x > 0.5f) newMoveDirection.x = 1;
+ 
+-                // ... and smaller people have to walk in a quicker pace.
+-                anim.SetFloat(""Speed"", (float)(AvatarMeasures.UnscaledHeight / AvatarMeasures.FullHeight));
+-            }
++            animMoveDirection = newMoveDirection;
++
++            animMoveSpeed = AvatarMeasures != null
++                ? (float)(AvatarMeasures.UnscaledHeight / AvatarMeasures.FullHeight)
++                : 1.0f;
++        }
++
++        private void UpdateBaseAnimation()
++        {
++            if (anim == null) return;
++
++            anim.SetInteger(""IntWalkFrontBack"", (int)animMoveDirection.y);
++            anim.SetInteger(""IntWalkLeftRight"", (int)animMoveDirection.x);
++            anim.SetFloat(""Speed"", animMoveSpeed);
+         }
+ 
+         #endregion
+@@ -145,9 +162,15 @@ void Update()
+ 
+                 // Needs to update the pose AFTER the position and rotation because
+                 // of a nasty flickering.
++
++                // Set and propagate the avatar baseline animation (e.g. walking)
+                 UpdateOwnPose();
+             }
+ 
++            // Both local and remote avatar have to set the animation direction into effect
++            UpdateBaseAnimation();
++
++            // Route the user's audio level into the mouth morphing
+             RouteVoice();
+         }
+     }"
+arteranos/Arteranos,107,fd7ef64,Assets/Arteranos/Scripts/Avatar/AvatarPoseDriver.cs,modified,6,33,39,"@@ -10,34 +10,24 @@
+ using Arteranos.NetworkIO;
+ using Arteranos.XR;
+ using Arteranos.Core;
+-using Mirror;
+ 
+ namespace Arteranos.Avatar
+ {
+ 
+-    public class AvatarPoseDriver : NetworkBehaviour
++    public class AvatarPoseDriver : MonoBehaviour
+     {
+         private IAvatarMeasures AvatarMeasures = null;
+         private NetworkPose NetworkPose = null;
+-        private Animator anim = null;
+ 
+-        [SyncVar]
+-        public Vector2 animMoveDirection = Vector2.zero;
+-
+-        [SyncVar]
+-        public float animMoveSpeed = 1.0f;
++        private bool isOwned => NetworkPose.isOwned;
+ 
+         private void Awake()
+         {
+             NetworkPose = GetComponent<NetworkPose>();
+-            syncDirection = SyncDirection.ClientToServer;
+-            syncInterval = 0;
+         }
+ 
+-        public override void OnStartClient()
++        private void Start()
+         {
+-            base.OnStartClient();
+-
+             if(isOwned)
+             {
+                 SettingsManager.Client.OnVRModeChanged += OnXRChanged;
+@@ -46,12 +36,10 @@ public override void OnStartClient()
+ 
+         }
+ 
+-        public override void OnStopClient()
++        private void OnDestroy()
+         {
+             if(isOwned)
+                 SettingsManager.Client.OnVRModeChanged -= OnXRChanged;
+-
+-            base.OnStopClient();
+         }
+ 
+         private void OnXRChanged(bool useXR)
+@@ -78,9 +66,6 @@ public void UpdateAvatarMeasures(IAvatarMeasures am)
+ 
+                 xrc.ReconfigureXRRig();
+             }
+-
+-            // The user got a new body in general, even if it's not yet active.
+-            anim = GetComponentInChildren<Animator>(true);
+         }
+ 
+         // --------------------------------------------------------------------
+@@ -113,22 +98,13 @@ public void UpdateOwnPose()
+             if (moveSpeed.x < -0.5f) newMoveDirection.x = -1;
+             if (moveSpeed.x > 0.5f) newMoveDirection.x = 1;
+ 
+-            animMoveDirection = newMoveDirection;
++            NetworkPose.animMoveDirection = newMoveDirection;
+ 
+-            animMoveSpeed = AvatarMeasures != null
++            NetworkPose.animMoveSpeed = AvatarMeasures != null
+                 ? (float)(AvatarMeasures.UnscaledHeight / AvatarMeasures.FullHeight)
+                 : 1.0f;
+         }
+ 
+-        private void UpdateBaseAnimation()
+-        {
+-            if (anim == null) return;
+-
+-            anim.SetInteger(""IntWalkFrontBack"", (int)animMoveDirection.y);
+-            anim.SetInteger(""IntWalkLeftRight"", (int)animMoveDirection.x);
+-            anim.SetFloat(""Speed"", animMoveSpeed);
+-        }
+-
+         #endregion
+ 
+         // --------------------------------------------------------------------
+@@ -167,9 +143,6 @@ void Update()
+                 UpdateOwnPose();
+             }
+ 
+-            // Both local and remote avatar have to set the animation direction into effect
+-            UpdateBaseAnimation();
+-
+             // Route the user's audio level into the mouth morphing
+             RouteVoice();
+         }"
+arteranos/Arteranos,107,fd7ef64,Assets/Arteranos/Scripts/Avatar/NetworkPose.cs,modified,20,1,21,"@@ -25,6 +25,11 @@ public class NetworkPose : NetworkPoseBase
+         [Tooltip(""Apply smallest-three quaternion compression. This is lossy, you can disable it if the small rotation inaccuracies are noticeable in your project."")]
+         public bool compressRotation = false;
+ 
++        // Base animation directives, synchronized.
++        public Vector2 animMoveDirection = Vector2.zero;
++        public float animMoveSpeed = 1.0f;
++
++
+         // Used to store last sent snapshots
+         protected PoseSnapshot last;
+ 
+@@ -153,6 +158,8 @@ public override void OnSerialize(NetworkWriter writer, bool initialState)
+             }
+ 
+             writer.WritePoseSnapshot(snapshot.rotation, ref lastSerializedRotations, mask, compressRotation);
++            writer.WriteVector2(animMoveDirection);
++            writer.WriteFloat(animMoveSpeed);
+ 
+             // set 'last'
+             last = snapshot;
+@@ -168,6 +175,8 @@ public override void OnDeserialize(NetworkReader reader, bool initialState)
+ 
+             // ... and delta
+             Quaternion[] rotation = reader.ReadPoseSnapshot(ref lastDeserializedRotations, compressRotation);
++            animMoveDirection = reader.ReadVector2();
++            animMoveSpeed = reader.ReadFloat();
+ 
+             // handle depending on server / client / host.
+             // server has priority for host mode.
+@@ -268,7 +277,17 @@ void UpdateClient()
+             }
+         }
+ 
+-        void LateUpdate()
++        private void Update()
++        {
++            // Both local and remote avatar have to set the animation direction into effect
++            if (anim == null) return;
++
++            anim.SetInteger(""IntWalkFrontBack"", (int)animMoveDirection.y);
++            anim.SetInteger(""IntWalkLeftRight"", (int)animMoveDirection.x);
++            anim.SetFloat(""Speed"", animMoveSpeed);
++        }
++
++        private void LateUpdate()
+         {
+             // if server then always sync to others.
+             if      (isServer) UpdateServer();"
+arteranos/Arteranos,107,fd7ef64,Assets/Arteranos/Scripts/Avatar/NetworkPoseBase.cs,modified,6,0,6,"@@ -21,6 +21,8 @@ public abstract class NetworkPoseBase : NetworkBehaviour
+         public string[] jointNames = null;
+         public Transform[] jointTransforms = null;
+ 
++        protected Animator anim = null;
++
+         protected virtual void Awake()
+         {
+             jointNames = new string[PoseSnapshot.MAX_SIZE];
+@@ -40,6 +42,10 @@ public virtual void UploadJointNames(Transform rootTransform, string[] names)
+                 jointTransforms[i] = rootTransform.FindRecursive(names[i]);
+                 Debug.Assert(jointTransforms[i] != null);
+             }
++
++
++            // The user got a new body in general, even if it's not yet active.
++            anim = GetComponentInChildren<Animator>(true);
+         }
+ 
+         public Quaternion[] RetrievePoseData()"

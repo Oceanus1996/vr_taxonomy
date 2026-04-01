@@ -1,0 +1,97 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+overte-org/overte,1247,965ee15,libraries/avatars-renderer/src/avatars-renderer/Avatar.cpp,modified,15,16,31,"@@ -994,9 +994,9 @@ void Avatar::renderDisplayName(gpu::Batch& batch, const ViewFrustum& view, const
+ 
+         QString statsFormat = QString(""(%1 Kbps, %2 Hz)"");
+         if (!renderedDisplayName.isEmpty()) {
+-            statsFormat.prepend("" - "");
++            statsFormat.append(""\n"");
+         }
+-        renderedDisplayName += statsFormat.arg(QString::number(kilobitsPerSecond, 'f', 2)).arg(getReceiveRate());
++        renderedDisplayName = statsFormat.arg(QString::number(kilobitsPerSecond, 'f', 2)).arg(getReceiveRate())  + renderedDisplayName;
+     }
+ 
+     // Compute display name extent/position offset
+@@ -1010,31 +1010,30 @@ void Avatar::renderDisplayName(gpu::Batch& batch, const ViewFrustum& view, const
+         // Compute background position/size
+         static const float SLIGHTLY_IN_FRONT = 0.1f;
+         static const float BORDER_RELATIVE_SIZE = 0.1f;
+-        static const float BEVEL_FACTOR = 0.1f;
++        // static const float BEVEL_FACTOR = 0.1f;
+         const int border = BORDER_RELATIVE_SIZE * nameDynamicRect.height();
+-        const int left = text_x - border;
+-        const int bottom = text_y - border;
+-        const int width = nameDynamicRect.width() + 2.0f * border;
++        // FIXME: Beveled box is broken
++        // const int left = text_x - border;
++        // const int bottom = text_y - border;
++        // const int width = nameDynamicRect.width() + 2.0f * border;
+         const int height = nameDynamicRect.height() + 2.0f * border;
+-        const int bevelDistance = BEVEL_FACTOR * height;
++        // const int bevelDistance = BEVEL_FACTOR * height;
+ 
+         // Display name and background colors
+         glm::vec4 textColor(0.93f, 0.93f, 0.93f, _displayNameAlpha);
+-        glm::vec4 backgroundColor(0.2f, 0.2f, 0.2f,
+-                                  (_displayNameAlpha / DISPLAYNAME_ALPHA) * DISPLAYNAME_BACKGROUND_ALPHA);
++        glm::vec4 backgroundColor(0.2f, 0.2f, 0.2f,(_displayNameAlpha / DISPLAYNAME_ALPHA) * DISPLAYNAME_BACKGROUND_ALPHA);
+ 
+         // Compute display name transform
+         auto textTransform = calculateDisplayNameTransform(view, textPosition);
+         // Test on extent above insures abs(height) > 0.0f
+         textTransform.postScale(1.0f / height);
+         batch.setModelTransform(textTransform);
+ 
+-        {
+-            PROFILE_RANGE_BATCH(batch, __FUNCTION__"":renderBevelCornersRect"");
+-            DependencyManager::get<GeometryCache>()->bindSimpleProgram(batch, false, false, true, true, true, forward);
+-            DependencyManager::get<GeometryCache>()->renderBevelCornersRect(batch, left, bottom, width, height,
+-                bevelDistance, backgroundColor, _nameRectGeometryID);
+-        }
++        // {
++        //     PROFILE_RANGE_BATCH(batch, __FUNCTION__"":renderBevelCornersRect"");
++        //     DependencyManager::get<GeometryCache>()->bindSimpleProgram(batch, false, false, true, true, true, forward);
++        //     DependencyManager::get<GeometryCache>()->renderBevelCornersRect(batch, left, bottom, width, height, bevelDistance, backgroundColor, _nameRectGeometryID);
++        // }
+ 
+         // Render actual name
+         QByteArray nameUTF8 = renderedDisplayName.toLocal8Bit();
+@@ -1044,7 +1043,7 @@ void Avatar::renderDisplayName(gpu::Batch& batch, const ViewFrustum& view, const
+         batch.setModelTransform(textTransform);
+         {
+             PROFILE_RANGE_BATCH(batch, __FUNCTION__"":renderText"");
+-            displayNameRenderer->draw(batch, { nameUTF8.data(), textColor, { text_x, -text_y }, glm::vec2(-1.0f), forward });
++            displayNameRenderer->draw(batch, { nameUTF8.data(), textColor, { text_x, -text_y }, glm::vec2(-1.0f), TextAlignment::LEFT, forward });
+         }
+     }
+ }"
+overte-org/overte,1247,965ee15,libraries/render-utils/src/sdf_text3D.slh,modified,2,2,4,"@@ -95,8 +95,8 @@ vec4 evalSDFColor(vec2 texCoord, vec4 glyphBounds) {
+ 
+ vec4 evalSDFSuperSampled(vec2 texCoord, vec2 positionMS, vec4 glyphBounds) {
+     // Clip to edges. Note: We don't need to check the top edge.
+-    if (positionMS.x < params.bounds.x || positionMS.x > (params.bounds.x + params.bounds.z) ||
+-        positionMS.y < params.bounds.y - params.bounds.w) {
++    if ((params.bounds.z > 0.0 && (positionMS.x < params.bounds.x || positionMS.x > (params.bounds.x + params.bounds.z))) ||
++        (params.bounds.w > 0.0 && (positionMS.y < params.bounds.y - params.bounds.w))) {
+         return vec4(0.0);
+     }
+ "
+overte-org/overte,1247,965ee15,libraries/render-utils/src/text/Font.cpp,modified,1,1,2,"@@ -438,7 +438,7 @@ void Font::buildVertices(Font::DrawInfo& drawInfo, const QString& str, const glm
+ 
+         // Draw the token
+         for (const QChar& c : token) {
+-            if (advance.x > rightEdge) {
++            if (bounds.x != -1 && advance.x > rightEdge) {
+                 break;
+             }
+             const Glyph& glyph = _glyphs[c];"
+overte-org/overte,1247,965ee15,libraries/render-utils/src/text/Font.h,modified,2,2,4,"@@ -71,8 +71,8 @@ class Font : public QObject {
+                   bool forward, bool mirror) :
+             str(str), color(color), effectColor(effectColor), origin(origin), bounds(bounds), scale(scale), effectThickness(effectThickness),
+             effect(effect), alignment(alignment), verticalAlignment(verticalAlignment), unlit(unlit), forward(forward), mirror(mirror) {}
+-        DrawProps(const QString& str, const glm::vec4& color, const glm::vec2& origin, const glm::vec2& bounds, bool forward) :
+-            str(str), color(color), origin(origin), bounds(bounds), forward(forward) {}
++        DrawProps(const QString& str, const glm::vec4& color, const glm::vec2& origin, const glm::vec2& bounds, TextAlignment alignment, bool forward) :
++            str(str), color(color), origin(origin), bounds(bounds), alignment(alignment), forward(forward) {}
+ 
+         const QString& str;
+         const glm::vec4& color;"

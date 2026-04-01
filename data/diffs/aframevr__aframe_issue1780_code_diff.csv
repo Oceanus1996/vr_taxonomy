@@ -1,0 +1,287 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe,1780,feba9b80aaa5a0472b73fe7468a5875131ce47a4,src/components/camera.js,modified,40,57,97,"@@ -23,22 +23,21 @@ module.exports.Component = registerComponent('camera', {
+    * Add reference from scene to this entity as the camera.
+    */
+   init: function () {
+-    var camera = this.camera = new THREE.PerspectiveCamera();
+-    var sceneEl = this.el.sceneEl;
+-    this.el.setObject3D('camera', camera);
+-    this.bindMethods();
+-    sceneEl.addEventListener('enter-vr', this.removeHeightOffset);
+-    sceneEl.addEventListener('enter-vr', this.saveCameraPose);
+-    sceneEl.addEventListener('exit-vr', this.restoreCameraPose);
+-    sceneEl.addEventListener('exit-vr', this.addHeightOffset);
+-  },
++    var camera;
++    var el = this.el;
++    var sceneEl = el.sceneEl;
++
++    this.savedPose = null;
+ 
+-  bindMethods: function () {
+-    this.addHeightOffset = this.addHeightOffset.bind(this);
+-    this.removeHeightOffset = this.removeHeightOffset.bind(this);
+-    this.updateHeightOffset = this.updateHeightOffset.bind(this);
+-    this.saveCameraPose = this.saveCameraPose.bind(this);
+-    this.restoreCameraPose = this.restoreCameraPose.bind(this);
++    // Create camera.
++    camera = this.camera = new THREE.PerspectiveCamera();
++    el.setObject3D('camera', camera);
++
++    // Add listeners to save and restore camera pose if headset is present.
++    this.onEnterVR = this.onEnterVR.bind(this);
++    this.onExitVR = this.onExitVR.bind(this);
++    sceneEl.addEventListener('enter-vr', this.onEnterVR);
++    sceneEl.addEventListener('exit-vr', this.onExitVR);
+   },
+ 
+   /**
+@@ -51,10 +50,7 @@ module.exports.Component = registerComponent('camera', {
+     var system = this.system;
+ 
+     // Update height offset.
+-    if (!oldData || oldData.userHeight !== data.userHeight) {
+-      this.userHeightOffset = oldData.userHeight || 0;
+-      this.updateHeightOffset();
+-    }
++    this.addHeightOffset(oldData.userHeight);
+ 
+     // Update properties.
+     camera.aspect = data.aspect || (window.innerWidth / window.innerHeight);
+@@ -83,30 +79,40 @@ module.exports.Component = registerComponent('camera', {
+   remove: function () {
+     var sceneEl = this.el.sceneEl;
+     this.el.removeObject3D('camera');
+-    sceneEl.removeEventListener('enter-vr', this.removeHeightOffset);
+-    sceneEl.removeEventListener('enter-vr', this.saveCameraPose);
+-    sceneEl.removeEventListener('exit-vr', this.restoreCameraPose);
+-    sceneEl.removeEventListener('exit-vr', this.addHeightOffset);
++    sceneEl.removeEventListener('enter-vr', this.onEnterVR);
++    sceneEl.removeEventListener('exit-vr', this.onExitVR);
++  },
++
++  /**
++   * Save pose and remove the offset.
++   */
++  onEnterVR: function () {
++    this.saveCameraPose();
++    this.removeHeightOffset();
++  },
++
++  /**
++   * Restore the pose. Do not need to re-add the offset because it was saved on entering VR.
++   */
++  onExitVR: function () {
++    this.restoreCameraPose();
+   },
+ 
+   /**
+    * Offsets the position of the camera to set a human scale perspective
+    * This offset is not necessary when using a headset because the SDK
+    * will return the real user's head height and position.
+    */
+-  addHeightOffset: function () {
++  addHeightOffset: function (oldOffset) {
+     var el = this.el;
+     var currentPosition;
++    var userHeightOffset = this.data.userHeight;
+ 
+-    // Only applies if there's a default camera with no applied offset.
+-    if (this.userHeightOffset) { return; }
+-
+-    this.userHeightOffset = this.data.userHeight;
+-
++    oldOffset = oldOffset || 0;
+     currentPosition = el.getComputedAttribute('position') || {x: 0, y: 0, z: 0};
+     el.setAttribute('position', {
+       x: currentPosition.x,
+-      y: currentPosition.y + this.userHeightOffset,
++      y: currentPosition.y - oldOffset + userHeightOffset,
+       z: currentPosition.z
+     });
+   },
+@@ -121,15 +127,14 @@ module.exports.Component = registerComponent('camera', {
+     var el = this.el;
+     var headsetConnected;
+     var sceneEl = el.sceneEl;
+-    var userHeightOffset = this.userHeightOffset;
++    var userHeightOffset = this.data.userHeight;
+ 
+     // If there's not a headset connected we keep the offset.
+     // Necessary for fullscreen mode with no headset.
+     // Checking this.headsetConnected to make the value injectable for unit tests.
+     headsetConnected = this.headsetConnected || checkHeadsetConnected();
+     if (sceneEl.isMobile || !userHeightOffset || !headsetConnected) { return; }
+ 
+-    this.userHeightOffset = undefined;
+     currentPosition = el.getAttribute('position') || {x: 0, y: 0, z: 0};
+     el.setAttribute('position', {
+       x: currentPosition.x,
+@@ -138,29 +143,6 @@ module.exports.Component = registerComponent('camera', {
+     });
+   },
+ 
+-  /**
+-   * Enables updating camera.userHeight
+-   */
+-  updateHeightOffset: function () {
+-    var currentPosition;
+-    var headsetConnected;
+-    var el = this.el;
+-    var oldHeightOffset = this.userHeightOffset;
+-
+-    // Do not update camera.userHeight if headset is connected
+-    headsetConnected = this.headsetConnected || checkHeadsetConnected();
+-    if (headsetConnected) { return; }
+-
+-    this.userHeightOffset = this.data.userHeight;
+-
+-    currentPosition = el.getComputedAttribute('position') || {x: 0, y: 0, z: 0};
+-    el.setAttribute('position', {
+-      x: currentPosition.x,
+-      y: currentPosition.y - oldHeightOffset + this.userHeightOffset,
+-      z: currentPosition.z
+-    });
+-  },
+-
+   /**
+    * Save camera pose before entering VR to restore later if exiting.
+    */
+@@ -182,12 +164,13 @@ module.exports.Component = registerComponent('camera', {
+   restoreCameraPose: function () {
+     var el = this.el;
+     var savedPose = this.savedPose;
++    var headsetConnected = this.headsetConnected || checkHeadsetConnected();
+ 
+-    if (!savedPose) { return; }
++    if (!savedPose || !headsetConnected) { return; }
+ 
+     // Reset camera orientation.
+     el.setAttribute('position', savedPose.position);
+     el.setAttribute('rotation', savedPose.rotation);
+-    this.savedPose = undefined;
++    this.savedPose = null;
+   }
+ });"
+aframevr/aframe,1780,feba9b80aaa5a0472b73fe7468a5875131ce47a4,tests/components/camera.test.js,modified,50,25,75,"@@ -37,58 +37,70 @@ suite('camera', function () {
+       el.setAttribute('camera', 'fov: 65');
+       assert.equal(el.object3D.children[0].uuid, cameraId);
+     });
++
++    test('can update userHeight', function () {
++      var el = this.el;
++      assert.shallowDeepEqual(el.getAttribute('position'), {x: 0, y: 1.6, z: 0});
++      el.setAttribute('camera', 'userHeight', 2.5);
++      assert.shallowDeepEqual(el.getAttribute('position'), {x: 0, y: 2.5, z: 0});
++    });
+   });
+ 
+-  suite('restoreCameraPose', function () {
+-    test('restore camera pose when exiting VR with a headset', function () {
+-      var sceneEl = this.el.sceneEl;
++  suite('saveCameraPose', function () {
++    test('saves camera pose when entering VR with headset', function () {
+       var cameraEl = this.el;
++      var sceneEl = cameraEl.sceneEl;
+       cameraEl.components.camera.headsetConnected = true;
+       sceneEl.emit('enter-vr');
+-      cameraEl.setAttribute('position', {x: 6, y: 6, z: 6});
+-      sceneEl.emit('exit-vr');
+-      assert.shallowDeepEqual(cameraEl.getAttribute('position'), {x: 0, y: 1.6, z: 0});
++      assert.shallowDeepEqual(cameraEl.components.camera.savedPose.position,
++                              {x: 0, y: 1.6, z: 0});
+     });
+ 
+-    test('does not restore camera pose with no headset', function () {
+-      var sceneEl = this.el.sceneEl;
++    test('does not save camera pose when entering VR without headset', function () {
+       var cameraEl = this.el;
++      var sceneEl = cameraEl.sceneEl;
++      cameraEl.components.camera.headsetConnected = false;
+       sceneEl.emit('enter-vr');
+-      cameraEl.setAttribute('position', {x: 6, y: 6, z: 6});
+-      sceneEl.emit('exit-vr');
+-      assert.shallowDeepEqual(cameraEl.getAttribute('position'), {x: 6, y: 6, z: 6});
++      assert.notOk(cameraEl.components.camera.savedPose);
+     });
+   });
+ 
+   suite('addHeightOffset', function () {
+-    test('add userHeight offset', function () {
++    test('adds userHeight offset', function () {
++      var cameraEl = this.el;
++      assert.shallowDeepEqual(cameraEl.getAttribute('position'), {x: 0, y: 1.6, z: 0});
++    });
++
++    test('adds userHeight offset on mobile', function () {
+       var cameraEl = this.el;
++      var sceneEl = cameraEl.sceneEl;
++      sceneEl.isMobile = true;
+       assert.shallowDeepEqual(cameraEl.getAttribute('position'), {x: 0, y: 1.6, z: 0});
+     });
+   });
+ 
+-  suite('removeHeightOffset', function () {
+-    test('removes the default offset when entering VR with a headset', function () {
+-      var sceneEl = this.el.sceneEl;
++  suite('removeCameraPose (enter VR)', function () {
++    test('removes the default offset with headset', function () {
+       var cameraEl = this.el;
++      var sceneEl = cameraEl.sceneEl;
+       cameraEl.components.camera.headsetConnected = true;
+       assert.shallowDeepEqual(cameraEl.getAttribute('position'), {x: 0, y: 1.6, z: 0});
+       sceneEl.emit('enter-vr');
+       assert.shallowDeepEqual(cameraEl.getAttribute('position'), {x: 0, y: 0, z: 0});
+     });
+ 
+-    test('does not remove the default offset when entering VR with no headset', function () {
+-      var sceneEl = this.el.sceneEl;
++    test('does not remove the default offset without headset', function () {
+       var cameraEl = this.el;
++      var sceneEl = cameraEl.sceneEl;
+       cameraEl.components.camera.headsetConnected = false;
+       assert.shallowDeepEqual(cameraEl.getAttribute('position'), {x: 0, y: 1.6, z: 0});
+       sceneEl.emit('enter-vr');
+       assert.shallowDeepEqual(cameraEl.getAttribute('position'), {x: 0, y: 1.6, z: 0});
+     });
+ 
+-    test('does not remove the default offset when entering VR on mobile', function () {
+-      var sceneEl = this.el.sceneEl;
++    test('does not remove the default offset on mobile', function () {
+       var cameraEl = this.el;
++      var sceneEl = cameraEl.sceneEl;
+       sceneEl.isMobile = true;
+       cameraEl.components.camera.headsetConnected = true;
+       assert.shallowDeepEqual(cameraEl.getAttribute('position'), {x: 0, y: 1.6, z: 0});
+@@ -97,12 +109,25 @@ suite('camera', function () {
+     });
+   });
+ 
+-  suite('updateHeightOffset', function () {
+-    test('updates userHeight', function () {
+-      var el = this.el;
+-      assert.shallowDeepEqual(el.getAttribute('position'), {x: 0, y: 1.6, z: 0});
+-      el.setAttribute('camera', 'userHeight', 2.5);
+-      assert.shallowDeepEqual(el.getAttribute('position'), {x: 0, y: 2.5, z: 0});
++  suite('restoreCameraPose (exit VR)', function () {
++    test('restores camera pose with headset', function () {
++      var cameraEl = this.el;
++      var sceneEl = cameraEl.sceneEl;
++      cameraEl.components.camera.headsetConnected = true;
++      sceneEl.emit('enter-vr');
++      cameraEl.setAttribute('position', {x: 6, y: 6, z: 6});
++      sceneEl.emit('exit-vr');
++      assert.shallowDeepEqual(cameraEl.getAttribute('position'), {x: 0, y: 1.6, z: 0});
++    });
++
++    test('does not restore camera pose without headset', function () {
++      var sceneEl = this.el.sceneEl;
++      var cameraEl = this.el;
++      cameraEl.components.camera.headsetConnected = false;
++      sceneEl.emit('enter-vr');
++      cameraEl.setAttribute('position', {x: 6, y: 6, z: 6});
++      sceneEl.emit('exit-vr');
++      assert.shallowDeepEqual(cameraEl.getAttribute('position'), {x: 6, y: 6, z: 6});
+     });
+   });
+ });"

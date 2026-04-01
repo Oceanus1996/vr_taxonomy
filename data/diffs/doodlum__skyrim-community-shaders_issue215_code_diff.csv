@@ -1,0 +1,52 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+doodlum/skyrim-community-shaders,215,52ff5d3686e3b4f160f7d9cf0885178f122cd2f2,package/Shaders/Lighting.hlsl,modified,2,2,4,"@@ -1616,7 +1616,7 @@ PS_OUTPUT main(PS_INPUT input, bool frontFace
+ 	if (perPassWetnessEffects[0].Raining > 0.0f && perPassWetnessEffects[0].EnableRaindropFx &&
+ 		(dot(input.WorldPosition, input.WorldPosition) < perPassWetnessEffects[0].RaindropFxRange * perPassWetnessEffects[0].RaindropFxRange)) {
+ 		float4 precipPositionCS = float4(2 * float2(DynamicResolutionParams2.x * screenUV.x, -screenUV.y * DynamicResolutionParams2.y + 1) - 1, input.Position.z, 1);
+-		float4 precipPositionMS = mul(CameraViewProjInverse[0], precipPositionCS);
++		float4 precipPositionMS = mul(CameraViewProjInverse[eyeIndex], precipPositionCS);
+ 		precipPositionMS.xyz = precipPositionMS.xyz / precipPositionMS.w;
+ 
+ 		float4 precipOcclusionTexCoord = mul(perPassWetnessEffects[0].PrecipProj, float4(precipPositionMS.xyz, 1));
+@@ -1625,7 +1625,7 @@ PS_OUTPUT main(PS_INPUT input, bool frontFace
+ 		float precipOcclusionZ = TexPrecipOcclusion.SampleLevel(SampShadowMaskSampler, precipOcclusionUv, 0).x;
+ 
+ 		if (precipOcclusionTexCoord.z < precipOcclusionZ + 1e-2)
+-			raindropInfo = GetRainDrops((input.WorldPosition + CameraPosAdjust[0]).xyz, perPassWetnessEffects[0].Time, worldSpaceNormal);
++			raindropInfo = GetRainDrops((input.WorldPosition + CameraPosAdjust[eyeIndex]).xyz, perPassWetnessEffects[0].Time, worldSpaceNormal);
+ 	}
+ 
+ 	float rainWetness = perPassWetnessEffects[0].Wetness * minWetnessAngle * perPassWetnessEffects[0].MaxRainWetness;"
+doodlum/skyrim-community-shaders,215,52ff5d3686e3b4f160f7d9cf0885178f122cd2f2,src/Features/WetnessEffects.cpp,modified,3,1,4,"@@ -280,7 +280,7 @@ void WetnessEffects::Draw(const RE::BSShader* shader, const uint32_t)
+ 			lastWeatherID = 0;
+ 			float currentWeatherRaining = 0.0f;
+ 			float lastWeatherRaining = 0.0f;
+-			float weatherTransitionPercentage = 0.0f;
++			float weatherTransitionPercentage = previousWeatherTransitionPercentage;
+ 
+ 			if (settings.EnableWetnessEffects) {
+ 				if (auto sky = RE::Sky::GetSingleton()) {
+@@ -305,6 +305,7 @@ void WetnessEffects::Draw(const RE::BSShader* shader, const uint32_t)
+ 									seconds = 0.0f;
+ 									currentWeatherWetnessDepth = 0.0f;
+ 									currentWeatherPuddleDepth = 0.0f;
++									weatherTransitionPercentage = DEFAULT_TRANSITION_PERCENTAGE;
+ 									CalculateWetness(currentWeather, sky, 1.0f, currentWeatherWetnessDepth, currentWeatherPuddleDepth);
+ 									wetnessDepth = currentWeatherWetnessDepth > 0 ? MAX_WETNESS_DEPTH : 0.0f;
+ 									puddleDepth = currentWeatherPuddleDepth > 0 ? MAX_PUDDLE_DEPTH : 0.0f;
+@@ -342,6 +343,7 @@ void WetnessEffects::Draw(const RE::BSShader* shader, const uint32_t)
+ 								data.Wetness = std::min(wetnessDepth, MAX_WETNESS);
+ 								data.PuddleWetness = std::min(puddleDepth, MAX_PUDDLE_WETNESS);
+ 								data.Raining = std::lerp(lastWeatherRaining, currentWeatherRaining, weatherTransitionPercentage);
++								previousWeatherTransitionPercentage = weatherTransitionPercentage;
+ 							}
+ 						}
+ 					}"
+doodlum/skyrim-community-shaders,215,52ff5d3686e3b4f160f7d9cf0885178f122cd2f2,src/Features/WetnessEffects.h,modified,1,0,1,"@@ -81,6 +81,7 @@ struct WetnessEffects : Feature
+ 	float lastGameTimeValue = 0.0f;
+ 	uint32_t currentWeatherID = 0;
+ 	uint32_t lastWeatherID = 0;
++	float previousWeatherTransitionPercentage = 0.0f;
+ 	RE::DirectX::XMFLOAT4X4 precipProj;
+ 
+ 	virtual void SetupResources();"

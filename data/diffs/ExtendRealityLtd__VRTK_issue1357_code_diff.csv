@@ -1,0 +1,68 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+ExtendRealityLtd/VRTK,1357,34bb0a6,Assets/VRTK/Scripts/Locomotion/ObjectControlActions/VRTK_BaseObjectControlAction.cs,modified,16,7,23,"@@ -28,6 +28,7 @@ public enum AxisListeners
+         protected float colliderHeight = 0f;
+         protected Transform controlledTransform;
+         protected Transform playArea;
++        protected VRTK_BodyPhysics internalBodyPhysics;
+ 
+         protected abstract void Process(GameObject controlledGameObject, Transform directionDevice, Vector3 axisDirection, float axis, float deadzone, bool currentlyFalling, bool modifierActive);
+ 
+@@ -51,6 +52,7 @@ protected virtual void OnEnable()
+                         break;
+                 }
+             }
++            internalBodyPhysics = (internalBodyPhysics == null ? VRTK_SharedMethods.FindEvenInactiveComponent<VRTK_BodyPhysics>() : internalBodyPhysics);
+         }
+ 
+         protected virtual void OnDisable()
+@@ -110,15 +112,22 @@ protected virtual Vector3 GetObjectCenter(Transform checkObject)
+ 
+                 if (checkObject == playArea)
+                 {
+-                    CapsuleCollider playAreaCollider = playArea.GetComponentInChildren<CapsuleCollider>();
+-                    centerCollider = playAreaCollider;
+-                    if (playAreaCollider != null)
++                    bool centerColliderSet = false;
++
++                    if (internalBodyPhysics != null && internalBodyPhysics.GetBodyColliderContainer() != null)
+                     {
+-                        colliderRadius = playAreaCollider.radius;
+-                        colliderHeight = playAreaCollider.height;
+-                        colliderCenter = playAreaCollider.center;
++                        CapsuleCollider playAreaCollider = internalBodyPhysics.GetBodyColliderContainer().GetComponent<CapsuleCollider>();
++                        centerCollider = playAreaCollider;
++                        if (playAreaCollider != null)
++                        {
++                            centerColliderSet = true;
++                            colliderRadius = playAreaCollider.radius;
++                            colliderHeight = playAreaCollider.height;
++                            colliderCenter = playAreaCollider.center;
++                        }
+                     }
+-                    else
++
++                    if (!centerColliderSet)
+                     {
+                         VRTK_Logger.Error(VRTK_Logger.GetCommonMessage(VRTK_Logger.CommonMessageKeys.REQUIRED_COMPONENT_MISSING_FROM_GAMEOBJECT, ""PlayArea"", ""CapsuleCollider"", ""the same or child""));
+                     }"
+ExtendRealityLtd/VRTK,1357,34bb0a6,Assets/VRTK/Scripts/Locomotion/ObjectControlActions/VRTK_SlideObjectControlAction.cs,modified,6,0,6,"@@ -41,6 +41,12 @@ protected override void Process(GameObject controlledGameObject, Transform direc
+             Move(controlledGameObject, directionDevice, axisDirection);
+         }
+ 
++        protected override void OnEnable()
++        {
++            internalBodyPhysics = bodyPhysics;
++            base.OnEnable();
++        }
++
+         protected virtual float CalculateSpeed(float inputValue, bool currentlyFalling, bool modifierActive)
+         {
+             float speed = currentSpeed;"
+ExtendRealityLtd/VRTK,1357,34bb0a6,Assets/VRTK/Scripts/Locomotion/ObjectControlActions/VRTK_WarpObjectControlAction.cs,modified,1,0,1,"@@ -48,6 +48,7 @@ protected override void Process(GameObject controlledGameObject, Transform direc
+ 
+         protected override void OnEnable()
+         {
++            internalBodyPhysics = bodyPhysics;
+             base.OnEnable();
+             headset = VRTK_DeviceFinder.HeadsetTransform();
+         }"

@@ -1,0 +1,162 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+arteranos/Arteranos,104,904c8ae,Assets/Arteranos/Scripts/Core/Client.cs,modified,2,2,4,"@@ -234,9 +234,9 @@ public class UserDataSettingsJSON
+ 
+     public class UserHUDSettingsJSON
+     {
+-        public virtual float AxisX { get; set; } = -1.5f;   // * 10
++        public virtual float AxisX { get; set; } = -1.3f;   // * 10
+ 
+-        public virtual float AxisY { get; set; } = -1.0f;   // * 10
++        public virtual float AxisY { get; set; } = -0.6f;   // * 10
+ 
+         public virtual float Log2Size { get; set; } = 0;    // 2^x (-2 ... 2 <=> 0.25 ... 4 )
+ "
+arteranos/Arteranos,104,756f220,Assets/Arteranos/Scripts/Core/Base/Helpers.cs,modified,1,1,2,"@@ -430,7 +430,7 @@ public static IAvatarGalleryUI New()
+             Transform t = XRControl.Instance.rigTransform;
+             Vector3 position = t.position;
+             Quaternion rotation= t.rotation;
+-            position += rotation * Vector3.forward * 1.5f;
++            position += rotation * Vector3.forward * 2f;
+ 
+             GameObject go = Instantiate(
+                 BP.I.InApp.AvatarGalleryPedestal,"
+arteranos/Arteranos,104,36c7d46,Assets/Arteranos/Prefabs/UI/Windows/UI_AddAvatar.prefab,modified,3,3,6,"@@ -552,7 +552,7 @@ GameObject:
+   m_Icon: {fileID: 0}
+   m_NavMeshLayer: 0
+   m_StaticEditorFlags: 0
+-  m_IsActive: 0
++  m_IsActive: 1
+ --- !u!224 &1889180529585697682
+ RectTransform:
+   m_ObjectHideFlags: 0
+@@ -562,7 +562,7 @@ RectTransform:
+   m_GameObject: {fileID: 1889180529585697687}
+   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+   m_LocalPosition: {x: 0, y: 0, z: 1}
+-  m_LocalScale: {x: 0.0025, y: 0.0025, z: 0.0025}
++  m_LocalScale: {x: 0.005, y: 0.005, z: 0.005}
+   m_ConstrainProportionsScale: 0
+   m_Children:
+   - {fileID: 2144342314487438291}
+@@ -2616,7 +2616,7 @@ MonoBehaviour:
+   m_EditorClassIdentifier: 
+   m_Padding:
+     m_Left: 0
+-    m_Right: 0
++    m_Right: 10
+     m_Top: 0
+     m_Bottom: 0
+   m_ChildAlignment: 3"
+arteranos/Arteranos,104,bfb6036,Assets/Arteranos/Scripts/Avatar/AvatarLoader.cs,modified,27,11,38,"@@ -13,16 +13,34 @@
+ using Arteranos.Core.Operations;
+ using System.Threading.Tasks;
+ using System;
++using System.Collections.Generic;
+ 
+ namespace Arteranos.Avatar
+ {
+     public class AvatarLoader : MonoBehaviour, IAvatarBody
+     {
+-        private GameObject AvatarStandin = null;
++        internal struct InternalAvatarMeasures : IAvatarMeasures
++        {
++            public readonly GameObject Avatar => Instantiate(BP.I.Avatar_Loading_StandIn);
++            public readonly Transform CenterEye => null;
++            public readonly float EyeHeight => 1.75f;
++            public readonly float FullHeight => 1.86f;
++            public readonly float UnscaledHeight => 1.86f;
++            public readonly Transform Head => null;
++            public readonly Transform LeftHand => null;
++            public readonly Transform RightHand => null;
++            public readonly List<string> JointNames => new();
++            public readonly List<FootIKData> Feet => new();
++            public readonly List<Transform> Eyes => new();
++            public readonly List<MeshBlendShapeIndex> MouthOpen => new();
++            public readonly List<MeshBlendShapeIndex> EyeBlinkLeft => new();
++            public readonly List<MeshBlendShapeIndex> EyeBlinkRight => new();
++        }
++
+         private bool loading = false;
+ 
+         private GameObject AvatarGameObject = null;
+-        public IAvatarMeasures AvatarMeasures { get; set; } = null;
++        public IAvatarMeasures AvatarMeasures { get; private set; } = null;
+ 
+ 
+         public bool Invisible
+@@ -46,14 +64,14 @@ public bool Invisible
+ 
+         private void Awake()
+         {
+-            AvatarStandin = BP.I.Avatar_Loading_StandIn;
++            AvatarMeasures = new InternalAvatarMeasures();
+             AvatarBrain = GetComponent<AvatarBrain>();
+         }
+ 
+         private void Start()
+         {
+             // Put up the Stand-in for the time where the avatar is loaded
+-            AvatarGameObject = Instantiate(AvatarStandin);
++            AvatarGameObject = AvatarMeasures.Avatar;
+             AvatarGameObject.transform.SetParent(transform, false);
+         }
+ 
+@@ -91,13 +109,11 @@ IEnumerator AvatarDownloaderCoroutine()
+                 if (AvatarGameObject)
+                     Destroy(AvatarGameObject);
+ 
+-                if (t.IsFaulted)
+-                    AvatarGameObject = Instantiate(AvatarStandin);
+-                else
+-                {
+-                    AvatarMeasures = AvatarDownloader.GetAvatarMeasures(co);
+-                    AvatarGameObject = AvatarMeasures.Avatar;
+-                }
++                AvatarMeasures = t.IsFaulted 
++                    ? new InternalAvatarMeasures() 
++                    : AvatarDownloader.GetAvatarMeasures(co);
++
++                AvatarGameObject = AvatarMeasures.Avatar;
+ 
+                 AvatarGameObject.name += AvatarBrain ? $""_{AvatarBrain.NetID}"" : ""_puppet"";
+ "
+arteranos/Arteranos,104,bfb6036,Assets/Arteranos/Scripts/Avatar/AvatarPoseDriver.cs,modified,3,5,8,"@@ -76,12 +76,10 @@ public void UpdateOwnPose()
+             // VR: Head tracking
+             if(SettingsManager.Client.VRMode)
+             {
+-                if(AvatarMeasures.CenterEye == null) return;
++                if(!AvatarMeasures.CenterEye || !AvatarMeasures.Head) return;
+ 
+-                Transform cam = XRControl.Instance.cameraTransform;
+-
+-                if(AvatarMeasures.Head)
+-                    AvatarMeasures.Head.rotation = cam.rotation;
++                Transform cam = XRControl.Instance.cameraTransform;                
++                AvatarMeasures.Head.rotation = cam.rotation;
+             }
+ 
+             // VR + 2D: Walking animation (only with loaded avatars)"
+arteranos/Arteranos,104,bfb6036,Assets/Arteranos/Scripts/Core/LLComponents/HandIKController.cs,modified,4,0,4,"@@ -66,6 +66,10 @@ public void LateUpdate()
+ 
+         private void AdjustHandIK(Transform handHandle)
+         {
++            // Should never happen because AvatarDownloader installed the component
++            // as well as entering the hand transform into AvatarMeasures.
++            if (!guidedTransform) return;
++
+             if (!ControllerTransform)
+             {
+                 // No controller. Set the hand's pose along with its animation."
+arteranos/Arteranos,104,bfb6036,Assets/Arteranos/Scripts/UI/InApp/NameplateUI.cs,modified,2,3,5,"@@ -51,10 +51,9 @@ protected override void OnEnable()
+             lbl_Name.text = GetLabelText();
+ 
+             Bearer.OnAppearanceStatusChanged += OnAppearanceStatusChanged;
+-            float fullHeight = Bearer.Body.AvatarMeasures?.FullHeight ?? 0.5f; // Maybe the avatar isn#t loaded yet.
++            float fullHeight = Bearer.Body.AvatarMeasures.FullHeight; // Maybe the avatar isn#t loaded yet.
+             // TODO Up vector? LocalPosition respects the root rotation, but...
+-            transform.localPosition = new Vector3(0, fullHeight + 0.2f, 0);
+-            transform.localRotation = Quaternion.Euler(0, 180, 0);
++            transform.SetLocalPositionAndRotation(new Vector3(0, fullHeight + 0.2f, 0), Quaternion.Euler(0, 180, 0));
+             OnAppearanceStatusChanged(Bearer.AppearanceStatus);
+         }
+ "

@@ -1,0 +1,351 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+microsoft/mixed-reality-extension-sdk,225,1520aa1bcd3873fcee26969797c35b47e9286230,.vscode/launch.json,modified,29,29,58,"@@ -1,30 +1,30 @@
+ {
+-    // Use IntelliSense to learn about possible attributes.
+-    // Hover to view descriptions of existing attributes.
+-    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+-    ""version"": ""0.2.0"",
+-    ""configurations"": [
+-        {
+-            ""type"": ""node"",
+-            ""request"": ""attach"",
+-            ""name"": ""Attach to app"",
+-            ""port"": 9229
+-        },
+-        {
+-          ""type"": ""node"",
+-          ""request"": ""launch"",
+-          ""name"": ""Launch functional-tests app"",
+-          ""runtimeExecutable"": ""npm"",
+-          ""runtimeArgs"": [
+-            ""run-script"",
+-            ""debug""
+-          ],
+-          ""port"": 9229,
+-          ""cwd"": ""${workspaceFolder}/packages/functional-tests"",
+-          ""autoAttachChildProcesses"": true,
+-          ""console"": ""integratedTerminal"",
+-          ""internalConsoleOptions"": ""neverOpen"",
+-          ""outputCapture"": ""std""
+-        }
+-    ]
+-}
++  // Use IntelliSense to learn about possible attributes.
++  // Hover to view descriptions of existing attributes.
++  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
++  ""version"": ""0.2.0"",
++  ""configurations"": [
++    {
++      ""type"": ""node"",
++      ""request"": ""attach"",
++      ""name"": ""Attach to app"",
++      ""port"": 9229
++    },
++    {
++      ""type"": ""node"",
++      ""request"": ""launch"",
++      ""name"": ""Launch functional-tests app"",
++      ""runtimeExecutable"": ""npm"",
++      ""runtimeArgs"": [
++        ""run-script"",
++        ""debug""
++      ],
++      ""port"": 9229,
++      ""cwd"": ""${workspaceFolder}/packages/functional-tests"",
++      ""internalConsoleOptions"": ""openOnSessionStart"",
++      ""autoAttachChildProcesses"": true,
++      ""console"": ""internalConsole"",
++      ""outputCapture"": ""std""
++    }
++  ]
++}
+\ No newline at end of file"
+microsoft/mixed-reality-extension-sdk,225,1520aa1bcd3873fcee26969797c35b47e9286230,packages/functional-tests/src/tests/look-at-test.ts,modified,14,6,20,"@@ -21,20 +21,28 @@ export default class LookAtTest extends Test {
+     public state = 0;
+ 
+     public async run(): Promise<boolean> {
+-        const tester = await MRE.Actor.CreateFromGltf(this.app.context, {
++        const tester = MRE.Actor.CreateFromGltf(this.app.context, {
+             resourceUrl: `${this.baseUrl}/monkey.glb`,
+             actor: { transform: { scale: { x: 0.5, y: 0.5, z: 0.5 } } }
+-        });
+-        await tester.createAnimation('circle', {
++        }).value;
++        const lookAtTarget = MRE.Actor.CreateEmpty(this.app.context, {
++            actor: {
++                attachment: {
++                    userId: this.user.id,
++                    attachPoint: 'head'
++                }
++            }
++        }).value;
++        tester.createAnimation('circle', {
+             wrapMode: MRE.AnimationWrapMode.Loop,
+             keyframes: circleKeyframes
+-        });
++        }).catch(() => { });
+         tester.enableAnimation('circle');
+ 
+         this.interval = setInterval(() => {
+             const modes = [MRE.LookAtMode.TargetXY, MRE.LookAtMode.TargetY, MRE.LookAtMode.None];
+-            tester.lookAt(this.user, modes[this.state++ % 3]);
+-        }, 2000);
++            tester.enableLookAt(lookAtTarget, modes[this.state++ % 3]);
++        }, 4000);
+ 
+         await this.stoppedAsync();
+         return true;"
+microsoft/mixed-reality-extension-sdk,225,1520aa1bcd3873fcee26969797c35b47e9286230,packages/sdk/src/adapters/multipeer/rules.ts,modified,0,11,11,"@@ -659,17 +659,6 @@ export const Rules: { [id in Payloads.PayloadType]: Rule } = {
+         }
+     },
+ 
+-    // ========================================================================
+-    'look-at': {
+-        ...DefaultRule,
+-        synchronization: {
+-            stage: 'create-actors',
+-            before: 'queue',
+-            during: 'queue',
+-            after: 'allow'
+-        }
+-    },
+-
+     // ========================================================================
+     'multi-operation-result': {
+         ...ClientOnlyRule"
+microsoft/mixed-reality-extension-sdk,225,1520aa1bcd3873fcee26969797c35b47e9286230,packages/sdk/src/types/internal/context.ts,modified,0,19,19,"@@ -40,7 +40,6 @@ import {
+     CreatePrimitive,
+     DestroyActors,
+     InterpolateActor,
+-    LookAt,
+     ObjectSpawned,
+     OperationResult,
+     Payload,
+@@ -342,24 +341,6 @@ export class InternalContext {
+         }
+     }
+ 
+-    public lookAt(actorId: string, targetId: string, lookAtMode: LookAtMode) {
+-        const actor = this.actorSet[actorId];
+-        if (actor) {
+-            actor.created().then(() => {
+-                this.protocol.sendPayload({
+-                    type: 'look-at',
+-                    actorId,
+-                    targetId,
+-                    lookAtMode
+-                } as LookAt);
+-            }).catch((reason: any) => {
+-                log.error('app', `Failed lookAt. Actor ${actor.id}. ${(reason || '').toString()}`.trim());
+-            });
+-        } else {
+-            log.error('app', `Failed lookAt. Actor ${actorId} not found.`);
+-        }
+-    }
+-
+     /* TODO: Delete enable-collider payload and implement via patching mechanism.
+ 
+     public enableCollider("
+microsoft/mixed-reality-extension-sdk,225,1520aa1bcd3873fcee26969797c35b47e9286230,packages/sdk/src/types/network/payloads/payloads.ts,modified,2,14,16,"@@ -4,9 +4,9 @@
+  */
+ 
+ import { OperationResultCode, Trace } from '..';
+-import { AnimationState, CreateAnimationOptions, LookAtMode, SetAnimationStateOptions } from '../../..';
++import { CreateAnimationOptions, SetAnimationStateOptions } from '../../..';
+ import { PrimitiveDefinition } from '../../primitiveTypes';
+-import { ActorLike, ColliderType, LightLike, TextLike, TransformLike, UserLike } from '../../runtime';
++import { ActorLike, ColliderType, UserLike } from '../../runtime';
+ import { ActionState, BehaviorType } from '../../runtime/behaviors';
+ import { OperatingModel } from '../operatingModel';
+ import { SubscriptionType } from '../subscriptionType';
+@@ -37,7 +37,6 @@ export type PayloadType
+     | 'heartbeat-reply'
+     | 'interpolate-actor'
+     | 'load-assets'
+-    | 'look-at'
+     | 'multi-operation-result'
+     | 'object-spawned'
+     | 'operation-result'
+@@ -370,14 +369,3 @@ export type InterpolateActor = Payload & {
+     curve: number[];
+     enabled: boolean;
+ };
+-
+-/**
+- * @hidden
+- * App to engine. Instruct the actor to face another actor or user.
+- */
+-export type LookAt = Payload & {
+-    type: 'look-at';
+-    actorId: string;
+-    targetId: string;
+-    lookAtMode: LookAtMode;
+-};"
+microsoft/mixed-reality-extension-sdk,225,1520aa1bcd3873fcee26969797c35b47e9286230,packages/sdk/src/types/runtime/actor.ts,modified,43,18,61,"@@ -13,6 +13,8 @@ import {
+     CollisionData,
+     Light,
+     LightLike,
++    LookAt,
++    LookAtLike,
+     Material,
+     RigidBody,
+     RigidBodyLike,
+@@ -57,6 +59,7 @@ export interface ActorLike {
+     collider: Partial<ColliderLike>;
+     text: Partial<TextLike>;
+     attachment: Partial<AttachmentLike>;
++    lookAt: Partial<LookAtLike>;
+     materialId: string;
+ }
+ 
+@@ -90,6 +93,7 @@ export class Actor implements ActorLike, Patchable<ActorLike> {
+     private _collider: Collider;
+     private _text: Text;
+     private _attachment: Attachment;
++    private _lookAt: LookAt;
+     private _materialId = ZeroGuid;
+     // tslint:enable:variable-name
+ 
+@@ -110,6 +114,7 @@ export class Actor implements ActorLike, Patchable<ActorLike> {
+     public get collider() { return this._collider; }
+     public get text() { return this._text; }
+     public get attachment() { return this._attachment; }
++    public get lookAt() { return this._lookAt; }
+     public get children() { return this.context.actors.filter(actor => actor.parentId === this.id); }
+     public get parent() { return this._context.actor(this._parentId); }
+     public get parentId() { return this._parentId; }
+@@ -384,6 +389,41 @@ export class Actor implements ActorLike, Patchable<ActorLike> {
+         this._text.copy(text);
+     }
+ 
++    /**
++     * Instruct the actor to face another object, or stop facing an object.
++     * @param actorOrActorId The Actor or id of the actor to face.
++     * @param lookAtMode (Optional) How to face the target. @see LookUpMode.
++     * @param backward (Optional) If true, actor faces away from target rather than toward.
++     */
++    public enableLookAt(actorOrActorId: Actor | string, mode?: LookAtMode, backward?: boolean) {
++        // Resolve the actorId value.
++        let actorId = ZeroGuid;
++        if (typeof (actorOrActorId) === 'object' && actorOrActorId.id !== undefined) {
++            actorId = actorOrActorId.id;
++        } else if (typeof (actorOrActorId) === 'string') {
++            actorId = actorOrActorId;
++        }
++        // Allocate component if necessary.
++        if (!this._lookAt) {
++            this._lookAt = new LookAt();
++            // Actor patching: Observe the lookAt component for changed values.
++            observe({
++                target: this._lookAt,
++                targetName: 'lookAt',
++                notifyChanged: (...path: string[]) => this.actorChanged(...path),
++                // Trigger notifications for every observed leaf node to ensure we get all values in the
++                // initial patch.
++                triggerNotificationsNow: true
++            });
++        }
++        // Set component values.
++        this._lookAt.copy({
++            actorId,
++            mode,
++            backward
++        });
++    }
++
+     /**
+      * Attach to the user at the given attach point.
+      * @param userOrUserId The User or id of user to attach to.
+@@ -541,23 +581,6 @@ export class Actor implements ActorLike, Patchable<ActorLike> {
+         return this.context.internal.animateTo(this.id, value, duration, curve);
+     }
+ 
+-    /**
+-     * Instruct the actor to face another object, or stop facing an object.
+-     * @param targetOrId The actor, user, or id of the object to face.
+-     * @param lookAtMode How to face the target. @see LookUpMode.
+-     */
+-    public lookAt(targetOrId: Actor | User | string, lookAtMode: LookAtMode) {
+-        let targetId: string;
+-        if (lookAtMode !== LookAtMode.None) {
+-            if (typeof (targetOrId) === 'object' && targetOrId.id !== undefined) {
+-                targetId = targetOrId.id;
+-            } else if (typeof (targetOrId) === 'string') {
+-                targetId = targetOrId;
+-            }
+-        }
+-        this.context.internal.lookAt(this.id, targetId, lookAtMode);
+-    }
+-
+     /**
+      * Finds child actors matching `name`.
+      * @param name The name of the actors to find.
+@@ -655,6 +678,7 @@ export class Actor implements ActorLike, Patchable<ActorLike> {
+         if (from.rigidBody) this.enableRigidBody(from.rigidBody);
+         if (from.collider) this._setCollider(from.collider);
+         if (from.text) this.enableText(from.text);
++        if (from.lookAt) this.enableLookAt(from.lookAt.actorId, from.lookAt.mode);
+ 
+         this.internal.observing = wasObserving;
+         return this;
+@@ -671,7 +695,8 @@ export class Actor implements ActorLike, Patchable<ActorLike> {
+             light: this._light ? this._light.toJSON() : undefined,
+             rigidBody: this._rigidBody ? this._rigidBody.toJSON() : undefined,
+             collider: this._collider ? this._collider.toJSON() : undefined,
+-            text: this._text ? this._text.toJSON() : undefined
++            text: this._text ? this._text.toJSON() : undefined,
++            lookAt: this._lookAt ? this._lookAt.toJSON() : undefined
+         } as ActorLike;
+     }
+ "
+microsoft/mixed-reality-extension-sdk,225,1520aa1bcd3873fcee26969797c35b47e9286230,packages/sdk/src/types/runtime/index.ts,modified,1,0,1,"@@ -15,3 +15,4 @@ export * from './text';
+ export * from './collider';
+ export * from './assets';
+ export * from './physics';
++export * from './lookAt';"
+microsoft/mixed-reality-extension-sdk,225,1520aa1bcd3873fcee26969797c35b47e9286230,packages/sdk/src/types/runtime/lookAt.ts,added,45,0,45,"@@ -0,0 +1,45 @@
++/*!
++ * Copyright (c) Microsoft Corporation. All rights reserved.
++ * Licensed under the MIT License.
++ */
++
++import { LookAtMode, Vector3, Vector3Like } from ""../.."";
++import { ZeroGuid } from ""../../constants"";
++
++export interface LookAtLike {
++    actorId: string;
++    mode: LookAtMode;
++    backward: boolean;
++}
++
++export class LookAt implements LookAtLike {
++    // tslint:disable:variable-name
++    private _actorId = ZeroGuid;
++    private _mode = LookAtMode.None;
++    private _backward = false;
++    // tslint:enable:variable-name
++
++    public get actorId() { return this._actorId; }
++    public set actorId(value) { value ? this._actorId = value : this._actorId = ZeroGuid; }
++    public get mode() { return this._mode; }
++    public set mode(value) { value ? this._mode = value : this._mode = LookAtMode.None; }
++    public get backward() { return this._backward; }
++    public set backward(value) { this._backward = !!value; }
++
++    /** @hidden */
++    public toJSON(): LookAtLike {
++        return {
++            actorId: this.actorId,
++            mode: this.mode,
++            backward: this.backward
++        } as LookAtLike;
++    }
++
++    public copy(from: Partial<LookAtLike>): this {
++        if (!from) return this;
++        if (from.actorId !== undefined) this.actorId = from.actorId;
++        if (from.mode !== undefined) this.mode = from.mode;
++        if (from.backward !== undefined) this.backward = from.backward;
++        return this;
++    }
++}"

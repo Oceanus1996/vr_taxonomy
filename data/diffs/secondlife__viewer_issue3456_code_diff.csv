@@ -1,0 +1,1126 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+secondlife/viewer,3456,d450295,indra/llrender/llglslshader.h,modified,1,0,1,"@@ -59,6 +59,7 @@ class LLShaderFeatures
+     bool attachNothing = false;
+     bool hasHeroProbes = false;
+     bool isPBRTerrain = false;
++    bool hasTonemap = false;
+ };
+ 
+ // ============= Structure for caching shader uniforms ==============="
+secondlife/viewer,3456,d450295,indra/llrender/llshadermgr.cpp,modified,8,0,8,"@@ -291,6 +291,14 @@ bool LLShaderMgr::attachShaderFeatures(LLGLSLShader * shader)
+         }
+     }
+ 
++    if (features->hasTonemap)
++    {
++        if (!shader->attachFragmentObject(""deferred/tonemapUtilF.glsl""))
++        {
++            return false;
++        }
++    }
++
+     // NOTE order of shader object attaching is VERY IMPORTANT!!!
+     if (features->hasAtmospherics)
+     {"
+secondlife/viewer,3456,d450295,indra/newview/app_settings/shaders/class1/deferred/postDeferredTonemap.glsl,modified,1,128,129,"@@ -28,138 +28,11 @@
+ out vec4 frag_color;
+ 
+ uniform sampler2D diffuseRect;
+-uniform sampler2D exposureMap;
+ 
+-uniform vec2 screen_res;
+ in vec2 vary_fragcoord;
+ 
+ vec3 linear_to_srgb(vec3 cl);
+-
+-//===============================================================
+-// tone mapping taken from Khronos sample implementation
+-//===============================================================
+-
+-// sRGB => XYZ => D65_2_D60 => AP1 => RRT_SAT
+-const mat3 ACESInputMat = mat3
+-(
+-    0.59719, 0.07600, 0.02840,
+-    0.35458, 0.90834, 0.13383,
+-    0.04823, 0.01566, 0.83777
+-);
+-
+-
+-// ODT_SAT => XYZ => D60_2_D65 => sRGB
+-const mat3 ACESOutputMat = mat3
+-(
+-    1.60475, -0.10208, -0.00327,
+-    -0.53108,  1.10813, -0.07276,
+-    -0.07367, -0.00605,  1.07602
+-);
+-
+-// ACES tone map (faster approximation)
+-// see: https://knarkowicz.wordpress.com/2016/01/06/aces-filmic-tone-mapping-curve/
+-vec3 toneMapACES_Narkowicz(vec3 color)
+-{
+-    const float A = 2.51;
+-    const float B = 0.03;
+-    const float C = 2.43;
+-    const float D = 0.59;
+-    const float E = 0.14;
+-    return clamp((color * (A * color + B)) / (color * (C * color + D) + E), 0.0, 1.0);
+-}
+-
+-
+-// ACES filmic tone map approximation
+-// see https://github.com/TheRealMJP/BakingLab/blob/master/BakingLab/ACES.hlsl
+-vec3 RRTAndODTFit(vec3 color)
+-{
+-    vec3 a = color * (color + 0.0245786) - 0.000090537;
+-    vec3 b = color * (0.983729 * color + 0.4329510) + 0.238081;
+-    return a / b;
+-}
+-
+-
+-// tone mapping
+-vec3 toneMapACES_Hill(vec3 color)
+-{
+-    color = ACESInputMat * color;
+-
+-    // Apply RRT and ODT
+-    color = RRTAndODTFit(color);
+-
+-    color = ACESOutputMat * color;
+-
+-    // Clamp to [0, 1]
+-    color = clamp(color, 0.0, 1.0);
+-
+-    return color;
+-}
+-
+-// Khronos Neutral tonemapping
+-// https://github.com/KhronosGroup/ToneMapping/tree/main
+-// Input color is non-negative and resides in the Linear Rec. 709 color space.
+-// Output color is also Linear Rec. 709, but in the [0, 1] range.
+-vec3 PBRNeutralToneMapping( vec3 color )
+-{
+-  const float startCompression = 0.8 - 0.04;
+-  const float desaturation = 0.15;
+-
+-  float x = min(color.r, min(color.g, color.b));
+-  float offset = x < 0.08 ? x - 6.25 * x * x : 0.04;
+-  color -= offset;
+-
+-  float peak = max(color.r, max(color.g, color.b));
+-  if (peak < startCompression) return color;
+-
+-  const float d = 1. - startCompression;
+-  float newPeak = 1. - d * d / (peak + d - startCompression);
+-  color *= newPeak / peak;
+-
+-  float g = 1. - 1. / (desaturation * (peak - newPeak) + 1.);
+-  return mix(color, newPeak * vec3(1, 1, 1), g);
+-}
+-
+-uniform float exposure;
+-uniform float tonemap_mix;
+-uniform int tonemap_type;
+-
+-vec3 toneMap(vec3 color)
+-{
+-#ifndef NO_POST
+-    float exp_scale = texture(exposureMap, vec2(0.5,0.5)).r;
+-
+-    color *= exposure * exp_scale;
+-
+-    vec3 clamped_color = clamp(color.rgb, vec3(0.0), vec3(1.0));
+-
+-    switch(tonemap_type)
+-    {
+-    case 0:
+-        color = PBRNeutralToneMapping(color);
+-        break;
+-    case 1:
+-        color = toneMapACES_Hill(color);
+-        break;
+-    }
+-
+-    // mix tonemapped and linear here to provide adjustment
+-    color = mix(clamped_color, color, tonemap_mix);
+-#endif
+-
+-    return color;
+-}
+-
+-//===============================================================
+-
+-void debugExposure(inout vec3 color)
+-{
+-    float exp_scale = texture(exposureMap, vec2(0.5,0.5)).r;
+-    exp_scale *= 0.5;
+-    if (abs(vary_fragcoord.y-exp_scale) < 0.01 && vary_fragcoord.x < 0.1)
+-    {
+-        color = vec3(1,0,0);
+-    }
+-}
++vec3 toneMap(vec3 color);
+ 
+ void main()
+ {"
+secondlife/viewer,3456,d450295,indra/newview/app_settings/shaders/class1/deferred/tonemapUtilF.glsl,added,180,0,180,"@@ -0,0 +1,180 @@
++/**
++ * @file postDeferredTonemap.glsl
++ *
++ * $LicenseInfo:firstyear=2024&license=viewerlgpl$
++ * Second Life Viewer Source Code
++ * Copyright (C) 2024, Linden Research, Inc.
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Lesser General Public
++ * License as published by the Free Software Foundation;
++ * version 2.1 of the License only.
++ *
++ * This library is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
++ * Lesser General Public License for more details.
++ *
++ * You should have received a copy of the GNU Lesser General Public
++ * License along with this library; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
++ *
++ * Linden Research, Inc., 945 Battery Street, San Francisco, CA  94111  USA
++ * $/LicenseInfo$
++ */
++
++/*[EXTRA_CODE_HERE]*/
++
++uniform sampler2D exposureMap;
++uniform vec2 screen_res;
++in vec2 vary_fragcoord;
++
++//===============================================================
++// tone mapping taken from Khronos sample implementation
++//===============================================================
++
++// sRGB => XYZ => D65_2_D60 => AP1 => RRT_SAT
++const mat3 ACESInputMat = mat3
++(
++    0.59719, 0.07600, 0.02840,
++    0.35458, 0.90834, 0.13383,
++    0.04823, 0.01566, 0.83777
++);
++
++
++// ODT_SAT => XYZ => D60_2_D65 => sRGB
++const mat3 ACESOutputMat = mat3
++(
++    1.60475, -0.10208, -0.00327,
++    -0.53108,  1.10813, -0.07276,
++    -0.07367, -0.00605,  1.07602
++);
++
++// ACES tone map (faster approximation)
++// see: https://knarkowicz.wordpress.com/2016/01/06/aces-filmic-tone-mapping-curve/
++vec3 toneMapACES_Narkowicz(vec3 color)
++{
++    const float A = 2.51;
++    const float B = 0.03;
++    const float C = 2.43;
++    const float D = 0.59;
++    const float E = 0.14;
++    return clamp((color * (A * color + B)) / (color * (C * color + D) + E), 0.0, 1.0);
++}
++
++
++// ACES filmic tone map approximation
++// see https://github.com/TheRealMJP/BakingLab/blob/master/BakingLab/ACES.hlsl
++vec3 RRTAndODTFit(vec3 color)
++{
++    vec3 a = color * (color + 0.0245786) - 0.000090537;
++    vec3 b = color * (0.983729 * color + 0.4329510) + 0.238081;
++    return a / b;
++}
++
++
++// tone mapping
++vec3 toneMapACES_Hill(vec3 color)
++{
++    color = ACESInputMat * color;
++
++    // Apply RRT and ODT
++    color = RRTAndODTFit(color);
++
++    color = ACESOutputMat * color;
++
++    // Clamp to [0, 1]
++    color = clamp(color, 0.0, 1.0);
++
++    return color;
++}
++
++// Khronos Neutral tonemapping
++// https://github.com/KhronosGroup/ToneMapping/tree/main
++// Input color is non-negative and resides in the Linear Rec. 709 color space.
++// Output color is also Linear Rec. 709, but in the [0, 1] range.
++vec3 PBRNeutralToneMapping( vec3 color )
++{
++  const float startCompression = 0.8 - 0.04;
++  const float desaturation = 0.15;
++
++  float x = min(color.r, min(color.g, color.b));
++  float offset = x < 0.08 ? x - 6.25 * x * x : 0.04;
++  color -= offset;
++
++  float peak = max(color.r, max(color.g, color.b));
++  if (peak < startCompression) return color;
++
++  const float d = 1. - startCompression;
++  float newPeak = 1. - d * d / (peak + d - startCompression);
++  color *= newPeak / peak;
++
++  float g = 1. - 1. / (desaturation * (peak - newPeak) + 1.);
++  return mix(color, newPeak * vec3(1, 1, 1), g);
++}
++
++uniform float exposure;
++uniform float tonemap_mix;
++uniform int tonemap_type;
++
++vec3 toneMap(vec3 color)
++{
++#ifndef NO_POST
++    float exp_scale = texture(exposureMap, vec2(0.5,0.5)).r;
++
++    color *= exposure * exp_scale;
++
++    vec3 clamped_color = clamp(color.rgb, vec3(0.0), vec3(1.0));
++
++    switch(tonemap_type)
++    {
++    case 0:
++        color = PBRNeutralToneMapping(color);
++        break;
++    case 1:
++        color = toneMapACES_Hill(color);
++        break;
++    }
++
++    // mix tonemapped and linear here to provide adjustment
++    color = mix(clamped_color, color, tonemap_mix);
++#endif
++
++    return color;
++}
++
++
++vec3 toneMapNoExposure(vec3 color)
++{
++#ifndef NO_POST
++    vec3 clamped_color = clamp(color.rgb, vec3(0.0), vec3(1.0));
++
++    switch(tonemap_type)
++    {
++    case 0:
++        color = PBRNeutralToneMapping(color);
++        break;
++    case 1:
++        color = toneMapACES_Hill(color);
++        break;
++    }
++
++    // mix tonemapped and linear here to provide adjustment
++    color = mix(clamped_color, color, tonemap_mix);
++#endif
++
++    return color;
++}
++
++
++//===============================================================
++
++void debugExposure(inout vec3 color)
++{
++    float exp_scale = texture(exposureMap, vec2(0.5,0.5)).r;
++    exp_scale *= 0.5;
++    if (abs(vary_fragcoord.y-exp_scale) < 0.01 && vary_fragcoord.x < 0.1)
++    {
++        color = vec3(1,0,0);
++    }
++}"
+secondlife/viewer,3456,d450295,indra/newview/app_settings/shaders/class3/environment/waterF.glsl,modified,28,27,55,"@@ -90,21 +90,15 @@ uniform sampler2D depthMap;
+ 
+ uniform sampler2D exclusionTex;
+ 
+-uniform float sunAngle;
+-uniform float sunAngle2;
++uniform int classic_mode;
+ uniform vec3 lightDir;
+ uniform vec3 specular;
+-uniform float lightExp;
++uniform float blurMultiplier;
+ uniform float refScale;
+ uniform float kd;
+-uniform vec2 screenRes;
+ uniform vec3 normScale;
+ uniform float fresnelScale;
+ uniform float fresnelOffset;
+-uniform float blurMultiplier;
+-uniform vec4 waterFogColor;
+-uniform vec3 waterFogColorLinear;
+-
+ 
+ //bigWave is (refCoord.w, view.w);
+ in vec4 refCoord;
+@@ -126,6 +120,7 @@ vec3 linear_to_srgb(vec3 col);
+ 
+ vec3 atmosLighting(vec3 light);
+ vec3 scaleSoftClip(vec3 light);
++vec3 toneMapNoExposure(vec3 color);
+ 
+ vec3 vN, vT, vB;
+ 
+@@ -171,18 +166,18 @@ void calculateFresnelFactors(out vec3 df3, out vec2 df2, vec3 viewVec, vec3 wave
+     // We calculate the fresnel here.
+     // We do this by getting the dot product for each sets of waves, and applying scale and offset.
+ 
+-    df3 = vec3(
++    df3 = max(vec3(0), vec3(
+         dot(viewVec, wave1),
+         dot(viewVec, (wave2 + wave3) * 0.5),
+         dot(viewVec, wave3)
+-    ) * fresnelScale + fresnelOffset;
++    ) * fresnelScale + fresnelOffset);
+ 
+     df3 *= df3;
+ 
+-    df2 = vec2(
++    df2 = max(vec2(0), vec2(
+         df3.x + df3.y + df3.z,
+         dot(viewVec, wavef) * fresnelScale + fresnelOffset
+-    );
++    ));
+ }
+ 
+ void main()
+@@ -194,6 +189,7 @@ void main()
+     vB = cross(vN, vT);
+ 
+     vec3 pos = vary_position.xyz;
++    float linear_depth = 1 / -pos.z;
+ 
+     float dist = length(pos.xyz);
+ 
+@@ -216,6 +212,12 @@ void main()
+     vec3 df3 = vec3(0);
+     vec2 df2 = vec2(0);
+ 
++    vec3 sunlit;
++    vec3 amblit;
++    vec3 additive;
++    vec3 atten;
++    calcAtmosphericVarsLinear(pos.xyz, wavef, vary_light_dir, sunlit, amblit, additive, atten);
++
+     calculateFresnelFactors(df3, df2, normalize(view.xyz), wave1, wave2, wave3, wavef);
+ 
+     vec3 waver = wavef*3;
+@@ -230,7 +232,7 @@ void main()
+     vec3 norm = transform_normal(normalize(wavef));
+ 
+     vdu = clamp(vdu, 0, 1);
+-    wavef.z *= max(vdu*vdu*vdu, 0.1);
++    //wavef.z *= max(vdu*vdu*vdu, 0.1);
+ 
+     wavef = normalize(wavef);
+ 
+@@ -245,11 +247,6 @@ void main()
+ 
+     distort2 = clamp(distort2, vec2(0), vec2(0.999));
+ 
+-    vec3 sunlit;
+-    vec3 amblit;
+-    vec3 additive;
+-    vec3 atten;
+-
+     float shadow = 1.0f;
+ 
+     float water_mask = texture(exclusionTex, distort).r;
+@@ -258,8 +255,6 @@ void main()
+     shadow = sampleDirectionalShadow(pos.xyz, norm.xyz, distort);
+ #endif
+ 
+-    calcAtmosphericVarsLinear(pos.xyz, wavef, vary_light_dir, sunlit, amblit, additive, atten);
+-
+     vec3 sunlit_linear = srgb_to_linear(sunlit);
+     float fade = 0;
+ #ifdef TRANSPARENT_WATER
+@@ -289,8 +284,8 @@ void main()
+ #endif
+ 
+     float metallic = 1.0;
+-    float perceptualRoughness = 0.1;
+-    float gloss      = 0.95;
++    float perceptualRoughness = blurMultiplier;
++    float gloss      = 1 - perceptualRoughness;
+ 
+     vec3  irradiance = vec3(0);
+     vec3  radiance  = vec3(0);
+@@ -300,7 +295,7 @@ void main()
+ #ifdef WATER_MINIMAL
+     sampleReflectionProbesWater(irradiance, radiance, distort2, pos.xyz, wave_ibl.xyz, gloss, amblit);
+ #elif WATER_MINIMAL_PLUS
+-    sampleReflectionProbes(irradiance, radiance, distort2, pos.xyz, wave_ibl.xyz, 1, false, amblit);
++    sampleReflectionProbes(irradiance, radiance, distort2, pos.xyz, wave_ibl.xyz, gloss, false, amblit);
+ #endif
+ 
+     vec3 diffuseColor = vec3(0);
+@@ -323,20 +318,26 @@ void main()
+     pbrPunctual(diffuseColor, specularColor, perceptualRoughness, metallic, normalize(wavef+up*max(dist, 32.0)/32.0*(1.0-vdu)), v, normalize(light_dir), nl, diffPunc, specPunc);
+ 
+     vec3 punctual = clamp(nl * (diffPunc + specPunc), vec3(0), vec3(10)) * sunlit_linear * shadow;
+-
++    radiance *= df2.y;
++    //radiance = toneMapNoExposure(radiance);
+     vec3 color = vec3(0);
+-    color = mix(fb.rgb, radiance * df2.y, df2.x * 0.99999) + punctual.rgb;
++    color = mix(fb.rgb, radiance, min(1, df2.x)) + punctual.rgb;
++
++    float water_haze_scale = 4;
++
++    if (classic_mode > 0)
++        water_haze_scale = 1;
+ 
+     // This looks super janky, but we do this to restore water haze in the distance.
+     // These values were finagled in to try and bring back some of the distant brightening on legacy water.  Also works reasonably well on PBR skies such as PBR midday.
+-    color += color * min(vec3(4),pow(1 - atten, vec3(1.35)) * 16 * fade);
++    // color = mix(color, additive * water_haze_scale, (1 - atten));
+ 
+     // We shorten the fade here at the shoreline so it doesn't appear too soft from a distance.
+     fade *= 60;
+     fade = min(1, fade);
+     color = mix(fb.rgb, color, fade);
+ 
+-    float spec = min(max(max(punctual.r, punctual.g), punctual.b), 0.05);
++    float spec = min(max(max(punctual.r, punctual.g), punctual.b), 0);
+ 
+     frag_color = min(vec4(1),max(vec4(color.rgb, spec * water_mask), vec4(0)));
+ }"
+secondlife/viewer,3456,d450295,indra/newview/lldrawpoolwater.cpp,modified,103,128,231,"@@ -176,154 +176,133 @@ void LLDrawPoolWater::renderPostDeferred(S32 pass)
+         light_diffuse *= (1.5f + (6.f * ground_proj_sq));
+     }
+ 
+-    // set up normal maps filtering
+-    for (auto norm_map : mWaterNormp)
+-        {
+-        if (norm_map) norm_map->setFilteringOption(has_normal_mips ? LLTexUnit::TFO_ANISOTROPIC : LLTexUnit::TFO_POINT);
+-        }
++    LLTexUnit::eTextureFilterOptions filter_mode = has_normal_mips ? LLTexUnit::TFO_ANISOTROPIC : LLTexUnit::TFO_POINT;
+ 
+     LLColor4      specular(sun_up ? psky->getSunlightColor() : psky->getMoonlightColor());
+     F32           phase_time = (F32) LLFrameTimer::getElapsedSeconds() * 0.5f;
+     LLGLSLShader *shader     = nullptr;
+ 
+-    // two passes, first with standard water shader bound, second with edge water shader bound
+-    for (int edge = 0; edge < 2; edge++)
++    // One pass, one of two shaders.  Void water and region water share state.
++    // There isn't a good reason anymore to really have void water run in a separate pass.
++    // It also just introduced a bunch of weird state consistency stuff that we really don't need.
++    // Not to mention, re-binding the the same shader and state for that shader is kind of wasteful.
++    // - Geenz 2025-02-11
++    // select shader
++    if (underwater)
+     {
+-        // select shader
+-        if (underwater)
+-        {
+-            shader = &gUnderWaterProgram;
+-        }
+-        else
+-        {
+-            if (edge)
+-            {
+-                shader = &gWaterEdgeProgram;
+-            }
+-            else
+-            {
+-                shader = &gWaterProgram;
+-            }
+-        }
+-
+-        gPipeline.bindDeferredShader(*shader, nullptr, &gPipeline.mWaterDis);
+-
+-        //bind normal map
+-        S32 bumpTex = shader->enableTexture(LLViewerShaderMgr::BUMP_MAP);
+-        S32 bumpTex2 = shader->enableTexture(LLViewerShaderMgr::BUMP_MAP2);
+-
+-        LLViewerTexture* tex_a = mWaterNormp[0];
+-        LLViewerTexture* tex_b = mWaterNormp[1];
++        shader = &gUnderWaterProgram;
++    }
++    else
++    {
++        shader = &gWaterProgram;
++    }
+ 
+-        F32 blend_factor = (F32)pwater->getBlendFactor();
++    gPipeline.bindDeferredShader(*shader, nullptr, &gPipeline.mWaterDis);
+ 
+-        gGL.getTexUnit(bumpTex)->unbind(LLTexUnit::TT_TEXTURE);
+-        gGL.getTexUnit(bumpTex2)->unbind(LLTexUnit::TT_TEXTURE);
++    LLViewerTexture* tex_a = mWaterNormp[0];
++    LLViewerTexture* tex_b = mWaterNormp[1];
+ 
+-        if (tex_a && (!tex_b || (tex_a == tex_b)))
+-        {
+-            gGL.getTexUnit(bumpTex)->bind(tex_a);
+-            blend_factor = 0; // only one tex provided, no blending
+-        }
+-        else if (tex_b && !tex_a)
+-        {
+-            gGL.getTexUnit(bumpTex)->bind(tex_b);
+-            blend_factor = 0; // only one tex provided, no blending
+-        }
+-        else if (tex_b != tex_a)
+-        {
+-            gGL.getTexUnit(bumpTex)->bind(tex_a);
+-            gGL.getTexUnit(bumpTex2)->bind(tex_b);
+-        }
++    F32 blend_factor = (F32)pwater->getBlendFactor();
+ 
+-        shader->bindTexture(LLShaderMgr::WATER_EXCLUSIONTEX, &gPipeline.mWaterExclusionMask);
++    if (tex_a && (!tex_b || (tex_a == tex_b)))
++    {
++        shader->bindTexture(LLViewerShaderMgr::BUMP_MAP, tex_a);
++        tex_a->setFilteringOption(filter_mode);
++        blend_factor = 0; // only one tex provided, no blending
++    }
++    else if (tex_b && !tex_a)
++    {
++        shader->bindTexture(LLViewerShaderMgr::BUMP_MAP, tex_b);
++        tex_a->setFilteringOption(filter_mode);
++        blend_factor = 0; // only one tex provided, no blending
++    }
++    else if (tex_b != tex_a)
++    {
++        shader->bindTexture(LLViewerShaderMgr::BUMP_MAP, tex_a);
++        tex_a->setFilteringOption(filter_mode);
++        shader->bindTexture(LLViewerShaderMgr::BUMP_MAP2, tex_b);
++        tex_b->setFilteringOption(filter_mode);
++    }
+ 
+-        // bind reflection texture from RenderTarget
+-        S32 screentex = shader->enableTexture(LLShaderMgr::WATER_SCREENTEX);
++    shader->bindTexture(LLShaderMgr::WATER_EXCLUSIONTEX, &gPipeline.mWaterExclusionMask);
+ 
+-        F32 screenRes[] = { 1.f / gGLViewport[2], 1.f / gGLViewport[3] };
++    shader->uniform1f(LLShaderMgr::BLEND_FACTOR, blend_factor);
+ 
+-        shader->uniform2fv(LLShaderMgr::DEFERRED_SCREEN_RES, 1, screenRes);
+-        shader->uniform1f(LLShaderMgr::BLEND_FACTOR, blend_factor);
++    F32      fog_density = pwater->getModifiedWaterFogDensity(underwater);
+ 
+-        F32      fog_density = pwater->getModifiedWaterFogDensity(underwater);
++    shader->bindTexture(LLShaderMgr::WATER_SCREENTEX, &gPipeline.mWaterDis);
+ 
+-        if (screentex > -1)
+-        {
+-            shader->uniform1f(LLShaderMgr::WATER_FOGDENSITY, fog_density);
+-            gGL.getTexUnit(screentex)->bind(&gPipeline.mWaterDis);
+-        }
++    if (mShaderLevel == 1)
++    {
++        fog_color.mV[VALPHA] = (F32)(log(fog_density) / log(2));
++    }
+ 
+-        if (mShaderLevel == 1)
+-        {
+-            fog_color.mV[VALPHA] = (F32)(log(fog_density) / log(2));
+-        }
++    F32 water_height = environment.getWaterHeight();
++    F32 camera_height = LLViewerCamera::getInstance()->getOrigin().mV[2];
++    shader->uniform1f(LLShaderMgr::WATER_WATERHEIGHT, camera_height - water_height);
++    shader->uniform1f(LLShaderMgr::WATER_TIME, phase_time);
++    shader->uniform3fv(LLShaderMgr::WATER_EYEVEC, 1, LLViewerCamera::getInstance()->getOrigin().mV);
+ 
+-        F32 water_height = environment.getWaterHeight();
+-        F32 camera_height = LLViewerCamera::getInstance()->getOrigin().mV[2];
+-        shader->uniform1f(LLShaderMgr::WATER_WATERHEIGHT, camera_height - water_height);
+-        shader->uniform1f(LLShaderMgr::WATER_TIME, phase_time);
+-        shader->uniform3fv(LLShaderMgr::WATER_EYEVEC, 1, LLViewerCamera::getInstance()->getOrigin().mV);
++    shader->uniform3fv(LLShaderMgr::WATER_SPECULAR, 1, light_diffuse.mV);
+ 
+-        shader->uniform4fv(LLShaderMgr::SPECULAR_COLOR, 1, specular.mV);
+-        shader->uniform4fv(LLShaderMgr::WATER_FOGCOLOR, 1, fog_color.mV);
+-        shader->uniform3fv(LLShaderMgr::WATER_FOGCOLOR_LINEAR, 1, fog_color_linear.mV);
++    shader->uniform2fv(LLShaderMgr::WATER_WAVE_DIR1, 1, pwater->getWave1Dir().mV);
++    shader->uniform2fv(LLShaderMgr::WATER_WAVE_DIR2, 1, pwater->getWave2Dir().mV);
+ 
+-        shader->uniform3fv(LLShaderMgr::WATER_SPECULAR, 1, light_diffuse.mV);
+-        shader->uniform1f(LLShaderMgr::WATER_SPECULAR_EXP, light_exp);
++    shader->uniform3fv(LLShaderMgr::WATER_LIGHT_DIR, 1, light_dir.mV);
+ 
+-        shader->uniform2fv(LLShaderMgr::WATER_WAVE_DIR1, 1, pwater->getWave1Dir().mV);
+-        shader->uniform2fv(LLShaderMgr::WATER_WAVE_DIR2, 1, pwater->getWave2Dir().mV);
++    shader->uniform3fv(LLShaderMgr::WATER_NORM_SCALE, 1, pwater->getNormalScale().mV);
++    shader->uniform1f(LLShaderMgr::WATER_FRESNEL_SCALE, pwater->getFresnelScale());
++    shader->uniform1f(LLShaderMgr::WATER_FRESNEL_OFFSET, pwater->getFresnelOffset());
++    shader->uniform1f(LLShaderMgr::WATER_BLUR_MULTIPLIER, fmaxf(0, pwater->getBlurMultiplier()) * 2);
+ 
+-        shader->uniform3fv(LLShaderMgr::WATER_LIGHT_DIR, 1, light_dir.mV);
++    static LLStaticHashedString s_exposure(""exposure"");
++    static LLStaticHashedString tonemap_mix(""tonemap_mix"");
++    static LLStaticHashedString tonemap_type(""tonemap_type"");
+ 
+-        shader->uniform3fv(LLShaderMgr::WATER_NORM_SCALE, 1, pwater->getNormalScale().mV);
+-        shader->uniform1f(LLShaderMgr::WATER_FRESNEL_SCALE, pwater->getFresnelScale());
+-        shader->uniform1f(LLShaderMgr::WATER_FRESNEL_OFFSET, pwater->getFresnelOffset());
+-        shader->uniform1f(LLShaderMgr::WATER_BLUR_MULTIPLIER, pwater->getBlurMultiplier());
++    static LLCachedControl<F32> exposure(gSavedSettings, ""RenderExposure"", 1.f);
+ 
+-        F32 sunAngle = llmax(0.f, light_dir.mV[1]);
+-        F32 scaledAngle = 1.f - sunAngle;
++    F32 e = llclamp(exposure(), 0.5f, 4.f);
+ 
+-        shader->uniform1i(LLShaderMgr::SUN_UP_FACTOR, sun_up ? 1 : 0);
+-        shader->uniform1f(LLShaderMgr::WATER_SUN_ANGLE, sunAngle);
+-        shader->uniform1f(LLShaderMgr::WATER_SCALED_ANGLE, scaledAngle);
+-        shader->uniform1f(LLShaderMgr::WATER_SUN_ANGLE2, 0.1f + 0.2f * sunAngle);
+-        shader->uniform1i(LLShaderMgr::WATER_EDGE_FACTOR, edge ? 1 : 0);
++    static LLCachedControl<bool> should_auto_adjust(gSavedSettings, ""RenderSkyAutoAdjustLegacy"", false);
+ 
+-        // SL-15861 This was changed from getRotatedLightNorm() as it was causing
+-        // lightnorm in shaders\class1\windlight\atmosphericsFuncs.glsl in have inconsistent additive lighting for 180 degrees of the FOV.
+-        LLVector4 rotated_light_direction = LLEnvironment::instance().getClampedLightNorm();
+-        shader->uniform3fv(LLViewerShaderMgr::LIGHTNORM, 1, rotated_light_direction.mV);
++    shader->uniform1f(s_exposure, e);
++    static LLCachedControl<U32> tonemap_type_setting(gSavedSettings, ""RenderTonemapType"", 0U);
++    shader->uniform1i(tonemap_type, tonemap_type_setting);
++    shader->uniform1f(tonemap_mix, psky->getTonemapMix(should_auto_adjust()));
+ 
+-        shader->uniform3fv(LLShaderMgr::WL_CAMPOSLOCAL, 1, LLViewerCamera::getInstance()->getOrigin().mV);
++    F32 sunAngle = llmax(0.f, light_dir.mV[1]);
++    F32 scaledAngle = 1.f - sunAngle;
+ 
+-        if (LLViewerCamera::getInstance()->cameraUnderWater())
+-        {
+-            shader->uniform1f(LLShaderMgr::WATER_REFSCALE, pwater->getScaleBelow());
+-        }
+-        else
+-        {
+-            shader->uniform1f(LLShaderMgr::WATER_REFSCALE, pwater->getScaleAbove());
+-        }
++    shader->uniform1i(LLShaderMgr::SUN_UP_FACTOR, sun_up ? 1 : 0);
+ 
+-        LLGLDisable cullface(GL_CULL_FACE);
++    // SL-15861 This was changed from getRotatedLightNorm() as it was causing
++    // lightnorm in shaders\class1\windlight\atmosphericsFuncs.glsl in have inconsistent additive lighting for 180 degrees of the FOV.
++    LLVector4 rotated_light_direction = LLEnvironment::instance().getClampedLightNorm();
++    shader->uniform3fv(LLViewerShaderMgr::LIGHTNORM, 1, rotated_light_direction.mV);
+ 
+-        pushWaterPlanes(edge);
++    shader->uniform3fv(LLShaderMgr::WL_CAMPOSLOCAL, 1, LLViewerCamera::getInstance()->getOrigin().mV);
+ 
+-        shader->disableTexture(LLShaderMgr::ENVIRONMENT_MAP, LLTexUnit::TT_CUBE_MAP);
+-        shader->disableTexture(LLShaderMgr::WATER_SCREENTEX);
+-        shader->disableTexture(LLShaderMgr::BUMP_MAP);
++    if (LLViewerCamera::getInstance()->cameraUnderWater())
++    {
++        shader->uniform1f(LLShaderMgr::WATER_REFSCALE, pwater->getScaleBelow());
++    }
++    else
++    {
++        shader->uniform1f(LLShaderMgr::WATER_REFSCALE, pwater->getScaleAbove());
++    }
+ 
+-        // clean up
+-        gPipeline.unbindDeferredShader(*shader);
++    LLGLDisable cullface(GL_CULL_FACE);
+ 
+-        gGL.getTexUnit(bumpTex)->unbind(LLTexUnit::TT_TEXTURE);
+-        gGL.getTexUnit(bumpTex2)->unbind(LLTexUnit::TT_TEXTURE);
+-    }
++    // Only push the water planes once.
++    // Previously we did this twice: once for void water and one for region water.
++    // However, the void water and region water shaders are the same exact shader.
++    // They also had the same exact state with the sole exception setting an edge water flag.
++    // That flag was not actually used anywhere in the shaders.
++    // - Geenz 2025-02-11
++    pushWaterPlanes(0);
+ 
+-    gGL.getTexUnit(0)->activate();
+-    gGL.getTexUnit(0)->enable(LLTexUnit::TT_TEXTURE);
++    // clean up
++    gPipeline.unbindDeferredShader(*shader);
+ 
+     gGL.setColorMask(true, false);
+ }
+@@ -333,22 +312,18 @@ void LLDrawPoolWater::pushWaterPlanes(int pass)
+     LLVOWater* water = nullptr;
+     for (LLFace* const& face : mDrawFace)
+     {
+-        if (!face)
+-            continue;
+         water = static_cast<LLVOWater*>(face->getViewerObject());
+-        if (!water)
+-            continue;
+ 
+-        if ((bool)pass == (bool)water->getIsEdgePatch())
++        face->renderIndexed();
++
++        // Note non-void water being drawn, updates required
++        // Previously we had some logic to determine if this pass was also our water edge pass.
++        // Now we only have one pass.  Check if we're doing a region water plane or void water plane.
++        // - Geenz 2025-02-11
++        if (!water->getIsEdgePatch())
+         {
+-            face->renderIndexed();
+-
+-            // Note non-void water being drawn, updates required
+-            if (!pass) // SL-16461 remove !LLPipeline::sUseOcclusion check
+-            {
+-                sNeedsReflectionUpdate = true;
+-                sNeedsDistortionUpdate = true;
+-            }
++            sNeedsReflectionUpdate = true;
++            sNeedsDistortionUpdate = true;
+         }
+     }
+ }"
+secondlife/viewer,3456,d450295,indra/newview/llviewershadermgr.cpp,modified,4,33,37,"@@ -114,7 +114,6 @@ LLGLSLShader        gObjectAlphaMaskNoColorProgram;
+ 
+ //environment shaders
+ LLGLSLShader        gWaterProgram;
+-LLGLSLShader        gWaterEdgeProgram;
+ LLGLSLShader        gUnderWaterProgram;
+ 
+ //interface shaders
+@@ -410,7 +409,6 @@ void LLViewerShaderMgr::finalizeShaderList()
+     //ONLY shaders that need WL Param management should be added here
+     mShaderList.push_back(&gAvatarProgram);
+     mShaderList.push_back(&gWaterProgram);
+-    mShaderList.push_back(&gWaterEdgeProgram);
+     mShaderList.push_back(&gAvatarEyeballProgram);
+     mShaderList.push_back(&gImpostorProgram);
+     mShaderList.push_back(&gObjectBumpProgram);
+@@ -877,6 +875,7 @@ std::string LLViewerShaderMgr::loadBasicShaders()
+     index_channels.push_back(-1);    shaders.push_back( make_pair( ""deferred/shadowUtil.glsl"",                      1) );
+     index_channels.push_back(-1);    shaders.push_back( make_pair( ""deferred/aoUtil.glsl"",                          1) );
+     index_channels.push_back(-1);    shaders.push_back( make_pair( ""deferred/pbrterrainUtilF.glsl"",                 1) );
++    index_channels.push_back(-1);    shaders.push_back( make_pair( ""deferred/tonemapUtilF.glsl"",                    1) );
+     index_channels.push_back(-1);    shaders.push_back( make_pair( ""deferred/reflectionProbeF.glsl"",                has_reflection_probes ? 3 : 2) );
+     index_channels.push_back(-1);    shaders.push_back( make_pair( ""deferred/screenSpaceReflUtil.glsl"",             ssr ? 3 : 1) );
+     index_channels.push_back(-1);    shaders.push_back( make_pair( ""lighting/lightNonIndexedF.glsl"",                    mShaderLevel[SHADER_LIGHTING] ) );
+@@ -909,7 +908,6 @@ bool LLViewerShaderMgr::loadShadersWater()
+     if (mShaderLevel[SHADER_WATER] == 0)
+     {
+         gWaterProgram.unload();
+-        gWaterEdgeProgram.unload();
+         gUnderWaterProgram.unload();
+         return true;
+     }
+@@ -923,6 +921,7 @@ bool LLViewerShaderMgr::loadShadersWater()
+         gWaterProgram.mFeatures.hasGamma = true;
+         gWaterProgram.mFeatures.hasSrgb = true;
+         gWaterProgram.mFeatures.hasReflectionProbes = true;
++        gWaterProgram.mFeatures.hasTonemap = true;
+         gWaterProgram.mFeatures.hasShadows = use_sun_shadow;
+         gWaterProgram.mShaderFiles.clear();
+         gWaterProgram.mShaderFiles.push_back(make_pair(""environment/waterV.glsl"", GL_VERTEX_SHADER));
+@@ -944,36 +943,6 @@ bool LLViewerShaderMgr::loadShadersWater()
+         llassert(success);
+     }
+ 
+-    if (success)
+-    {
+-    // load water shader
+-        gWaterEdgeProgram.mName = ""Water Edge Shader"";
+-        gWaterEdgeProgram.mFeatures.calculatesAtmospherics = true;
+-        gWaterEdgeProgram.mFeatures.hasAtmospherics = true;
+-        gWaterEdgeProgram.mFeatures.hasGamma = true;
+-        gWaterEdgeProgram.mFeatures.hasSrgb = true;
+-        gWaterEdgeProgram.mFeatures.hasReflectionProbes = true;
+-        gWaterEdgeProgram.mFeatures.hasShadows = use_sun_shadow;
+-        gWaterEdgeProgram.mShaderFiles.clear();
+-        gWaterEdgeProgram.mShaderFiles.push_back(make_pair(""environment/waterV.glsl"", GL_VERTEX_SHADER));
+-        gWaterEdgeProgram.mShaderFiles.push_back(make_pair(""environment/waterF.glsl"", GL_FRAGMENT_SHADER));
+-        gWaterEdgeProgram.clearPermutations();
+-        gWaterEdgeProgram.addPermutation(""WATER_EDGE"", ""1"");
+-        if (LLPipeline::sRenderTransparentWater)
+-        {
+-            gWaterEdgeProgram.addPermutation(""TRANSPARENT_WATER"", ""1"");
+-        }
+-
+-        if (use_sun_shadow)
+-        {
+-            gWaterEdgeProgram.addPermutation(""HAS_SUN_SHADOW"", ""1"");
+-        }
+-        gWaterEdgeProgram.mShaderGroup = LLGLSLShader::SG_WATER;
+-        gWaterEdgeProgram.mShaderLevel = mShaderLevel[SHADER_WATER];
+-        success = gWaterEdgeProgram.createShader();
+-        llassert(success);
+-    }
+-
+     if (success)
+     {
+         //load under water vertex shader
+@@ -2484,6 +2453,7 @@ bool LLViewerShaderMgr::loadShadersDeferred()
+         gDeferredPostTonemapProgram.mName = ""Deferred Tonemap Post Process"";
+         gDeferredPostTonemapProgram.mFeatures.hasSrgb = true;
+         gDeferredPostTonemapProgram.mFeatures.isDeferred = true;
++        gDeferredPostTonemapProgram.mFeatures.hasTonemap = true;
+         gDeferredPostTonemapProgram.mShaderFiles.clear();
+         gDeferredPostTonemapProgram.clearPermutations();
+         gDeferredPostTonemapProgram.mShaderFiles.push_back(make_pair(""deferred/postDeferredNoTCV.glsl"", GL_VERTEX_SHADER));
+@@ -2498,6 +2468,7 @@ bool LLViewerShaderMgr::loadShadersDeferred()
+         gNoPostTonemapProgram.mName = ""No Post Tonemap Post Process"";
+         gNoPostTonemapProgram.mFeatures.hasSrgb = true;
+         gNoPostTonemapProgram.mFeatures.isDeferred = true;
++        gNoPostTonemapProgram.mFeatures.hasTonemap = true;
+         gNoPostTonemapProgram.mShaderFiles.clear();
+         gNoPostTonemapProgram.clearPermutations();
+         gNoPostTonemapProgram.addPermutation(""NO_POST"", ""1"");"
+secondlife/viewer,3456,d450295,indra/newview/llviewershadermgr.h,modified,0,1,1,"@@ -192,7 +192,6 @@ extern LLGLSLShader     gObjectAlphaMaskNoColorProgram;
+ 
+ //environment shaders
+ extern LLGLSLShader         gWaterProgram;
+-extern LLGLSLShader         gWaterEdgeProgram;
+ extern LLGLSLShader         gUnderWaterProgram;
+ extern LLGLSLShader         gGlowProgram;
+ extern LLGLSLShader         gGlowExtractProgram;"
+secondlife/viewer,3456,460e77c,indra/newview/app_settings/shaders/class1/environment/srgbF.glsl,modified,20,0,20,"@@ -41,6 +41,26 @@ vec3 srgb_to_linear(vec3 cs)
+ 
+ }
+ 
++
++vec4 srgb_to_linear4(vec4 cs)
++{
++    vec4 low_range = cs / vec4(12.92);
++    vec4 high_range = pow((cs+vec4(0.055))/vec4(1.055), vec4(2.4));
++    bvec4 lte = lessThanEqual(cs,vec4(0.04045));
++
++#ifdef OLD_SELECT
++    vec4 result;
++    result.r = lte.r ? low_range.r : high_range.r;
++    result.g = lte.g ? low_range.g : high_range.g;
++    result.b = lte.b ? low_range.b : high_range.b;
++    result.a = lte.a ? low_range.a : high_range.a;
++    return result;
++#else
++    return mix(high_range, low_range, lte);
++#endif
++
++}
++
+ vec3 linear_to_srgb(vec3 cl)
+ {
+     cl = clamp(cl, vec3(0), vec3(1));"
+secondlife/viewer,3456,460e77c,indra/newview/app_settings/shaders/class1/environment/waterFogF.glsl,modified,2,2,4,"@@ -66,11 +66,11 @@ vec4 getWaterFogViewNoClip(vec3 pos)
+     float t2 = kd + ks * es;
+     float t3 = pow(F, t2*l) - 1.0;
+ 
+-    float L = min(t1/t2*t3, 1.0);
++    float L = pow(min(t1/t2*t3, 1.0), 1.0/1.7);
+ 
+     float D = pow(0.98, l*kd);
+ 
+-    return vec4(srgb_to_linear(kc.rgb*L), D);
++    return vec4(srgb_to_linear(kc.rgb)*L, D);
+ }
+ 
+ vec4 getWaterFogView(vec3 pos)"
+secondlife/viewer,3456,460e77c,indra/newview/app_settings/shaders/class3/deferred/waterHazeF.glsl,modified,1,1,2,"@@ -56,7 +56,7 @@ void main()
+     vec4  pos          = getPositionWithDepth(tc, depth);
+ 
+     vec4 fogged = getWaterFogView(pos.xyz);
+-
++    fogged.a = max(pow(fogged.a, 1.7), 0);
+     frag_color = max(fogged, vec4(0)); //output linear since local lights will be added to this shader's results
+ 
+ }"
+secondlife/viewer,3456,460e77c,indra/newview/app_settings/shaders/class3/environment/waterF.glsl,modified,69,56,125,"@@ -132,8 +132,54 @@ vec3 transform_normal(vec3 vNt)
+ void sampleReflectionProbesWater(inout vec3 ambenv, inout vec3 glossenv,
+         vec2 tc, vec3 pos, vec3 norm, float glossiness, vec3 amblit_linear);
+ 
++void sampleReflectionProbes(inout vec3 ambenv, inout vec3 glossenv,
++        vec2 tc, vec3 pos, vec3 norm, float glossiness, bool transparent, vec3 amblit_linear);
++
++void sampleReflectionProbesLegacy(inout vec3 ambenv, inout vec3 glossenv, inout vec3 legacyenv,
++        vec2 tc, vec3 pos, vec3 norm, float glossiness, float envIntensity, bool transparent, vec3 amblit);
++
++
+ vec3 getPositionWithNDC(vec3 ndc);
+ 
++void generateWaveNormals(out vec3 wave1, out vec3 wave2, out vec3 wave3)
++{
++    // Generate all of our wave normals.
++    // We layer these back and forth.
++
++    vec2 bigwave = vec2(refCoord.w, view.w);
++
++    vec3 wave1_a = texture(bumpMap, bigwave, -2).xyz * 2.0 - 1.0;
++    vec3 wave2_a = texture(bumpMap, littleWave.xy).xyz * 2.0 - 1.0;
++    vec3 wave3_a = texture(bumpMap, littleWave.zw).xyz * 2.0 - 1.0;
++
++    vec3 wave1_b = texture(bumpMap2, bigwave).xyz * 2.0 - 1.0;
++    vec3 wave2_b = texture(bumpMap2, littleWave.xy).xyz * 2.0 - 1.0;
++    vec3 wave3_b = texture(bumpMap2, littleWave.zw).xyz * 2.0 - 1.0;
++
++    wave1 = BlendNormal(wave1_a, wave1_b);
++    wave2 = BlendNormal(wave2_a, wave2_b);
++    wave3 = BlendNormal(wave3_a, wave3_b);
++}
++
++void calculateFresnelFactors(out vec3 df3, out vec2 df2, vec3 viewVec, vec3 wave1, vec3 wave2, vec3 wave3, vec3 wavef)
++{
++    // We calculate the fresnel here.
++    // We do this by getting the dot product for each sets of waves, and applying scale and offset.
++
++    df3 = vec3(
++        dot(viewVec, wave1),
++        dot(viewVec, (wave2 + wave3) * 0.5),
++        dot(viewVec, wave3)
++    ) * fresnelScale + fresnelOffset;
++
++    df3 *= df3;
++
++    df2 = vec2(
++        df3.x + df3.y + df3.z,
++        dot(viewVec, wavef) * fresnelScale + fresnelOffset
++    );
++}
++
+ void main()
+ {
+     mirrorClip(vary_position);
+@@ -148,30 +194,23 @@ void main()
+     //normalize view vector
+     vec3 viewVec = normalize(pos.xyz);
+ 
+-    //get wave normals
+-    vec2 bigwave = vec2(refCoord.w, view.w);
+-    vec3 wave1_a = texture(bumpMap, bigwave, -2      ).xyz*2.0-1.0;
+-    vec3 wave2_a = texture(bumpMap, littleWave.xy).xyz*2.0-1.0;
+-    vec3 wave3_a = texture(bumpMap, littleWave.zw).xyz*2.0-1.0;
+-
+-    vec3 wave1_b = texture(bumpMap2, bigwave      ).xyz*2.0-1.0;
+-    vec3 wave2_b = texture(bumpMap2, littleWave.xy).xyz*2.0-1.0;
+-    vec3 wave3_b = texture(bumpMap2, littleWave.zw).xyz*2.0-1.0;
++    // Setup our waves.
+ 
+-    //wave1_a = wave2_a = wave3_a = wave1_b = wave2_b = wave3_b = vec3(0,0,1);
++    vec3 wave1 = vec3(0, 0, 1);
++    vec3 wave2 = vec3(0, 0, 1);
++    vec3 wave3 = vec3(0, 0, 1);
+ 
+-    vec3 wave1 = BlendNormal(wave1_a, wave1_b);
+-    vec3 wave2 = BlendNormal(wave2_a, wave2_b);
+-    vec3 wave3 = BlendNormal(wave3_a, wave3_b);
++    generateWaveNormals(wave1, wave2, wave3);
+ 
+     vec2 distort = (refCoord.xy/refCoord.z) * 0.5 + 0.5;
+ 
+-    //wave1 = transform_normal(wave1);
+-    //wave2 = transform_normal(wave2);
+-    //wave3 = transform_normal(wave3);
+-
+     vec3 wavef = (wave1 + wave2 * 0.4 + wave3 * 0.6) * 0.5;
+ 
++    vec3 df3 = vec3(0);
++    vec2 df2 = vec2(0);
++
++    calculateFresnelFactors(df3, df2, normalize(view.xyz), wave1, wave2, wave3, wavef);
++
+     vec3 waver = wavef*3;
+ 
+     vec3 up = transform_normal(vec3(0,0,1));
+@@ -197,7 +236,7 @@ void main()
+     float dmod = sqrt(dist);
+ 
+     //figure out distortion vector (ripply)
+-    vec2 distort2 = distort + waver.xy * refScale / max(dmod, 1.0);
++    vec2 distort2 = distort + waver.xy * refScale / max(dmod, 1.0) * 2;
+ 
+     distort2 = clamp(distort2, vec2(0), vec2(0.999));
+ 
+@@ -217,8 +256,8 @@ void main()
+     vec3 sunlit_linear = srgb_to_linear(sunlit);
+ 
+ #ifdef TRANSPARENT_WATER
+-    vec4 fb = texture(screenTex, distort2);
+     float depth = texture(depthMap, distort2).r;
++    vec4 fb = texture(screenTex, distort2);
+     vec3 refPos = getPositionWithNDC(vec3(distort2*2.0-vec2(1.0), depth*2.0-1.0));
+ 
+     if (refPos.z > pos.z-0.05)
+@@ -234,18 +273,16 @@ void main()
+     vec4 fb = applyWaterFogViewLinear(viewVec*2048.0, vec4(1.0));
+ #endif
+ 
+-    // fudge sample on other side of water to be a tad darker
+-    fb.rgb *= 0.75;
+-
+-    float metallic = 0.0;
+-    float perceptualRoughness = 0.05;
+-    float gloss      = 1.0 - perceptualRoughness;
++    float metallic = 1.0;
++    float perceptualRoughness = 0.1;
++    float gloss      = 0.95;
+ 
+     vec3  irradiance = vec3(0);
+     vec3  radiance  = vec3(0);
++    vec3 legacyenv = vec3(0);
+     sampleReflectionProbesWater(irradiance, radiance, distort2, pos.xyz, wave_ibl.xyz, gloss, amblit);
+-
+-    irradiance       = vec3(0);
++    //sampleReflectionProbes(irradiance, radiance, distort2, pos.xyz, wave_ibl.xyz, 1, true, amblit);
++    //sampleReflectionProbesLegacy(irradiance, radiance, legacyenv, distort2, pos.xyz, wave_ibl.xyz, gloss, 1, false, amblit);
+ 
+     vec3 diffuseColor = vec3(0);
+     vec3 specularColor = vec3(0);
+@@ -257,46 +294,22 @@ void main()
+     float ao = 1.0;
+     vec3 light_dir = transform_normal(lightDir);
+ 
+-    perceptualRoughness = 0.0;
+-    metallic = 1.0;
+-
+     float NdotV = clamp(abs(dot(norm, v)), 0.001, 1.0);
+ 
+     float nl = 0;
+     vec3 diffPunc = vec3(0);
+     vec3 specPunc = vec3(0);
+ 
+-    pbrPunctual(vec3(0), specularColor, 0.1, metallic, normalize(wavef+up*max(dist, 32.0)/32.0*(1.0-vdu)), v, normalize(light_dir), nl, diffPunc, specPunc);
+-
+-    vec3 punctual = clamp(nl * (diffPunc + specPunc), vec3(0), vec3(10));
+-
+-    vec3 color = punctual * sunlit_linear * 2.75 * shadow;
+-    vec3 iblDiff;
+-    vec3 iblSpec;
+-    pbrIbl(vec3(0), vec3(1), radiance, vec3(0), ao, NdotV, 0.0, iblDiff, iblSpec);
+-
+-    color += iblDiff + iblSpec;
+-
+-    float nv = clamp(abs(dot(norm.xyz, v)), 0.001, 1.0);
+-    vec2 brdf = BRDF(clamp(nv, 0, 1), 1.0);
+-    float f = 1.0-brdf.y; //1.0 - (brdf.x+brdf.y);
+-    f *= 0.9;
+-    f *= f;
+-
+-    // incoming scale is [0, 1] with 0.5 being default
+-    // shift to 0.5 to 1.5
+-    f *= (fresnelScale - 0.5)+1.0;
++    pbrPunctual(diffuseColor, specularColor, perceptualRoughness, metallic, normalize(wavef+up*max(dist, 32.0)/32.0*(1.0-vdu)), v, normalize(light_dir), nl, diffPunc, specPunc);
+ 
+-    // incoming offset is [0, 1] with 0.5 being default
+-    // shift from -1 to 1
+-    f += (fresnelOffset - 0.5) * 2.0;
++    vec3 punctual = clamp(nl * (diffPunc + specPunc), vec3(0), vec3(10)) * sunlit_linear * 2.75 * shadow;
+ 
+-    f = clamp(f, 0, 1);
++    vec3 color = vec3(0);
+ 
+-    color = ((1.0 - f) * color) + fb.rgb;
++    color = mix(fb.rgb, radiance * df2.x, df2.x * 0.99999) + punctual.rgb;
+ 
+     float spec = min(max(max(punctual.r, punctual.g), punctual.b), 0.05);
+ 
+-    frag_color = max(vec4(color, spec), vec4(0));
++    frag_color = max(vec4(color.rgb, spec), vec4(0));
+ }
+ "

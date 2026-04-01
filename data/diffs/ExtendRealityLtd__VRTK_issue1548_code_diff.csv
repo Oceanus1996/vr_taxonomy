@@ -1,0 +1,69 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+ExtendRealityLtd/VRTK,1548,eb9e189,Assets/VRTK/Documentation/API.md,modified,2,2,4,"@@ -4051,8 +4051,8 @@ Determines if the GameObject can be interacted with.
+ 
+ **Script Usage:**
+  * Place the `VRTK_InteractableObject` script onto the GameObject that is to be interactable.
+- * Alternatively, select the GameObject and use the `Window->VRTK->Setup Interactable Object` panel to set up quickly.
+- * The Highlighter used by the Interactable Object will be selected in the following order:
++ * Alternatively, select the GameObject and use the `Window -> VRTK -> Setup Interactable Object` panel to set up quickly.
++ * The optional Highlighter used by the Interactable Object will be selected in the following order:
+    * The provided Base Highlighter in the `Object Highlighter` parameter.
+    * If the above is not provided, then the first active Base Highlighter found on the Interactable Object GameObject will be used.
+    * If the above is not found, then a Material Color Swap Highlighter will be created on the Interactable Object GameObject at runtime."
+ExtendRealityLtd/VRTK,1548,eb9e189,Assets/VRTK/Source/Scripts/Interactions/Interactables/VRTK_InteractableObject.cs,modified,6,8,14,"@@ -39,8 +39,8 @@ public struct InteractableObjectEventArgs
+     ///
+     /// **Script Usage:**
+     ///  * Place the `VRTK_InteractableObject` script onto the GameObject that is to be interactable.
+-    ///  * Alternatively, select the GameObject and use the `Window->VRTK->Setup Interactable Object` panel to set up quickly.
+-    ///  * The Highlighter used by the Interactable Object will be selected in the following order:
++    ///  * Alternatively, select the GameObject and use the `Window -> VRTK -> Setup Interactable Object` panel to set up quickly.
++    ///  * The optional Highlighter used by the Interactable Object will be selected in the following order:
+     ///    * The provided Base Highlighter in the `Object Highlighter` parameter.
+     ///    * If the above is not provided, then the first active Base Highlighter found on the Interactable Object GameObject will be used.
+     ///    * If the above is not found, then a Material Color Swap Highlighter will be created on the Interactable Object GameObject at runtime.
+@@ -657,7 +657,6 @@ public virtual void Highlight(Color highlightColor)
+         /// </summary>
+         public virtual void Unhighlight()
+         {
+-            InitialiseHighlighter();
+             if (baseHighlighter != null)
+             {
+                 baseHighlighter.Unhighlight();
+@@ -1061,7 +1060,6 @@ protected virtual void OnEnable()
+             {
+                 baseHighlighter = null;
+             }
+-            InitialiseHighlighter();
+             RegisterTeleporters();
+             forceDisabled = false;
+             if (forcedDropped)
+@@ -1155,9 +1153,9 @@ protected virtual void LoadPreviousState()
+             }
+         }
+ 
+-        protected virtual void InitialiseHighlighter(Color? highlightColor = null)
++        protected virtual void InitialiseHighlighter(Color highlightColor)
+         {
+-            if (baseHighlighter == null)
++            if (baseHighlighter == null && highlightColor != Color.clear)
+             {
+                 autoHighlighter = false;
+                 baseHighlighter = GetValidHighlighter();
+@@ -1166,7 +1164,7 @@ protected virtual void InitialiseHighlighter(Color? highlightColor = null)
+                     autoHighlighter = true;
+                     baseHighlighter = gameObject.AddComponent<VRTK_MaterialColorSwapHighlighter>();
+                 }
+-                baseHighlighter.Initialise((highlightColor != null ? highlightColor : Color.clear), gameObject);
++                baseHighlighter.Initialise(highlightColor, gameObject);
+             }
+         }
+ 
+@@ -1435,7 +1433,7 @@ protected virtual void StopGrabbingInteractions()
+             if (grabbingObject != null && (grabbingObject.activeInHierarchy || forceDisabled))
+             {
+                 VRTK_InteractGrab grabbingObjectScript = grabbingObject.GetComponentInChildren<VRTK_InteractGrab>();
+-                if(grabbingObjectScript != null && grabbingObjectScript.interactTouch != null)
++                if (grabbingObjectScript != null && grabbingObjectScript.interactTouch != null)
+                 {
+                     grabbingObjectScript.interactTouch.ForceStopTouching();
+                     grabbingObjectScript.ForceRelease();"

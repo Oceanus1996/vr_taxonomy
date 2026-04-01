@@ -1,0 +1,77 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+MindPort-GmbH/VR-Builder,81,c461e23,Source/XR-Interaction-Component/Source/Runtime/Hands/Animation/HandAnimatorController.cs,modified,33,8,41,"@@ -37,6 +37,26 @@ public class HandAnimatorController : MonoBehaviour
+         [Tooltip(""Controller manager needed to set state parameters."")]
+         private ActionBasedControllerManager controllerManager;
+ 
++        /// <summary>
++        /// True if the controller is in UI mode.
++        /// </summary>
++        public bool IsUIMode { get; private set; }       
++
++        /// <summary>
++        /// True if the controller is in teleport mode.
++        /// </summary>
++        public bool IsTeleportMode { get; private set; }
++
++        /// <summary>
++        /// Current controller select value.
++        /// </summary>
++        public float SelectValue { get; private set; }
++
++        /// <summary>
++        /// Current controller activate value.
++        /// </summary>
++        public float ActivateValue { get; private set; }
++
+         private void Start()
+         {
+             animator = GetComponent<Animator>();
+@@ -59,34 +79,39 @@ private void Start()
+ 
+         private void Update()
+         {
+-            if (controller == null)
++            if (controller == null || controller.enableInputActions == false)
+             {
+-                return;
++                return;             
+             }
+ 
+             if (controllerManager != null)
+             {
+                 if (controllerManager.UIState.Enabled)
+                 {
+-                    animator.SetBool(UIStateBool, true);
++                    IsUIMode = true;
+                 }
+                 else
+                 {
+-                    animator.SetBool(UIStateBool, false);
++                    IsUIMode = false;
+                 }
+ 
+                 if (controllerManager.TeleportState.Enabled)
+                 {
+-                    animator.SetBool(teleportStateBool, true);
++                    IsTeleportMode = true;
+                 }
+                 else
+                 {
+-                    animator.SetBool(teleportStateBool, false);
++                    IsTeleportMode = false;
+                 }
+             }
+ 
+-            animator.SetFloat(selectFloat, controller.selectActionValue.action.ReadValue<float>());
+-            animator.SetFloat(activateFloat, controller.activateActionValue.action.ReadValue<float>());
++            SelectValue = controller.selectActionValue.action.ReadValue<float>();
++            ActivateValue = controller.activateActionValue.action.ReadValue<float>();
++
++            animator.SetBool(UIStateBool, IsUIMode);
++            animator.SetBool(teleportStateBool, IsTeleportMode);
++            animator.SetFloat(selectFloat, SelectValue);
++            animator.SetFloat(activateFloat, ActivateValue);
+         }
+     }
+ }
+\ No newline at end of file"

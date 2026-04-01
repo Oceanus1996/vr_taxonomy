@@ -1,0 +1,686 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+OpenKneeboard/OpenKneeboard,40,37ede84,src/app/app-winui3/App.xaml.cpp,modified,30,0,30,"@@ -22,13 +22,21 @@
+ #include ""App.xaml.h""
+ // clang-format on
+ 
++#include <OpenKneeboard/DCSWorldInstance.h>
++#include <OpenKneeboard/GamesList.h>
++#include <OpenKneeboard/KneeboardState.h>
+ #include <OpenKneeboard/SHM.h>
+ #include <OpenKneeboard/dprint.h>
+ #include <Psapi.h>
+ #include <appmodel.h>
+ 
++#include <set>
+ #include <filesystem>
+ 
++#include ""CheckDCSHooks.h""
++#include ""Globals.h""
++
++
+ #include ""MainWindow.xaml.h""
+ 
+ using namespace winrt;
+@@ -61,6 +69,28 @@ App::App() {
+ 
+ void App::OnLaunched(LaunchActivatedEventArgs const&) {
+   window = make<MainWindow>();
++
++  window.Content().as<winrt::Microsoft::UI::Xaml::FrameworkElement>().Loaded(
++    [=](auto&, auto&) -> winrt::fire_and_forget {
++
++  std::set<std::filesystem::path> dcsSavedGamesPaths;
++  for (const auto& game: gKneeboard->GetGamesList()->GetGameInstances()) {
++    auto dcs = std::dynamic_pointer_cast<DCSWorldInstance>(game);
++    if (!dcs) {
++      continue;
++    }
++    const auto path = dcs->mSavedGamesPath;
++    if (!dcsSavedGamesPaths.contains(path)) {
++      dcsSavedGamesPaths.emplace(path);
++    }
++  }
++
++  auto root = window.Content().XamlRoot();
++  for (const auto& path: dcsSavedGamesPaths) {
++    co_await CheckDCSHooks(root, path);
++  }
++    });
++
+   window.Activate();
+ }
+ "
+OpenKneeboard/OpenKneeboard,40,37ede84,src/app/app-winui3/CheckDCSHooks.cpp,added,202,0,202,"@@ -0,0 +1,202 @@
++/*
++ * OpenKneeboard
++ *
++ * Copyright (C) 2022 Fred Emmott <fred@fredemmott.com>
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; version 2.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301,
++ * USA.
++ */
++
++// clang-format off
++#include ""pch.h""
++// clang-format on
++
++#include ""CheckDCSHooks.h""
++
++#include <OpenKneeboard/RuntimeFiles.h>
++#include <OpenKneeboard/utf8.h>
++#include <fmt/format.h>
++#include <winrt/microsoft.ui.xaml.controls.h>
++
++using namespace winrt::Microsoft::UI::Xaml;
++using namespace winrt::Microsoft::UI::Xaml::Controls;
++
++namespace OpenKneeboard {
++
++static bool FilesDiffer(
++  const std::filesystem::path& a,
++  const std::filesystem::path& b) {
++  const auto size = std::filesystem::file_size(a);
++  if (std::filesystem::file_size(b) != size) {
++    return true;
++  }
++
++  winrt::handle ah {CreateFile(
++    a.c_str(),
++    GENERIC_READ,
++    FILE_SHARE_READ | FILE_SHARE_WRITE,
++    nullptr,
++    OPEN_EXISTING,
++    FILE_ATTRIBUTE_NORMAL,
++    NULL)};
++  winrt::handle bh {CreateFile(
++    b.c_str(),
++    GENERIC_READ,
++    FILE_SHARE_READ | FILE_SHARE_WRITE,
++    nullptr,
++    OPEN_EXISTING,
++    FILE_ATTRIBUTE_NORMAL,
++    NULL)};
++
++  winrt::handle afm {
++    CreateFileMappingW(ah.get(), nullptr, PAGE_READONLY, 0, 0, nullptr)};
++  winrt::handle bfm {
++    CreateFileMappingW(bh.get(), nullptr, PAGE_READONLY, 0, 0, nullptr)};
++
++  auto av = reinterpret_cast<std::byte*>(
++    MapViewOfFile(afm.get(), FILE_MAP_READ, 0, 0, 0));
++  auto bv = reinterpret_cast<std::byte*>(
++    MapViewOfFile(bfm.get(), FILE_MAP_READ, 0, 0, 0));
++
++  auto equal = std::equal(av, av + size, bv, bv + size);
++
++  UnmapViewOfFile(av);
++  UnmapViewOfFile(bv);
++
++  return !equal;
++}
++
++enum DCSHookInstallState { UP_TO_DATE, OUT_OF_DATE, NOT_INSTALLED };
++
++static DCSHookInstallState GetHookInstallState(
++  const std::filesystem::path& hooksDir,
++  const std::filesystem::path& exeDir) {
++  if (!std::filesystem::is_directory(hooksDir)) {
++    return NOT_INSTALLED;
++  }
++
++  const auto dllDest = hooksDir / RuntimeFiles::DCSWORLD_HOOK_DLL;
++  const auto luaDest = hooksDir / RuntimeFiles::DCSWORLD_HOOK_LUA;
++
++  if (!(std::filesystem::is_regular_file(dllDest)
++        && std::filesystem::is_regular_file(dllDest))) {
++    return NOT_INSTALLED;
++  }
++
++  const auto dllSource = exeDir / RuntimeFiles::DCSWORLD_HOOK_DLL;
++  const auto luaSource = exeDir / RuntimeFiles::DCSWORLD_HOOK_LUA;
++
++  if (FilesDiffer(dllSource, dllDest) || FilesDiffer(luaSource, luaDest)) {
++    return OUT_OF_DATE;
++  }
++
++  return UP_TO_DATE;
++}
++
++winrt::Windows::Foundation::IAsyncAction CheckDCSHooks(
++  XamlRoot& root,
++  const std::filesystem::path& savedGamesPath) {
++  const auto hooksDir = savedGamesPath / ""Scripts"" / ""Hooks"";
++  wchar_t buffer[MAX_PATH];
++  auto length = GetModuleFileNameW(NULL, buffer, MAX_PATH);
++  const auto exeDir
++    = std::filesystem::path(std::wstring_view(buffer, length)).parent_path();
++
++  const auto state = GetHookInstallState(hooksDir, exeDir);
++
++  if (state == UP_TO_DATE) {
++    co_return;
++  }
++
++  const auto dllSource = exeDir / RuntimeFiles::DCSWORLD_HOOK_DLL;
++  const auto luaSource = exeDir / RuntimeFiles::DCSWORLD_HOOK_LUA;
++  const auto dllDest = hooksDir / RuntimeFiles::DCSWORLD_HOOK_DLL;
++  const auto luaDest = hooksDir / RuntimeFiles::DCSWORLD_HOOK_LUA;
++
++  ContentDialog dialog;
++  dialog.XamlRoot(root);
++  dialog.Title(winrt::box_value(winrt::to_hstring(_(""DCS Hooks""))));
++  dialog.CloseButtonText(winrt::to_hstring(_(""Cancel"")));
++  dialog.DefaultButton(ContentDialogButton::Primary);
++
++  if (state == NOT_INSTALLED) {
++    dialog.Content(winrt::box_value(winrt::to_hstring(fmt::format(
++      fmt::runtime(""DCS hooks aren't installed in {}; would you like to ""
++                   ""install them now?""),
++      to_utf8(savedGamesPath)))));
++    dialog.PrimaryButtonText(winrt::to_hstring(_(""Install DCS Hooks"")));
++  } else {
++    if (state != OUT_OF_DATE) {
++      throw std::logic_error(""Unexpected hook state"");
++    }
++    dialog.Content(winrt::box_value(winrt::to_hstring(fmt::format(
++      fmt::runtime(
++        ""Hooks in {} are out of date; would you like to update them now?""),
++      to_utf8(savedGamesPath)))));
++    dialog.PrimaryButtonText(winrt::to_hstring(_(""Update DCS Hooks"")));
++  }
++
++  do {
++    auto result = co_await dialog.ShowAsync();
++    if (result != ContentDialogResult::Primary) {
++      co_return;
++    }
++    dialog.PrimaryButtonText(winrt::to_hstring(_(""Retry"")));
++
++    std::error_code ec;
++    if (!(std::filesystem::is_directory(hooksDir)
++          || std::filesystem::create_directories(hooksDir, ec))) {
++      dialog.Content(winrt::box_value(winrt::to_hstring(fmt::format(
++        fmt::runtime(_(""Failed to create {}: {} ({:#x}})"")),
++        to_utf8(hooksDir),
++        ec.message(),
++        ec.value()))));
++      continue;
++    }
++
++    if (!std::filesystem::copy_file(
++          luaSource,
++          luaDest,
++          std::filesystem::copy_options::overwrite_existing,
++          ec)) {
++      dialog.Content(winrt::box_value(winrt::to_hstring(fmt::format(
++        fmt::runtime(
++          _(""Failed to write to {}: {} ({:#x}) - if DCS is running, ""
++            ""close DCS, and try again."")),
++        to_utf8(luaDest),
++        ec.message(),
++        ec.value()))));
++      continue;
++    }
++
++    if (!std::filesystem::copy_file(
++          dllSource,
++          dllDest,
++          std::filesystem::copy_options::overwrite_existing,
++          ec)) {
++      dialog.Content(winrt::box_value(winrt::to_hstring(fmt::format(
++        fmt::runtime(
++          _(""Failed to write to {}: {} ({:#x}) - if DCS is running, ""
++            ""close DCS, and try again."")),
++        to_utf8(luaDest),
++        ec.message(),
++        ec.value()))));
++      continue;
++    }
++
++    co_return;
++  } while (true);
++}
++
++}// namespace OpenKneeboard"
+OpenKneeboard/OpenKneeboard,40,37ede84,src/app/app-winui3/CheckDCSHooks.h,added,39,0,39,"@@ -0,0 +1,39 @@
++/*
++ * OpenKneeboard
++ *
++ * Copyright (C) 2022 Fred Emmott <fred@fredemmott.com>
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; version 2.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301,
++ * USA.
++ */
++#pragma once
++
++// clang-format off
++#include ""pch.h""
++#include <Unknwn.h>
++// clang-format on
++
++#include <winrt/base.h>
++#include <winrt/microsoft.ui.xaml.h>
++#include <winrt/windows.foundation.h>
++
++#include <filesystem>
++
++namespace OpenKneeboard {
++
++winrt::Windows::Foundation::IAsyncAction CheckDCSHooks(
++  winrt::Microsoft::UI::Xaml::XamlRoot& root,
++  const std::filesystem::path& savedGamesPath);
++
++}"
+OpenKneeboard/OpenKneeboard,40,37ede84,src/app/app-winui3/MainWindow.xaml.cpp,modified,186,188,374,"@@ -1,188 +1,186 @@
+-﻿/*
+- * OpenKneeboard
+- *
+- * Copyright (C) 2022 Fred Emmott <fred@fredemmott.com>
+- *
+- * This program is free software; you can redistribute it and/or
+- * modify it under the terms of the GNU General Public License
+- * as published by the Free Software Foundation; version 2.
+- *
+- * This program is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+- * GNU General Public License for more details.
+- *
+- * You should have received a copy of the GNU General Public License
+- * along with this program; if not, write to the Free Software
+- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301,
+- * USA.
+- */
+-// clang-format off
+-#include ""pch.h""
+-#include ""MainWindow.xaml.h""
+-#if __has_include(""MainWindow.g.cpp"")
+-#include ""MainWindow.g.cpp""
+-#endif
+-// clang-format on
+-
+-#include <OpenKneeboard/KneeboardState.h>
+-#include <OpenKneeboard/Tab.h>
+-#include <OpenKneeboard/TabState.h>
+-#include <OpenKneeboard/dprint.h>
+-#include <microsoft.ui.xaml.window.h>
+-#include <winrt/windows.ui.xaml.interop.h>
+-
+-#include <nlohmann/json.hpp>
+-
+-#include ""Globals.h""
+-
+-using namespace winrt;
+-using namespace Microsoft::UI::Xaml;
+-using namespace ::OpenKneeboard;
+-
+-namespace muxc = winrt::Microsoft::UI::Xaml::Controls;
+-
+-namespace winrt::OpenKneeboardApp::implementation {
+-MainWindow::MainWindow() {
+-  InitializeComponent();
+-  Title(L""OpenKneeboard"");
+-  // See:
+-  // * https://docs.microsoft.com/en-us/windows/winui/api/microsoft.ui.xaml.window.settitlebar
+-  // * https://docs.microsoft.com/en-us/windows/apps/develop/title-bar?tabs=wasdk
+-  ExtendsContentIntoTitleBar(true);
+-  SetTitleBar(AppTitleBar());
+-
+-  {
+-    auto ref = get_strong();
+-    winrt::check_hresult(ref.as<IWindowNative>()->get_WindowHandle(&mHwnd));
+-    gMainWindow = mHwnd;
+-  }
+-
+-  auto bigIcon = LoadImageW(
+-    GetModuleHandleW(nullptr),
+-    L""appIcon"",
+-    IMAGE_ICON,
+-    GetSystemMetrics(SM_CXICON),
+-    GetSystemMetrics(SM_CYICON),
+-    0);
+-  SendMessage(mHwnd, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(bigIcon));
+-  auto smallIcon = LoadImageW(
+-    GetModuleHandleW(nullptr),
+-    L""appIcon"",
+-    IMAGE_ICON,
+-    GetSystemMetrics(SM_CXSMICON),
+-    GetSystemMetrics(SM_CYSMICON),
+-    0);
+-  SendMessage(
+-    mHwnd, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(smallIcon));
+-
+-  gUIThreadDispatcherQueue = DispatcherQueue();
+-  gDXResources = DXResources::Create();
+-  gKneeboard = std::make_shared<KneeboardState>(mHwnd, gDXResources);
+-
+-  OnTabsChanged();
+-  OnTabChanged();
+-
+-  AddEventListener(
+-    gKneeboard->evCurrentTabChangedEvent, &MainWindow::OnTabChanged, this);
+-  AddEventListener(
+-    gKneeboard->evTabsChangedEvent, &MainWindow::OnTabsChanged, this);
+-
+-  // TODO: add to globals as 'game loop' thread
+-  mDQC = DispatcherQueueController::CreateOnDedicatedThread();
+-  mFrameTimer = mDQC.DispatcherQueue().CreateTimer();
+-  mFrameTimer.Interval(std::chrono::milliseconds(1000 / 60));
+-  mFrameTimer.Tick([=](auto&, auto&) { gKneeboard->evFrameTimerEvent.Emit(); });
+-  mFrameTimer.Start();
+-
+-  this->Closed({this, &MainWindow::OnClosed});
+-
+-  // TODO: install DCS hooks
+-}
+-
+-MainWindow::~MainWindow() {
+-  gMainWindow = {};
+-}
+-
+-winrt::Windows::Foundation::IAsyncAction MainWindow::OnClosed(
+-  const IInspectable&,
+-  const WindowEventArgs&) {
+-  dprint(""Stopping frame timer..."");
+-  mFrameTimer.Stop();
+-  mFrameTimer = {nullptr};
+-  dprint(""Stopping dispatch queue..."");
+-  co_await mDQC.ShutdownQueueAsync();
+-  mDQC = {nullptr};
+-  dprint(""Frame thread shutdown."");
+-}
+-
+-void MainWindow::OnTabChanged() {
+-  const auto id = gKneeboard->GetCurrentTab()->GetInstanceID();
+-
+-  for (auto it: this->Navigation().MenuItems()) {
+-    auto item = it.try_as<Control>();
+-    if (!item) {
+-      continue;
+-    }
+-    auto tag = item.Tag();
+-    if (!tag) {
+-      continue;
+-    }
+-    if (winrt::unbox_value<uint64_t>(tag) == id) {
+-      Navigation().SelectedItem(item);
+-      break;
+-    }
+-  }
+-  this->Frame().Navigate(xaml_typename<TabPage>(), winrt::box_value(id));
+-}
+-
+-void MainWindow::OnTabsChanged() {
+-  auto navItems = this->Navigation().MenuItems();
+-  navItems.Clear();
+-  for (auto tab: gKneeboard->GetTabs()) {
+-    muxc::NavigationViewItem item;
+-    item.Content(
+-      winrt::box_value(winrt::to_hstring(tab->GetTab()->GetTitle())));
+-    item.Tag(winrt::box_value(tab->GetInstanceID()));
+-    navItems.Append(item);
+-  }
+-}
+-
+-void MainWindow::OnNavigationItemInvoked(
+-  const IInspectable&,
+-  const NavigationViewItemInvokedEventArgs& args) {
+-  if (args.IsSettingsInvoked()) {
+-    Frame().Navigate(xaml_typename<SettingsPage>());
+-    return;
+-  }
+-
+-  auto item = args.InvokedItemContainer().try_as<NavigationViewItem>();
+-  if (!item) {
+-    return;
+-  }
+-
+-  if (item == AboutNavItem()) {
+-    Frame().Navigate(xaml_typename<AboutPage>());
+-    return;
+-  }
+-
+-  auto tag = item.Tag();
+-  if (!tag) {
+-    return;
+-  }
+-
+-  const auto tabID = winrt::unbox_value<uint64_t>(tag);
+-
+-  if (tabID == gKneeboard->GetCurrentTab()->GetInstanceID()) {
+-    Frame().Navigate(xaml_typename<TabPage>(), tag);
+-    return;
+-  }
+-
+-  gKneeboard->SetTabID(tabID);
+-}
+-
+-void MainWindow::OnBackClick(const IInspectable&, const RoutedEventArgs&) {
+-  Frame().GoBack();
+-}
+-
+-}// namespace winrt::OpenKneeboardApp::implementation
++﻿/*
++ * OpenKneeboard
++ *
++ * Copyright (C) 2022 Fred Emmott <fred@fredemmott.com>
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; version 2.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301,
++ * USA.
++ */
++// clang-format off
++#include ""pch.h""
++#include ""MainWindow.xaml.h""
++#if __has_include(""MainWindow.g.cpp"")
++#include ""MainWindow.g.cpp""
++#endif
++// clang-format on
++
++#include <OpenKneeboard/KneeboardState.h>
++#include <OpenKneeboard/Tab.h>
++#include <OpenKneeboard/TabState.h>
++#include <OpenKneeboard/dprint.h>
++#include <microsoft.ui.xaml.window.h>
++#include <winrt/windows.ui.xaml.interop.h>
++
++#include <nlohmann/json.hpp>
++
++#include ""Globals.h""
++
++using namespace winrt;
++using namespace Microsoft::UI::Xaml;
++using namespace ::OpenKneeboard;
++
++namespace muxc = winrt::Microsoft::UI::Xaml::Controls;
++
++namespace winrt::OpenKneeboardApp::implementation {
++MainWindow::MainWindow() {
++  InitializeComponent();
++  Title(L""OpenKneeboard"");
++  // See:
++  // * https://docs.microsoft.com/en-us/windows/winui/api/microsoft.ui.xaml.window.settitlebar
++  // * https://docs.microsoft.com/en-us/windows/apps/develop/title-bar?tabs=wasdk
++  ExtendsContentIntoTitleBar(true);
++  SetTitleBar(AppTitleBar());
++
++  {
++    auto ref = get_strong();
++    winrt::check_hresult(ref.as<IWindowNative>()->get_WindowHandle(&mHwnd));
++    gMainWindow = mHwnd;
++  }
++
++  auto bigIcon = LoadImageW(
++    GetModuleHandleW(nullptr),
++    L""appIcon"",
++    IMAGE_ICON,
++    GetSystemMetrics(SM_CXICON),
++    GetSystemMetrics(SM_CYICON),
++    0);
++  SendMessage(mHwnd, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(bigIcon));
++  auto smallIcon = LoadImageW(
++    GetModuleHandleW(nullptr),
++    L""appIcon"",
++    IMAGE_ICON,
++    GetSystemMetrics(SM_CXSMICON),
++    GetSystemMetrics(SM_CYSMICON),
++    0);
++  SendMessage(
++    mHwnd, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(smallIcon));
++
++  gUIThreadDispatcherQueue = DispatcherQueue();
++  gDXResources = DXResources::Create();
++  gKneeboard = std::make_shared<KneeboardState>(mHwnd, gDXResources);
++
++  OnTabsChanged();
++  OnTabChanged();
++
++  AddEventListener(
++    gKneeboard->evCurrentTabChangedEvent, &MainWindow::OnTabChanged, this);
++  AddEventListener(
++    gKneeboard->evTabsChangedEvent, &MainWindow::OnTabsChanged, this);
++
++  // TODO: add to globals as 'game loop' thread
++  mDQC = DispatcherQueueController::CreateOnDedicatedThread();
++  mFrameTimer = mDQC.DispatcherQueue().CreateTimer();
++  mFrameTimer.Interval(std::chrono::milliseconds(1000 / 60));
++  mFrameTimer.Tick([=](auto&, auto&) { gKneeboard->evFrameTimerEvent.Emit(); });
++  mFrameTimer.Start();
++
++  this->Closed({this, &MainWindow::OnClosed});
++}
++
++MainWindow::~MainWindow() {
++  gMainWindow = {};
++}
++
++winrt::Windows::Foundation::IAsyncAction MainWindow::OnClosed(
++  const IInspectable&,
++  const WindowEventArgs&) {
++  dprint(""Stopping frame timer..."");
++  mFrameTimer.Stop();
++  mFrameTimer = {nullptr};
++  dprint(""Stopping dispatch queue..."");
++  co_await mDQC.ShutdownQueueAsync();
++  mDQC = {nullptr};
++  dprint(""Frame thread shutdown."");
++}
++
++void MainWindow::OnTabChanged() {
++  const auto id = gKneeboard->GetCurrentTab()->GetInstanceID();
++
++  for (auto it: this->Navigation().MenuItems()) {
++    auto item = it.try_as<Control>();
++    if (!item) {
++      continue;
++    }
++    auto tag = item.Tag();
++    if (!tag) {
++      continue;
++    }
++    if (winrt::unbox_value<uint64_t>(tag) == id) {
++      Navigation().SelectedItem(item);
++      break;
++    }
++  }
++  this->Frame().Navigate(xaml_typename<TabPage>(), winrt::box_value(id));
++}
++
++void MainWindow::OnTabsChanged() {
++  auto navItems = this->Navigation().MenuItems();
++  navItems.Clear();
++  for (auto tab: gKneeboard->GetTabs()) {
++    muxc::NavigationViewItem item;
++    item.Content(
++      winrt::box_value(winrt::to_hstring(tab->GetTab()->GetTitle())));
++    item.Tag(winrt::box_value(tab->GetInstanceID()));
++    navItems.Append(item);
++  }
++}
++
++void MainWindow::OnNavigationItemInvoked(
++  const IInspectable&,
++  const NavigationViewItemInvokedEventArgs& args) {
++  if (args.IsSettingsInvoked()) {
++    Frame().Navigate(xaml_typename<SettingsPage>());
++    return;
++  }
++
++  auto item = args.InvokedItemContainer().try_as<NavigationViewItem>();
++  if (!item) {
++    return;
++  }
++
++  if (item == AboutNavItem()) {
++    Frame().Navigate(xaml_typename<AboutPage>());
++    return;
++  }
++
++  auto tag = item.Tag();
++  if (!tag) {
++    return;
++  }
++
++  const auto tabID = winrt::unbox_value<uint64_t>(tag);
++
++  if (tabID == gKneeboard->GetCurrentTab()->GetInstanceID()) {
++    Frame().Navigate(xaml_typename<TabPage>(), tag);
++    return;
++  }
++
++  gKneeboard->SetTabID(tabID);
++}
++
++void MainWindow::OnBackClick(const IInspectable&, const RoutedEventArgs&) {
++  Frame().GoBack();
++}
++
++}// namespace winrt::OpenKneeboardApp::implementation"
+OpenKneeboard/OpenKneeboard,40,37ede84,src/app/app-winui3/app-winui3.vcxproj,modified,2,0,2,"@@ -95,6 +95,7 @@
+     <ResourceCompile AdditionalIncludeDirectories=""$(VERSION_RC_DIRECTORY)"" Include=""Resource.rc"" />
+   </ItemGroup>
+   <ItemGroup>
++    <ClInclude Include=""CheckDCSHooks.h"" />
+     <ClInclude Include=""pch.h"" />
+     <ClInclude Include=""Globals.h"" />
+     <ClInclude Include=""App.xaml.h"">
+@@ -167,6 +168,7 @@
+     <ClCompile Include=""pch.cpp"">
+       <PrecompiledHeader>Create</PrecompiledHeader>
+     </ClCompile>
++    <ClCompile Include=""CheckDCSHooks.cpp"" />
+     <ClCompile Include=""Events-winrt.cpp"" />
+     <ClCompile Include=""ExecutableIconFactory.cpp"" />
+     <ClCompile Include=""Globals.cpp"" />"

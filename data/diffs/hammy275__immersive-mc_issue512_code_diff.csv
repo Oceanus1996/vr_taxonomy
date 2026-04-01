@@ -1,0 +1,59 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+hammy275/immersive-mc,512,1a52df6b07dc2d1388bea44e810cf185033ee790,common/src/main/java/com/hammy275/immersivemc/client/api_impl/ImmersiveRenderHelpersImpl.java,modified,4,1,5,"@@ -6,6 +6,7 @@
+ import com.hammy275.immersivemc.api.common.hitbox.BoundingBox;
+ import com.hammy275.immersivemc.api.common.hitbox.HitboxInfo;
+ import com.hammy275.immersivemc.client.config.ClientConstants;
++import com.hammy275.immersivemc.client.immersive.SwapTracker;
+ import com.hammy275.immersivemc.client.subscribe.ClientRenderSubscriber;
+ import com.hammy275.immersivemc.common.config.ActiveConfig;
+ import com.hammy275.immersivemc.common.obb.OBBClientUtil;
+@@ -39,7 +40,9 @@ public class ImmersiveRenderHelpersImpl implements ImmersiveRenderHelpers {
+     @Override
+     public void renderItemWithInfo(ItemStack item, PoseStack stack, float size, boolean renderItemCounts, int light, ImmersiveInfo info, boolean shouldRenderItemGuide, int hitboxIndex, @Nullable Float spinDegrees, @Nullable Direction facing, @Nullable Direction upDown) {
+         HitboxInfo hitbox = info.getAllHitboxes().get(hitboxIndex);
+-        boolean hovered = info.getSlotHovered(0) == hitboxIndex || info.getSlotHovered(1) == hitboxIndex;
++        boolean hovered = info.getSlotHovered(0) == hitboxIndex
++                || info.getSlotHovered(1) == hitboxIndex
++                || SwapTracker.slotHovered(info, hitboxIndex);
+         if (item == null || item.isEmpty()) {
+             if (shouldRenderItemGuide) {
+                 renderItemGuide(stack, hitbox.getHitbox(), hovered, light);"
+hammy275/immersive-mc,512,1a52df6b07dc2d1388bea44e810cf185033ee790,common/src/main/java/com/hammy275/immersivemc/client/immersive/SwapTracker.java,modified,8,0,8,"@@ -30,6 +30,10 @@ public class SwapTracker {
+     protected boolean lastTickWasIdle = false;
+     protected int rightClickCooldown = 0; // Needs to be kept here, since Minecraft messes with it in ways that don't work for us
+ 
++    public static boolean slotHovered(ImmersiveInfo info, int slot) {
++        return c0.hasSlotHovered(info, slot) || c1.hasSlotHovered(info, slot);
++    }
++
+     public SwapTracker(InteractionHand hand) {
+         this.hand = hand;
+     }
+@@ -106,6 +110,10 @@ public int getCooldown() {
+         return rightClickCooldown;
+     }
+ 
++    protected boolean hasSlotHovered(ImmersiveInfo info, int slot) {
++        return this.lastImmersive != null && this.lastImmersive.info == info && queuedPlacements.contains(slot);
++    }
++
+     protected void setState(SwapState newState, int newHitbox) {
+         if (newHitbox != this.mostRecentHitbox) {
+             this.ticksInMostRecent = 0;"
+hammy275/immersive-mc,512,1a52df6b07dc2d1388bea44e810cf185033ee790,common/src/main/java/com/hammy275/immersivemc/client/immersive/info/BuiltImmersiveInfoImpl.java,modified,2,1,3,"@@ -4,6 +4,7 @@
+ import com.hammy275.immersivemc.api.common.hitbox.HitboxInfo;
+ import com.hammy275.immersivemc.client.ClientUtil;
+ import com.hammy275.immersivemc.client.immersive.RelativeHitboxInfoImpl;
++import com.hammy275.immersivemc.client.immersive.SwapTracker;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.Direction;
+ import net.minecraft.world.item.ItemStack;
+@@ -79,7 +80,7 @@ public int getSlotHovered(int handIndex) {
+ 
+     @Override
+     public boolean isSlotHovered(int hitboxIndex) {
+-        return slotsHovered[0] == hitboxIndex || slotsHovered[1] == hitboxIndex;
++        return slotsHovered[0] == hitboxIndex || slotsHovered[1] == hitboxIndex || SwapTracker.slotHovered(this, hitboxIndex);
+     }
+ 
+     @Override"

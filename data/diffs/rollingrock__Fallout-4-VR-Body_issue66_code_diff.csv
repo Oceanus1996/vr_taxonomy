@@ -1,0 +1,114 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+rollingrock/Fallout-4-VR-Body,66,205f3d4c382914686552709e54a8d0d108f4e42d,Fallout4VR_Body.vcxproj,modified,1,1,2,"@@ -133,7 +133,7 @@
+     <Link>
+       <SubSystem>Console</SubSystem>
+       <GenerateDebugInformation>true</GenerateDebugInformation>
+-      <AdditionalDependencies>f4sevr_1_2_72.lib;f4se_common.lib;common_vc11.lib;openvr_api.lib;%(AdditionalDependencies)</AdditionalDependencies>
++      <AdditionalDependencies>f4sevr_1_2_72.lib;f4se_common.lib;common_vc11.lib;%(AdditionalDependencies)</AdditionalDependencies>
+       <ModuleDefinitionFile>exports.def</ModuleDefinitionFile>
+       <OptimizeReferences>true</OptimizeReferences>
+       <EnableCOMDATFolding>true</EnableCOMDATFolding>"
+rollingrock/Fallout-4-VR-Body,66,205f3d4c382914686552709e54a8d0d108f4e42d,Skeleton.cpp,modified,18,7,25,"@@ -1532,14 +1532,18 @@ namespace F4VRBody
+ 
+ 		BSFixedString screenName(""Screen:0"");
+ 		NiAVObject* screen = pipboy->GetObjectByName(&screenName);
++		if (screen == nullptr) {
++			return false;
++		}
+ 
+-		NiPoint3 pipBoyOut = screen->m_worldTransform.rot * NiPoint3(0, -1, 0);
+-		NiPoint3 lookDir = (*g_playerCamera)->cameraNode->m_worldTransform.rot * NiPoint3(0, 1, 0);
++		return  isCameraLookingAtObject((*g_playerCamera)->cameraNode, screen, c_pipBoyLookAtGate);
+ 
+-		float dot = vec3_dot(vec3_norm(pipBoyOut), vec3_norm(lookDir));
++		//NiPoint3 pipBoyOut = screen->m_worldTransform.rot * NiPoint3(0, -1, 0);
++		//NiPoint3 lookDir = (*g_playerCamera)->cameraNode->m_worldTransform.rot * NiPoint3(0, 1, 0);
+ 
+-		return dot < -(c_pipBoyLookAtGate);
++		//float dot = vec3_dot(vec3_norm(pipBoyOut), vec3_norm(lookDir));
+ 
++		//return dot < -(c_pipBoyLookAtGate);
+ 	}
+ 
+     void Skeleton::hidePipboy() {
+@@ -3534,12 +3538,15 @@ namespace F4VRBody
+             Matrix44 rot;
+             if (bone.find(""Finger11"") != std::string::npos) {
+                 rot.setEulerAngles(sign * 0.5, sign * 0.4, -0.3);
++				NiMatrix43 wr = handOpen[bone].rot;
++				wr = rot.multiply43Left(wr);
++				qt.fromRot(wr);
+             } else if (bone.find(""Finger13"") != std::string::npos) {
+                 rot.setEulerAngles(0, 0, degrees_to_rads(-35.0));
++				NiMatrix43 wr = handOpen[bone].rot;
++				wr = rot.multiply43Left(wr);
++				qt.fromRot(wr);
+             }
+-            NiMatrix43 wr = handOpen[bone].rot;
+-            wr = rot.multiply43Left(wr);
+-            qt.fromRot(wr);
+         }
+         else if (_closedHand[bone]) {
+             qt.fromRot(handClosed[bone].rot);
+@@ -4132,6 +4139,10 @@ namespace F4VRBody
+ 		if (!c_dampenPipboyScreen) {
+ 			return;
+ 		}
++		else if (!_pipboyStatus) {
++			_pipboyScreenPrevFrame = _playerNodes->ScreenNode->m_worldTransform;
++			return;
++		}
+ 		NiNode* pipboyScreen = _playerNodes->ScreenNode;
+ 
+ 		if (pipboyScreen && _pipboyStatus) {"
+rollingrock/Fallout-4-VR-Body,66,205f3d4c382914686552709e54a8d0d108f4e42d,include/version.h,modified,1,1,2,"@@ -7,7 +7,7 @@
+ #define F4VRBODY_VERSION_MAJOR	0
+ #define F4VRBODY_VERSION_MINOR	1
+ #define F4VRBODY_VERSION_PATCH	0
+-#define F4VRBODY_VERSION_BETA	70
++#define F4VRBODY_VERSION_BETA	71
+ #define F4VRBODY_VERSION_VERSTRING	MAKE_STR(F4VRBODY_VERSION_MAJOR) ""."" MAKE_STR(F4VRBODY_VERSION_MINOR) ""."" MAKE_STR(F4VRBODY_VERSION_PATCH) ""."" MAKE_STR(F4VRBODY_VERSION_BETA)
+ 
+ #endif"
+rollingrock/Fallout-4-VR-Body,66,205f3d4c382914686552709e54a8d0d108f4e42d,utils.cpp,modified,26,0,26,"@@ -302,6 +302,32 @@ namespace F4VRBody {
+ 
+ 	}
+ 
++	// Function to check if the camera is looking at the object and the object is facing the camera
++	bool isCameraLookingAtObject(NiAVObject* cameraNode, NiAVObject* objectNode, float detectThresh) {
++		// Get the position of the camera and the object
++		NiPoint3 cameraPos = cameraNode->m_worldTransform.pos;
++		NiPoint3 objectPos = objectNode->m_worldTransform.pos;
++
++		// Calculate the direction vector from the camera to the object
++		NiPoint3 direction = vec3_norm(NiPoint3(objectPos.x - cameraPos.x, objectPos.y - cameraPos.y, objectPos.z - cameraPos.z));
++
++		// Get the forward vector of the camera (assuming it's the y-axis)
++		NiPoint3 cameraForward = vec3_norm(cameraNode->m_worldTransform.rot * NiPoint3(0, 1, 0));
++
++		// Get the forward vector of the object (assuming it's the y-axis)
++		NiPoint3 objectForward = vec3_norm(objectNode->m_worldTransform.rot * NiPoint3(0, 1, 0));
++
++		// Check if the camera is looking at the object
++		float cameraDot = vec3_dot(cameraForward, direction);
++		bool isCameraLooking = cameraDot > detectThresh; // Adjust the threshold as needed
++
++		// Check if the object is facing the camera
++		float objectDot = vec3_dot(objectForward, direction);
++		bool isObjectFacing = objectDot > detectThresh; // Adjust the threshold as needed
++
++		return isCameraLooking && isObjectFacing;
++	}
++
+ 	bool getLeftHandedMode() {
+ 		Setting* set = GetINISetting(""bLeftHandedMode:VR"");
+ "
+rollingrock/Fallout-4-VR-Body,66,205f3d4c382914686552709e54a8d0d108f4e42d,utils.h,modified,2,0,2,"@@ -58,6 +58,8 @@ namespace F4VRBody {
+ 	void turnPipBoyOn();
+ 	void turnPipBoyOff();
+ 
++	bool isCameraLookingAtObject(NiAVObject* cameraNode, NiAVObject* objectNode, float detectThresh);
++
+ 	bool getLeftHandedMode();
+ 
+ 	NiNode* getChildNode(const char* nodeName, NiNode* nde);"

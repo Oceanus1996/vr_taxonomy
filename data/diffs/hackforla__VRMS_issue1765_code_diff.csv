@@ -1,0 +1,177 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+hackforla/VRMS,1765,d1a2b0dc1251c6a8fc049f61179ff24406a13aaf,backend/models/user.model.js,modified,1,1,2,"@@ -11,7 +11,7 @@ const userSchema = mongoose.Schema({
+   email: { type: String, unique: true },
+   accessLevel: { 
+     type: String, 
+-    enum: [""user"", ""admin""], // restricts values to ""user"" and ""admin""
++    enum: [""user"", ""admin"", ""superadmin""], // restricts values to ""user"", ""admin"" and ""superadmin""
+     default: ""user"" 
+   },
+   createdDate: { type: Date, default: Date.now },"
+hackforla/VRMS,1765,d1a2b0dc1251c6a8fc049f61179ff24406a13aaf,client/src/components/user-admin/EditUsers.jsx,modified,35,23,58,"@@ -1,6 +1,6 @@
+ import React, { useEffect, useState } from 'react';
+ import '../../sass/UserAdmin.scss';
+-import { FormGroup, FormControlLabel, Switch } from '@mui/material'
++import { FormGroup, FormControlLabel, Switch } from '@mui/material';
+ 
+ // child of UserAdmin. Displays form to update users.
+ const EditUsers = ({ userToEdit, backToSearch, updateUserDb, projects, updateUserActiveStatus, updateUserAccessLevel }) => {
+@@ -9,6 +9,9 @@ const EditUsers = ({ userToEdit, backToSearch, updateUserDb, projects, updateUse
+   const [isActive, setIsActive] = useState(userToEdit.isActive);
+   const [isAdmin, setIsAdmin] = useState(userToEdit.accessLevel === ""admin"");
+ 
++  // Boolean to check if the current user is the super admin
++  const isSuperAdmin = userToEdit.accessLevel === ""superadmin"";
++
+   // Prepare data for display
+   const userName = `${userToEdit.name?.firstName} ${userToEdit.name?.lastName}`;
+   const userEmail = userToEdit.email;
+@@ -18,7 +21,6 @@ const EditUsers = ({ userToEdit, backToSearch, updateUserDb, projects, updateUse
+   const activeProjects = Object.values(projects)
+     .filter((project) => project.projectStatus === 'Active')
+     .sort((a, b) => a.name?.localeCompare(b.name))
+-    // eslint-disable-next-line no-underscore-dangle
+     .map((p) => [p._id, p.name]);
+ 
+   // add user projects to state
+@@ -35,11 +37,7 @@ const EditUsers = ({ userToEdit, backToSearch, updateUserDb, projects, updateUse
+   const onSubmit = (event) => {
+     event.preventDefault();
+ 
+-    if (
+-      projectValue.length > 0 &&
+-      projectValue !== 'default' &&
+-      !userManagedProjects.includes(projectValue)
+-    ) {
++    if (!isSuperAdmin && projectValue.length > 0 && projectValue !== 'default' && !userManagedProjects.includes(projectValue)) {
+       const newProjects = [...userManagedProjects, projectValue];
+       updateUserDb(userToEdit, newProjects);
+       setUserManagedProjects(newProjects);
+@@ -51,24 +49,26 @@ const EditUsers = ({ userToEdit, backToSearch, updateUserDb, projects, updateUse
+ 
+   // Remove projects from db
+   const handleRemoveProject = (projectToRemove) => {
+-    if (userManagedProjects.length > 0) {
+-      const newProjects = userManagedProjects.filter(
+-        (p) => p !== projectToRemove
+-      );
++    if (!isSuperAdmin && userManagedProjects.length > 0) {
++      const newProjects = userManagedProjects.filter((p) => p !== projectToRemove);
+       updateUserDb(userToEdit, newProjects);
+       setUserManagedProjects(newProjects);
+     }
+   };
+ 
+   const handleSetIsActive = () => {
+-    setIsActive(!isActive)
+-    updateUserActiveStatus(userToEdit, !isActive)
+-  }
++    if (!isSuperAdmin) {
++      setIsActive(!isActive);
++      updateUserActiveStatus(userToEdit, !isActive);
++    }
++  };
+ 
+   const handleSetAccessLevel = () => {
+-    const newAccessLevel = isAdmin ? ""user"" : ""admin"";
+-    setIsAdmin(!isAdmin);
+-    updateUserAccessLevel(userToEdit, newAccessLevel);
++    if (!isSuperAdmin) {
++      const newAccessLevel = isAdmin ? ""user"" : ""admin"";
++      setIsAdmin(!isAdmin);
++      updateUserAccessLevel(userToEdit, newAccessLevel);
++    }
+   };
+ 
+   return (
+@@ -86,16 +86,24 @@ const EditUsers = ({ userToEdit, backToSearch, updateUserDb, projects, updateUse
+         <div className=""toggle-flex"">
+           <span className=""toggle-status"">{isActive.toString()}</span>
+           <FormGroup>
+-            <FormControlLabel control={<Switch checked={isActive} />} onClick={() => handleSetIsActive()} />
++            <FormControlLabel 
++              disabled={isSuperAdmin} 
++              control={<Switch checked={isActive} />} 
++              onClick={handleSetIsActive} 
++            />
+           </FormGroup>
+         </div>
+       </div>
+       <div className=""ua-row toggle-flex"">
+-        <div className=""user-toggle-column-left"">VRSM Admin:</div>
++        <div className=""user-toggle-column-left"">VRMS Admin:</div>
+         <div className=""toggle-flex"">
+-          <span className=""toggle-status"">{isAdmin ? ""Yes"" : ""No""}</span>
++          <span className=""toggle-status"">{isAdmin || isSuperAdmin ? ""Yes"" : ""No""}</span>
+           <FormGroup>
+-            <FormControlLabel control={<Switch checked={isAdmin} />} onClick={() => handleSetAccessLevel()} />
++            <FormControlLabel 
++              disabled={isSuperAdmin} 
++              control={<Switch checked={isAdmin || isSuperAdmin} />} 
++              onClick={handleSetAccessLevel} 
++            />
+           </FormGroup>
+         </div>
+       </div>
+@@ -110,6 +118,7 @@ const EditUsers = ({ userToEdit, backToSearch, updateUserDb, projects, updateUse
+                   <button
+                     type=""button""
+                     className=""button-remove""
++                    disabled={isSuperAdmin}
+                     onClick={() => handleRemoveProject(result[0])}
+                   >
+                     (remove)
+@@ -128,6 +137,7 @@ const EditUsers = ({ userToEdit, backToSearch, updateUserDb, projects, updateUse
+             onChange={(event) => {
+               setProjectValue(event.target.value);
+             }}
++            disabled={isSuperAdmin}
+           >
+             <option value=""default"">Select a project..</option>
+             {activeProjects.map((result) => {
+@@ -138,13 +148,15 @@ const EditUsers = ({ userToEdit, backToSearch, updateUserDb, projects, updateUse
+               );
+             })}
+           </select>
+-          <button className=""button-add"" type=""submit"">
++          <button className={`button-add ${isSuperAdmin ? 'button-add-disabled' : ''}`}
++            type=""submit""
++            disabled={isSuperAdmin}>
+             Add project
+           </button>
+         </form>
+         <div>
+           <button type=""button"" className=""button-back"" onClick={backToSearch}>
+-            Back to search
++            Back to search  
+           </button>
+         </div>
+       </div>"
+hackforla/VRMS,1765,d1a2b0dc1251c6a8fc049f61179ff24406a13aaf,client/src/sass/UserAdmin.scss,modified,6,2,8,"@@ -61,14 +61,14 @@
+ .user-display-column-right {
+   display: flex;
+   flex-direction: column;
+-  flex-basis: 85%;
++  flex-basis: 80%;
+   margin-bottom: 8px;
+ }
+ 
+ .user-toggle-column-left {
+   display: flex;
+   flex-direction: column;
+-  flex-basis: 15%;
++  flex-basis: 20%;
+ }
+ 
+ .toggle-status {
+@@ -108,6 +108,10 @@
+   margin-top: 10px;
+   margin-bottom: 10px;
+ }
++.button-add-disabled {
++  opacity: 0.5;
++  cursor: not-allowed;
++}
+ 
+ .button-back {
+   background-color: black;"

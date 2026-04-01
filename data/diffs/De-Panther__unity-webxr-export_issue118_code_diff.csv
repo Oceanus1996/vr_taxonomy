@@ -1,0 +1,149 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+De-Panther/unity-webxr-export,118,f4b1b70,Build/Build/Build.data.unityweb,modified,0,0,0,
+De-Panther/unity-webxr-export,118,f4b1b70,Build/Build/Build.wasm,modified,0,0,0,
+De-Panther/unity-webxr-export,118,f4b1b70,Build/Build/Build.wasm.framework.unityweb,modified,1,1,2,
+De-Panther/unity-webxr-export,118,f4b1b70,Packages/webxr/CHANGELOG.md,modified,3,0,3,"@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
+ - Camera matrices handling.
+ - WebGLTemplates webxr.js merged into Plugins webxr.jspre.
+ 
++### Fixed
++- Bug related to pose view eye can be `none`.
++
+ ### Removed
+ - Matrix utilities files.
+ "
+De-Panther/unity-webxr-export,118,f4b1b70,Packages/webxr/Runtime/Plugins/WebGL/webxr.jspre,modified,23,21,44,"@@ -31,14 +31,10 @@ setTimeout(function () {
+                                       0, 1, 0, 0,
+                                       0, 0, 1, 0,
+                                       0, 0, 0, 1];
+-        this.leftViewMatrix =  [1, 0, 0, 0,
+-                                0, 1, 0, 0,
+-                                0, 0, 1, 0,
+-                                0, 0, 0, 1];
+-        this.rightViewMatrix = [1, 0, 0, 0,
+-                                0, 1, 0, 0,
+-                                0, 0, 1, 0,
+-                                0, 0, 0, 1];
++        this.leftViewRotation =  [0, 0, 0, 1];
++        this.rightViewRotation = [0, 0, 0, 1];
++        this.leftViewPosition =  [0, 0, 0];
++        this.rightViewPosition = [0, 0, 0];
+         this.gamepads = [];
+         this.controllerA = new XRControllerData();
+         this.controllerB = new XRControllerData();
+@@ -829,20 +825,24 @@ setTimeout(function () {
+     
+         for (var i = 0; i < pose.views.length; i++) {
+           var view = pose.views[i];
+-          if (view.eye === 'left') {
++          if (view.eye === ""left"" || view.eye === ""none"") {
+             xrData.leftProjectionMatrix = view.projectionMatrix;
+-            xrData.leftViewMatrix = view.transform.matrix;
+-            xrData.leftViewMatrix[6] *= -1;
+-            xrData.leftViewMatrix[8] *= -1;
+-            xrData.leftViewMatrix[9] *= -1;
+-            xrData.leftViewMatrix[14] *= -1;
++            xrData.leftViewRotation[0] = -view.transform.orientation.x;
++            xrData.leftViewRotation[1] = -view.transform.orientation.y;
++            xrData.leftViewRotation[2] = view.transform.orientation.z;
++            xrData.leftViewRotation[3] = view.transform.orientation.w;
++            xrData.leftViewPosition[0] = view.transform.position.x;
++            xrData.leftViewPosition[1] = view.transform.position.y;
++            xrData.leftViewPosition[2] = -view.transform.position.z;
+           } else if (view.eye === 'right') {
+             xrData.rightProjectionMatrix = view.projectionMatrix;
+-            xrData.rightViewMatrix = view.transform.matrix;
+-            xrData.rightViewMatrix[6] *= -1;
+-            xrData.rightViewMatrix[8] *= -1;
+-            xrData.rightViewMatrix[9] *= -1;
+-            xrData.rightViewMatrix[14] *= -1;
++            xrData.rightViewRotation[0] = -view.transform.orientation.x;
++            xrData.rightViewRotation[1] = -view.transform.orientation.y;
++            xrData.rightViewRotation[2] = view.transform.orientation.z;
++            xrData.rightViewRotation[3] = view.transform.orientation.w;
++            xrData.rightViewPosition[0] = view.transform.position.x;
++            xrData.rightViewPosition[1] = view.transform.position.y;
++            xrData.rightViewPosition[2] = -view.transform.position.z;
+           }
+         }
+     
+@@ -890,8 +890,10 @@ setTimeout(function () {
+         document.dispatchEvent(new CustomEvent('XRData', { detail: {
+           leftProjectionMatrix: xrData.leftProjectionMatrix,
+           rightProjectionMatrix: xrData.rightProjectionMatrix,
+-          leftViewMatrix: xrData.leftViewMatrix,
+-          rightViewMatrix: xrData.rightViewMatrix
++          leftViewRotation: xrData.leftViewRotation,
++          rightViewRotation: xrData.rightViewRotation,
++          leftViewPosition: xrData.leftViewPosition,
++          rightViewPosition: xrData.rightViewPosition
+         }}));
+     
+         document.dispatchEvent(new CustomEvent('XRControllersData', { detail: {"
+De-Panther/unity-webxr-export,118,f4b1b70,Packages/webxr/Runtime/XRPlugin/WebXRSubsystem.cs,modified,22,12,34,"@@ -135,13 +135,11 @@ private void UpdateXRCameras()
+       if (OnHeadsetUpdate != null && this.xrState != WebXRState.NORMAL)
+       {
+         GetMatrixFromSharedArray(0, ref leftProjectionMatrix);
+-        GetMatrixFromSharedArray(1, ref rightProjectionMatrix);
+-        GetMatrixFromSharedArray(2, ref leftViewMatrix);
+-        GetMatrixFromSharedArray(3, ref rightViewMatrix);
+-        leftPosition = leftViewMatrix.GetColumn(3);
+-        rightPosition = rightViewMatrix.GetColumn(3);
+-        leftRotation = Quaternion.LookRotation(leftViewMatrix.GetColumn(2), leftViewMatrix.GetColumn(1));
+-        rightRotation = Quaternion.LookRotation(rightViewMatrix.GetColumn(2), rightViewMatrix.GetColumn(1));
++        GetMatrixFromSharedArray(16, ref rightProjectionMatrix);
++        GetQuaternionFromSharedArray(32, ref leftRotation);
++        GetQuaternionFromSharedArray(36, ref rightRotation);
++        GetVector3FromSharedArray(40, ref leftPosition);
++        GetVector3FromSharedArray(43, ref rightPosition);
+ 
+         OnHeadsetUpdate?.Invoke(
+             leftProjectionMatrix,
+@@ -234,16 +232,14 @@ public delegate void HeadsetUpdate(
+     // Cameras calculations helpers
+     private Matrix4x4 leftProjectionMatrix = new Matrix4x4();
+     private Matrix4x4 rightProjectionMatrix = new Matrix4x4();
+-    private Matrix4x4 leftViewMatrix = new Matrix4x4();
+-    private Matrix4x4 rightViewMatrix = new Matrix4x4();
+     private Vector3 leftPosition = new Vector3();
+     private Vector3 rightPosition = new Vector3();
+     private Quaternion leftRotation = Quaternion.identity;
+     private Quaternion rightRotation = Quaternion.identity;
+ 
+     // Shared array which we will load headset data in from webxr.jslib
+-    // Array stores  5 matrices, each 16 values, stored linearly.
+-    float[] sharedArray = new float[4 * 16];
++    // Array stores 2 matrices, each 16 values, 2 Quaternions and 2 Vector3, stored linearly.
++    float[] sharedArray = new float[(2 * 16) + (2 * 7)];
+ 
+     // Shared array for controllers data
+     float[] controllersArray = new float[2 * 20];
+@@ -357,13 +353,27 @@ public void HapticPulse(WebXRControllerHand hand, float intensity, float duratio
+ 
+     void GetMatrixFromSharedArray(int index, ref Matrix4x4 matrix)
+     {
+-      index = index * 16;
+       for (int i = 0; i < 16; i++)
+       {
+         matrix[i] = sharedArray[index + i];
+       }
+     }
+ 
++    void GetQuaternionFromSharedArray(int index, ref Quaternion quaternion)
++    {
++      quaternion.x = sharedArray[index];
++      quaternion.y = sharedArray[index + 1];
++      quaternion.z = sharedArray[index + 2];
++      quaternion.w = sharedArray[index + 3];
++    }
++
++    void GetVector3FromSharedArray(int index, ref Vector3 vec3)
++    {
++      vec3.x = sharedArray[index];
++      vec3.y = sharedArray[index + 1];
++      vec3.z = sharedArray[index + 2];
++    }
++
+     bool GetGamepadFromControllersArray(int controllerIndex, ref WebXRControllerData newControllerData)
+     {
+       int arrayPosition = controllerIndex * 20;"

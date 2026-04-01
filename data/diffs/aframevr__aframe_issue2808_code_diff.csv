@@ -1,0 +1,94 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe,2808,60a440cc5070a0ce95d5e4efcf2c3b5e108cbd25,src/components/text.js,modified,14,14,28,"@@ -106,7 +106,7 @@ module.exports.Component = registerComponent('text', {
+ 
+     // Update geometry and layout.
+     if (font) {
+-      updateGeometry(this.geometry, data, font);
++      this.updateGeometry(this.geometry, data, font);
+       this.updateLayout(data);
+     }
+   },
+@@ -209,7 +209,7 @@ module.exports.Component = registerComponent('text', {
+ 
+       // Update geometry given font metrics.
+       coercedData = coerceData(data);
+-      updateGeometry(geometry, data, font);
++      self.updateGeometry(geometry, self.data, font);
+ 
+       // Set font and update layout.
+       self.currentFont = font;
+@@ -313,6 +313,18 @@ module.exports.Component = registerComponent('text', {
+    */
+   lookupFont: function (key) {
+     return FONTS[key];
++  },
++
++  /**
++   * Update the text geometry using `three-bmfont-text.update`.
++   */
++  updateGeometry: function (geometry, data, font) {
++    geometry.update(utils.extend({}, data, {
++      font: font,
++      width: computeWidth(data.wrapPixels, data.wrapCount, font.widthFactor),
++      text: data.value.replace(/\\n/g, '\n').replace(/\\t/g, '\t'),
++      lineHeight: data.lineHeight || font.common.lineHeight
++    }));
+   }
+ });
+ 
+@@ -410,18 +422,6 @@ function updateBaseMaterial (material, data) {
+   material.side = data.side;
+ }
+ 
+-/**
+- * Update the text geometry using `three-bmfont-text.update`.
+- */
+-function updateGeometry (geometry, data, font) {
+-  geometry.update(utils.extend({}, data, {
+-    font: font,
+-    width: computeWidth(data.wrapPixels, data.wrapCount, font.widthFactor),
+-    text: data.value.replace(/\\n/g, '\n').replace(/\\t/g, '\t'),
+-    lineHeight: data.lineHeight || font.common.lineHeight
+-  }));
+-}
+-
+ /**
+  * Determine wrap pixel count. Either specified or by experimental fudge factor.
+  * Note that experimental factor will never be correct for variable width fonts."
+aframevr/aframe,2808,60a440cc5070a0ce95d5e4efcf2c3b5e108cbd25,tests/components/text.test.js,modified,23,0,23,"@@ -50,6 +50,19 @@ suite('text', function () {
+   });
+ 
+   suite('update', function () {
++    test('updates value', function (done) {
++      var updateSpy = this.sinon.spy(component, 'updateGeometry');
++      el.addEventListener('textfontset', evt => {
++        el.setAttribute('text', {value: 'foo', font: 'mozillavr'});
++        el.setAttribute('text', {value: 'bar', font: 'mozillavr'});
++        assert.equal(updateSpy.getCalls()[0].args[1].value, '');
++        assert.equal(updateSpy.getCalls()[1].args[1].value, 'foo');
++        assert.equal(updateSpy.getCalls()[2].args[1].value, 'bar');
++        done();
++      });
++      el.setAttribute('text', {font: 'mozillavr'});
++    });
++
+     test('updates geometry with value', function (done) {
+       // There are two paths by which geometry update can happen:
+       // 1. As after-effect of font change.
+@@ -194,6 +207,16 @@ suite('text', function () {
+       });
+       el.setAttribute('text', {font: 'mozillavr', fontImage: '/base/tests/assets/test2.png'});
+     });
++
++    test('uses up-to-date data once loaded', function (done) {
++      var updateSpy = this.sinon.spy(component, 'updateGeometry');
++      el.addEventListener('textfontset', evt => {
++        assert.equal(updateSpy.getCalls()[0].args[1].value, 'bar');
++        done();
++      });
++      el.setAttribute('text', {value: 'foo', font: 'mozillavr'});
++      el.setAttribute('text', {value: 'bar', font: 'mozillavr'});
++    });
+   });
+ 
+   suite('updateLayout', function () {"

@@ -1,0 +1,85 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+doodlum/skyrim-community-shaders,862,8323dc521160c1d61ca9b9a872b7fb0e42078408,src/Hooks.cpp,modified,2,5,7,"@@ -614,11 +614,8 @@ namespace Hooks
+ 		static LRESULT thunk(HWND a_hwnd, UINT a_msg, WPARAM a_wParam, LPARAM a_lParam)
+ 		{
+ 			auto menu = globals::menu;
+-			if (a_msg == WM_KILLFOCUS && menu->initialized) {
+-				menu->OnFocusLost();
+-				auto& io = ImGui::GetIO();
+-				io.ClearInputKeys();
+-				io.ClearEventsQueue();
++			if ((a_msg == WM_KILLFOCUS || a_msg == WM_SETFOCUS) && menu->initialized) {
++				menu->focusChanged = true;
+ 			}
+ 			return func(a_hwnd, a_msg, a_wParam, a_lParam);
+ 		}"
+doodlum/skyrim-community-shaders,862,8323dc521160c1d61ca9b9a872b7fb0e42078408,src/Menu.cpp,modified,25,3,28,"@@ -130,6 +130,8 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(
+ 	Theme,
+ 	PerfOverlay)
+ 
++constexpr std::uint16_t KEY_PRESSED_MASK = 0x8000;
++
+ void Menu::SetupImGuiStyle() const
+ {
+ 	auto& style = ImGui::GetStyle();
+@@ -305,6 +307,10 @@ void Menu::Init()
+ 
+ void Menu::DrawSettings()
+ {
++	if (focusChanged) {
++		OnFocusChanged();
++		focusChanged = false;
++	}
+ 	ImGui::DockSpaceOverViewport(NULL, ImGuiDockNodeFlags_PassthruCentralNode);
+ 
+ 	ImGui::SetNextWindowPos(Util::GetNativeViewportSizeScaled(0.5f), ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
+@@ -2714,6 +2720,16 @@ void Menu::ProcessInputEventQueue()
+ 	}
+ 
+ 	_keyEventQueue.clear();
++
++	// Fallback: release stuck Shift and Tab if OS reports them not pressed
++	if ((io.KeysDown[ImGuiKey_LeftShift] && !(GetAsyncKeyState(VK_LSHIFT) & KEY_PRESSED_MASK)) ||
++		(io.KeysDown[ImGuiKey_RightShift] && !(GetAsyncKeyState(VK_RSHIFT) & KEY_PRESSED_MASK))) {
++		io.AddKeyEvent(ImGuiKey_LeftShift, false);
++		io.AddKeyEvent(ImGuiKey_RightShift, false);
++	}
++	if (io.KeysDown[ImGuiKey_Tab] && !(GetAsyncKeyState(VK_TAB) & KEY_PRESSED_MASK)) {
++		io.AddKeyEvent(ImGuiKey_Tab, false);
++	}
+ }
+ 
+ void Menu::addToEventQueue(KeyEvent e)
+@@ -2722,10 +2738,16 @@ void Menu::addToEventQueue(KeyEvent e)
+ 	_keyEventQueue.emplace_back(e);
+ }
+ 
+-void Menu::OnFocusLost()
++void Menu::OnFocusChanged()
+ {
+-	std::unique_lock<std::shared_mutex> mutex(_inputEventMutex);
+-	_keyEventQueue.clear();
++	// Solves the alt+tab stuck issue, but disables tab after tabbing back in.
++	if (const auto& inputMgr = RE::BSInputDeviceManager::GetSingleton()) {
++		if (const auto& device = inputMgr->GetKeyboard()) {
++			device->Reset();
++		}
++	}
++	// Allows tab to work again after alt+tabbing back in.
++	ImGui::GetIO().ClearInputKeys();
+ }
+ 
+ void Menu::ProcessInputEvents(RE::InputEvent* const* a_events)"
+doodlum/skyrim-community-shaders,862,8323dc521160c1d61ca9b9a872b7fb0e42078408,src/Menu.h,modified,5,1,6,"@@ -47,7 +47,11 @@ class Menu
+ 
+ 	void ProcessInputEvents(RE::InputEvent* const* a_events);
+ 	bool ShouldSwallowInput();
+-	void OnFocusLost();
++
++	// Used for resetting input keys to solve alt-tab stuck issue
++	std::atomic<bool> focusChanged = false;
++	void OnFocusChanged();
++
+ 	// UI icon textures
+ 	struct UIIcon
+ 	{"

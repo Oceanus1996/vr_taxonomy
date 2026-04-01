@@ -1,0 +1,545 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vizorvr/patches,1472,c307312,browser/scripts/ui-core-statestore.js,modified,9,3,12,"@@ -20,7 +20,7 @@ var UiState = function(persistentStorageRef, context) {
+ 	EventEmitter.apply(this, arguments)
+ 	var that = this
+ 
+-	var persistentStorageKey = 'uiState104'
++	var persistentStorageKey = 'uiState105'
+ 
+ 	var defineProperty = function(obj, prop, options, callback) {
+ 		options = _.extend({
+@@ -66,13 +66,13 @@ var UiState = function(persistentStorageRef, context) {
+ 
+ 	this._internal = {
+ 		modifyMode 	: uiModifyMode.move,			// does not autosave
++		modifyModeDefault: 	uiModifyMode.move,		//	''	, recall when modifications(keydown) end (keyup)
+ 		selectedObjects	: []						// [node, ...], does not autosave
+ 	}
+ 
+ 	var emitMain 		= makeEmitter(this)
+ 	defineGettersAndSetters(this, emitMain)
+ 
+-
+ 	_.extend(this._internal, {
+ 		mode 		: uiMode.build,
+ 		visible 	: true,				// overall visibility of the UI
+@@ -421,6 +421,7 @@ UiState.prototype.getCopy = function() {
+ 	return {
+ 		mode: this.mode,
+ 		modifyMode: this.modifyMode,
++		modifyModeDefault: this.modifyModeDefault,
+ 		visible: this.visible,
+ 		viewCamera: this.viewCamera,
+ 		visibility: clone(this.visibility._internal),
+@@ -443,7 +444,12 @@ UiState.prototype._apply = function(newState) {
+ 	var newVisibility = newState.visibility
+ 	if (newState.mode) 			internal.mode = newState.mode
+ 	if (newState.viewCamera) 	internal.viewCamera = newState.viewCamera
+-	// modifyMode and selectedObjects ignored
++
++	if (newState.modifyModeDefault) 	{
++		internal.modifyModeDefault = newState.modifyModeDefault
++		internal.modifyMode = internal.modifyModeDefault
++	}
++	// selectedObjects ignored, and modifyMode set to default if one is given
+ 
+ 	// take values from supplied visibility, but default to current
+ 	for (var k in internalVisibility) {"
+vizorvr/patches,1472,c307312,browser/scripts/ui-core.js,modified,40,17,57,"@@ -444,18 +444,31 @@ VizorUI.prototype.getModifiedKey = function(key) {
+ }
+ 
+ VizorUI.prototype.trackModifierKeysForWorldEditor = function() {
+-	if (!this.isInBuildMode()) return;
+-	if (this.isDragging()) return;
+-
+-	if (!this.flags.pressedShift && this.flags.pressedMeta) {
+-		this.state.modifyMode = uiModifyMode.rotate
+-	}
+-	if (this.flags.pressedShift && this.flags.pressedMeta) {
+-		this.state.modifyMode = uiModifyMode.scale
+-	}
+-	if (!this.flags.pressedShift && !this.flags.pressedMeta) {
+-		this.state.modifyMode = uiModifyMode.move
++	if (!this.isInBuildMode()) return
++	if (this.isDragging()) return
++
++	var flags = this.flags
++	var anyModifiersPressed = flags.pressedMeta || flags.pressedShift || flags.pressedAlt
++
++	if (!anyModifiersPressed)
++		return anyModifiersPressed
++
++	switch (true) {
++		// 'cmd/ctrl' to rotate
++		case (this.flags.pressedMeta && !this.flags.pressedShift && !this.flags.pressedAlt):
++			this.state.modifyMode = uiModifyMode.rotate
++			break
++		// 'cmd/ctrl+shift' to scale
++		case (this.flags.pressedShift && this.flags.pressedMeta && (!this.flags.pressedAlt)):
++			this.state.modifyMode = uiModifyMode.scale
++			break
++		// 'shift' to move
++		case (this.flags.pressedShift && !this.flags.pressedAlt && !this.flags.pressedMeta):
++			this.state.modifyMode = uiModifyMode.move
++			break
+ 	}
++
++	return anyModifiersPressed
+ }
+ 
+ VizorUI.prototype.onKeyPress = function(e) {
+@@ -640,13 +653,16 @@ VizorUI.prototype.onKeyPress = function(e) {
+ 		// world editor (any camera) -specific keys
+ 		switch(key) {
+ 			case uiKeys.modifyModeMove:
+-				this.state.modifyMode = uiModifyMode.move;
++				state.modifyModeDefault = uiModifyMode.move
++				state.modifyMode = state.modifyModeDefault
+ 				break;
+ 			case uiKeys.modifyModeRotate:
+-				this.state.modifyMode = uiModifyMode.rotate;
++				state.modifyModeDefault = uiModifyMode.rotate
++				state.modifyMode = state.modifyModeDefault
+ 				break;
+ 			case uiKeys.modifyModeScale:
+-				this.state.modifyMode = uiModifyMode.scale;
++				state.modifyModeDefault = uiModifyMode.scale
++				state.modifyMode = state.modifyModeDefault
+ 				break;
+ 			case uiKeys.toggleWorldEditorGrid:
+ 				E2.app.worldEditor.toggleGrid();
+@@ -660,7 +676,6 @@ VizorUI.prototype.onKeyPress = function(e) {
+ VizorUI.prototype.onKeyDown = function(e) {
+ 	var modifiersChanged = this._trackModifierKeys(e);
+ 	if (this.isModalOpen() || E2.util.isTextInputInFocus(e) || this.isFullScreen()) return true;
+-	if (modifiersChanged) this.trackModifierKeysForWorldEditor();
+ 	if (this.isDragging()) {
+ 		e.preventDefault();
+ 		e.stopPropagation();
+@@ -671,6 +686,9 @@ VizorUI.prototype.onKeyDown = function(e) {
+ 	var that = this;
+ 	var modifiedKeyCode = this.getModifiedKeyCode(e.keyCode);
+ 
++	if (modifiersChanged)
++				this.trackModifierKeysForWorldEditor()
++
+ 	switch (modifiedKeyCode) {
+ 		case uiKeys.toggleFloatingPanels:
+ 			this.toggleFloatingPanels();
+@@ -747,15 +765,20 @@ VizorUI.prototype.onKeyDown = function(e) {
+ }
+ VizorUI.prototype.onKeyUp = function(e) {
+ 	var modifiersChanged = this._trackModifierKeys(e);
+-	if (modifiersChanged) this.trackModifierKeysForWorldEditor();
++
++	if (modifiersChanged) {
++		var anyModifiersPressed = this.trackModifierKeysForWorldEditor()
++		if (anyModifiersPressed === false)
++			this.state.modifyMode = this.state.modifyModeDefault
++	}
++
+ 	if (this.isModalOpen() || E2.util.isTextInputInFocus(e) || this.isFullScreen()) return true;
+ 
+ 	if(e.keyCode === uiKeys.shift)
+ 	{
+ 		E2.app.releaseHoverSlot();
+ 		E2.app.releaseHoverNode(false);
+ 	}
+-
+ 	return true;
+ };
+ "
+vizorvr/patches,1472,a337fb4,browser/scripts/ui-core-statestore.js,modified,9,3,12,"@@ -20,7 +20,7 @@ var UiState = function(persistentStorageRef, context) {
+ 	EventEmitter.apply(this, arguments)
+ 	var that = this
+ 
+-	var persistentStorageKey = 'uiState104'
++	var persistentStorageKey = 'uiState105'
+ 
+ 	var defineProperty = function(obj, prop, options, callback) {
+ 		options = _.extend({
+@@ -66,13 +66,13 @@ var UiState = function(persistentStorageRef, context) {
+ 
+ 	this._internal = {
+ 		modifyMode 	: uiModifyMode.move,			// does not autosave
++		modifyModeDefault: 	uiModifyMode.move,		//	''	, recall when modifications(keydown) end (keyup)
+ 		selectedObjects	: []						// [node, ...], does not autosave
+ 	}
+ 
+ 	var emitMain 		= makeEmitter(this)
+ 	defineGettersAndSetters(this, emitMain)
+ 
+-
+ 	_.extend(this._internal, {
+ 		mode 		: uiMode.build,
+ 		visible 	: true,				// overall visibility of the UI
+@@ -421,6 +421,7 @@ UiState.prototype.getCopy = function() {
+ 	return {
+ 		mode: this.mode,
+ 		modifyMode: this.modifyMode,
++		modifyModeDefault: this.modifyModeDefault,
+ 		visible: this.visible,
+ 		viewCamera: this.viewCamera,
+ 		visibility: clone(this.visibility._internal),
+@@ -443,7 +444,12 @@ UiState.prototype._apply = function(newState) {
+ 	var newVisibility = newState.visibility
+ 	if (newState.mode) 			internal.mode = newState.mode
+ 	if (newState.viewCamera) 	internal.viewCamera = newState.viewCamera
+-	// modifyMode and selectedObjects ignored
++
++	if (newState.modifyModeDefault) 	{
++		internal.modifyModeDefault = newState.modifyModeDefault
++		internal.modifyMode = internal.modifyModeDefault
++	}
++	// selectedObjects ignored, and modifyMode set to default if one is given
+ 
+ 	// take values from supplied visibility, but default to current
+ 	for (var k in internalVisibility) {"
+vizorvr/patches,1472,a337fb4,browser/scripts/ui-core.js,modified,48,21,69,"@@ -117,8 +117,8 @@ VizorUI.prototype._init = function(e2) {	// called by .init() in ui.js
+ 	document.body.addEventListener('keydown', this.onKeyDown.bind(this));
+ 	document.body.addEventListener('keyup', this.onKeyUp.bind(this));
+ 	document.addEventListener('keypress', this.onKeyPress.bind(this), true);	// first
+-	window.addEventListener('blur', this._clearModifierKeys.bind(this));
+-	window.addEventListener('focus', this._clearModifierKeys.bind(this));
++	window.addEventListener('blur', this._onWindowBlur.bind(this));
++	window.addEventListener('focus', this._onWindowFocus.bind(this));
+ 	window.addEventListener('resize', this.onWindowResize.bind(this));
+ 	e2.core.on('fullScreenChanged', this.onFullScreenChanged.bind(this));
+ 	e2.core.on('progress', this.updateProgressBar.bind(this));
+@@ -407,12 +407,18 @@ VizorUI.prototype.isModalOpen = function() {
+ 
+ /**** EVENT HANDLERS ****/
+ 
+-VizorUI.prototype._clearModifierKeys = function() {	// blur
+-	this.flags.pressedMeta = false;
+-	this.flags.pressedAlt = false;
+-	this.flags.pressedShift = false;
+-	return true;
++VizorUI.prototype._onWindowBlur = function() {
++	// clear modifier keys
++	this.flags.pressedMeta = false
++	this.flags.pressedAlt = false
++	this.flags.pressedShift = false
++
++	// set default modify mode
++	this.state.modifyMode = this.state.modifyModeDefault
++
++	return true
+ }
++VizorUI.prototype._onWindowFocus = VizorUI.prototype._onWindowBlur
+ 
+ VizorUI.prototype._trackModifierKeys = function(e) {	// returns bool if any modifiers changed
+ 	var oldMeta = this.flags.pressedMeta,
+@@ -444,18 +450,29 @@ VizorUI.prototype.getModifiedKey = function(key) {
+ }
+ 
+ VizorUI.prototype.trackModifierKeysForWorldEditor = function() {
+-	if (!this.isInBuildMode()) return;
+-	if (this.isDragging()) return;
++	if (!this.isInBuildMode()) return
++	if (this.isDragging()) return
++
++	var flags = this.flags
++	var anyModifiersPressed = flags.pressedMeta || flags.pressedShift || flags.pressedAlt
++
++	if (!anyModifiersPressed)
++		return anyModifiersPressed
+ 
+-	if (!this.flags.pressedShift && this.flags.pressedMeta) {
++	// 'cmd/ctrl' to rotate
++	// 'cmd/ctrl+shift' to scale
++	// 'shift' to move
++
++	if (flags.pressedMeta &&  !flags.pressedShift &&  !flags.pressedAlt)
+ 		this.state.modifyMode = uiModifyMode.rotate
+-	}
+-	if (this.flags.pressedShift && this.flags.pressedMeta) {
++
++	else if (flags.pressedShift && flags.pressedMeta &&  !flags.pressedAlt)
+ 		this.state.modifyMode = uiModifyMode.scale
+-	}
+-	if (!this.flags.pressedShift && !this.flags.pressedMeta) {
++
++	else if (flags.pressedShift &&  !flags.pressedAlt &&  !flags.pressedMeta)
+ 		this.state.modifyMode = uiModifyMode.move
+-	}
++
++	return anyModifiersPressed
+ }
+ 
+ VizorUI.prototype.onKeyPress = function(e) {
+@@ -640,13 +657,16 @@ VizorUI.prototype.onKeyPress = function(e) {
+ 		// world editor (any camera) -specific keys
+ 		switch(key) {
+ 			case uiKeys.modifyModeMove:
+-				this.state.modifyMode = uiModifyMode.move;
++				state.modifyModeDefault = uiModifyMode.move
++				state.modifyMode = state.modifyModeDefault
+ 				break;
+ 			case uiKeys.modifyModeRotate:
+-				this.state.modifyMode = uiModifyMode.rotate;
++				state.modifyModeDefault = uiModifyMode.rotate
++				state.modifyMode = state.modifyModeDefault
+ 				break;
+ 			case uiKeys.modifyModeScale:
+-				this.state.modifyMode = uiModifyMode.scale;
++				state.modifyModeDefault = uiModifyMode.scale
++				state.modifyMode = state.modifyModeDefault
+ 				break;
+ 			case uiKeys.toggleWorldEditorGrid:
+ 				E2.app.worldEditor.toggleGrid();
+@@ -660,7 +680,6 @@ VizorUI.prototype.onKeyPress = function(e) {
+ VizorUI.prototype.onKeyDown = function(e) {
+ 	var modifiersChanged = this._trackModifierKeys(e);
+ 	if (this.isModalOpen() || E2.util.isTextInputInFocus(e) || this.isFullScreen()) return true;
+-	if (modifiersChanged) this.trackModifierKeysForWorldEditor();
+ 	if (this.isDragging()) {
+ 		e.preventDefault();
+ 		e.stopPropagation();
+@@ -671,6 +690,9 @@ VizorUI.prototype.onKeyDown = function(e) {
+ 	var that = this;
+ 	var modifiedKeyCode = this.getModifiedKeyCode(e.keyCode);
+ 
++	if (modifiersChanged)
++				this.trackModifierKeysForWorldEditor()
++
+ 	switch (modifiedKeyCode) {
+ 		case uiKeys.toggleFloatingPanels:
+ 			this.toggleFloatingPanels();
+@@ -747,15 +769,20 @@ VizorUI.prototype.onKeyDown = function(e) {
+ }
+ VizorUI.prototype.onKeyUp = function(e) {
+ 	var modifiersChanged = this._trackModifierKeys(e);
+-	if (modifiersChanged) this.trackModifierKeysForWorldEditor();
++
++	if (modifiersChanged) {
++		var anyModifiersPressed = this.trackModifierKeysForWorldEditor()
++		if (anyModifiersPressed === false)
++			this.state.modifyMode = this.state.modifyModeDefault
++	}
++
+ 	if (this.isModalOpen() || E2.util.isTextInputInFocus(e) || this.isFullScreen()) return true;
+ 
+ 	if(e.keyCode === uiKeys.shift)
+ 	{
+ 		E2.app.releaseHoverSlot();
+ 		E2.app.releaseHoverNode(false);
+ 	}
+-
+ 	return true;
+ };
+ "
+vizorvr/patches,1472,a337fb4,browser/scripts/ui.js,modified,6,4,10,"@@ -100,10 +100,12 @@ VizorUI.prototype.setupEventHandlers = function(e2, dom) {
+ 
+ 	var switchModifyMode = function(modifyMode){
+ 		return function(e){
+-			e.preventDefault();
+-			e.stopPropagation();
+-			that.state.modifyMode = modifyMode;
+-			return false;
++			e.preventDefault()
++			e.stopPropagation()
++			var state = that.state
++			state.modifyModeDefault = modifyMode
++			state.modifyMode = state.modifyModeDefault
++			return false
+ 		}
+ 	}
+ 	dom.btnMove.on('mousedown', switchModifyMode(uiModifyMode.move));"
+vizorvr/patches,1472,b94ded0,browser/scripts/ui-core-statestore.js,modified,9,3,12,"@@ -20,7 +20,7 @@ var UiState = function(persistentStorageRef, context) {
+ 	EventEmitter.apply(this, arguments)
+ 	var that = this
+ 
+-	var persistentStorageKey = 'uiState104'
++	var persistentStorageKey = 'uiState105'
+ 
+ 	var defineProperty = function(obj, prop, options, callback) {
+ 		options = _.extend({
+@@ -66,13 +66,13 @@ var UiState = function(persistentStorageRef, context) {
+ 
+ 	this._internal = {
+ 		modifyMode 	: uiModifyMode.move,			// does not autosave
++		modifyModeDefault: 	uiModifyMode.move,		//	''	, recall when modifications(keydown) end (keyup)
+ 		selectedObjects	: []						// [node, ...], does not autosave
+ 	}
+ 
+ 	var emitMain 		= makeEmitter(this)
+ 	defineGettersAndSetters(this, emitMain)
+ 
+-
+ 	_.extend(this._internal, {
+ 		mode 		: uiMode.build,
+ 		visible 	: true,				// overall visibility of the UI
+@@ -421,6 +421,7 @@ UiState.prototype.getCopy = function() {
+ 	return {
+ 		mode: this.mode,
+ 		modifyMode: this.modifyMode,
++		modifyModeDefault: this.modifyModeDefault,
+ 		visible: this.visible,
+ 		viewCamera: this.viewCamera,
+ 		visibility: clone(this.visibility._internal),
+@@ -443,7 +444,12 @@ UiState.prototype._apply = function(newState) {
+ 	var newVisibility = newState.visibility
+ 	if (newState.mode) 			internal.mode = newState.mode
+ 	if (newState.viewCamera) 	internal.viewCamera = newState.viewCamera
+-	// modifyMode and selectedObjects ignored
++
++	if (newState.modifyModeDefault) 	{
++		internal.modifyModeDefault = newState.modifyModeDefault
++		internal.modifyMode = internal.modifyModeDefault
++	}
++	// selectedObjects ignored, and modifyMode set to default if one is given
+ 
+ 	// take values from supplied visibility, but default to current
+ 	for (var k in internalVisibility) {"
+vizorvr/patches,1472,b94ded0,browser/scripts/ui-core.js,modified,48,21,69,"@@ -117,8 +117,8 @@ VizorUI.prototype._init = function(e2) {	// called by .init() in ui.js
+ 	document.body.addEventListener('keydown', this.onKeyDown.bind(this));
+ 	document.body.addEventListener('keyup', this.onKeyUp.bind(this));
+ 	document.addEventListener('keypress', this.onKeyPress.bind(this), true);	// first
+-	window.addEventListener('blur', this._clearModifierKeys.bind(this));
+-	window.addEventListener('focus', this._clearModifierKeys.bind(this));
++	window.addEventListener('blur', this._onWindowBlur.bind(this));
++	window.addEventListener('focus', this._onWindowFocus.bind(this));
+ 	window.addEventListener('resize', this.onWindowResize.bind(this));
+ 	e2.core.on('fullScreenChanged', this.onFullScreenChanged.bind(this));
+ 	e2.core.on('progress', this.updateProgressBar.bind(this));
+@@ -407,12 +407,18 @@ VizorUI.prototype.isModalOpen = function() {
+ 
+ /**** EVENT HANDLERS ****/
+ 
+-VizorUI.prototype._clearModifierKeys = function() {	// blur
+-	this.flags.pressedMeta = false;
+-	this.flags.pressedAlt = false;
+-	this.flags.pressedShift = false;
+-	return true;
++VizorUI.prototype._onWindowBlur = function() {
++	// clear modifier keys
++	this.flags.pressedMeta = false
++	this.flags.pressedAlt = false
++	this.flags.pressedShift = false
++
++	// set default modify mode
++	this.state.modifyMode = this.state.modifyModeDefault
++
++	return true
+ }
++VizorUI.prototype._onWindowFocus = VizorUI.prototype._onWindowBlur
+ 
+ VizorUI.prototype._trackModifierKeys = function(e) {	// returns bool if any modifiers changed
+ 	var oldMeta = this.flags.pressedMeta,
+@@ -444,18 +450,29 @@ VizorUI.prototype.getModifiedKey = function(key) {
+ }
+ 
+ VizorUI.prototype.trackModifierKeysForWorldEditor = function() {
+-	if (!this.isInBuildMode()) return;
+-	if (this.isDragging()) return;
++	if (!this.isInBuildMode()) return
++	if (this.isDragging()) return
++
++	var flags = this.flags
++	var anyModifiersPressed = flags.pressedMeta || flags.pressedShift || flags.pressedAlt
++
++	if (!anyModifiersPressed)
++		return anyModifiersPressed
+ 
+-	if (!this.flags.pressedShift && this.flags.pressedMeta) {
++	// 'cmd/ctrl' to rotate
++	// 'cmd/ctrl+shift' to scale
++	// 'shift' to move
++
++	if (flags.pressedMeta &&  !flags.pressedShift &&  !flags.pressedAlt)
+ 		this.state.modifyMode = uiModifyMode.rotate
+-	}
+-	if (this.flags.pressedShift && this.flags.pressedMeta) {
++
++	else if (flags.pressedShift && flags.pressedMeta &&  !flags.pressedAlt)
+ 		this.state.modifyMode = uiModifyMode.scale
+-	}
+-	if (!this.flags.pressedShift && !this.flags.pressedMeta) {
++
++	else if (flags.pressedShift &&  !flags.pressedAlt &&  !flags.pressedMeta)
+ 		this.state.modifyMode = uiModifyMode.move
+-	}
++
++	return anyModifiersPressed
+ }
+ 
+ VizorUI.prototype.onKeyPress = function(e) {
+@@ -640,13 +657,16 @@ VizorUI.prototype.onKeyPress = function(e) {
+ 		// world editor (any camera) -specific keys
+ 		switch(key) {
+ 			case uiKeys.modifyModeMove:
+-				this.state.modifyMode = uiModifyMode.move;
++				state.modifyModeDefault = uiModifyMode.move
++				state.modifyMode = state.modifyModeDefault
+ 				break;
+ 			case uiKeys.modifyModeRotate:
+-				this.state.modifyMode = uiModifyMode.rotate;
++				state.modifyModeDefault = uiModifyMode.rotate
++				state.modifyMode = state.modifyModeDefault
+ 				break;
+ 			case uiKeys.modifyModeScale:
+-				this.state.modifyMode = uiModifyMode.scale;
++				state.modifyModeDefault = uiModifyMode.scale
++				state.modifyMode = state.modifyModeDefault
+ 				break;
+ 			case uiKeys.toggleWorldEditorGrid:
+ 				E2.app.worldEditor.toggleGrid();
+@@ -660,7 +680,6 @@ VizorUI.prototype.onKeyPress = function(e) {
+ VizorUI.prototype.onKeyDown = function(e) {
+ 	var modifiersChanged = this._trackModifierKeys(e);
+ 	if (this.isModalOpen() || E2.util.isTextInputInFocus(e) || this.isFullScreen()) return true;
+-	if (modifiersChanged) this.trackModifierKeysForWorldEditor();
+ 	if (this.isDragging()) {
+ 		e.preventDefault();
+ 		e.stopPropagation();
+@@ -671,6 +690,9 @@ VizorUI.prototype.onKeyDown = function(e) {
+ 	var that = this;
+ 	var modifiedKeyCode = this.getModifiedKeyCode(e.keyCode);
+ 
++	if (modifiersChanged)
++				this.trackModifierKeysForWorldEditor()
++
+ 	switch (modifiedKeyCode) {
+ 		case uiKeys.toggleFloatingPanels:
+ 			this.toggleFloatingPanels();
+@@ -747,15 +769,20 @@ VizorUI.prototype.onKeyDown = function(e) {
+ }
+ VizorUI.prototype.onKeyUp = function(e) {
+ 	var modifiersChanged = this._trackModifierKeys(e);
+-	if (modifiersChanged) this.trackModifierKeysForWorldEditor();
++
++	if (modifiersChanged) {
++		var anyModifiersPressed = this.trackModifierKeysForWorldEditor()
++		if (anyModifiersPressed === false)
++			this.state.modifyMode = this.state.modifyModeDefault
++	}
++
+ 	if (this.isModalOpen() || E2.util.isTextInputInFocus(e) || this.isFullScreen()) return true;
+ 
+ 	if(e.keyCode === uiKeys.shift)
+ 	{
+ 		E2.app.releaseHoverSlot();
+ 		E2.app.releaseHoverNode(false);
+ 	}
+-
+ 	return true;
+ };
+ "
+vizorvr/patches,1472,b94ded0,browser/scripts/ui.js,modified,6,4,10,"@@ -100,10 +100,12 @@ VizorUI.prototype.setupEventHandlers = function(e2, dom) {
+ 
+ 	var switchModifyMode = function(modifyMode){
+ 		return function(e){
+-			e.preventDefault();
+-			e.stopPropagation();
+-			that.state.modifyMode = modifyMode;
+-			return false;
++			e.preventDefault()
++			e.stopPropagation()
++			var state = that.state
++			state.modifyModeDefault = modifyMode
++			state.modifyMode = state.modifyModeDefault
++			return false
+ 		}
+ 	}
+ 	dom.btnMove.on('mousedown', switchModifyMode(uiModifyMode.move));"

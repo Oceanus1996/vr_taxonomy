@@ -1,0 +1,101 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vrm-c/UniVRM,1136,8f31f32d68fabed5f5345e8a9e42d1940424d169,Assets/VRM10/Editor/Components/VRM10ObjectEditor.cs,modified,24,2,26,"@@ -1,5 +1,7 @@
+-﻿using UniGLTF;
++﻿using System.Linq;
++using UniGLTF;
+ using UnityEditor;
++using UnityEngine;
+ 
+ namespace UniVRM10
+ {
+@@ -22,7 +24,7 @@ enum Tabs
+         SerializedPropertyEditor m_meta;
+         SerializedPropertyEditor m_lookAt;
+         SerializedPropertyEditor m_firstPerson;
+-        SerializedPropertyEditor m_asset;
++        SerializedProperty m_prefab;
+ 
+         void OnEnable()
+         {
+@@ -36,10 +38,22 @@ void OnEnable()
+             m_meta = VRM10MetaEditor.Create(serializedObject);
+             m_lookAt = SerializedPropertyEditor.Create(serializedObject, nameof(m_target.LookAt));
+             m_firstPerson = SerializedPropertyEditor.Create(serializedObject, nameof(m_target.FirstPerson));
++
++            m_prefab = serializedObject.FindProperty(""m_prefab"");
+         }
+ 
+         public override void OnInspectorGUI()
+         {
++            // prefab
++            if (_tab == Tabs.FirstPerson && m_prefab.objectReferenceValue == null)
++            {
++                EditorGUILayout.HelpBox(""required !"", MessageType.Error);
++            }
++            serializedObject.Update();
++            EditorGUILayout.ObjectField(m_prefab);
++            serializedObject.ApplyModifiedProperties();
++            EditorGUILayout.Separator();
++
+             // select sub editor
+             using (new EnabledScope())
+             {
+@@ -62,6 +76,14 @@ public override void OnInspectorGUI()
+                     break;
+ 
+                 case Tabs.FirstPerson:
++                    using (new EditorGUI.DisabledScope(m_target.Prefab == null))
++                    {
++                        if (GUILayout.Button(""set default""))
++                        {
++                            m_target.FirstPerson.SetDefault(m_target.Prefab.transform);
++                        }
++                        EditorGUILayout.HelpBox(""Clear Renderers and add all renderers (Auto)"", MessageType.Info);
++                    }
+                     m_firstPerson.OnInspectorGUI();
+                     break;
+             }"
+vrm-c/UniVRM,1136,8f31f32d68fabed5f5345e8a9e42d1940424d169,Assets/VRM10/Editor/ScriptedImporter/RemapEditorVrm.cs,modified,2,0,2,"@@ -78,6 +78,8 @@ public static void Extract(ScriptedImporter importer, GltfData data)
+             // vrmObject の expression を置き換える
+             var vrmObject = AssetDatabase.LoadAllAssetsAtPath(importer.assetPath).First(x => x is VRM10Object) as VRM10Object;
+             vrmObject.Expression.Replace(map);
++            vrmObject.Prefab = prefab; // for FirstPerson Editor
++
+             // extract
+             ExtractSubAsset(vrmObject, $""{path}/{vrmObject.name}.asset"", false);
+ "
+vrm-c/UniVRM,1136,8f31f32d68fabed5f5345e8a9e42d1940424d169,Assets/VRM10/Runtime/Components/VRM10Object/VRM10ObjectFirstPerson.cs,modified,14,13,27,"@@ -11,20 +11,21 @@ public class VRM10ObjectFirstPerson
+     {
+         [SerializeField]
+         public List<RendererFirstPersonFlags> Renderers = new List<RendererFirstPersonFlags>();
++        public void SetDefault(Transform root)
++        {
++            Renderers.Clear();
+ 
+-        // public void CopyTo(GameObject _dst, Dictionary<Transform, Transform> map)
+-        // {
+-        //     var dst = _dst.GetOrAddComponent<VRM10Controller>();
+-        //     dst.Vrm.FirstPerson.Renderers = Renderers.Select(x =>
+-        //     {
+-        //         var renderer = map[x.Renderer.transform].GetComponent<Renderer>();
+-        //         return new RendererFirstPersonFlags
+-        //         {
+-        //             Renderer = renderer,
+-        //             FirstPersonFlag = x.FirstPersonFlag,
+-        //         };
+-        //     }).ToList();
+-        // }
++            var renderers = root.GetComponentsInChildren<Renderer>();
++            var paths = renderers.Select(x => x.transform.RelativePathFrom(root)).ToArray();
++            foreach (var path in paths)
++            {
++                Renderers.Add(new RendererFirstPersonFlags
++                {
++                    FirstPersonFlag = UniGLTF.Extensions.VRMC_vrm.FirstPersonType.auto,
++                    Renderer = path,
++                });
++            }
++        }
+ 
+         // If no layer names are set, use the default layer IDs.
+         // Otherwise use the two Unity layers called ""VRMFirstPersonOnly"" and ""VRMThirdPersonOnly""."

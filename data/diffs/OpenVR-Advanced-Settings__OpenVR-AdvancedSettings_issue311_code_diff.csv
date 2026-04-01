@@ -1,0 +1,1497 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,311,05c12cd4a057ac149e2d0956d2f85e11c5bfadf4,build_scripts/qt/resources.pri,modified,1,0,1,"@@ -49,6 +49,7 @@ DISTFILES += \
+ 	src/res/qml/video_page/miscvid/* \
+ 	src/res/qml/video_page/profiles/* \
+ 	src/res/qml/video_page/dialogboxes/* \
++	src/res/qml/video_page/overlaycolorbright/* \
+     src/res/qml/common/* \
+     src/res/qml/desktop_overlay_page/* \
+     src/res/qml/desktop_overlay_page/translation_left_right/SteamDesktopTranslationLeftRight.qml \"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,311,05c12cd4a057ac149e2d0956d2f85e11c5bfadf4,build_scripts/qt/sources.pri,modified,2,0,2,"@@ -15,6 +15,7 @@ SOURCES += src/main.cpp\
+     src/openvr/ivrinput.cpp \
+     src/utils/setup.cpp \
+     src/utils/paths.cpp \
++	src/utils/FrameRateUtils.cpp \
+     src/openvr/overlay_utils.cpp \
+     src/keyboard_input/keyboard_input.cpp \
+     src/keyboard_input/input_parser.cpp
+@@ -45,6 +46,7 @@ HEADERS += src/overlaycontroller.h \
+     src/openvr/ivrinput.h \
+     src/utils/setup.h \
+     src/utils/paths.h \
++	src/utils/FrameRateUtils.h \
+     src/openvr/overlay_utils.h \
+     src/keyboard_input/input_parser.h \
+     src/keyboard_input/input_sender.h"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,311,05c12cd4a057ac149e2d0956d2f85e11c5bfadf4,src/res/img/video/color.png,added,0,0,0,
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,311,05c12cd4a057ac149e2d0956d2f85e11c5bfadf4,src/res/qml/video_page/VideoPage.qml,modified,20,1,21,"@@ -8,14 +8,17 @@ import ""color""
+ import ""supersampling""
+ import ""miscvid""
+ import ""profiles""
++import ""overlaycolorbright""
+ 
+ MyStackViewPage {
+     width: 1200
+     headerText: ""Video Settings""
+-
+     content: ColumnLayout {
+         spacing: 10
+ 
++        OverlayMethodGroupBox{
++        id: overlayMethodGroupBox
++        }
+         BrightnessGroupBox {
+         id: brightnessGroupBox}
+         ColorGroupBox {
+@@ -36,4 +39,20 @@ MyStackViewPage {
+         }
+ 
+     }
++    Component.onCompleted: {
++        overlayMethodGroupBox.visible = VideoTabController.isOverlayMethodActive
++        brightnessGroupBox.visible = !(VideoTabController.isOverlayMethodActive);
++        colorGroupBox.visible = !(VideoTabController.isOverlayMethodActive);
++    }
++
++    Connections {
++        target: VideoTabController
++            onIsOverlayMethodActiveChanged:{
++                overlayMethodGroupBox.visible = VideoTabController.isOverlayMethodActive
++                brightnessGroupBox.visible = !(VideoTabController.isOverlayMethodActive);
++                colorGroupBox.visible = !(VideoTabController.isOverlayMethodActive);
++            }
++
++    }
++
+ }"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,311,05c12cd4a057ac149e2d0956d2f85e11c5bfadf4,src/res/qml/video_page/brightness/BrightnessGroupBox.qml,modified,3,3,6,"@@ -36,7 +36,7 @@ GroupBox {
+                 id: brightnessToggle
+                 text: ""Toggle On/Off""
+                 onCheckedChanged: {
+-                    VideoTabController.setBrightnessEnabled(this.checked, false)                }
++                    VideoTabController.setBrightnessEnabled(this.checked, true)                }
+             }
+ 
+             Item {
+@@ -57,12 +57,12 @@ GroupBox {
+                 value: 1.0
+                 Layout.fillWidth: true
+                 onPositionChanged: {
+-                    var val = (this.position * 100)
++                    var val = (this.value * 100)
+                     brightnessValueText.text = Math.round(val) + ""%""
+                 }
+                 onValueChanged: {
+ 
+-                    VideoTabController.setBrightnessValue(value.toFixed(2), false)
++                    VideoTabController.setBrightnessValue(value.toFixed(2), true)
+                 }
+             }
+ "
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,311,05c12cd4a057ac149e2d0956d2f85e11c5bfadf4,src/res/qml/video_page/color/ColorGroupBox.qml,modified,6,6,12,"@@ -41,7 +41,7 @@ GroupBox {
+             MySlider {
+                 id: colorRedSlider
+                 from: 0.01
+-                to: 2.0
++                to: 1.0
+                 stepSize: 0.01
+                 value: 1.0
+                 Layout.fillWidth: true
+@@ -51,7 +51,7 @@ GroupBox {
+                 }
+                 onValueChanged: {
+ 
+-                    VideoTabController.setColorRed(value.toFixed(2), false)
++                    VideoTabController.setColorRed(value.toFixed(2), true)
+                 }
+             }
+ 
+@@ -85,7 +85,7 @@ GroupBox {
+             MySlider {
+                 id: colorGreenSlider
+                 from: 0.01
+-                to: 2.0
++                to: 1.0
+                 stepSize: 0.01
+                 value: 1.0
+                 Layout.fillWidth: true
+@@ -95,7 +95,7 @@ GroupBox {
+                 }
+                 onValueChanged: {
+ 
+-                    VideoTabController.setColorGreen(value.toFixed(2), false)
++                    VideoTabController.setColorGreen(value.toFixed(2), true)
+                 }
+             }
+ 
+@@ -130,7 +130,7 @@ GroupBox {
+                 MySlider {
+                     id: colorBlueSlider
+                     from: 0.01
+-                    to: 2.0
++                    to: 1.0
+                     stepSize: 0.01
+                     value: 1.0
+                     Layout.fillWidth: true
+@@ -140,7 +140,7 @@ GroupBox {
+                     }
+                     onValueChanged: {
+ 
+-                        VideoTabController.setColorBlue(value.toFixed(2), false)
++                        VideoTabController.setColorBlue(value.toFixed(2), true)
+                     }
+                 }
+ "
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,311,05c12cd4a057ac149e2d0956d2f85e11c5bfadf4,src/res/qml/video_page/miscvid/VideoMiscGroupBox.qml,modified,15,1,16,"@@ -50,14 +50,25 @@ GroupBox {
+                     VideoTabController.setAllowSupersampleFiltering(this.checked, false)
+                 }
+             }
++            Item {
++                Layout.preferredWidth: 20
++            }
++
++            MyToggleButton {
++                id: videoUseOverlayToggle
++                text: ""Use Overlay For Color""
++                onCheckedChanged: {
++                    VideoTabController.setIsOverlayMethodActive(this.checked, true)
++                }
++            }
+         }
+ 
+     }
+ 
+     Component.onCompleted: {
+         videoAllowSupersampleFilteringToggle.checked = VideoTabController.allowSupersampleFiltering
+         videoMotionSmoothingToggle.checked = VideoTabController.motionSmoothing
+-
++        videoUseOverlayToggle.checked = VideoTabController.isOverlayMethodActive
+     }
+ 
+     Connections {
+@@ -69,6 +80,9 @@ GroupBox {
+         onMotionSmoothingChanged: {
+             videoMotionSmoothingToggle.checked = VideoTabController.motionSmoothing
+         }
++        onIsOverlayMethodActiveChanged:{
++            videoUseOverlayToggle.checked = VideoTabController.isOverlayMethodActive
++        }
+ 
+     }
+ }"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,311,05c12cd4a057ac149e2d0956d2f85e11c5bfadf4,src/res/qml/video_page/overlaycolorbright/OverlayMethodGroupBox.qml,added,329,0,329,"@@ -0,0 +1,329 @@
++import QtQuick 2.7
++import QtQuick.Controls 2.0
++import QtQuick.Layouts 1.3
++import ovras.advsettings 1.0
++import ""../../common""
++
++GroupBox {
++    id: overlayMethodGroupBox
++    Layout.fillWidth: true
++
++    label: MyText {
++        leftPadding: 10
++        text: ""Brightness and Color (via overlay)""
++        bottomPadding: -10
++    }
++    background: Rectangle {
++        color: ""transparent""
++        border.color: ""#ffffff""
++        radius: 8
++    }
++
++    ColumnLayout {
++        anchors.fill: parent
++
++        Rectangle {
++            color: ""#ffffff""
++            height: 1
++            Layout.fillWidth: true
++            Layout.bottomMargin: 5
++        }
++
++        RowLayout {
++            Layout.fillWidth: true
++
++            MyToggleButton {
++                id: brightnessToggle
++                text: ""Toggle On/Off""
++                onCheckedChanged: {
++                    VideoTabController.setBrightnessEnabled(this.checked, true)
++                }
++            }
++
++            Item {
++                Layout.preferredWidth: 150
++            }
++
++            MyText {
++                text: ""Brightness:""
++                horizontalAlignment: Text.AlignRight
++                Layout.rightMargin: 10
++            }
++
++            MySlider {
++                id: brightnessSlider
++                from: 0.01
++                to: 1.0
++                stepSize: 0.01
++                value: 1.0
++                Layout.fillWidth: true
++                onPositionChanged: {
++                    var val = (this.value * 100)
++                    brightnessValueText.text = Math.round(val) + ""%""
++                }
++                onValueChanged: {
++
++                    VideoTabController.setBrightnessValue(value.toFixed(2), true)
++                }
++            }
++
++            MyTextField {
++                id: brightnessValueText
++                text: ""100%""
++                keyBoardUID: 902
++                Layout.preferredWidth: 100
++                Layout.leftMargin: 10
++                horizontalAlignment: Text.AlignHCenter
++                function onInputEvent(input) {
++                    var val2 = parseFloat(input)
++                    if (!isNaN(val2)) {
++                        if (val2 < 5) {
++                            val2 = 5
++                        } else if (val2 > 100.0) {
++                            val2 = 100.0
++                        }
++                        var v2 = (val2/100).toFixed(2)
++                            brightnessSlider.value = v
++                    }
++                    text = Math.round(VideoTabController.brightnessValue * 100) + ""%""
++                }
++            }
++        }
++
++        RowLayout {
++            Layout.fillWidth: true
++
++            MyToggleButton {
++                id: colorToggle
++                text: ""Toggle On/Off""
++                onCheckedChanged: {
++                    VideoTabController.setColorOverlayEnabled(this.checked, true)                }
++            }
++
++            Item {
++                Layout.preferredWidth: 150
++            }
++
++            MyText {
++                text: ""Opacity:""
++                horizontalAlignment: Text.AlignRight
++                Layout.rightMargin: 10
++            }
++
++            MySlider {
++                id: opacitySlider
++                from: 0.01
++                to: 0.85
++                stepSize: 0.01
++                value: 0.01
++                Layout.fillWidth: true
++                onPositionChanged: {
++                    var val = (this.value * 100)
++                    opacityValueText.text = Math.round(val) + ""%""
++                }
++                onValueChanged: {
++
++                    VideoTabController.setColorOverlayOpacity(this.value.toFixed(2), true)
++                }
++            }
++
++            MyTextField {
++                id: opacityValueText
++                text: ""1%""
++                keyBoardUID: 903
++                Layout.preferredWidth: 100
++                Layout.leftMargin: 10
++                horizontalAlignment: Text.AlignHCenter
++                function onInputEvent(input) {
++                    var val = parseFloat(input)
++                    if (!isNaN(val)) {
++                        if (val < 5) {
++                            val = 5
++                        } else if (val > 85.0) {
++                            val = 85.0
++                        }
++                        var v = (val/100).toFixed(2)
++                            opacitySlider.value = v
++                    }
++                    text = Math.round(VideoTabController.colorOverlayOpacity * 100) + ""%""
++                }
++            }
++        }
++
++        RowLayout {
++            Layout.fillWidth: true
++
++            MyText {
++                text: ""Red:""
++                horizontalAlignment: Text.AlignRight
++                Layout.preferredWidth: 75
++            }
++
++            MySlider {
++                id: colorRedSlider
++                from: 0.01
++                to: 1.0
++                stepSize: 0.01
++                value: 1.0
++                Layout.fillWidth: true
++                onPositionChanged: {
++                    var val = (this.value * 100)
++                    colorRedText.text = Math.round(val) + ""%""
++                }
++                onValueChanged: {
++
++                    VideoTabController.setColorRed(value.toFixed(2), true)
++                }
++            }
++
++            MyTextField {
++                id: colorRedText
++                text: ""100%""
++                keyBoardUID: 915
++                Layout.preferredWidth: 100
++                Layout.leftMargin: 10
++                horizontalAlignment: Text.AlignHCenter
++                function onInputEvent(input) {
++                    var val = parseFloat(input)
++                    if (!isNaN(val)) {
++                        if (val < 5) {
++                            val = 5
++                        } else if (val > 100.0) {
++                            val = 100.0
++                        }
++                        var v = (val/100).toFixed(2)
++                            colorRedSlider.value = v
++                    }
++                    text = Math.round(VideoTabController.colorRed * 100) + ""%""
++                }
++            }
++            MyText {
++                text: ""Green:""
++                horizontalAlignment: Text.AlignRight
++                Layout.preferredWidth: 85
++            }
++
++            MySlider {
++                id: colorGreenSlider
++                from: 0.01
++                to: 1.0
++                stepSize: 0.01
++                value: 1.0
++                Layout.fillWidth: true
++                onPositionChanged: {
++                    var val = (this.value * 100)
++                    colorGreenText.text = Math.round(val) + ""%""
++                }
++                onValueChanged: {
++
++                    VideoTabController.setColorGreen(value.toFixed(2), true)
++                }
++            }
++
++            MyTextField {
++                id: colorGreenText
++                text: ""100%""
++                keyBoardUID: 916
++                Layout.preferredWidth: 100
++                Layout.leftMargin: 10
++                horizontalAlignment: Text.AlignHCenter
++                function onInputEvent(input) {
++                    var val = parseFloat(input)
++                    if (!isNaN(val)) {
++                        if (val < 5) {
++                            val = 5
++                        } else if (val > 100.0) {
++                            val = 100.0
++                        }
++                        var v = (val/100).toFixed(2)
++                            colorGreenSlider.value = v
++                    }
++                    text = Math.round(VideoTabController.colorGreen * 100) + ""%""
++                }
++            }
++
++                MyText {
++                    text: ""Blue:""
++                    horizontalAlignment: Text.AlignRight
++                    Layout.preferredWidth: 75
++                }
++
++                MySlider {
++                    id: colorBlueSlider
++                    from: 0.01
++                    to: 1.0
++                    stepSize: 0.01
++                    value: 1.0
++                    Layout.fillWidth: true
++                    onPositionChanged: {
++                        var val = (this.value * 100)
++                        colorBlueText.text = Math.round(val) + ""%""
++                    }
++                    onValueChanged: {
++
++                        VideoTabController.setColorBlue(value.toFixed(2), true)
++                    }
++                }
++
++                MyTextField {
++                    id: colorBlueText
++                    text: ""100%""
++                    keyBoardUID: 917
++                    Layout.preferredWidth: 100
++                    Layout.leftMargin: 10
++                    horizontalAlignment: Text.AlignHCenter
++                    function onInputEvent(input) {
++                        var val = parseFloat(input)
++                        if (!isNaN(val)) {
++                            if (val < 5) {
++                                val = 5
++                            } else if (val > 100.0) {
++                                val = 100.0
++                            }
++                            var v = (val/100).toFixed(2)
++                                colorBlueSlider.value = v
++                        }
++                        text = Math.round(VideoTabController.colorBlue * 100) + ""%""
++                    }
++                }
++
++        }
++    }
++
++    Component.onCompleted: {
++        brightnessSlider.value = VideoTabController.brightnessValue
++        brightnessToggle.checked = VideoTabController.brightnessEnabled
++        colorToggle.checked = VideoTabController.colorOverlayEnabled
++        opacitySlider.value = VideoTabController.colorOverlayOpacity
++        colorRedSlider.value = VideoTabController.colorRed
++        colorGreenSlider.value = VideoTabController.colorGreen
++        colorBlueSlider.value = VideoTabController.colorBlue
++    }
++
++    Connections {
++        target: VideoTabController
++
++        onBrightnessValueChanged: {
++            brightnessSlider.value = VideoTabController.brightnessValue
++        }
++        onBrightnessEnabledChanged: {
++            brightnessToggle.checked = VideoTabController.brightnessEnabled
++        }
++        onColorOverlayOpacityChanged:{
++            opacitySlider.value = VideoTabController.colorOverlayOpacity
++        }
++        onColorOverlayEnabledChanged:{
++            colorToggle.checked = VideoTabController.colorOverlayEnabled
++        }
++
++        onColorRedChanged:{
++            colorRedSlider.value = VideoTabController.colorRed
++        }
++        onColorGreenChanged:{
++            colorGreenSlider.value = VideoTabController.colorGreen
++        }
++        onColorBlueChanged:{
++            colorBlueSlider.value = VideoTabController.colorBlue
++        }
++    }
++}"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,311,05c12cd4a057ac149e2d0956d2f85e11c5bfadf4,src/tabcontrollers/AudioTabController.cpp,modified,3,1,4,"@@ -20,6 +20,8 @@ void AudioTabController::initStage1()
+     audioManager.reset( new AudioManagerDummy() );
+ #endif
+     audioManager->init( this );
++    m_k_audioSettingsUpdateCounter
++        = utils::adjustUpdateRate( k_audioSettingsUpdateCounter );
+     m_playbackDevices = audioManager->getPlaybackDevices();
+     m_recordingDevices = audioManager->getRecordingDevices();
+     findPlaybackDeviceIndex( audioManager->getPlaybackDevId(), false );
+@@ -165,7 +167,7 @@ void AudioTabController::eventLoopTick()
+         return;
+     }
+ 
+-    if ( settingsUpdateCounter >= k_audioSettingsUpdateCounter )
++    if ( settingsUpdateCounter >= m_k_audioSettingsUpdateCounter )
+     {
+         vr::EVRSettingsError vrSettingsError;
+         char mirrorDeviceId[1024];"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,311,05c12cd4a057ac149e2d0956d2f85e11c5bfadf4,src/tabcontrollers/AudioTabController.h,modified,3,0,3,"@@ -4,6 +4,7 @@
+ #include ""AudioManager.h""
+ #include ""PttController.h""
+ #include <memory>
++#include ""../utils/FrameRateUtils.h""
+ 
+ class QQuickWindow;
+ // application namespace
+@@ -73,6 +74,8 @@ class AudioTabController : public PttController
+     bool m_micReversePtt = false;
+     bool m_isDefaultAudioProfile = false;
+ 
++    unsigned int m_k_audioSettingsUpdateCounter = 90;
++
+     int m_defaultProfileIndex = -1;
+ 
+     unsigned settingsUpdateCounter = 0;"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,311,05c12cd4a057ac149e2d0956d2f85e11c5bfadf4,src/tabcontrollers/ChaperoneTabController.cpp,modified,9,2,11,"@@ -35,8 +35,15 @@ void ChaperoneTabController::initStage1()
+     m_fadeDistanceRemembered
+         = settings->value( ""fadeDistanceRemembered"", 0.5f ).toFloat();
+     settings->endGroup();
+-    reloadChaperoneProfiles();
+ 
++    if ( m_disableChaperone )
++    {
++        setFadeDistance( 0.0f, true );
++    }
++
++    reloadChaperoneProfiles();
++    m_k_chaperoneSettingsUpdateCounter
++        = utils::adjustUpdateRate( k_chaperoneSettingsUpdateCounter );
+     eventLoopTick( nullptr );
+ }
+ 
+@@ -638,7 +645,7 @@ void ChaperoneTabController::eventLoopTick(
+         }
+     }
+ 
+-    if ( settingsUpdateCounter >= k_chaperoneSettingsUpdateCounter )
++    if ( settingsUpdateCounter >= m_k_chaperoneSettingsUpdateCounter )
+     {
+         if ( parent->isDashboardVisible() )
+         {"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,311,05c12cd4a057ac149e2d0956d2f85e11c5bfadf4,src/tabcontrollers/ChaperoneTabController.h,modified,3,0,3,"@@ -7,6 +7,7 @@
+ #include <thread>
+ #include <openvr.h>
+ #include <cmath>
++#include ""../utils/FrameRateUtils.h""
+ 
+ class QQuickWindow;
+ // application namespace
+@@ -170,6 +171,8 @@ class ChaperoneTabController : public QObject
+ 
+     int m_updateTicksChaperoneReload = 0;
+ 
++    unsigned int m_k_chaperoneSettingsUpdateCounter = 101;
++
+     vr::VRActionHandle_t m_rightActionHandle;
+     vr::VRActionHandle_t m_leftActionHandle;
+     vr::VRInputValueHandle_t m_leftInputHandle;"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,311,05c12cd4a057ac149e2d0956d2f85e11c5bfadf4,src/tabcontrollers/MoveCenterTabController.cpp,modified,2,0,2,"@@ -165,6 +165,8 @@ void MoveCenterTabController::initStage1()
+     }
+     settings->endGroup();
+     reloadOffsetProfiles();
++    m_k_moveCenterSettingsUpdateCounter
++        = utils::adjustUpdateRate( k_moveCenterSettingsUpdateCounter );
+     m_lastDragUpdateTimePoint = std::chrono::steady_clock::now();
+     m_lastGravityUpdateTimePoint = std::chrono::steady_clock::now();
+ }"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,311,05c12cd4a057ac149e2d0956d2f85e11c5bfadf4,src/tabcontrollers/MoveCenterTabController.h,modified,4,0,4,"@@ -5,6 +5,7 @@
+ #include <openvr.h>
+ #include <chrono>
+ #include <qmath.h>
++#include ""../utils/FrameRateUtils.h""
+ 
+ class QQuickWindow;
+ // application namespace
+@@ -190,6 +191,9 @@ class MoveCenterTabController : public QObject
+     int m_hmdRotationStatsUpdateCounter = 0;
+     unsigned m_dragComfortFrameSkipCounter = 0;
+     unsigned m_turnComfortFrameSkipCounter = 0;
++
++    unsigned int m_k_moveCenterSettingsUpdateCounter = 83;
++
+     double m_velocity[3] = { 0.0, 0.0, 0.0 };
+     std::chrono::steady_clock::time_point m_lastGravityUpdateTimePoint;
+     std::chrono::steady_clock::time_point m_lastDragUpdateTimePoint;"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,311,05c12cd4a057ac149e2d0956d2f85e11c5bfadf4,src/tabcontrollers/SettingsTabController.cpp,modified,3,1,4,"@@ -9,6 +9,8 @@ void SettingsTabController::initStage1()
+ {
+     m_autoStartEnabled = vr::VRApplications()->GetApplicationAutoLaunch(
+         application_strings::applicationKey );
++    m_k_settingsTabSettingsUpdateCounter
++        = utils::adjustUpdateRate( k_settingsTabSettingsUpdateCounter );
+ }
+ 
+ void SettingsTabController::initStage2( OverlayController* var_parent )
+@@ -18,7 +20,7 @@ void SettingsTabController::initStage2( OverlayController* var_parent )
+ 
+ void SettingsTabController::dashboardLoopTick()
+ {
+-    if ( settingsUpdateCounter >= k_settingsTabSettingsUpdateCounter )
++    if ( settingsUpdateCounter >= m_k_settingsTabSettingsUpdateCounter )
+     {
+         setAutoStartEnabled( vr::VRApplications()->GetApplicationAutoLaunch(
+             application_strings::applicationKey ) );"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,311,05c12cd4a057ac149e2d0956d2f85e11c5bfadf4,src/tabcontrollers/SettingsTabController.h,modified,3,0,3,"@@ -2,6 +2,7 @@
+ #pragma once
+ 
+ #include <QObject>
++#include ""../utils/FrameRateUtils.h""
+ 
+ class QQuickWindow;
+ // application namespace
+@@ -23,6 +24,8 @@ class SettingsTabController : public QObject
+ 
+     bool m_autoStartEnabled = false;
+ 
++    unsigned int m_k_settingsTabSettingsUpdateCounter = 157;
++
+ public:
+     void initStage1();
+     void initStage2( OverlayController* parent );"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,311,05c12cd4a057ac149e2d0956d2f85e11c5bfadf4,src/tabcontrollers/SteamVRTabController.cpp,modified,3,1,4,"@@ -7,6 +7,8 @@ namespace advsettings
+ {
+ void SteamVRTabController::initStage1()
+ {
++    m_k_steamVrSettingsUpdateCounter
++        = utils::adjustUpdateRate( k_steamVrSettingsUpdateCounter );
+     dashboardLoopTick();
+ }
+ 
+@@ -17,7 +19,7 @@ void SteamVRTabController::initStage2( OverlayController* var_parent )
+ 
+ void SteamVRTabController::dashboardLoopTick()
+ {
+-    if ( settingsUpdateCounter >= k_steamVrSettingsUpdateCounter )
++    if ( settingsUpdateCounter >= m_k_steamVrSettingsUpdateCounter )
+     {
+         vr::EVRSettingsError vrSettingsError;
+ "
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,311,05c12cd4a057ac149e2d0956d2f85e11c5bfadf4,src/tabcontrollers/SteamVRTabController.h,modified,3,0,3,"@@ -2,6 +2,7 @@
+ #pragma once
+ 
+ #include <QObject>
++#include ""../utils/FrameRateUtils.h""
+ 
+ class QQuickWindow;
+ // application namespace
+@@ -50,6 +51,8 @@ class SteamVRTabController : public QObject
+ 
+     unsigned settingsUpdateCounter = 0;
+ 
++    unsigned int m_k_steamVrSettingsUpdateCounter = 97;
++
+ public:
+     void initStage1();
+     void initStage2( OverlayController* parent );"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,311,05c12cd4a057ac149e2d0956d2f85e11c5bfadf4,src/tabcontrollers/UtilitiesTabController.cpp,modified,4,1,5,"@@ -23,6 +23,9 @@ void UtilitiesTabController::initStage1()
+     m_alarmIsModal = qAlarmIsModal.toBool();
+     m_vrcDebug = qVrcDebug.toBool();
+     m_alarmTime = QTime( qAlarmHour.toInt(), qAlarmMinute.toInt() );
++
++    m_k_utilitiesSettingsUpdateCounter
++        = utils::adjustUpdateRate( k_utilitiesSettingsUpdateCounter );
+ }
+ 
+ void UtilitiesTabController::initStage2( OverlayController* var_parent )
+@@ -461,7 +464,7 @@ vr::VROverlayHandle_t createBatteryOverlay( vr::TrackedDeviceIndex_t index )
+ 
+ void UtilitiesTabController::eventLoopTick()
+ {
+-    if ( settingsUpdateCounter >= k_utilitiesSettingsUpdateCounter )
++    if ( settingsUpdateCounter >= m_k_utilitiesSettingsUpdateCounter )
+     {
+         if ( m_alarmEnabled && m_alarmTime.isValid() )
+         {"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,311,05c12cd4a057ac149e2d0956d2f85e11c5bfadf4,src/tabcontrollers/UtilitiesTabController.h,modified,3,0,3,"@@ -7,6 +7,7 @@
+ #include <memory>
+ #include ""src/keyboard_input/keyboard_input.h""
+ #include ""src/media_keys/media_keys.h""
++#include ""../utils/FrameRateUtils.h""
+ 
+ class QQuickWindow;
+ // application namespace
+@@ -45,6 +46,8 @@ class UtilitiesTabController : public QObject
+     int m_batteryState[vr::k_unMaxTrackedDeviceCount];
+     bool m_batteryVisible[vr::k_unMaxTrackedDeviceCount];
+ 
++    unsigned int m_k_utilitiesSettingsUpdateCounter = 19;
++
+ public:
+     void initStage1();
+     void initStage2( OverlayController* var_parent );"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,311,05c12cd4a057ac149e2d0956d2f85e11c5bfadf4,src/tabcontrollers/VideoTabController.cpp,modified,342,81,423,"@@ -8,8 +8,12 @@ namespace advsettings
+ {
+ void VideoTabController::initStage1()
+ {
++    // In order to ensure gain is ""normal"" before applying to either overlay or
++    // gain.
++    resetGain();
++
+     initBrightnessOverlay();
+-    initColorGain();
++    initColorOverlay();
+     initMotionSmoothing();
+     initSupersampleOverride();
+     m_overlayInit = true;
+@@ -57,6 +61,70 @@ void VideoTabController::initBrightnessOverlay()
+     }
+ }
+ 
++void VideoTabController::initColorOverlay()
++{
++    std::string notifKey
++        = std::string( application_strings::applicationKey ) + "".coloroverlay"";
++
++    vr::VROverlayError overlayError = vr::VROverlay()->CreateOverlay(
++        notifKey.c_str(), notifKey.c_str(), &m_colorOverlayHandle );
++    if ( overlayError == vr::VROverlayError_None )
++    {
++        const auto notifIconPath = paths::binaryDirectoryFindFile(
++            video_keys::k_colorOverlayFilename );
++        if ( notifIconPath.has_value() )
++        {
++            vr::VROverlay()->SetOverlayFromFile( m_colorOverlayHandle,
++                                                 notifIconPath->c_str() );
++            vr::VROverlay()->SetOverlayWidthInMeters( m_colorOverlayHandle,
++                                                      k_overlayWidth );
++            // position it just slightly further out so we don't have to worry
++            // about render order.
++            vr::HmdMatrix34_t notificationTransform
++                = { { { 1.0f, 0.0f, 0.0f, 0.00f },
++                      { 0.0f, 1.0f, 0.0f, 0.00f },
++                      { 0.0f, 0.0f, 1.0f, ( k_hmdDistance - 0.01f ) } } };
++            vr::VROverlay()->SetOverlayTransformTrackedDeviceRelative(
++                m_colorOverlayHandle,
++                vr::k_unTrackedDeviceIndex_Hmd,
++                &notificationTransform );
++        }
++        else
++        {
++            LOG( ERROR ) << ""Could not find Base color overlay: \""""
++                         << video_keys::k_colorOverlayFilename << ""\"""";
++        }
++    }
++    else
++    {
++        LOG( ERROR ) << ""Could not create color overlay: ""
++                     << vr::VROverlay()->GetOverlayErrorNameFromEnum(
++                            overlayError );
++    }
++}
++
++void VideoTabController::loadColorOverlay()
++{
++    vr::VROverlayError overlayError = vr::VROverlay()->SetOverlayColor(
++        m_colorOverlayHandle, m_colorRed, m_colorGreen, m_colorBlue );
++    if ( overlayError != vr::VROverlayError_None )
++    {
++        LOG( ERROR ) << ""Could not set Colors for color overlay: ""
++                     << vr::VROverlay()->GetOverlayErrorNameFromEnum(
++                            overlayError );
++    }
++
++    overlayError = vr::VROverlay()->SetOverlayAlpha( m_colorOverlayHandle,
++                                                     m_colorOverlayOpacity );
++    if ( overlayError != vr::VROverlayError_None )
++    {
++        LOG( ERROR ) << ""Could not set alpha: ""
++                     << vr::VROverlay()->GetOverlayErrorNameFromEnum(
++                            overlayError );
++    }
++    emit colorOverlayOpacityChanged( true );
++}
++
+ void VideoTabController::eventLoopTick() {}
+ 
+ void VideoTabController::dashboardLoopTick()
+@@ -158,9 +226,19 @@ void VideoTabController::reloadVideoConfig()
+     m_brightnessOpacityValue
+         = settings->value( ""brightnessOpacityValue"", 0.0f ).toFloat();
+     m_brightnessValue = settings->value( ""brightnessValue"", 1.0f ).toFloat();
++    setColorOverlayEnabled(
++        settings->value( ""colorOverlayEnabled"", false ).toBool(), true );
++    setColorOverlayOpacity(
++        settings->value( ""colorOverlayOpacity"", 0.0f ).toFloat(), true );
++    setIsOverlayMethodActive(
++        settings->value( ""isOverlayMethodActive"", false ).toBool(), true );
++    setColorRed( settings->value( ""colorRed"", 1.0f ).toFloat() );
++    setColorGreen( settings->value( ""colorGreen"", 1.0f ).toFloat() );
++    setColorBlue( settings->value( ""colorBlue"", 1.0f ).toFloat() );
+ 
+     settings->endGroup();
+     setBrightnessOpacityValue();
++    loadColorOverlay();
+     settings->sync();
+ }
+ 
+@@ -171,6 +249,12 @@ void VideoTabController::saveVideoConfig()
+     settings->setValue( ""brightnessEnabled"", brightnessEnabled() );
+     settings->setValue( ""brightnessOpacityValue"", brightnessOpacityValue() );
+     settings->setValue( ""brightnessValue"", brightnessValue() );
++    settings->setValue( ""colorOverlayEnabled"", colorOverlayEnabled() );
++    settings->setValue( ""colorOverlayOpacity"", colorOverlayOpacity() );
++    settings->setValue( ""colorRed"", colorRed() );
++    settings->setValue( ""colorGreen"", colorGreen() );
++    settings->setValue( ""colorBlue"", colorBlue() );
++    settings->setValue( ""isOverlayMethodActive"", isOverlayMethodActive() );
+ 
+     settings->endGroup();
+     settings->sync();
+@@ -191,11 +275,16 @@ bool VideoTabController::brightnessEnabled() const
+     return m_brightnessEnabled;
+ }
+ 
+-void VideoTabController::setBrightnessEnabled( bool value, bool notify )
++void VideoTabController::setBrightnessEnabled( bool value,
++                                               bool notify,
++                                               bool keepValue )
+ {
+-    if ( value != m_brightnessEnabled )
++    if ( value != m_brightnessEnabled || keepValue )
+     {
+-        m_brightnessEnabled = value;
++        if ( !keepValue )
++        {
++            m_brightnessEnabled = value;
++        }
+         auto overlayHandle = getBrightnessOverlayHandle();
+         if ( value )
+         {
+@@ -280,6 +369,16 @@ void VideoTabController::setBrightnessOpacityValue()
+ 
+ // getters
+ 
++bool VideoTabController::colorOverlayEnabled() const
++{
++    return m_colorOverlayEnabled;
++}
++
++float VideoTabController::colorOverlayOpacity() const
++{
++    return m_colorOverlayOpacity;
++}
++
+ float VideoTabController::colorRed() const
+ {
+     return m_colorRed;
+@@ -295,27 +394,138 @@ float VideoTabController::colorBlue() const
+     return m_colorBlue;
+ }
+ 
++bool VideoTabController::isOverlayMethodActive() const
++{
++    return m_isOverlayMethodActive;
++}
++
+ // setters
+ 
+-void VideoTabController::setColorRed( float value, bool notify )
++void VideoTabController::setIsOverlayMethodActive( bool value, bool notify )
+ {
+-    if ( fabs( static_cast<double>( value - m_colorRed ) ) > .005 )
++    resetGain();
++    m_isOverlayMethodActive = value;
++    if ( value )
+     {
+-        m_colorRed = value;
+-        vr::EVRSettingsError vrSettingsError;
+-        vr::VRSettings()->SetFloat(
+-            vr::k_pch_SteamVR_Section,
+-            vr::k_pch_SteamVR_HmdDisplayColorGainR_Float,
+-            m_colorRed,
+-            &vrSettingsError );
++        setColorOverlayEnabled( colorOverlayEnabled(), true, false );
++    }
++    else
++    {
++        setColorOverlayEnabled( false, true, false );
++    }
++    setColor( colorRed(), colorGreen(), colorBlue(), true, true );
+ 
+-        if ( vrSettingsError != vr::VRSettingsError_None )
++    saveVideoConfig();
++    if ( notify )
++    {
++        emit isOverlayMethodActiveChanged( value );
++    }
++}
++
++void VideoTabController::setColorOverlayEnabled( bool value,
++                                                 bool notify,
++                                                 bool keepValue )
++{
++    if ( value != m_colorOverlayEnabled || keepValue )
++    {
++        if ( !keepValue )
++        {
++            m_colorOverlayEnabled = value;
++        }
++        auto overlayHandle = getColorOverlayHandle();
++        if ( value )
++        {
++            if ( overlayHandle != vr::k_ulOverlayHandleInvalid )
++            {
++                vr::VROverlay()->ShowOverlay( getColorOverlayHandle() );
++                LOG( INFO ) << ""Color Overlay toggled on"";
++            }
++        }
++        else
++        {
++            if ( overlayHandle != vr::k_ulOverlayHandleInvalid )
++            {
++                vr::VROverlay()->HideOverlay( getColorOverlayHandle() );
++                LOG( INFO ) << ""Color Overlay toggled off"";
++            }
++        }
++        saveVideoConfig();
++        if ( notify )
++        {
++            emit colorOverlayEnabledChanged( value );
++        }
++    }
++}
++
++void VideoTabController::setColorOverlayOpacity( float value, bool notify )
++{
++    if ( fabs( static_cast<double>( value - m_colorOverlayOpacity ) ) > .005 )
++    {
++        vr::VROverlayError overlayError = vr::VROverlay()->SetOverlayAlpha(
++            m_colorOverlayHandle, m_colorOverlayOpacity );
++        if ( value > .85f )
++        {
++            m_colorOverlayOpacity = 0.85f;
++        }
++        else
++        {
++            m_colorOverlayOpacity = value;
++        }
++
++        if ( overlayError != vr::VROverlayError_None )
++        {
++            LOG( ERROR ) << ""Could not set alpha for color overlay: ""
++                         << vr::VROverlay()->GetOverlayErrorNameFromEnum(
++                                overlayError );
++        }
++        saveVideoConfig();
++        if ( notify )
++        {
++            emit colorOverlayOpacityChanged( m_colorOverlayOpacity );
++        }
++    }
++}
++
++void VideoTabController::setColorRed( float value, bool notify, bool keepValue )
++{
++    if ( ( fabs( static_cast<double>( value - m_colorRed ) ) > .005 )
++         || keepValue )
++    {
++        if ( !keepValue )
++        {
++            m_colorRed = value;
++        }
++
++        if ( isOverlayMethodActive() )
++        {
++            vr::VROverlayError overlayError = vr::VROverlay()->SetOverlayColor(
++                m_colorOverlayHandle, m_colorRed, m_colorGreen, m_colorBlue );
++            if ( overlayError != vr::VROverlayError_None )
++            {
++                LOG( ERROR ) << ""Could not set Red for color overlay: ""
++                             << vr::VROverlay()->GetOverlayErrorNameFromEnum(
++                                    overlayError );
++            }
++        }
++        else
+         {
+-            LOG( ERROR ) << ""could not set Red Gain Value, Error: ""
+-                         << vr::VRSettings()->GetSettingsErrorNameFromEnum(
+-                                vrSettingsError );
++            vr::EVRSettingsError vrSettingsError;
++            vr::VRSettings()->SetFloat(
++                vr::k_pch_SteamVR_Section,
++                vr::k_pch_SteamVR_HmdDisplayColorGainR_Float,
++                m_colorRed,
++                &vrSettingsError );
++
++            if ( vrSettingsError != vr::VRSettingsError_None )
++            {
++                LOG( ERROR ) << ""could not set Red Gain Value, Error: ""
++                             << vr::VRSettings()->GetSettingsErrorNameFromEnum(
++                                    vrSettingsError );
++            }
+         }
+-        LOG( DEBUG ) << ""Changed Red Gain to: "" << m_colorRed;
++
++        LOG( DEBUG ) << ""Changed Red Value to: "" << m_colorRed;
++        saveVideoConfig();
+         vr::VRSettings()->Sync();
+         if ( notify )
+         {
+@@ -324,25 +534,48 @@ void VideoTabController::setColorRed( float value, bool notify )
+     }
+ }
+ 
+-void VideoTabController::setColorGreen( float value, bool notify )
++void VideoTabController::setColorGreen( float value,
++                                        bool notify,
++                                        bool keepValue )
+ {
+-    if ( fabs( static_cast<double>( value - m_colorGreen ) ) > .005 )
++    if ( ( fabs( static_cast<double>( value - m_colorGreen ) ) > .005 )
++         || keepValue )
+     {
+-        m_colorGreen = value;
+-        vr::EVRSettingsError vrSettingsError;
+-        vr::VRSettings()->SetFloat(
+-            vr::k_pch_SteamVR_Section,
+-            vr::k_pch_SteamVR_HmdDisplayColorGainG_Float,
+-            m_colorGreen,
+-            &vrSettingsError );
++        if ( !keepValue )
++        {
++            m_colorGreen = value;
++        }
+ 
+-        if ( vrSettingsError != vr::VRSettingsError_None )
++        if ( isOverlayMethodActive() )
+         {
+-            LOG( ERROR ) << ""could not set Green Gain Value, Error: ""
+-                         << vr::VRSettings()->GetSettingsErrorNameFromEnum(
+-                                vrSettingsError );
++            vr::VROverlayError overlayError = vr::VROverlay()->SetOverlayColor(
++                m_colorOverlayHandle, m_colorRed, m_colorGreen, m_colorBlue );
++            if ( overlayError != vr::VROverlayError_None )
++            {
++                LOG( ERROR ) << ""Could not set Green for color overlay: ""
++                             << vr::VROverlay()->GetOverlayErrorNameFromEnum(
++                                    overlayError );
++            }
+         }
+-        LOG( DEBUG ) << ""Changed Green Gain to: "" << m_colorGreen;
++        else
++        {
++            vr::EVRSettingsError vrSettingsError;
++            vr::VRSettings()->SetFloat(
++                vr::k_pch_SteamVR_Section,
++                vr::k_pch_SteamVR_HmdDisplayColorGainG_Float,
++                m_colorGreen,
++                &vrSettingsError );
++
++            if ( vrSettingsError != vr::VRSettingsError_None )
++            {
++                LOG( ERROR ) << ""could not set Green Gain Value, Error: ""
++                             << vr::VRSettings()->GetSettingsErrorNameFromEnum(
++                                    vrSettingsError );
++            }
++        }
++
++        LOG( DEBUG ) << ""Changed Green Value to: "" << m_colorGreen;
++        saveVideoConfig();
+         vr::VRSettings()->Sync();
+         if ( notify )
+         {
+@@ -351,25 +584,47 @@ void VideoTabController::setColorGreen( float value, bool notify )
+     }
+ }
+ 
+-void VideoTabController::setColorBlue( float value, bool notify )
++void VideoTabController::setColorBlue( float value,
++                                       bool notify,
++                                       bool keepValue )
+ {
+-    if ( fabs( static_cast<double>( value - m_colorBlue ) ) > .005 )
++    if ( ( fabs( static_cast<double>( value - m_colorBlue ) ) > .005 )
++         || keepValue )
+     {
+-        m_colorBlue = value;
+-        vr::EVRSettingsError vrSettingsError;
+-        vr::VRSettings()->SetFloat(
+-            vr::k_pch_SteamVR_Section,
+-            vr::k_pch_SteamVR_HmdDisplayColorGainB_Float,
+-            m_colorBlue,
+-            &vrSettingsError );
+-
+-        if ( vrSettingsError != vr::VRSettingsError_None )
++        if ( !keepValue )
+         {
+-            LOG( ERROR ) << ""could not set Blue Gain Value, Error: ""
+-                         << vr::VRSettings()->GetSettingsErrorNameFromEnum(
+-                                vrSettingsError );
++            m_colorBlue = value;
+         }
+-        LOG( DEBUG ) << ""Changed Blue Gain to: "" << m_colorBlue;
++        if ( isOverlayMethodActive() )
++        {
++            vr::VROverlayError overlayError = vr::VROverlay()->SetOverlayColor(
++                m_colorOverlayHandle, m_colorRed, m_colorGreen, m_colorBlue );
++            if ( overlayError != vr::VROverlayError_None )
++            {
++                LOG( ERROR ) << ""Could not set Blue for color overlay: ""
++                             << vr::VROverlay()->GetOverlayErrorNameFromEnum(
++                                    overlayError );
++            }
++        }
++        else
++        {
++            vr::EVRSettingsError vrSettingsError;
++            vr::VRSettings()->SetFloat(
++                vr::k_pch_SteamVR_Section,
++                vr::k_pch_SteamVR_HmdDisplayColorGainB_Float,
++                m_colorBlue,
++                &vrSettingsError );
++
++            if ( vrSettingsError != vr::VRSettingsError_None )
++            {
++                LOG( ERROR ) << ""could not set Blue Gain Value, Error: ""
++                             << vr::VRSettings()->GetSettingsErrorNameFromEnum(
++                                    vrSettingsError );
++            }
++        }
++
++        LOG( DEBUG ) << ""Changed Blue Value to: "" << m_colorBlue;
++        saveVideoConfig();
+         vr::VRSettings()->Sync();
+         if ( notify )
+         {
+@@ -378,58 +633,54 @@ void VideoTabController::setColorBlue( float value, bool notify )
+     }
+ }
+ 
+-void VideoTabController::initColorGain()
++void VideoTabController::resetGain()
+ {
+-    float temporary = 0.0f;
+     vr::EVRSettingsError vrSettingsError;
+-    temporary = vr::VRSettings()->GetFloat(
+-        vr::k_pch_SteamVR_Section,
+-        vr::k_pch_SteamVR_HmdDisplayColorGainR_Float,
+-        &vrSettingsError );
++    vr::VRSettings()->SetFloat( vr::k_pch_SteamVR_Section,
++                                vr::k_pch_SteamVR_HmdDisplayColorGainR_Float,
++                                1.0f,
++                                &vrSettingsError );
+ 
+     if ( vrSettingsError != vr::VRSettingsError_None )
+     {
+-        LOG( ERROR ) << ""Could not get Red Gain Value ERROR: ""
++        LOG( ERROR ) << ""could not set Red Gain Value, Error: ""
+                      << vr::VRSettings()->GetSettingsErrorNameFromEnum(
+                             vrSettingsError );
+     }
+-    else
+-    {
+-        m_colorRed = temporary;
+-        setColorRed( temporary );
+-    }
++    vr::VRSettings()->SetFloat( vr::k_pch_SteamVR_Section,
++                                vr::k_pch_SteamVR_HmdDisplayColorGainG_Float,
++                                1.0f,
++                                &vrSettingsError );
+ 
+-    temporary = vr::VRSettings()->GetFloat(
+-        vr::k_pch_SteamVR_Section,
+-        vr::k_pch_SteamVR_HmdDisplayColorGainG_Float,
+-        &vrSettingsError );
+     if ( vrSettingsError != vr::VRSettingsError_None )
+     {
+-        LOG( ERROR ) << ""Could not get Green Gain Value ERROR: ""
++        LOG( ERROR ) << ""could not set Green Gain Value, Error: ""
+                      << vr::VRSettings()->GetSettingsErrorNameFromEnum(
+                             vrSettingsError );
+     }
+-    else
+-    {
+-        m_colorGreen = temporary;
+-        setColorGreen( temporary );
+-    }
+ 
+-    temporary = vr::VRSettings()->GetFloat(
+-        vr::k_pch_SteamVR_Section,
+-        vr::k_pch_SteamVR_HmdDisplayColorGainB_Float,
+-        &vrSettingsError );
++    vr::VRSettings()->SetFloat( vr::k_pch_SteamVR_Section,
++                                vr::k_pch_SteamVR_HmdDisplayColorGainB_Float,
++                                1.0f,
++                                &vrSettingsError );
++
+     if ( vrSettingsError != vr::VRSettingsError_None )
+     {
+-        LOG( ERROR ) << ""Could not get Blue Gain Value ERROR: ""
++        LOG( ERROR ) << ""could not set Blue Gain Value, Error: ""
+                      << vr::VRSettings()->GetSettingsErrorNameFromEnum(
+                             vrSettingsError );
+     }
+-    else
+-    {
+-        m_colorBlue = temporary;
+-        setColorBlue( temporary );
+-    }
++}
++
++void VideoTabController::setColor( float R,
++                                   float G,
++                                   float B,
++                                   bool notify,
++                                   bool keepValue )
++{
++    setColorRed( R, notify, keepValue );
++    setColorGreen( G, notify, keepValue );
++    setColorBlue( B, notify, keepValue );
+ }
+ 
+ /*
+@@ -621,6 +872,8 @@ void VideoTabController::addVideoProfile( const QString name )
+     profile->colorBlue = m_colorBlue;
+     profile->brightnessToggle = m_brightnessEnabled;
+     profile->brightnessValue = m_brightnessValue;
++    profile->opacity = m_colorOverlayOpacity;
++    profile->overlayMethodState = m_isOverlayMethodActive;
+ 
+     saveVideoProfiles();
+     OverlayController::appSettings()->sync();
+@@ -638,11 +891,13 @@ void VideoTabController::applyVideoProfile( const unsigned index )
+         setSuperSampling( profile.supersampling );
+         setAllowSupersampleFiltering( profile.anisotropicFiltering );
+         setMotionSmoothing( profile.motionSmooth );
++        setIsOverlayMethodActive( profile.overlayMethodState );
+         setColorRed( profile.colorRed );
+         setColorBlue( profile.colorBlue );
+         setColorGreen( profile.colorGreen );
+         setBrightnessEnabled( profile.brightnessToggle );
+         setBrightnessValue( profile.brightnessValue );
++        setColorOverlayOpacity( profile.opacity );
+         vr::VRSettings()->Sync( true );
+     }
+ }
+@@ -663,8 +918,8 @@ void VideoTabController::reloadVideoProfiles()
+ {
+     videoProfiles.clear();
+     auto settings = OverlayController::appSettings();
+-    settings->beginGroup( ""steamVRSettings"" );
+-    auto profileCount = settings->beginReadArray( ""steamVRProfiles"" );
++    settings->beginGroup( ""VideoSettings"" );
++    auto profileCount = settings->beginReadArray( ""videoProfiles"" );
+     for ( int i = 0; i < profileCount; i++ )
+     {
+         settings->setArrayIndex( i );
+@@ -689,6 +944,9 @@ void VideoTabController::reloadVideoProfiles()
+             = settings->value( ""brightnessToggle"", false ).toBool();
+         entry.brightnessValue
+             = settings->value( ""brightnessValue"", 1.0f ).toFloat();
++        entry.opacity = settings->value( ""opacity"", 0.0f ).toFloat();
++        entry.overlayMethodState
++            = settings->value( ""overlayMethodState"", false ).toBool();
+     }
+     settings->endArray();
+     settings->endGroup();
+@@ -718,6 +976,9 @@ void VideoTabController::saveVideoProfiles()
+         settings->setValue( ""brightnessToggle"", p.brightnessToggle );
+         settings->setValue( ""brightnessValue"", p.brightnessValue );
+ 
++        settings->setValue( ""opacity"", p.opacity );
++        settings->setValue( ""overlayMethodState"", p.overlayMethodState );
++
+         i++;
+     }
+     settings->endArray();"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,311,05c12cd4a057ac149e2d0956d2f85e11c5bfadf4,src/tabcontrollers/VideoTabController.h,modified,54,6,60,"@@ -10,6 +10,7 @@ class QQuickWindow;
+ namespace video_keys
+ {
+ constexpr auto k_brightnessOverlayFilename = ""/res/img/video/dimmer.png"";
++constexpr auto k_colorOverlayFilename = ""/res/img/video/color.png"";
+ 
+ } // namespace video_keys
+ 
+@@ -31,6 +32,8 @@ struct VideoProfile
+     float colorBlue = 1.0f;
+     bool brightnessToggle = false;
+     float brightnessValue = 1.0f;
++    bool overlayMethodState = false;
++    float opacity = 0.0f;
+ };
+ 
+ class VideoTabController : public QObject
+@@ -56,12 +59,20 @@ class VideoTabController : public QObject
+     Q_PROPERTY( bool allowSupersampleFiltering READ allowSupersampleFiltering
+                     WRITE setAllowSupersampleFiltering NOTIFY
+                         allowSupersampleFilteringChanged )
++    Q_PROPERTY(
++        bool isOverlayMethodActive READ isOverlayMethodActive WRITE
++            setIsOverlayMethodActive NOTIFY isOverlayMethodActiveChanged )
++    Q_PROPERTY( bool colorOverlayEnabled READ colorOverlayEnabled WRITE
++                    setColorOverlayEnabled NOTIFY colorOverlayEnabledChanged )
++    Q_PROPERTY( float colorOverlayOpacity READ colorOverlayOpacity WRITE
++                    setColorOverlayOpacity NOTIFY colorOverlayOpacityChanged )
+ 
+ private:
+     unsigned settingsUpdateCounter = 0;
+ 
+     // how far away the overlay is, any OVERLAY closer will not be dimmed.
+     const float k_hmdDistance = -0.15f;
++
+     // how wide overlay is, Increase this value if edges of view are not
+     // dimmed.
+     const float k_overlayWidth = 1.0f;
+@@ -79,16 +90,29 @@ class VideoTabController : public QObject
+     float m_colorBlue = 0.0f;
+     float m_colorGreen = 0.0f;
+     bool m_overlayInit = false;
++    bool m_isOverlayMethodActive = false;
++
++    bool m_colorOverlayEnabled = false;
++    float m_colorOverlayOpacity = 0.0f;
+ 
+     float m_superSampling = 1.0;
+     bool m_allowSupersampleOverride = false;
+     bool m_motionSmoothing = true;
+     bool m_allowSupersampleFiltering = true;
+ 
+-    void initColorGain();
++    void setColor( float R,
++                   float G,
++                   float B,
++                   bool notify = true,
++                   bool keepValue = false );
++    void resetGain();
++
+     void initSupersampleOverride();
+     void initMotionSmoothing();
+ 
++    void initColorOverlay();
++    void loadColorOverlay();
++
+     void reloadVideoConfig();
+     void saveVideoConfig();
+     void setBrightnessOpacityValue();
+@@ -107,22 +131,30 @@ class VideoTabController : public QObject
+         return m_brightnessOverlayHandle;
+     }
+ 
++    vr::VROverlayHandle_t getColorOverlayHandle()
++    {
++        return m_colorOverlayHandle;
++    }
++
+ public:
+     float brightnessOpacityValue() const;
+     // inverse of brightnessValue
+     float brightnessValue() const;
+     bool brightnessEnabled() const;
+ 
+     // Color overlay Getters
+-    bool colorEnabled() const;
++    bool colorOverlayEnabled() const;
+     float colorRed() const;
+     float colorGreen() const;
+     float colorBlue() const;
+ 
++    float colorOverlayOpacity() const;
++
+     bool allowSupersampleOverride() const;
+     float superSampling() const;
+     bool motionSmoothing() const;
+     bool allowSupersampleFiltering() const;
++    bool isOverlayMethodActive() const;
+ 
+     void initStage1();
+     void eventLoopTick();
+@@ -135,19 +167,31 @@ class VideoTabController : public QObject
+     Q_INVOKABLE QString getVideoProfileName( unsigned index );
+ 
+ public slots:
+-    void setBrightnessEnabled( bool value, bool notify = true );
++    void setBrightnessEnabled( bool value,
++                               bool notify = true,
++                               bool keepValue = false );
+     void setBrightnessValue( float percvalue, bool notify = true );
+ 
+     void setSuperSampling( float value, bool notify = true );
+     void setAllowSupersampleOverride( bool value, bool notify = true );
+     // Color overlay Setters
+-    void setColorRed( float value, bool notify = true );
+-    void setColorGreen( float value, bool notify = true );
+-    void setColorBlue( float value, bool notify = true );
++    void setColorRed( float value, bool notify = true, bool keepValue = false );
++    void setColorGreen( float value,
++                        bool notify = true,
++                        bool keepValue = false );
++    void
++        setColorBlue( float value, bool notify = true, bool keepValue = false );
++
++    void setColorOverlayEnabled( bool value,
++                                 bool notify = true,
++                                 bool keepValue = false );
++    void setColorOverlayOpacity( float value, bool notify = true );
+ 
+     void setMotionSmoothing( bool value, bool notify = true );
+     void setAllowSupersampleFiltering( bool value, bool notify = true );
+ 
++    void setIsOverlayMethodActive( bool value, bool notify = true );
++
+     void addVideoProfile( QString name );
+     void applyVideoProfile( unsigned index );
+     void deleteVideoProfile( unsigned index );
+@@ -158,6 +202,10 @@ public slots:
+     void colorRedChanged( float value );
+     void colorGreenChanged( float value );
+     void colorBlueChanged( float value );
++    void isOverlayMethodActiveChanged( bool value );
++
++    void colorOverlayEnabledChanged( bool value );
++    void colorOverlayOpacityChanged( float value );
+ 
+     void superSamplingChanged( float value );
+     void allowSupersampleOverrideChanged( bool value );"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,311,05c12cd4a057ac149e2d0956d2f85e11c5bfadf4,src/utils/FrameRateUtils.cpp,added,41,0,41,"@@ -0,0 +1,41 @@
++#include ""FrameRateUtils.h""
++#include <easylogging++.h>
++
++namespace utils
++{
++/* Adjusts update rate for event loop ticks so that regardless of ticks we
++ * maintain the approximate same time value for the updates, if Key is not set
++ * in SteamVR we assume HMD is @ 90 hz
++ * */
++unsigned int adjustUpdateRate( const unsigned int baseRefreshKey )
++{
++    double updateRate;
++    vr::EVRSettingsError vrSettingsError;
++    updateRate = static_cast<double>(
++        vr::VRSettings()->GetInt32( vr::k_pch_SteamVR_Section,
++                                    vr::k_pch_SteamVR_PreferredRefreshRate,
++                                    &vrSettingsError ) );
++
++    if ( vrSettingsError != vr::VRSettingsError_None )
++    {
++        LOG( WARNING ) << ""Could not read \""""
++                       << vr::k_pch_SteamVR_PreferredRefreshRate
++                       << ""\"" setting: ""
++                       << vr::VRSettings()->GetSettingsErrorNameFromEnum(
++                              vrSettingsError );
++        return baseRefreshKey;
++    }
++
++    // Assume Base 90 hz Refresh
++    double multiplier = updateRate / 90.0;
++    unsigned int adjustedRefreshKey = static_cast<unsigned int>(
++        static_cast<double>( baseRefreshKey ) * multiplier );
++    if ( adjustedRefreshKey < 45 )
++    {
++        return baseRefreshKey;
++    }
++
++    return adjustedRefreshKey;
++}
++
++} // end namespace utils"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,311,05c12cd4a057ac149e2d0956d2f85e11c5bfadf4,src/utils/FrameRateUtils.h,added,9,0,9,"@@ -0,0 +1,9 @@
++#pragma once
++
++#include <openvr.h>
++
++namespace utils
++{
++unsigned int adjustUpdateRate( const unsigned int keyvalue );
++
++} // end namespace utils"

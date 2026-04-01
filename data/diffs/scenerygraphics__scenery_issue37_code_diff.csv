@@ -1,0 +1,329 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+scenerygraphics/scenery,37,12f39fdb624d5e774d809b7445c15ad93f5a2caf,src/main/kotlin/scenery/backends/Renderer.kt,modified,2,0,2,"@@ -38,6 +38,8 @@ interface Renderer : Hubable {
+ 
+     fun screenshot()
+ 
++    fun reshape(newWidth: Int, newHeight: Int)
++
+     val managesRenderLoop: Boolean
+ 
+     companion object {"
+scenerygraphics/scenery,37,12f39fdb624d5e774d809b7445c15ad93f5a2caf,src/main/kotlin/scenery/backends/opengl/OpenGLRenderer.kt,modified,67,42,109,"@@ -104,6 +104,16 @@ open class OpenGLRenderer : Renderer, Hubable, ClearGLDefaultEventListener {
+     /** Eyes of the stereo render targets */
+     var eyes = (0..0)
+ 
++
++    /** time since last resizing */
++    protected var lastResizeTimer = Timer()
++
++    /** Window resizing timeout */
++    protected var WINDOW_RESIZE_TIMEOUT = 200L
++
++    /** Flag to indicate whether framebuffers have to be recreated */
++    protected var mustRecreateFramebuffers = false
++
+     var initialized = false
+ 
+     /**
+@@ -177,6 +187,39 @@ open class OpenGLRenderer : Renderer, Hubable, ClearGLDefaultEventListener {
+             settings.set(""vr.IPD"", -0.5f)
+         }
+ 
++        recreateFramebuffers()
++
++        logger.info(geometryBuffer.map { it.toString() }.joinToString(""\n""))
++
++        lightingPassProgram = GLProgram.buildProgram(gl, OpenGLRenderer::class.java,
++            arrayOf(""shaders/FullscreenQuad.vert"", ""shaders/DeferredLighting.frag""))
++
++        hdrPassProgram = GLProgram.buildProgram(gl, OpenGLRenderer::class.java,
++            arrayOf(""shaders/FullscreenQuad.vert"", ""shaders/HDR.frag""))
++
++        combinerProgram = GLProgram.buildProgram(gl, OpenGLRenderer::class.java,
++            arrayOf(""shaders/FullscreenQuad.vert"", ""shaders/Combiner.frag""))
++
++        gl.glViewport(0, 0, this.window.width, this.window.height)
++        gl.glClearColor(0.0f, 0.0f, 0.0f, 0.0f)
++
++        gl.glEnable(GL4.GL_TEXTURE_GATHER)
++
++        initialized = true
++
++        initializeScene()
++    }
++
++    fun recreateFramebuffers() {
++
++        geometryBuffer.map { it.destroy(this.gl) }
++        hdrBuffer.map { it.destroy(this.gl) }
++        combinationBuffer.map { it.destroy(this.gl) }
++
++        geometryBuffer.clear()
++        hdrBuffer.clear()
++        combinationBuffer.clear()
++
+         eyes.forEach {
+             // create 32bit position buffer, 16bit normal buffer, 8bit diffuse buffer and 24bit depth buffer
+             val vrWidthDivisor = if (settings.get(""vr.DoAnaglyph"")) 1 else 2
+@@ -190,7 +233,7 @@ open class OpenGLRenderer : Renderer, Hubable, ClearGLDefaultEventListener {
+             gb.addDepthBuffer(this.gl, 32, 1)
+ 
+             // 32bit depth buffers might not be supported, fall back to 24bit
+-            if(!gb.checkDrawBuffers(this.gl)) {
++            if (!gb.checkDrawBuffers(this.gl)) {
+                 gb = GLFramebuffer(this.gl, actualWidth, actualHeight)
+                 gb.addFloatRGBABuffer(this.gl, 32)
+                 gb.addFloatRGBABuffer(this.gl, 16)
+@@ -214,26 +257,6 @@ open class OpenGLRenderer : Renderer, Hubable, ClearGLDefaultEventListener {
+ 
+             combinationBuffer.add(cb)
+         }
+-
+-        logger.info(geometryBuffer.map { it.toString() }.joinToString(""\n""))
+-
+-        lightingPassProgram = GLProgram.buildProgram(gl, OpenGLRenderer::class.java,
+-            arrayOf(""shaders/FullscreenQuad.vert"", ""shaders/DeferredLighting.frag""))
+-
+-        hdrPassProgram = GLProgram.buildProgram(gl, OpenGLRenderer::class.java,
+-            arrayOf(""shaders/FullscreenQuad.vert"", ""shaders/HDR.frag""))
+-
+-        combinerProgram = GLProgram.buildProgram(gl, OpenGLRenderer::class.java,
+-            arrayOf(""shaders/FullscreenQuad.vert"", ""shaders/Combiner.frag""))
+-
+-        gl.glViewport(0, 0, this.window.width, this.window.height)
+-        gl.glClearColor(0.0f, 0.0f, 0.0f, 0.0f)
+-
+-        gl.glEnable(GL4.GL_TEXTURE_GATHER)
+-
+-        initialized = true
+-
+-        initializeScene()
+     }
+ 
+     override fun display(pDrawable: GLAutoDrawable) {
+@@ -329,7 +352,7 @@ open class OpenGLRenderer : Renderer, Hubable, ClearGLDefaultEventListener {
+     }
+ 
+     protected fun textureTypeToArrayName(type: String): String {
+-        return when(type) {
++        return when (type) {
+             ""ambient"" -> ""ObjectTextures[0]""
+             ""diffuse"" -> ""ObjectTextures[1]""
+             ""specular"" -> ""ObjectTextures[2]""
+@@ -666,7 +689,7 @@ open class OpenGLRenderer : Renderer, Hubable, ClearGLDefaultEventListener {
+      * @param[scene] [Scene] to render. Must have been given to [initializeScene] before or bad things will happen.
+      */
+     override fun render() {
+-        if(scene.children.count() == 0 ||
++        if (scene.children.count() == 0 ||
+             lightingPassProgram == null ||
+             hdrPassProgram == null ||
+             combinerProgram == null
+@@ -676,6 +699,15 @@ open class OpenGLRenderer : Renderer, Hubable, ClearGLDefaultEventListener {
+             return
+         }
+ 
++        if(mustRecreateFramebuffers) {
++            recreateFramebuffers()
++
++            gl.glClear(GL.GL_DEPTH_BUFFER_BIT or GL.GL_COLOR_BUFFER_BIT)
++            gl.glViewport(0, 0, window.width, window.height)
++
++            mustRecreateFramebuffers = false
++        }
++
+         val renderOrderList = ArrayList<Node>()
+         val cam: Camera = scene.findObserver()
+         var mv: GLMatrix
+@@ -1014,7 +1046,7 @@ open class OpenGLRenderer : Renderer, Hubable, ClearGLDefaultEventListener {
+             renderFullscreenQuad(combinerProgram!!)
+         }
+ 
+-        if(screenshotRequested && joglDrawable != null) {
++        if (screenshotRequested && joglDrawable != null) {
+             try {
+                 val readBufferUtil = AWTGLReadBufferUtil(joglDrawable!!.glProfile, false)
+                 val image = readBufferUtil.readPixelsToBufferedImage(gl, true)
+@@ -1273,29 +1305,22 @@ open class OpenGLRenderer : Renderer, Hubable, ClearGLDefaultEventListener {
+      * @param[newWidth] The resized window's width
+      * @param[newHeight] The resized window's height
+      */
+-    fun reshape(newWidth: Int, newHeight: Int) {
+-        if(!initialized) {
++    override fun reshape(newWidth: Int, newHeight: Int) {
++        if (!initialized) {
+             return
+         }
+-        window.width = newWidth
+-        window.height = newHeight
+ 
+-        if (settings.get<Boolean>(""vr.Active"")) {
+-            val eyeDivisor = settings.get<Int>(""vr.EyeDivisor"")
+-            geometryBuffer.forEach {
+-                it.resize(gl, newWidth / eyeDivisor, newHeight)
+-            }
++        lastResizeTimer.cancel()
+ 
+-            hdrBuffer.forEach {
+-                it.resize(gl, newWidth / eyeDivisor, newHeight)
+-            }
+-        } else {
+-            geometryBuffer.first().resize(gl, newWidth, newHeight)
+-            hdrBuffer.first().resize(gl, newWidth, newHeight)
+-        }
++        lastResizeTimer = Timer()
++        lastResizeTimer.schedule(object : TimerTask() {
++            override fun run() {
++                window.width = newWidth
++                window.height = newHeight
+ 
+-        gl.glClear(GL.GL_DEPTH_BUFFER_BIT or GL.GL_COLOR_BUFFER_BIT)
+-        gl.glViewport(0, 0, window.width, window.height)
++                mustRecreateFramebuffers = true
++            }
++        }, WINDOW_RESIZE_TIMEOUT)
+     }
+ 
+     /**"
+scenerygraphics/scenery,37,12f39fdb624d5e774d809b7445c15ad93f5a2caf,src/main/kotlin/scenery/backends/vulkan/VulkanRenderer.kt,modified,14,5,19,"@@ -15,18 +15,23 @@ import org.lwjgl.vulkan.VK10.*
+ import org.slf4j.Logger
+ import org.slf4j.LoggerFactory
+ import scenery.*
+-import scenery.backends.*
++import scenery.backends.RenderConfigReader
++import scenery.backends.Renderer
++import scenery.backends.SceneryWindow
++import scenery.backends.createRenderpassFlow
+ import scenery.fonts.SDFFontAtlas
+-import java.awt.color.ColorSpace
+-import java.awt.image.*
++import java.awt.image.BufferedImage
++import java.awt.image.DataBufferByte
+ import java.io.File
+-import java.nio.*
++import java.nio.ByteBuffer
++import java.nio.IntBuffer
++import java.nio.LongBuffer
++import java.text.SimpleDateFormat
+ import java.util.*
+ import java.util.concurrent.ConcurrentHashMap
+ import java.util.concurrent.ExecutorService
+ import java.util.concurrent.Executors
+ import java.util.concurrent.TimeUnit
+-import java.text.SimpleDateFormat
+ import javax.imageio.ImageIO
+ import kotlin.concurrent.thread
+ 
+@@ -2188,4 +2193,8 @@ open class VulkanRenderer : Renderer {
+     override fun close() {
+         vkDestroyInstance(instance, null)
+     }
++
++    override fun reshape(newWidth: Int, newHeight: Int) {
++
++    }
+ }"
+scenerygraphics/scenery,37,12f39fdb624d5e774d809b7445c15ad93f5a2caf,src/main/kotlin/scenery/controls/GLFWMouseAndKeyHandler.kt,modified,11,5,16,"@@ -1,27 +1,33 @@
+ package scenery.controls
+ 
+-import com.jogamp.newt.event.*
++import com.jogamp.newt.event.InputEvent
++import com.jogamp.newt.event.KeyEvent
++import com.jogamp.newt.event.MouseEvent
++import com.jogamp.newt.event.WindowEvent
+ import gnu.trove.map.hash.TIntLongHashMap
+ import gnu.trove.set.hash.TIntHashSet
+ import net.java.games.input.*
+-import org.lwjgl.glfw.*
++import org.lwjgl.glfw.GLFW.*
++import org.lwjgl.glfw.GLFWCursorPosCallback
++import org.lwjgl.glfw.GLFWKeyCallback
++import org.lwjgl.glfw.GLFWMouseButtonCallback
++import org.lwjgl.glfw.GLFWScrollCallback
+ import org.scijava.ui.behaviour.*
+ import org.slf4j.Logger
+ import org.slf4j.LoggerFactory
++import scenery.Hub
+ import scenery.controls.behaviours.GamepadBehaviour
+ import java.awt.Toolkit
+ import java.io.File
+ import java.nio.file.Files
+ import java.util.*
+ import java.util.concurrent.ConcurrentHashMap
+ import kotlin.concurrent.thread
+-import org.lwjgl.glfw.GLFW.*
+-import org.lwjgl.glfw.GLFWKeyCallback
+ 
+ /**
+  * Created by ulrik on 10/26/2016.
+  */
+-open class GLFWMouseAndKeyHandler : MouseAndKeyHandler {
++open class GLFWMouseAndKeyHandler(protected var hub: Hub?) : MouseAndKeyHandler {
+ 
+     var cursorCallback = object : GLFWCursorPosCallback() {
+         override fun invoke(window: Long, xpos: Double, ypos: Double) {"
+scenerygraphics/scenery,37,12f39fdb624d5e774d809b7445c15ad93f5a2caf,src/main/kotlin/scenery/controls/InputHandler.kt,modified,6,6,12,"@@ -1,25 +1,25 @@
+ package scenery.controls
+ 
+ import net.java.games.input.Component
++import org.lwjgl.glfw.GLFW.*
+ import org.scijava.ui.behaviour.Behaviour
+ import org.scijava.ui.behaviour.BehaviourMap
+ import org.scijava.ui.behaviour.InputTriggerMap
+ import org.scijava.ui.behaviour.io.InputTriggerConfig
+ import org.scijava.ui.behaviour.io.yaml.YamlConfigIO
++import org.slf4j.Logger
++import org.slf4j.LoggerFactory
+ import scenery.Hub
+ import scenery.Hubable
+ import scenery.Scene
+ import scenery.SceneryElement
+-import scenery.controls.behaviours.*
+ import scenery.backends.Renderer
+ import scenery.backends.SceneryWindow
++import scenery.controls.behaviours.*
+ import java.io.FileNotFoundException
+ import java.io.FileReader
+ import java.io.Reader
+ import java.io.StringReader
+-import org.lwjgl.glfw.GLFW.*
+-import org.slf4j.Logger
+-import org.slf4j.LoggerFactory
+ 
+ /**
+  * Input orchestrator for ClearGL windows
+@@ -56,7 +56,7 @@ class InputHandler(scene: Scene, renderer: Renderer, override var hub: Hub?) : H
+ 
+         if(window.clearglWindow != null) {
+             // create Mouse & Keyboard Handler
+-            handler = JOGLMouseAndKeyHandler()
++            handler = JOGLMouseAndKeyHandler(hub)
+             handler.setInputMap(inputMap)
+             handler.setBehaviourMap(behaviourMap)
+ 
+@@ -66,7 +66,7 @@ class InputHandler(scene: Scene, renderer: Renderer, override var hub: Hub?) : H
+                 addWindowListener(handler)
+             }
+         } else if(window.glfwWindow != null) {
+-            handler = GLFWMouseAndKeyHandler()
++            handler = GLFWMouseAndKeyHandler(hub)
+ 
+             handler.setInputMap(inputMap)
+             handler.setBehaviourMap(behaviourMap)"
+scenerygraphics/scenery,37,12f39fdb624d5e774d809b7445c15ad93f5a2caf,src/main/kotlin/scenery/controls/JOGLMouseAndKeyHandler.kt,modified,2,1,3,"@@ -7,6 +7,7 @@ import net.java.games.input.*
+ import org.scijava.ui.behaviour.*
+ import org.slf4j.Logger
+ import org.slf4j.LoggerFactory
++import scenery.Hub
+ import scenery.controls.behaviours.GamepadBehaviour
+ import java.awt.Toolkit
+ import java.io.File
+@@ -20,7 +21,7 @@ import kotlin.concurrent.thread
+  *
+  * @author Ulrik Günther <hello@ulrik.is>
+  */
+-class JOGLMouseAndKeyHandler : MouseAndKeyHandler, MouseListener, KeyListener, WindowListener, WindowAdapter(), ControllerListener {
++class JOGLMouseAndKeyHandler(protected var hub: Hub?) : MouseAndKeyHandler, MouseListener, KeyListener, WindowListener, WindowAdapter(), ControllerListener {
+     /** slf4j logger for this class */
+     protected var logger: Logger = LoggerFactory.getLogger(""InputHandler"")
+ "

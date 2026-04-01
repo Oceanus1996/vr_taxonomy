@@ -1,0 +1,146 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+gftruj/aframe-hand-tracking-controls-extras,5,f19b3206fa2e065379a031e3a259cf48454680b2,components/index.js,modified,2,1,3,"@@ -1,4 +1,5 @@
+ require (""./src/drag-rotate"")
+ require (""./src/drag-move"")
+ require (""./src/hand-teleport"")
+-require (""./src/finger-cursor"")
+\ No newline at end of file
++require (""./src/finger-cursor"")
++require(""./src/touchy-fingertips"")
+\ No newline at end of file"
+gftruj/aframe-hand-tracking-controls-extras,5,f19b3206fa2e065379a031e3a259cf48454680b2,components/src/touchy-fingertips.js,added,101,0,101,"@@ -0,0 +1,101 @@
++AFRAME.registerComponent(""cube-ray"", {
++    schema: {
++      showLines: {
++        default: true
++      },
++      far: {
++        default: 0.1
++      },
++      objects: {
++        default: ""[data-raycastable]""
++      }
++    },
++    createRaySetupData: function(x, y, z) {
++      return {
++        direction: new THREE.Vector3(x, y, z),
++        element: document.createElement(""a-entity"")
++      }
++    },
++    init: function() {
++      this.raySetup = {
++        xUp: this.createRaySetupData(1, 0, 0),
++        xDown: this.createRaySetupData(-1, 0, 0),
++        yUp: this.createRaySetupData(0, 1, 0),
++        yDown: this.createRaySetupData(0, -1, 0),
++        zUp: this.createRaySetupData(0, 0, 1),
++        zDown: this.createRaySetupData(0, 0, -1)
++      }
++      for (let dir in this.raySetup) {
++        this.el.appendChild(this.raySetup[dir].element);
++      }
++      this.updateRaycaster = this.updateRaycaster.bind(this);
++    },
++    updateRaycaster(rayname) {
++      this.raySetup[rayname].element.setAttribute(`cursor`, {
++        fuse: true,
++        fuseTimeout: 25
++      })
++      this.raySetup[rayname].element.setAttribute(`raycaster`, {
++        direction: this.raySetup[rayname].direction,
++        showLine: this.data.showLines,
++        lineColor: ""blue"",
++        far: this.data.far,
++        objects: this.data.objects
++      })
++    },
++    update: function() {
++      for (let dir in this.raySetup) {
++        this.updateRaycaster(dir)
++      }
++    },
++    remove: function() {
++      for (let dir in this.raySetup) {
++        this.el.removeChild(this.raySetup[dir].element)
++      }
++    }
++  });
++
++
++AFRAME.registerComponent(""touchy-fingertip"", {
++    schema: {
++        debug: {
++            default: false
++        },
++        far: {
++            default: 0.01
++        },
++      objects: {
++        default: ""[data-raycastable]""
++      }
++    },
++    init: function () {
++        this.fingertips = {};
++        this.onHandTrackingLoaded = this.onHandTrackingLoaded.bind(this);
++        this.el.addEventListener(""hand-tracking-extras-ready"", this.onHandTrackingLoaded);
++    },
++    onHandTrackingLoaded: function (evt) {
++        this.jointAPI = evt.detail.data.jointAPI;
++        this.indexTip = this.jointAPI.getIndexTip();
++        this.touchyTip = document.createElement(""a-entity"")
++        this.touchyTip.setAttribute(""cube-ray"", {
++            showLines: this.data.debug,
++            far: this.data.far,
++            objects: this.data.objects
++        })
++        console.log(this.data.far)
++        this.el.appendChild(this.touchyTip)
++    },
++    tick: (function () {
++        return function () {
++            // wait for the fingertips
++            if (!this.indexTip) return
++            
++            const tip = this.indexTip;
++            const raysObj = this.touchyTip.object3D
++            if (!tip.isValid()) {               
++                return;
++            }
++            tip.getPosition(raysObj.position);
++        }
++    })()
++})
+\ No newline at end of file"
+gftruj/aframe-hand-tracking-controls-extras,5,f19b3206fa2e065379a031e3a259cf48454680b2,examples/fingertip-touch.html,added,31,0,31,"@@ -0,0 +1,31 @@
++<script src=""https://aframe.io/releases/1.4.2/aframe.min.js""></script>
++<script src=""../dist/aframe-hand-tracking-controls-extras-full.js""></script>
++
++<a-scene cursor=""rayOrigin: mouse"" raycaster=""objects: [data-raycastable]"">
++    <a-cylinder data-raycastable position=""1 0.75 -0.5"" radius=""0.5"" height=""1.5"" color=""#FFC65D"" animation__1=""property: components.material.material.color;
++                  type: color;
++                  to: blue;
++                  dur: 50; 
++                  easing: linear; 
++                  startEvents: click"" animation__2=""property: components.material.material.color;
++                  type: color;
++                  to: #FFC65D;
++                  dur: 50; 
++                  easing: linear; 
++                  startEvents: animationcomplete__1"">
++    </a-cylinder>
++
++    <a-plane position=""0 0 -4"" rotation=""-90 0 0"" width=""4"" height=""4"" color=""#7BC8A4""></a-plane>
++    <a-entity id=""rig"">
++        <a-camera>
++        </a-camera>
++    <a-entity id=""leftHand"" hand-tracking-controls=""hand: left;"" hand-tracking-extras></a-entity>
++    <a-entity id=""rightHand"" 
++            hand-tracking-controls=""hand: right;"" 
++            hand-tracking-extras 
++            world-drag=""rig: #rig""
++            touchy-fingertip=""debug: true"">
++    </a-entity>
++    </a-entity>
++    <a-sky color=""#ECECEC""></a-sky>
++</a-scene>
+\ No newline at end of file"

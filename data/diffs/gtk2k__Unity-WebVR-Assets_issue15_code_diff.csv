@@ -1,0 +1,80 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+gtk2k/Unity-WebVR-Assets,15,a2a3d3bdd5a7311bf6dd942d8e39926ab9968de1,WebGLTemplates/WebVR/css/webvr.css,modified,25,0,25,"@@ -1,3 +1,28 @@
++.canvas-wrapper {
++  overflow: hidden;
++  position: relative;
++}
++
++/* Hides Chromium mirroring issue (see https://github.com/gtk2k/Unity-WebVR-Sample-Assets/issues/14). */
++[data-vr-is-presenting=""true""][data-supports-vr-chromium=""true""] .canvas-wrapper:before {
++  align-items: flex-end;
++  background: #336 url(../TemplateData/vr-toggle.svg) 50% 100% no-repeat;
++  background-position: 50% calc(100% - 4rem);
++  background-size: auto 10rem;
++  bottom: 0;
++  color: #dde;
++  content: attr(data-vr-presentation-text);
++  display: flex;
++  font: 300 2rem/1.1 Consolas, Andale Mono, monaco, monospace;
++  justify-content: center;
++  left: 0;
++  padding-bottom: 3rem;
++  position: absolute;
++  right: 0;
++  top: 0;
++  z-index: 1;
++}
++
+ .fullscreen .vr {
+   display: inline-block;
+ }"
+gtk2k/Unity-WebVR-Assets,15,a2a3d3bdd5a7311bf6dd942d8e39926ab9968de1,WebGLTemplates/WebVR/index.html,modified,1,1,2,"@@ -11,7 +11,7 @@
+   <body class=""template"" data-unity-width=""960"" data-unity-height=""600"" data-unity-loaded=""false"" data-vr-loaded=""false"" data-supports-vr=""false"">
+     <p class=""header""><span>Unity WebGL Player | </span>%UNITY_WEB_NAME%</p>
+     <div class=""template-wrap clear"">
+-      <div class=""canvas-wrapper"" style=""width: %UNITY_WIDTH%px; height: %UNITY_HEIGHT%px;"">
++      <div class=""canvas-wrapper"" style=""width: %UNITY_WIDTH%px; height: %UNITY_HEIGHT%px"" data-vr-presentation-text=""Put on your VR headset now"">
+         <canvas class=""emscripten"" id=""canvas"" height=""%UNITY_HEIGHT%"" width=""%UNITY_WIDTH%""></canvas>
+       </div>
+       <div class=""logo""></div>"
+gtk2k/Unity-WebVR-Assets,15,a2a3d3bdd5a7311bf6dd942d8e39926ab9968de1,WebGLTemplates/WebVR/js/UnityWebVRManager.js,modified,8,9,17,"@@ -15,6 +15,7 @@
+ 
+   if (isSupported) {
+     document.body.dataset.supportsVr = 'true';
++    document.body.dataset.supportsVrChromium = 'chrome' in window && 'getVRDisplays' in navigator;
+   }
+ 
+   btnFsEnter.addEventListener('click', btnFsEnterOnClick);
+@@ -296,15 +297,11 @@
+ 
+   function resizeCanvas () {
+     if (isPresenting()) {
+-      if (isDeprecatedAPI) {
+-        canvas.width = Math.max(eyeParamsL.renderRect.width * 2, eyeParamsL.renderRect.height);
+-        canvas.height = Math.max(eyeParamsL.renderRect.height, eyeParamsL.renderRect.height);
+-      } else {
+-        canvas.width = Math.max(eyeParamsL.renderWidth * 2, eyeParamsL.renderHeight);
+-        canvas.height = Math.max(eyeParamsL.renderHeight, eyeParamsL.renderHeight);
+-        // TODO: Figure out how to properly mirror the canvas stereoscopically with the v1.0 API in Chromium.
+-        // See https://github.com/toji/webvr-samples/blob/633a43e/04-simple-mirroring.html#L227-L231
+-      }
++      canvas.width = Math.max(eyeParamsL.renderWidth, eyeParamsR.renderWidth) * 2;
++      canvas.height = Math.max(eyeParamsL.renderHeight, eyeParamsR.renderHeight);
++      // TODO: Figure out how to properly mirror the canvas stereoscopically with the v1.0 API in Chromium:
++      // https://github.com/gtk2k/Unity-WebVR-Sample-Assets/pull/15
++      // See https://github.com/toji/webvr-samples/blob/633a43e/04-simple-mirroring.html#L227-L231
+     } else {
+       revertCanvas();
+     }
+@@ -318,9 +315,11 @@
+   function modeChange (e) {
+     if (isPresenting()) {
+       SendMessage('WebVRCameraSet', 'changeMode', 'vr');
++      document.body.dataset.vrPresenting = 'true';
+       btnVrToggle.textContent = btnVrToggle.title = btnVrToggle.dataset.exitVrTitle;
+     } else {
+       SendMessage('WebVRCameraSet', 'changeMode', 'normal');
++      document.body.dataset.vrPresenting = 'false';
+       btnVrToggle.textContent = btnVrToggle.title = btnVrToggle.dataset.enterVrTitle;
+     }
+     resizeCanvas();"

@@ -1,0 +1,311 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vizorvr/patches,1802,4bf9163,browser/plugins/three_text_geometry.plugin.js,modified,26,28,54,"@@ -123,45 +123,43 @@
+ 
+ 	ThreeTextGeometry.prototype.update_state = function() {
+ 		if (!this.font || !this.font.font || (this.state.fontId !== this.font.font.id)) {
+-			if (!this.loadPromise) {
+-				this.font = this.fontSelector.getById(this.state.fontId)
+-
+-				if (!this.font.font) {
+-					var that = this
+-
+-					var dfd = when.defer()
++			if (this.loadPromise) {
++				return
++			}
+ 
+-					var doLoad = function() {
+-						that.fontSelector.fontLoader.load(that.font.url, function(font) {
+-							that.font.font = font
+-							that.reconstructGeometry()
++			this.font = this.fontSelector.getById(this.state.fontId)
+ 
+-							dfd.resolve()
+-						})
+-					}
++			if (!this.font.font) {
++				var that = this
+ 
+-					if (this.loadPromise) {
+-						this.loadPromise.then(doLoad)
+-					}
+-					else {
+-						this.loadPromise = dfd.promise
++				var dfd = when.defer()
+ 
+-						doLoad()
+-					}
++				var doLoad = function() {
++					that.fontSelector.fontLoader.load(that.font.url, function(font) {
++						that.font.font = font
++						that.reconstructGeometry()
+ 
+-					this.loadPromise.then(function() {
+-						that.loadPromise = undefined
++						dfd.resolve()
+ 					})
+ 				}
++
++				if (this.loadPromise) {
++					this.loadPromise.then(doLoad)
++				}
+ 				else {
+-					this.reconstructGeometry()
++					this.loadPromise = dfd.promise
++
++					doLoad()
+ 				}
+-			}
+ 
+-			return
+-		}
++				this.loadPromise.then(function() {
++					that.loadPromise = undefined
++				})
+ 
+-		if (!this.dirty) {
++				return
++			}
++		}
++		else if (!this.dirty) {
+ 			return
+ 		}
+ "
+vizorvr/patches,1802,4bf9163,browser/scripts/fontSelector.js,modified,2,2,4,"@@ -5,8 +5,8 @@ var FontSelector = function() {
+ 		id: 'source sans',
+ 		url: '/data/fonts/Source Sans Pro_Regular.json'
+ 	}, {
+-		name: 'Source Sans',
+-		id: 'source sans',
++		name: 'Source Sans Bold',
++		id: 'source sans bold',
+ 		url: '/data/fonts/Source Sans Pro_Bold.json'
+ 	}, {
+ 		name: 'Helvetiker',"
+vizorvr/patches,1802,70b3476,browser/data/fonts/Source Sans Pro_Bold.json,added,1,0,1,
+vizorvr/patches,1802,70b3476,browser/data/fonts/Source Sans Pro_Regular.json,added,1,0,1,
+vizorvr/patches,1802,70b3476,browser/plugins/three_text_geometry.plugin.js,modified,68,19,87,"@@ -29,18 +29,36 @@
+ 			name: 'geometry', dt: core.datatypes.GEOMETRY
+ 		}]
+ 
++		this.fontSelector = new FontSelector()
++
++		this.state = {
++			fontId: this.fontSelector.getByIndex(0).id
++		}
++
+ 		this.desc = 'Generate text'
+ 	}
+ 
+ 	ThreeTextGeometry.prototype = Object.create(Plugin.prototype)
+ 	ThreeTextGeometry.prototype.constructor = Plugin.prototype
+ 
++	ThreeTextGeometry.prototype.create_ui = function() {
++		var $ui = make('div')
++
++		var that = this
++
++		this.fontSelector.createUi($ui, function(newFont, newSelection) {
++			that.undoableSetState('fontId', newSelection, that.state.fontId)
++			that.font = newFont
++		})
++
++		return $ui
++	}
++
+ 	ThreeTextGeometry.prototype.reset = function() {
+ 		this.geometry = new THREE.Geometry()
+ 		this.dirty = true
+ 	}
+ 
+-
+ 	ThreeTextGeometry.prototype.update_input = function(slot, data) {
+ 		this.dirty = true
+ 	}
+@@ -49,15 +67,7 @@
+ 		return this.geometry
+ 	}
+ 
+-	ThreeTextGeometry.prototype.update_state = function() {
+-		if (!this.dirty) {
+-			return
+-		}
+-
+-		if (!this.font) {
+-			return
+-		}
+-
++	ThreeTextGeometry.prototype.reconstructGeometry = function() {
+ 		var parameters = {
+ 			curveSegments: this.inputValues.segments,
+ 			size: this.inputValues.size,
+@@ -91,7 +101,7 @@
+ 				}
+ 			}
+ 
+-			var lineShapes = this.font.generateShapes(lines[i], parameters.size, parameters.curveSegments)
++			var lineShapes = this.font.font.generateShapes(lines[i], parameters.size, parameters.curveSegments)
+ 
+ 			if (this.geometry) {
+ 				var mtx = new THREE.Matrix4().makeTranslation(0, lineHeight, 0)
+@@ -107,20 +117,59 @@
+ 		this.geometry.computeFaceNormals()
+ 
+ 		this.dirty = false
++
++		this.updated = true
+ 	}
+ 
+-	ThreeTextGeometry.prototype.state_changed = function(ui) {
+-		if (ui) {
++	ThreeTextGeometry.prototype.update_state = function() {
++		if (!this.font || !this.font.font || (this.state.fontId !== this.font.font.id)) {
++			if (this.loadPromise) {
++				return
++			}
++
++			this.font = this.fontSelector.getById(this.state.fontId)
++
++			if (!this.font.font) {
++				var that = this
++
++				var dfd = when.defer()
++
++				var doLoad = function() {
++					that.fontSelector.fontLoader.load(that.font.url, function(font) {
++						that.font.font = font
++						that.reconstructGeometry()
++
++						dfd.resolve()
++					})
++				}
++
++				if (this.loadPromise) {
++					this.loadPromise.then(doLoad)
++				}
++				else {
++					this.loadPromise = dfd.promise
++
++					doLoad()
++				}
++
++				this.loadPromise.then(function() {
++					that.loadPromise = undefined
++				})
++
++				return
++			}
++		}
++		else if (!this.dirty) {
+ 			return
+ 		}
+ 
+-		var that = this
++		this.reconstructGeometry()
++	}
+ 
+-		if (!this.font) {
+-			var fontLoader = new THREE.FontLoader()
+-			fontLoader.load(""/data/fonts/helvetiker_regular.typeface.js"", function(font) {
+-				that.font = font
+-			})
++	ThreeTextGeometry.prototype.state_changed = function(ui) {
++		if (ui) {
++			this.fontSelector.initialise(ui, this.state.fontId)
++			return
+ 		}
+ 	}
+ })()"
+vizorvr/patches,1802,70b3476,browser/scripts/fontSelector.js,added,76,0,76,"@@ -0,0 +1,76 @@
++var FontSelector = function() {
++	this.fonts = [
++	{
++		name: 'Source Sans',
++		id: 'source sans',
++		url: '/data/fonts/Source Sans Pro_Regular.json'
++	}, {
++		name: 'Source Sans Bold',
++		id: 'source sans bold',
++		url: '/data/fonts/Source Sans Pro_Bold.json'
++	}, {
++		name: 'Helvetiker',
++		id: 'helvetiker',
++		url: '/data/fonts/helvetiker_regular.typeface.js'
++	}, {
++		name: 'Helvetiker Bold',
++		id: 'helvetiker bold',
++		url: '/data/fonts/helvetiker_bold.typeface.js'
++	}]
++
++	this.fontLoader = new THREE.FontLoader()
++
++	this.getByIndex = function(idx) {
++		return this.fonts[idx]
++	}
++
++	this.getById = function(id) {
++		for(var i = 0, len = this.fonts.length; i < len; ++i) {
++			if (this.fonts[i].id === id) {
++				return this.fonts[i]
++			}
++		}
++	}
++
++	this.getIndex = function(font) {
++		return this.fonts.indexOf(font)
++	}
++
++
++	this.createUi = function($ui, callback) {
++		var $selectFont = $('<select class=""font-type-sel"" title=""Select Font""/>')
++
++		for (var i = 0, len = this.fonts.length; i < len; ++i) {
++			var font = this.fonts[i]
++			$('<option>', {value: i, text: font.name}).appendTo($selectFont)
++		}
++
++		var that = this
++
++		$selectFont.change(function() {
++			var newFont = that.getByIndex($selectFont.val())
++			var selection = newFont.id
++
++			if (!newFont.font) {
++				that.fontLoader.load(newFont.url, function(font) {
++					newFont.font = font
++					callback(newFont, selection)
++				})
++			}
++			else {
++				callback(newFont, selection)
++			}
++		})
++
++		$ui.append($selectFont)
++	}
++
++	this.initialise = function(ui, id) {
++		var font = this.getById(id)
++		var idx = this.getIndex(font)
++		ui.find('.font-type-sel').val(idx)
++	}
++}
++
++if (typeof(module) !== 'undefined')
++	module.exports = FontSelector"
+vizorvr/patches,1802,70b3476,gulpfile.js,modified,1,0,1,"@@ -45,6 +45,7 @@ var paths = {
+ 			'./browser/scripts/abstractPlugins/abstractAnimateValueOnTriggerPlugin.js',
+ 	
+ 			'./browser/scripts/blendFunctions.js',
++			'./browser/scripts/fontSelector.js',
+ 
+ 			'./browser/scripts/worldEditor/worldEditor.js',
+ 			'./browser/scripts/worldEditor/worldEditorPerspectiveCamera.js',"
+vizorvr/patches,1802,70b3476,views/layouts/editor.handlebars,modified,1,0,1,"@@ -65,6 +65,7 @@
+     <script type=""text/javascript"" src=""/scripts/autoSlotGroup.js""></script>
+     <script type=""text/javascript"" src=""/scripts/variables.js""></script>
+ 	<script type=""text/javascript"" src=""/scripts/blendFunctions.js""></script>
++    <script type=""text/javascript"" src=""/scripts/fontSelector.js""></script>
+ 
+     <script type=""text/javascript"" src=""/scripts/loaders/loader.js""></script>
+     <script type=""text/javascript"" src=""/scripts/loaders/imageLoader.js""></script>"

@@ -1,0 +1,181 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+AltspaceVR/AltspaceSDK,21,6b497d1bfe9f8e96d0259950a0c209bafe0631f0,gulpfile.js,added,37,0,37,"@@ -0,0 +1,37 @@
++var
++	fs = require('fs'),
++	gulp = require('gulp'),
++	del = require('del'),
++	merge = require('merge-stream'),
++	webpackStream = require('webpack-stream'),
++	replace = require('gulp-replace');
++
++function versionAndPack(filename, webpackPlugins) {
++	return gulp.src('./src/index.js')
++		.pipe(webpackStream({
++			output: {
++				filename: filename
++			},
++			plugins: webpackPlugins
++		}))
++		.pipe(replace('AFRAME_ALTSPACE_VERSION', version))
++		.pipe(gulp.dest('./dist/'));
++}
++
++gulp.task('clean:dist', function () {
++	return del(['./dist/*.js']);
++});
++gulp.task('dist', ['clean:dist'], function () {
++	version = JSON.parse(fs.readFileSync('./package.json')).version;
++	console.log('version', version);
++	return merge(
++		versionAndPack('aframe-altspace-component.js'),
++		versionAndPack(
++			'aframe-altspace-component.min.js',
++			[
++				new webpackStream.webpack.optimize.UglifyJsPlugin(),
++				new webpackStream.webpack.optimize.OccurrenceOrderPlugin()
++			]
++		)
++	);
++});"
+AltspaceVR/AltspaceSDK,21,6b497d1bfe9f8e96d0259950a0c209bafe0631f0,package.json,modified,6,2,8,"@@ -6,7 +6,7 @@
+   ""scripts"": {
+     ""build"": ""browserify examples/main.js -o examples/build.js"",
+     ""dev"": ""budo examples/main.js:build.js --dir examples --port 8000 --live --open"",
+-    ""dist"": ""webpack src/index.js dist/aframe-altspace-component.js && webpack -p src/index.js dist/aframe-altspace-component.min.js"",
++    ""dist"": ""gulp dist"",
+     ""postpublish"": ""npm run dist"",
+     ""preghpages"": ""npm run build && rm -rf gh-pages && cp -r examples gh-pages"",
+     ""ghpages"": ""npm run preghpages && ghpages -p gh-pages"",
+@@ -39,9 +39,13 @@
+     ""browserify"": ""13.1.0"",
+     ""browserify-css"": ""0.9.2"",
+     ""budo"": ""9.2.0"",
++    ""del"": ""^2.2.2"",
+     ""ghpages"": ""0.0.3"",
++    ""gulp"": ""^3.9.1"",
++    ""gulp-replace"": ""^0.5.4"",
+     ""jsdoc"": ""^3.4.3"",
++    ""merge-stream"": ""^1.0.1"",
+     ""minami"": ""github:altspacevr/minami"",
+-    ""webpack"": ""1.13.2""
++    ""webpack-stream"": ""^3.2.0""
+   }
+ }"
+AltspaceVR/AltspaceSDK,21,6b497d1bfe9f8e96d0259950a0c209bafe0631f0,src/altspace.js,modified,5,2,7,"@@ -20,7 +20,7 @@
+ * <head>
+ *   <title>My A-Frame Scene</title>
+ *   <script src=""https://aframe.io/releases/0.3.0/aframe.min.js""></script>
+-*   <script src=""https://cdn.rawgit.com/AltspaceVR/aframe-altspace-component/v1.0.0/dist/aframe-altspace-component.min.js""></script>
++*   <script src=""https://cdn.rawgit.com/AltspaceVR/aframe-altspace-component/vAFRAME_ALTSPACE_VERSION/dist/aframe-altspace-component.min.js""></script>
+ * </head>
+ * <body>
+ *   <a-scene altspace>
+@@ -29,6 +29,7 @@
+ * </body>
+ */
+ AFRAME.registerComponent('altspace', {
++  version: 'AFRAME_ALTSPACE_VERSION',
+   schema: {
+ 	usePixelScale: { type: 'boolean', default: 'false'},
+ 	verticalAlign: { type: 'string',  default: 'middle'},
+@@ -129,7 +130,9 @@ AFRAME.registerComponent('altspace', {
+ 	}.bind(this));
+ 
+ 	var oldRenderer = this.el.renderer;
+-	var renderer = this.el.renderer = this.el.effect = altspace.getThreeJSRenderer();
++	var renderer = this.el.renderer = this.el.effect = altspace.getThreeJSRenderer({
++	  aframeComponentVersion: this.version
++	});
+ 	var noop = function() {};
+ 	renderer.setSize = noop;
+ 	renderer.setPixelRatio = noop;"
+AltspaceVR/AltspaceSDK,21,bd2ef4a24a190007df317069c4cfcaf5a1e0b42c,README.md,modified,1,1,2,"@@ -120,7 +120,7 @@ var hoverEffect = new ColorHoverEffect( blueGreen );
+ cursorEvents.addEffect( dragEffect, cube );
+ cursorEvents.addEffect( hoverEffect, cube );
+ ```
+-Now the cube is draggable (click once to start drag, click again to release) and it will also change color when the cursor hovers over it. In addition to using plugins included with this SDK, you can create your own, for use in your apps or to share with the Altspace developer community.
++Now the cube is draggable (using left mouse click) and it will also change color when the cursor hovers over it. In addition to using plugins included with this SDK, you can create your own, for use in your apps or to share with the Altspace developer community.
+ 
+ **Step 7**:
+ Add muti-player networking with [FirebaseSync]"
+AltspaceVR/AltspaceSDK,21,bd2ef4a24a190007df317069c4cfcaf5a1e0b42c,examples/chess.html,modified,3,3,6,"@@ -467,9 +467,9 @@
+ 	params.firebaseSync = firebaseSync;
+ 	params.dragPlane = dragPlane;
+ 
+-	if ( showDragPoint ) {
+-		params.dragPointMarker = dragPointSphere;
+-	}
++	if ( showDragPoint ) params.dragPointMarker = dragPointSphere;
++	if ( useOrbitControls ) params.orbitControls = orbitControls;
++
+ 	var dragEffect = new DragPlaneEffect( params );
+ 
+ 	var redTint = new THREE.Color(0.8, 0.2, 0.2);"
+AltspaceVR/AltspaceSDK,21,bd2ef4a24a190007df317069c4cfcaf5a1e0b42c,src/cursor/DragPlaneEffect.js,modified,23,5,28,"@@ -7,7 +7,6 @@
+  */
+ 
+ DragPlaneEffect = function ( params ) {
+-	// TODO: Allow both single-click-drag and click-hold-drag.
+ 
+ 	this.hoverObject;
+ 	this.dragObject;
+@@ -19,9 +18,12 @@ DragPlaneEffect = function ( params ) {
+ 
+   var p = params || {};
+ 
+-  // Save object as drag position changes; initFirebase must be already called.
++  // Save object as drag position changes.
+   this.firebaseSync = p.firebaseSync || null;
+ 
++  // Disable orbit controls during a drag (non-Altspace only). 
++  this.orbitControls = p.orbitControls || null;
++
+   this.dragPlane = p.dragPlane || null;
+ 
+   if ( !this.dragPlane ) {
+@@ -39,11 +41,20 @@ DragPlaneEffect = function ( params ) {
+ 
+ };
+ 
++DragPlaneEffect.prototype.holocursordown = function( object, event ) {
++
++  this.dragStart( object, event );
++
++}
+ 
+ DragPlaneEffect.prototype.holocursorup = function( object, event ) {
+ 
+-  // Clicking object will start or end drag.
+-  this.dragObject ? this.dragEnd( object, event ) : this.dragStart( object, event );
++  this.dragEnd( object, event );
++
++  // To use click-release to start drag, move, then click-release to end drag,
++  // ignore holocursordown and toggle between start/end drag here as follows:
++  // this.dragObject ? this.dragEnd( object, event ) : this.dragStart( object, event );
++  // We could add this as option set in constructor params if desired.
+ 
+ }
+ 
+@@ -61,6 +72,10 @@ DragPlaneEffect.prototype.dragStart = function( object, event ) {
+ 
+   if ( this.dragObject ) {
+ 
++    if ( this.orbitControls ) {
++      this.orbitControls.enabled = false;
++    }
++
+     // Raise/lower the drag plane to match the drag start point.
+     this.dragPlane.position.y = intersectionPoint.y;
+ 
+@@ -83,7 +98,10 @@ DragPlaneEffect.prototype.dragStart = function( object, event ) {
+ 
+ 
+ DragPlaneEffect.prototype.dragEnd = function( object, event ) {
+-    //console.log(""dragEnd"");
++
++    if ( this.orbitControls ) {
++      this.orbitControls.enabled = true;
++    }
+ 
+     this.dragObject = null;
+ "

@@ -1,0 +1,1152 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+Raicuparta/two-forks-vr,128,194efa4ba77ef74495cc192d94d294e69a9cdf32,TwoForksVr/TwoForksVrAssets/Bindings/actions.json,modified,6,1,7,"@@ -83,6 +83,10 @@
+       ""name"": ""/actions/default/in/Teleport"",
+       ""type"": ""boolean""
+     },
++    {
++      ""name"": ""/actions/default/in/Radio"",
++      ""type"": ""boolean""
++    },
+     {
+       ""name"": ""/actions/default/out/Haptic"",
+       ""type"": ""vibration""
+@@ -174,7 +178,8 @@
+       ""/actions/default/in/Grip"": ""Grip"",
+       ""/actions/default/in/SnapTurnRight"": ""Snap Turn Right"",
+       ""/actions/default/in/SnapTurnLeft"": ""Snap Turn Left"",
+-      ""/actions/default/in/Teleport"": ""Teleport""
++      ""/actions/default/in/Teleport"": ""Teleport"",
++      ""/actions/default/in/Radio"": ""Radio""
+     }
+   ]
+ }
+\ No newline at end of file"
+Raicuparta/two-forks-vr,128,194efa4ba77ef74495cc192d94d294e69a9cdf32,TwoForksVr/TwoForksVrAssets/Bindings/bindings_holographic_controller.json,modified,9,0,9,"@@ -206,6 +206,15 @@
+                   ""sub_mode"" : ""touch""
+                },
+                ""path"" : ""/user/hand/left/input/joystick""
++            },
++            {
++               ""inputs"" : {
++                  ""click"" : {
++                     ""output"" : ""/actions/default/in/radio""
++                  }
++               },
++               ""mode"" : ""button"",
++               ""path"" : ""/user/hand/left/input/grip""
+             }
+          ]
+       },"
+Raicuparta/two-forks-vr,128,194efa4ba77ef74495cc192d94d294e69a9cdf32,TwoForksVr/TwoForksVrAssets/Bindings/bindings_knuckles.json,modified,9,0,9,"@@ -190,6 +190,15 @@
+                   ""sub_mode"" : ""touch""
+                },
+                ""path"" : ""/user/hand/left/input/thumbstick""
++            },
++            {
++               ""inputs"" : {
++                  ""click"" : {
++                     ""output"" : ""/actions/default/in/radio""
++                  }
++               },
++               ""mode"" : ""button"",
++               ""path"" : ""/user/hand/left/input/grip""
+             }
+          ]
+       }"
+Raicuparta/two-forks-vr,128,194efa4ba77ef74495cc192d94d294e69a9cdf32,TwoForksVr/TwoForksVrAssets/Bindings/bindings_oculus_touch.json,modified,9,0,9,"@@ -190,6 +190,15 @@
+                   ""sub_mode"" : ""touch""
+                },
+                ""path"" : ""/user/hand/left/input/joystick""
++            },
++            {
++               ""inputs"" : {
++                  ""click"" : {
++                     ""output"" : ""/actions/default/in/radio""
++                  }
++               },
++               ""mode"" : ""button"",
++               ""path"" : ""/user/hand/left/input/grip""
+             }
+          ]
+       }"
+Raicuparta/two-forks-vr,128,194efa4ba77ef74495cc192d94d294e69a9cdf32,TwoForksVr/TwoForksVrAssets/Bindings/bindings_vive_controller.json,modified,9,0,9,"@@ -172,6 +172,15 @@
+                   ""sub_mode"" : ""touch""
+                },
+                ""path"" : ""/user/hand/left/input/trackpad""
++            },
++            {
++               ""inputs"" : {
++                  ""click"" : {
++                     ""output"" : ""/actions/default/in/radio""
++                  }
++               },
++               ""mode"" : ""button"",
++               ""path"" : ""/user/hand/left/input/grip""
+             }
+          ]
+       }"
+Raicuparta/two-forks-vr,128,194efa4ba77ef74495cc192d94d294e69a9cdf32,TwoForksVr/src/Debugging/GeneralDebugger.cs,modified,3,0,3,"@@ -33,6 +33,9 @@ private static void UpdateInputsDebug()
+                 }
+             }
+ 
++            Logs.LogInfo(""## Virtual keys: ##"");
++            foreach (var item in inputManager.customLayout.mapping) Logs.LogInfo($""virtual key: {item.virtualKey}"");
++
+             Logs.LogInfo(""## Ended key bind logs ##"");
+         }
+ "
+Raicuparta/two-forks-vr,128,194efa4ba77ef74495cc192d94d294e69a9cdf32,TwoForksVr/src/LaserPointer/Laser.cs,modified,3,2,5,"@@ -1,5 +1,6 @@
+ ﻿using TwoForksVr.Helpers;
+ using TwoForksVr.LaserPointer.Patches;
++using TwoForksVr.VrInput;
+ using UnityEngine;
+ using Valve.VR;
+ 
+@@ -8,7 +9,7 @@ namespace TwoForksVr.LaserPointer
+     public class Laser : MonoBehaviour
+     {
+         private const float laserLength = 1f;
+-        private readonly SteamVR_Action_Boolean inputAction = SteamVR_Actions.default_Interact;
++        private readonly SteamVR_Action_Boolean inputAction = BindingsManager.ActionSet.Interact;
+         private bool ignoreNextInput;
+ 
+         private LaserInputModule inputModule;
+@@ -91,7 +92,7 @@ private bool HasCurrentTarget()
+         private void UpdateLaserVisibility()
+         {
+             lineRenderer.enabled =
+-                HasCurrentTarget() || SteamVR_Actions.default_Interact.state;
++                HasCurrentTarget() || BindingsManager.ActionSet.Interact.state;
+         }
+ 
+         public bool ClickDown()"
+Raicuparta/two-forks-vr,128,194efa4ba77ef74495cc192d94d294e69a9cdf32,TwoForksVr/src/Limbs/VrHand.cs,modified,5,2,7,"@@ -1,5 +1,6 @@
+ ﻿using TwoForksVr.Assets;
+ using TwoForksVr.Helpers;
++using TwoForksVr.VrInput;
+ using UnityEngine;
+ using Valve.VR;
+ 
+@@ -9,6 +10,7 @@ public class VrHand : MonoBehaviour
+     {
+         private string handName;
+         private bool isLeft;
++        public VrButtonHighlight ButtonHighlight { get; private set; }
+ 
+         public static VrHand Create(Transform parent, bool isLeft = false)
+         {
+@@ -20,6 +22,7 @@ public static VrHand Create(Transform parent, bool isLeft = false)
+             var instance = transform.gameObject.AddComponent<VrHand>();
+             instance.handName = handName;
+             instance.isLeft = isLeft;
++            instance.ButtonHighlight = transform.GetComponentInChildren<VrButtonHighlight>();
+             instance.SetUpPose();
+ 
+             return instance;
+@@ -46,12 +49,12 @@ private void SetUpPose()
+             if (isLeft)
+             {
+                 pose.inputSource = SteamVR_Input_Sources.LeftHand;
+-                pose.poseAction = SteamVR_Actions.default_PoseLeftHand;
++                pose.poseAction = BindingsManager.ActionSet.PoseLeftHand;
+             }
+             else
+             {
+                 pose.inputSource = SteamVR_Input_Sources.RightHand;
+-                pose.poseAction = SteamVR_Actions.default_PoseRightHand;
++                pose.poseAction = BindingsManager.ActionSet.PoseRightHand;
+             }
+         }
+ "
+Raicuparta/two-forks-vr,128,194efa4ba77ef74495cc192d94d294e69a9cdf32,TwoForksVr/src/Limbs/VrLimbManager.cs,modified,15,0,15,"@@ -3,6 +3,7 @@
+ using TwoForksVr.Tools;
+ using TwoForksVr.UI.Patches;
+ using UnityEngine;
++using Valve.VR;
+ 
+ namespace TwoForksVr.Limbs
+ {
+@@ -49,6 +50,20 @@ public void SetUp(Transform playerTransform, Camera camera)
+             VrFoot.Create(skeletonRoot, true);
+         }
+ 
++        public void HighlightButton(params ISteamVR_Action_In_Source[] actions)
++        {
++            if (actions.Length == 0)
++            {
++                LeftHand.ButtonHighlight.HideAllButtonHints();
++                RightHand.ButtonHighlight.HideAllButtonHints();
++            }
++            else
++            {
++                LeftHand.ButtonHighlight.ShowButtonHint(actions);
++                RightHand.ButtonHighlight.ShowButtonHint(actions);
++            }
++        }
++
+         private static Material GetArmsMaterial(Transform playerTransform)
+         {
+             return !playerTransform"
+Raicuparta/two-forks-vr,128,194efa4ba77ef74495cc192d94d294e69a9cdf32,TwoForksVr/src/Locomotion/TeleportController.cs,modified,2,1,3,"@@ -2,6 +2,7 @@
+ using TwoForksVr.Limbs;
+ using TwoForksVr.Settings;
+ using TwoForksVr.Stage;
++using TwoForksVr.VrInput;
+ using UnityEngine;
+ using Valve.VR;
+ 
+@@ -10,7 +11,7 @@ namespace TwoForksVr.Locomotion
+     public class TeleportController : MonoBehaviour
+     {
+         private const float triggerTeleportSquareDistance = 0.3f;
+-        private static readonly SteamVR_Action_Boolean teleportInput = SteamVR_Actions.default_Teleport;
++        private static readonly SteamVR_Action_Boolean teleportInput = BindingsManager.ActionSet.Teleport;
+         private VrLimbManager limbManager;
+         private vgPlayerNavigationController navigationController;
+         private TeleportArc teleportArc;"
+Raicuparta/two-forks-vr,128,194efa4ba77ef74495cc192d94d294e69a9cdf32,TwoForksVr/src/Locomotion/TurningController.cs,modified,4,4,8,"@@ -2,8 +2,8 @@
+ using TwoForksVr.Settings;
+ using TwoForksVr.Stage;
+ using TwoForksVr.VrCamera;
++using TwoForksVr.VrInput;
+ using UnityEngine;
+-using Valve.VR;
+ 
+ namespace TwoForksVr.Locomotion
+ {
+@@ -45,13 +45,13 @@ private void Update()
+ 
+         private void UpdateSnapTurning()
+         {
+-            if (SteamVR_Actions.default_SnapTurnLeft.stateDown)
++            if (BindingsManager.ActionSet.SnapTurnLeft.stateDown)
+             {
+                 stage.FadeToBlack();
+                 Invoke(nameof(SnapTurnLeft), FadeOverlay.Duration);
+             }
+ 
+-            if (SteamVR_Actions.default_SnapTurnRight.stateDown)
++            if (BindingsManager.ActionSet.SnapTurnRight.stateDown)
+             {
+                 stage.FadeToBlack();
+                 Invoke(nameof(SnapTurnRight), FadeOverlay.Duration);
+@@ -62,7 +62,7 @@ private void UpdateSmoothTurning()
+         {
+             navigationController.transform.Rotate(
+                 Vector3.up,
+-                SteamVR_Actions._default.Rotate.axis.x * smoothRotationSpeed * Time.unscaledDeltaTime);
++                BindingsManager.ActionSet.Rotate.axis.x * smoothRotationSpeed * Time.unscaledDeltaTime);
+         }
+ 
+         private void SnapTurnLeft()"
+Raicuparta/two-forks-vr,128,194efa4ba77ef74495cc192d94d294e69a9cdf32,TwoForksVr/src/Stage/VrStage.cs,modified,22,7,29,"@@ -9,6 +9,7 @@
+ using TwoForksVr.UI;
+ using TwoForksVr.VrCamera;
+ using TwoForksVr.VrInput;
++using TwoForksVr.VrInput.ActionInputs;
+ using UnityEngine;
+ using UnityEngine.SceneManagement;
+ using Valve.VR;
+@@ -138,6 +139,11 @@ public void RecenterRotation()
+             cameraManager.RecenterRotation();
+         }
+ 
++        public void HighlightButton(params ISteamVR_Action_In_Source[] actions)
++        {
++            limbManager.HighlightButton(actions);
++        }
++
+         public void FadeToBlack()
+         {
+             if (!fadeOverlay) return;
+@@ -176,18 +182,27 @@ public Transform GetStaticUiTarget()
+             return staticUiTarget ? staticUiTarget.TargetTransform : null;
+         }
+ 
+-        public bool IsVector2CommandExisting(string command)
++        public IActionInput GetInputAction(string virtualKey)
++        {
++            if (!bindingsManager) return null;
++            bindingsManager.ActionMap.TryGetValue(virtualKey, out var value);
++            return value;
++        }
++
++        public float GetInputValue(string virtualKey)
+         {
+-            if (!bindingsManager) return false;
++            if (!bindingsManager) return 0;
++            return bindingsManager.GetValue(virtualKey);
++        }
+ 
+-            return bindingsManager.Vector2XActionMap.ContainsKey(command) ||
+-                   bindingsManager.Vector2YActionMap.ContainsKey(command);
++        public bool GetInputUp(string virtualKey)
++        {
++            return bindingsManager && bindingsManager.GetUp(virtualKey);
+         }
+ 
+-        public SteamVR_Action_Boolean GetBooleanAction(string command)
++        public bool GetInputDown(string virtualKey)
+         {
+-            bindingsManager.BooleanActionMap.TryGetValue(command, out var value);
+-            return value;
++            return bindingsManager && bindingsManager.GetDown(virtualKey);
+         }
+     }
+ }
+\ No newline at end of file"
+Raicuparta/two-forks-vr,128,194efa4ba77ef74495cc192d94d294e69a9cdf32,TwoForksVr/src/Tools/ToolPicker.cs,modified,2,1,3,"@@ -1,6 +1,7 @@
+ ﻿using System.Collections.Generic;
+ using TwoForksVr.Assets;
+ using TwoForksVr.Helpers;
++using TwoForksVr.VrInput;
+ using UnityEngine;
+ using Valve.VR;
+ 
+@@ -10,7 +11,7 @@ public class ToolPicker : MonoBehaviour
+     {
+         private const float minSquareDistance = 0.03f;
+ 
+-        private readonly SteamVR_Action_Boolean input = SteamVR_Actions.default_ToolPicker;
++        private readonly SteamVR_Action_Boolean input = BindingsManager.ActionSet.ToolPicker;
+         private ToolPickerItem hoveredTool;
+         private Transform leftHand;
+         private Transform rightHand;"
+Raicuparta/two-forks-vr,128,194efa4ba77ef74495cc192d94d294e69a9cdf32,TwoForksVr/src/VrCamera/VrCameraManager.cs,modified,2,2,4,"@@ -1,9 +1,9 @@
+ ﻿using TwoForksVr.Helpers;
+ using TwoForksVr.Stage;
++using TwoForksVr.VrInput;
+ using UnityEngine;
+ using UnityEngine.XR;
+ using UnityStandardAssets.ImageEffects;
+-using Valve.VR;
+ 
+ namespace TwoForksVr.VrCamera
+ {
+@@ -42,7 +42,7 @@ private void Start()
+ 
+         private void Update()
+         {
+-            if (SteamVR_Actions.default_Recenter.stateDown) RecenterPosition(true);
++            if (BindingsManager.ActionSet.Recenter.stateDown) RecenterPosition(true);
+             UpdateCulling();
+         }
+ "
+Raicuparta/two-forks-vr,128,194efa4ba77ef74495cc192d94d294e69a9cdf32,TwoForksVr/src/VrInput/ActionInputs/ActionInput.cs,added,21,0,21,"@@ -0,0 +1,21 @@
++﻿using Valve.VR;
++
++namespace TwoForksVr.VrInput.ActionInputs
++{
++    public abstract class ActionInput<TAction> : IActionInput where TAction : ISteamVR_Action_In
++    {
++        protected readonly TAction SpecificAction;
++
++        protected ActionInput(TAction action)
++        {
++            SpecificAction = action;
++        }
++
++        public ISteamVR_Action_In Action => SpecificAction;
++        public bool Active => Action.active;
++        public abstract float Value { get; }
++        public abstract bool ValueUp { get; }
++        public abstract bool ValueDown { get; }
++        public SteamVR_Input_Sources ActiveSource => Action?.activeDevice ?? SteamVR_Input_Sources.Any;
++    }
++}
+\ No newline at end of file"
+Raicuparta/two-forks-vr,128,194efa4ba77ef74495cc192d94d294e69a9cdf32,TwoForksVr/src/VrInput/ActionInputs/ActionInputDefinitions.cs,added,50,0,50,"@@ -0,0 +1,50 @@
++﻿namespace TwoForksVr.VrInput.ActionInputs
++{
++    public static class ActionInputDefinitions
++    {
++        public static readonly EmptyActionInput Empty =
++            new EmptyActionInput();
++
++        public static readonly BooleanActionInput Cancel =
++            new BooleanActionInput(BindingsManager.ActionSet.Cancel);
++
++        public static readonly BooleanActionInput Grip =
++            new BooleanActionInput(BindingsManager.ActionSet.Grip);
++
++        public static readonly BooleanActionInput Radio =
++            new BooleanActionInput(BindingsManager.ActionSet.Radio);
++
++        public static readonly BooleanActionInput Interact =
++            new BooleanActionInput(BindingsManager.ActionSet.Interact);
++
++        public static readonly BooleanActionInput Jog =
++            new BooleanActionInput(BindingsManager.ActionSet.Jog);
++
++        public static readonly BooleanActionInput UIUp =
++            new BooleanActionInput(BindingsManager.ActionSet.UIUp);
++
++        public static readonly BooleanActionInput UIDown =
++            new BooleanActionInput(BindingsManager.ActionSet.UIDown);
++
++        public static readonly BooleanActionInput NextPage =
++            new BooleanActionInput(BindingsManager.ActionSet.NextPage);
++
++        public static readonly BooleanActionInput PreviousPage =
++            new BooleanActionInput(BindingsManager.ActionSet.PreviousPage);
++
++        public static readonly Vector2ActionInput MoveX =
++            new Vector2ActionInput(BindingsManager.ActionSet.Move);
++
++        public static readonly Vector2ActionInput MoveY =
++            new Vector2ActionInput(BindingsManager.ActionSet.Move, true);
++
++        public static readonly Vector2ActionInput RotateX =
++            new Vector2ActionInput(BindingsManager.ActionSet.Rotate);
++
++        public static readonly Vector2ActionInput RotateY =
++            new Vector2ActionInput(BindingsManager.ActionSet.Rotate, true);
++
++        public static readonly BooleanActionInput Recenter =
++            new BooleanActionInput(BindingsManager.ActionSet.Recenter);
++    }
++}
+\ No newline at end of file"
+Raicuparta/two-forks-vr,128,194efa4ba77ef74495cc192d94d294e69a9cdf32,TwoForksVr/src/VrInput/ActionInputs/BooleanActionInput.cs,added,16,0,16,"@@ -0,0 +1,16 @@
++﻿using Valve.VR;
++
++namespace TwoForksVr.VrInput.ActionInputs
++{
++    public class BooleanActionInput : ActionInput<SteamVR_Action_Boolean>
++    {
++        public BooleanActionInput(SteamVR_Action_Boolean action) :
++            base(action)
++        {
++        }
++
++        public override float Value => SpecificAction.state ? 1 : 0;
++        public override bool ValueUp => SpecificAction.stateUp;
++        public override bool ValueDown => SpecificAction.stateDown;
++    }
++}
+\ No newline at end of file"
+Raicuparta/two-forks-vr,128,194efa4ba77ef74495cc192d94d294e69a9cdf32,TwoForksVr/src/VrInput/ActionInputs/EmptyActionInput.cs,added,17,0,17,"@@ -0,0 +1,17 @@
++﻿using Valve.VR;
++
++namespace TwoForksVr.VrInput.ActionInputs
++{
++    public class EmptyActionInput : ActionInput<ISteamVR_Action_In>
++    {
++        public EmptyActionInput(string texturePath = null) : base(null)
++        {
++            TexturePath = texturePath;
++        }
++
++        public override float Value => 0;
++        public string TexturePath { get; }
++        public override bool ValueUp => false;
++        public override bool ValueDown => false;
++    }
++}
+\ No newline at end of file"
+Raicuparta/two-forks-vr,128,194efa4ba77ef74495cc192d94d294e69a9cdf32,TwoForksVr/src/VrInput/ActionInputs/IActionInput.cs,added,14,0,14,"@@ -0,0 +1,14 @@
++﻿using Valve.VR;
++
++namespace TwoForksVr.VrInput.ActionInputs
++{
++    public interface IActionInput
++    {
++        ISteamVR_Action_In Action { get; }
++        bool Active { get; }
++        float Value { get; }
++        bool ValueUp { get; }
++        bool ValueDown { get; }
++        SteamVR_Input_Sources ActiveSource { get; }
++    }
++}
+\ No newline at end of file"
+Raicuparta/two-forks-vr,128,194efa4ba77ef74495cc192d94d294e69a9cdf32,TwoForksVr/src/VrInput/ActionInputs/SingleActionInput.cs,added,15,0,15,"@@ -0,0 +1,15 @@
++﻿using Valve.VR;
++
++namespace TwoForksVr.VrInput.ActionInputs
++{
++    public class SingleActionInput : ActionInput<SteamVR_Action_Single>
++    {
++        public SingleActionInput(SteamVR_Action_Single action) : base(action)
++        {
++        }
++
++        public override float Value => SpecificAction.axis;
++        public override bool ValueUp => false;
++        public override bool ValueDown => false;
++    }
++}
+\ No newline at end of file"
+Raicuparta/two-forks-vr,128,194efa4ba77ef74495cc192d94d294e69a9cdf32,TwoForksVr/src/VrInput/ActionInputs/Vector2ActionInput.cs,added,21,0,21,"@@ -0,0 +1,21 @@
++﻿using Valve.VR;
++
++namespace TwoForksVr.VrInput.ActionInputs
++{
++    public class Vector2ActionInput : ActionInput<SteamVR_Action_Vector2>
++    {
++        private readonly bool yOnly;
++
++        public Vector2ActionInput(SteamVR_Action_Vector2 action, bool yOnly = false,
++            string textureModifier = null) : base(action)
++        {
++            this.yOnly = yOnly;
++            TextureModifier = textureModifier;
++        }
++
++        public override float Value => yOnly ? SpecificAction.axis.y : SpecificAction.axis.x;
++        public string TextureModifier { get; }
++        public override bool ValueUp => false;
++        public override bool ValueDown => false;
++    }
++}
+\ No newline at end of file"
+Raicuparta/two-forks-vr,128,194efa4ba77ef74495cc192d94d294e69a9cdf32,TwoForksVr/src/VrInput/BindingsManager.cs,modified,33,85,118,"@@ -1,18 +1,17 @@
+ using System.Collections.Generic;
+ using TwoForksVr.Helpers;
+ using TwoForksVr.Stage;
++using TwoForksVr.VrInput.ActionInputs;
+ using UnityEngine;
+ using Valve.VR;
+ 
+ namespace TwoForksVr.VrInput
+ {
+     public class BindingsManager : MonoBehaviour
+     {
+-        private static SteamVR_Input_ActionSet_default actionSet;
+-        public Dictionary<string, SteamVR_Action_Boolean> BooleanActionMap { get; private set; }
+-        public Dictionary<string, SteamVR_Action_Boolean> InvertedBooleanActionMap { get; private set; }
+-        public Dictionary<string, SteamVR_Action_Vector2> Vector2XActionMap { get; private set; }
+-        public Dictionary<string, SteamVR_Action_Vector2> Vector2YActionMap { get; private set; }
++        public static SteamVR_Input_ActionSet_default ActionSet = SteamVR_Actions._default;
++        public Dictionary<string, IActionInput> ActionMap { get; private set; }
++
+ 
+         public static BindingsManager Create(VrStage stage)
+         {
+@@ -24,99 +23,48 @@ private void Awake()
+         {
+             Logs.LogInfo(""## Initializing Bindings Patches"");
+ 
+-            actionSet = SteamVR_Actions._default;
+-            BooleanActionMap = new Dictionary<string, SteamVR_Action_Boolean>
+-            {
+-                {InputName.LocomotionAction, actionSet.Interact},
+-                {InputName.UseCamera, actionSet.Interact},
+-                {InputName.Use, actionSet.Interact},
+-                {InputName.UISubmit, actionSet.Interact},
+-                {InputName.StowHeldObject, actionSet.Jog},
+-                {InputName.UICancel, actionSet.Cancel},
+-                {InputName.DialogSelectionUp, actionSet.UIUp},
+-                {InputName.DialogSelectionDown, actionSet.UIDown},
+-                {InputName.UIUp, actionSet.UIUp},
+-                {InputName.UIDown, actionSet.UIDown},
+-                {InputName.LockNumberUp, actionSet.UIUp},
+-                {InputName.LockNumberDown, actionSet.UIDown},
+-                {InputName.LockTumblerRight, actionSet.NextPage},
+-                {InputName.LockTumblerLeft, actionSet.PreviousPage},
+-                {InputName.LockCancel, actionSet.Cancel},
+-                {InputName.ToggleJog, actionSet.Jog},
+-                {InputName.Pause, actionSet.Cancel},
+-                {InputName.NextMenu, actionSet.NextPage},
+-                {InputName.PreviousMenu, actionSet.PreviousPage},
+-                {InputName.RadioUp, actionSet.Grip}
+-            };
+-            InvertedBooleanActionMap = new Dictionary<string, SteamVR_Action_Boolean>
+-            {
+-                {InputName.RadioDown, actionSet.Grip}
+-            };
+-            Vector2XActionMap = new Dictionary<string, SteamVR_Action_Vector2>
++            ActionMap = new Dictionary<string, IActionInput>
+             {
+-                {InputName.MoveStrafe, actionSet.Move},
+-                {InputName.LookHorizontalStick, actionSet.Rotate},
+-                {InputName.UIHorizontal, actionSet.Move}
++                {VirtualKey.LocomotionAction, ActionInputDefinitions.Interact},
++                {VirtualKey.Use, ActionInputDefinitions.Interact},
++                {VirtualKey.Confirm, ActionInputDefinitions.Interact},
++                {VirtualKey.StoreObject, ActionInputDefinitions.Jog},
++                {VirtualKey.Cancel, ActionInputDefinitions.Cancel},
++                {VirtualKey.DialogUp, ActionInputDefinitions.UIUp},
++                {VirtualKey.DialogDown, ActionInputDefinitions.UIDown},
++                {VirtualKey.Jog, ActionInputDefinitions.Jog},
++                {VirtualKey.Pause, ActionInputDefinitions.Cancel},
++                {VirtualKey.NextMenu, ActionInputDefinitions.NextPage},
++                {VirtualKey.PreviousMenu, ActionInputDefinitions.PreviousPage},
++                {VirtualKey.Radio, ActionInputDefinitions.Radio},
++                {VirtualKey.MoveXAxis, ActionInputDefinitions.MoveX},
++                {VirtualKey.LookXAxisStick, ActionInputDefinitions.RotateX},
++                {VirtualKey.MoveYAxis, ActionInputDefinitions.MoveY}
+             };
+-            Vector2YActionMap = new Dictionary<string, SteamVR_Action_Vector2>
+-            {
+-                {InputName.MoveForward, actionSet.Move},
+-                {InputName.LookVerticalStick, actionSet.Rotate},
+-                {InputName.Scroll, actionSet.Rotate},
+-                {InputName.UIVertical, actionSet.Move}
+-            };
+-
+-            foreach (var entry in Vector2XActionMap)
+-                entry.Value.onChange += (action, source, axis, delta) =>
+-                    TriggerCommand(entry.Key, axis.x);
+-            foreach (var entry in Vector2YActionMap)
+-                entry.Value.onChange += (action, source, axis, delta) =>
+-                    TriggerCommand(entry.Key, axis.y);
+-            foreach (var entry in BooleanActionMap)
+-                entry.Value.onChange += (action, source, state) =>
+-                {
+-                    if (!state) return;
+-                    TriggerCommand(entry.Key, 1);
+-                };
+-            foreach (var entry in InvertedBooleanActionMap)
+-                entry.Value.onChange += (action, source, state) =>
+-                {
+-                    if (state) return;
+-                    TriggerCommand(entry.Key, 1, true);
+-                };
+         }
+ 
+-        private void OnDestroy()
++        public float GetValue(string virtualKey)
+         {
+-            foreach (var entry in Vector2XActionMap)
+-                entry.Value.RemoveAllListeners(SteamVR_Input_Sources.Any);
+-            foreach (var entry in Vector2YActionMap)
+-                entry.Value.RemoveAllListeners(SteamVR_Input_Sources.Any);
+-            foreach (var entry in BooleanActionMap)
+-                entry.Value.RemoveAllListeners(SteamVR_Input_Sources.Any);
+-            foreach (var entry in InvertedBooleanActionMap)
+-                entry.Value.RemoveAllListeners(SteamVR_Input_Sources.Any);
++            ActionMap.TryGetValue(virtualKey, out var actionInput);
++            if (actionInput == null) return 0;
++
++            return actionInput.Value;
+         }
+ 
+-        private static void TriggerCommand(string command, float axisValue, bool forceAllowed = false)
++        public bool GetUp(string virtualKey)
+         {
+-            if (!vgInputManager.Instance || vgInputManager.Instance.commandCallbackMap == null) return;
+-
+-            if (!forceAllowed && !IsCommandAllowed(command)) return;
++            ActionMap.TryGetValue(virtualKey, out var actionInput);
++            if (actionInput == null) return false;
+ 
+-            var commandCallbackMap = vgInputManager.Instance.commandCallbackMap;
+-            if (!vgInputManager.Instance.flushCommands &&
+-                commandCallbackMap.TryGetValue(command, out var inputDelegate)) inputDelegate?.Invoke(axisValue);
++            return actionInput.ValueUp;
+         }
+ 
+-        private static bool IsCommandAllowed(string command)
++        public bool GetDown(string virtualKey)
+         {
+-            foreach (var keyBind in vgInputManager.Instance.virtualKeyKeyBindMap.Values)
+-            foreach (var keyBindCommand in keyBind.commands)
+-                if (keyBindCommand.command == command)
+-                    return true;
++            ActionMap.TryGetValue(virtualKey, out var actionInput);
++            if (actionInput == null) return false;
+ 
+-            return false;
++            return actionInput.ValueDown;
+         }
+     }
+ }
+\ No newline at end of file"
+Raicuparta/two-forks-vr,128,194efa4ba77ef74495cc192d94d294e69a9cdf32,TwoForksVr/src/VrInput/InputName.cs,removed,0,117,117,"@@ -1,117 +0,0 @@
+-﻿namespace TwoForksVr.VrInput
+-{
+-    public struct InputName
+-    {
+-        public const string AltUse = ""AltUse"";
+-        public const string BackwardKeyDown = ""BackwardKeyDown"";
+-        public const string BackwardKeyUp = ""BackwardKeyUp"";
+-        public const string Camera = ""Camera"";
+-        public const string CompassZoomIn = ""CompassZoomIn"";
+-        public const string CompassZoomOut = ""CompassZoomOut"";
+-        public const string DemoTeleport = ""DemoTeleport"";
+-        public const string DialogSelectionDown = ""DialogSelectionDown"";
+-        public const string DialogSelectionDownOrUse = ""DialogSelectionDownOrUse"";
+-        public const string DialogSelectionScroll = ""DialogSelectionScroll"";
+-        public const string DialogSelectionUp = ""DialogSelectionUp"";
+-        public const string DisplayInventory = ""DisplayInventory"";
+-        public const string EquipCompass = ""EquipCompass"";
+-        public const string EquipMap = ""EquipMap"";
+-        public const string Flashlight = ""Flashlight"";
+-        public const string ForwardKeyDown = ""ForwardKeyDown"";
+-        public const string ForwardKeyUp = ""ForwardKeyUp"";
+-        public const string HideInventory = ""HideInventory"";
+-        public const string HorizontalMouse = ""Horizontal_Mouse"";
+-        public const string HorizontalStick = ""Horizontal_Stick"";
+-        public const string InventoryRotateHorizontal = ""InventoryRotateHorizontal"";
+-        public const string InventoryRotateHorizontalStick = ""InventoryRotateHorizontal_Stick"";
+-        public const string InventoryRotateVertical = ""InventoryRotateVertical"";
+-        public const string InventoryRotateVerticalStick = ""InventoryRotateVertical_Stick"";
+-        public const string InventoryZoomIn = ""InventoryZoomIn"";
+-        public const string InventoryZoomInTrigger = ""InventoryZoomInTrigger"";
+-        public const string Key0 = ""Key0"";
+-        public const string Key1 = ""Key1"";
+-        public const string Key2 = ""Key2"";
+-        public const string Key3 = ""Key3"";
+-        public const string Key4 = ""Key4"";
+-        public const string Key5 = ""Key5"";
+-        public const string Key6 = ""Key6"";
+-        public const string Key7 = ""Key7"";
+-        public const string Key8 = ""Key8"";
+-        public const string Key9 = ""Key9"";
+-        public const string Lean = ""Lean"";
+-        public const string LeanDown = ""LeanDown"";
+-        public const string LeanHorizontal = ""LeanHorizontal"";
+-        public const string LeanLeft = ""LeanLeft"";
+-        public const string LeanRight = ""LeanRight"";
+-        public const string LeanUp = ""LeanUp"";
+-        public const string LeanVertical = ""LeanVertical"";
+-        public const string LockCancel = ""LockCancel"";
+-        public const string LockNumberDown = ""LockNumberDown"";
+-        public const string LockNumberUp = ""LockNumberUp"";
+-        public const string LockTry = ""LockTry"";
+-        public const string LockTumblerLeft = ""LockTumblerLeft"";
+-        public const string LockTumblerRight = ""LockTumblerRight"";
+-        public const string LocomotionAction = ""LocomotionAction"";
+-        public const string LocomotionActionOrToggleJog = ""LocomotionActionOrToggleJog"";
+-        public const string LocomotionActionRelease = ""LocomotionActionRelease"";
+-        public const string LookHorizontalMouse = ""LookHorizontal_Mouse"";
+-        public const string LookHorizontalStick = ""LookHorizontal_Stick"";
+-        public const string LookVerticalMouse = ""LookVertical_Mouse"";
+-        public const string LookVerticalStick = ""LookVertical_Stick"";
+-        public const string MapZoomIn = ""MapZoomIn"";
+-        public const string MapZoomOut = ""MapZoomOut"";
+-        public const string MoveForward = ""MoveForward"";
+-        public const string MoveStrafe = ""MoveStrafe"";
+-        public const string NextMenu = ""NextMenu"";
+-        public const string Pause = ""Pause"";
+-        public const string PressDemoKey1 = ""PressDemoKey1"";
+-        public const string PressDemoKey2 = ""PressDemoKey2"";
+-        public const string PressDemoKey3 = ""PressDemoKey3"";
+-        public const string PressDemoKey4 = ""PressDemoKey4"";
+-        public const string PreviousMenu = ""PreviousMenu"";
+-        public const string PutDownItem = ""PutDownItem"";
+-        public const string QuickLoad = ""QuickLoad"";
+-        public const string QuickSave = ""QuickSave"";
+-        public const string RadioDown = ""RadioDown"";
+-        public const string RadioUp = ""RadioUp"";
+-        public const string ReadMode = ""ReadMode"";
+-        public const string Scroll = ""Scroll"";
+-        public const string StartInventoryRotation = ""StartInventoryRotation"";
+-        public const string StopInventoryRotation = ""StopInventoryRotation"";
+-        public const string StopLean = ""StopLean"";
+-        public const string StopStowHeldObject = ""StopStowHeldObject"";
+-        public const string StowHeldObject = ""StowHeldObject"";
+-        public const string StrafeLeftKeyDown = ""StrafeLeftKeyDown"";
+-        public const string StrafeLeftKeyUp = ""StrafeLeftKeyUp"";
+-        public const string StrafeRightKeyDown = ""StrafeRightKeyDown"";
+-        public const string StrafeRightKeyUp = ""StrafeRightKeyUp"";
+-        public const string Titlecard = ""Titlecard"";
+-        public const string ToggleCompass = ""ToggleCompass"";
+-        public const string ToggleJog = ""ToggleJog"";
+-        public const string ToggleMap = ""ToggleMap"";
+-        public const string ToggleReading = ""ToggleReading"";
+-        public const string TossItem = ""TossItem"";
+-        public const string UICancel = ""UICancel"";
+-        public const string UISubmit = ""UISubmit"";
+-        public const string UIClick = ""UIClick"";
+-        public const string UILeft = ""UILeft"";
+-        public const string UIRight = ""UIRight"";
+-        public const string UIUp = ""UIUp"";
+-        public const string UIDown = ""UIDown"";
+-        public const string UIVertical = ""UIVertical"";
+-        public const string UIHorizontal = ""UIHorizontal"";
+-        public const string UnCrouch = ""UnCrouch"";
+-        public const string UnequipCompass = ""UnequipCompass"";
+-        public const string UnequipMap = ""UnequipMap"";
+-        public const string UnPause = ""UnPause"";
+-        public const string Use = ""Use"";
+-        public const string UseCamera = ""UseCamera"";
+-        public const string VerticalMouse = ""Vertical_Mouse"";
+-        public const string VerticalStick = ""Vertical_Stick"";
+-        public const string WindUpToss = ""WindUpToss"";
+-        public const string ZoomIn = ""ZoomIn"";
+-        public const string ZoomInOnHeldObject = ""ZoomInOnHeldObject"";
+-        public const string ZoomOut = ""ZoomOut"";
+-        public const string ZoomOutOnHeldObject = ""ZoomOutOnHeldObject"";
+-    }
+-}
+\ No newline at end of file"
+Raicuparta/two-forks-vr,128,194efa4ba77ef74495cc192d94d294e69a9cdf32,TwoForksVr/src/VrInput/Patches/BindingsPatches.cs,modified,52,20,72,"@@ -20,27 +20,11 @@ private static bool GetActionsFileFromMod(ref string __result)
+             return false;
+         }
+ 
+-        [HarmonyPrefix]
+-        [HarmonyPatch(typeof(vgRewiredInput), nameof(vgRewiredInput.UpdateActiveController))]
+-        private static bool ForceXboxController(vgRewiredInput __instance)
+-        {
+-            __instance.activeController = vgControllerLayoutChoice.XBox;
+-            __instance.mCurrentIconMap = __instance.IconMap_Xbox;
+-            __instance.mCurrentIconMap.Init();
+-
+-            if (vgSettingsManager.Instance &&
+-                vgSettingsManager.Instance.controller != (int) __instance.activeController)
+-                vgSettingsManager.Instance.controller = (int) __instance.activeController;
+-
+-            return false;
+-        }
+-
+         [HarmonyPrefix]
+         [HarmonyPatch(typeof(vgPlayerController), nameof(vgPlayerController.CheckForPCControls))]
+-        private static bool ForceDisablePcControls(vgPlayerController __instance)
++        private static bool DisableJogDisableThreshold(vgPlayerController __instance)
+         {
+             __instance.minimumInputForJog = 0f;
+-            __instance.PCControlsActive = false;
+             return false;
+         }
+ 
+@@ -71,12 +55,60 @@ private static float ProcessAxisValue(float value)
+             return valueSign * Mathf.InverseLerp(innerDeadzone, 1f - outerDeadzone, absoluteValue);
+         }
+ 
++        [HarmonyPrefix]
++        [HarmonyPatch(typeof(vgRewiredInput), nameof(vgRewiredInput.UpdateActiveController))]
++        private static bool ForceXboxController(vgRewiredInput __instance)
++        {
++            __instance.activeController = vgControllerLayoutChoice.XBox;
++            __instance.mCurrentIconMap = __instance.IconMap_Xbox;
++            __instance.mCurrentIconMap.Init();
++
++            if (vgSettingsManager.Instance &&
++                vgSettingsManager.Instance.controller != (int) __instance.activeController)
++                vgSettingsManager.Instance.controller = (int) __instance.activeController;
++
++            return false;
++        }
++
++        [HarmonyPrefix]
++        [HarmonyPatch(typeof(vgRewiredInput), nameof(vgRewiredInput.GetButtonUp))]
++        private static bool ReadVrButtonInputUp(ref bool __result, string id)
++        {
++            __result = StageInstance.GetInputUp(id);
++            return false;
++        }
++
++        [HarmonyPrefix]
++        [HarmonyPatch(typeof(vgRewiredInput), nameof(vgRewiredInput.GetAxis))]
++        private static bool ReadVrAxisInput(ref float __result, string id)
++        {
++            __result = StageInstance.GetInputValue(id);
++            return false;
++        }
++
++        [HarmonyPrefix]
++        [HarmonyPatch(typeof(vgRewiredInput), nameof(vgRewiredInput.GetButtonDown))]
++        private static bool ReadVrButtonInputDown(ref bool __result, string id)
++        {
++            __result = StageInstance.GetInputDown(id);
++            return false;
++        }
+ 
+         [HarmonyPrefix]
+-        [HarmonyPatch(typeof(vgKeyBind), nameof(vgKeyBind.TriggerCommand))]
+-        private static bool IgnoreDefaultAxisInputs(string command)
++        [HarmonyPatch(typeof(vgRewiredInput), nameof(vgRewiredInput.GetButton))]
++        private static bool ReadVrButtonInputValue(ref bool __result, string id)
++        {
++            __result = StageInstance.GetInputValue(id) != 0;
++            return false;
++        }
++
++        // Forcing Rewired to always handle input makes it easier to patch button input values,
++        // and also helps with patching the input prompt icons.
++        [HarmonyPostfix]
++        [HarmonyPatch(typeof(vgRewiredInput), nameof(vgRewiredInput.IsHandlingInput))]
++        private static void ForceRewiredHandlingInput(ref bool __result)
+         {
+-            return !StageInstance.IsVector2CommandExisting(command);
++            __result = true;
+         }
+     }
+ }
+\ No newline at end of file"
+Raicuparta/two-forks-vr,128,194efa4ba77ef74495cc192d94d294e69a9cdf32,TwoForksVr/src/VrInput/Patches/InputPromptsPatches.cs,added,37,0,37,"@@ -0,0 +1,37 @@
++using HarmonyLib;
++using TwoForksVr.Helpers;
++using Valve.VR;
++
++namespace TwoForksVr.VrInput.Patches
++{
++    [HarmonyPatch]
++    public class InputPromptsPatches : TwoForksVrPatch
++    {
++        [HarmonyPrefix]
++        [HarmonyPatch(typeof(vgButtonIconMap), nameof(vgButtonIconMap.GetIconName))]
++        private static bool ReplacePromptIconsWithVrButtonText(ref string __result, string id)
++        {
++            __result = id; // TODO should just hide the prompt in this case?
++
++            var action = StageInstance.GetInputAction(id);
++            if (action == null)
++            {
++                Logs.LogWarning($""Failed to find actionInput for virtual key {id}"");
++                return false;
++            }
++
++            __result = action.Action.GetLocalizedOriginPart(SteamVR_Input_Sources.Any,
++                EVRInputStringBits.VRInputString_InputSource);
++
++            return false;
++        }
++
++        [HarmonyPrefix]
++        [HarmonyPatch(typeof(vgButtonIconMap), nameof(vgButtonIconMap.HasIcon))]
++        private static bool ReplacePromptIconsWithVrButtonText(ref bool __result)
++        {
++            __result = true;
++            return false;
++        }
++    }
++}
+\ No newline at end of file"
+Raicuparta/two-forks-vr,128,194efa4ba77ef74495cc192d94d294e69a9cdf32,TwoForksVr/src/VrInput/VirtualKey.cs,added,72,0,72,"@@ -0,0 +1,72 @@
++﻿namespace TwoForksVr.VrInput
++{
++    public struct VirtualKey
++    {
++        public const string Radio = ""RadioButton"";
++        public const string DialogUp = ""DialogUpButton"";
++        public const string DialogDown = ""DialogDownButton"";
++        public const string LocomotionAction = ""LocomotionActionButton"";
++        public const string Use = ""UseButton"";
++        public const string Jog = ""JogButton"";
++        public const string Camera = ""CameraButton"";
++        public const string StoreObject = ""StoreObjectButton"";
++        public const string Cancel = ""CancelButton"";
++        public const string Pause = ""PauseButton"";
++        public const string Confirm = ""ConfirmButton"";
++        public const string NextMenu = ""NextMenuButton"";
++        public const string PreviousMenu = ""PreviousMenuButton"";
++        public const string LookXAxisStick = ""LookXAxis_Stick"";
++        public const string MoveXAxis = ""MoveXAxis"";
++        public const string MoveYAxis = ""MoveYAxis"";
++
++        // These are unused in VR, since they can be done with gestures
++        public const string Zoom = ""ZoomButton"";
++        public const string Map = ""MapButton"";
++        public const string MapRegion = ""MapRegionButton"";
++        public const string Flashlight = ""FlashlightButton"";
++        public const string ReadMode = ""ReadModeButton"";
++        public const string Inventory = ""InventoryButton"";
++
++        // These I don't know what they're for.
++        public const string UIRightStickHorizontal = ""UIRightStickHorizontal"";
++        public const string UIRightStickVertical = ""UIRightStickVertical"";
++        public const string EndBracketKey = ""EndBracketKey"";
++        public const string UILeftStickHorizontal = ""UILeftStickHorizontal"";
++        public const string UILeftStickVertical = ""UILeftStickVertical"";
++
++        // These are mouse/keyboard only.
++        public const string LookXAxisMouse = ""LookXAxis_Mouse"";
++        public const string LookYAxisMouse = ""LookYAxis_Mouse"";
++        public const string MoveForwardKeyboard = ""MoveForwardKeyboard"";
++        public const string MoveBackwardKeyboard = ""MoveBackwardKeyboard"";
++        public const string StrafeLeftKeyboard = ""StrafeLeftKeyboard"";
++        public const string StrafeRightKeyboard = ""StrafeRightKeyboard"";
++
++        // These I just don't need.
++        public const string LookYAxisStick = ""LookYAxis_Stick"";
++        public const string ScrollUpDown = ""ScrollUpDown"";
++        public const string ItemsLeftRight = ""ItemsLeftRight"";
++        public const string ItemsUpDown = ""ItemsUpDown"";
++        public const string QuickSave = ""QuickSaveButton"";
++        public const string QuickLoad = ""QuickLoadButton"";
++        public const string DialogSelectionScroll = ""DialogSelectionScroll"";
++
++        // These are leftover debug stuff, so no need to use them.
++        public const string Num0 = ""Num0"";
++        public const string Num1 = ""Num1"";
++        public const string Num2 = ""Num2"";
++        public const string Num3 = ""Num3"";
++        public const string Num4 = ""Num4"";
++        public const string Num5 = ""Num5"";
++        public const string Num6 = ""Num6"";
++        public const string Num7 = ""Num7"";
++        public const string Num8 = ""Num8"";
++        public const string Num9 = ""Num9"";
++        public const string PeriodKey = ""PeriodKey"";
++        public const string PressDemo1 = ""PressDemo1"";
++        public const string PressDemo2 = ""PressDemo2"";
++        public const string PressDemo3 = ""PressDemo3"";
++        public const string PressDemo4 = ""PressDemo4"";
++        public const string TakeDebugScreenshot = ""TakeDebugScreenshot"";
++    }
++}
+\ No newline at end of file"
+Raicuparta/two-forks-vr,128,194efa4ba77ef74495cc192d94d294e69a9cdf32,UnityHelper/Assets/SteamVR_Input/ActionSetClasses/SteamVR_Input_ActionSet_default.cs,modified,8,0,8,"@@ -177,6 +177,14 @@ public virtual SteamVR_Action_Boolean Teleport
+             }
+         }
+         
++        public virtual SteamVR_Action_Boolean Radio
++        {
++            get
++            {
++                return SteamVR_Actions.default_Radio;
++            }
++        }
++        
+         public virtual SteamVR_Action_Vibration Haptic
+         {
+             get"
+Raicuparta/two-forks-vr,128,194efa4ba77ef74495cc192d94d294e69a9cdf32,UnityHelper/Assets/SteamVR_Input/SteamVR_Input_Actions.cs,modified,18,3,21,"@@ -57,6 +57,8 @@ public partial class SteamVR_Actions
+         
+         private static SteamVR_Action_Boolean p_default_Teleport;
+         
++        private static SteamVR_Action_Boolean p_default_Radio;
++        
+         private static SteamVR_Action_Vibration p_default_Haptic;
+         
+         public static SteamVR_Action_Boolean default_Interact
+@@ -219,6 +221,14 @@ public static SteamVR_Action_Boolean default_Teleport
+             }
+         }
+         
++        public static SteamVR_Action_Boolean default_Radio
++        {
++            get
++            {
++                return SteamVR_Actions.p_default_Radio.GetCopy <SteamVR_Action_Boolean>();
++            }
++        }
++        
+         public static SteamVR_Action_Vibration default_Haptic
+         {
+             get
+@@ -251,6 +261,7 @@ private static void InitializeActionArrays()
+                     SteamVR_Actions.default_SnapTurnRight,
+                     SteamVR_Actions.default_SnapTurnLeft,
+                     SteamVR_Actions.default_Teleport,
++                    SteamVR_Actions.default_Radio,
+                     SteamVR_Actions.default_Haptic};
+             Valve.VR.SteamVR_Input.actionsIn = new Valve.VR.ISteamVR_Action_In[]
+             {
+@@ -273,7 +284,8 @@ private static void InitializeActionArrays()
+                     SteamVR_Actions.default_Grip,
+                     SteamVR_Actions.default_SnapTurnRight,
+                     SteamVR_Actions.default_SnapTurnLeft,
+-                    SteamVR_Actions.default_Teleport};
++                    SteamVR_Actions.default_Teleport,
++                    SteamVR_Actions.default_Radio};
+             Valve.VR.SteamVR_Input.actionsOut = new Valve.VR.ISteamVR_Action_Out[]
+             {
+                     SteamVR_Actions.default_Haptic};
+@@ -299,7 +311,8 @@ private static void InitializeActionArrays()
+                     SteamVR_Actions.default_Grip,
+                     SteamVR_Actions.default_SnapTurnRight,
+                     SteamVR_Actions.default_SnapTurnLeft,
+-                    SteamVR_Actions.default_Teleport};
++                    SteamVR_Actions.default_Teleport,
++                    SteamVR_Actions.default_Radio};
+             Valve.VR.SteamVR_Input.actionsSingle = new Valve.VR.SteamVR_Action_Single[0];
+             Valve.VR.SteamVR_Input.actionsVector2 = new Valve.VR.SteamVR_Action_Vector2[]
+             {
+@@ -327,7 +340,8 @@ private static void InitializeActionArrays()
+                     SteamVR_Actions.default_Grip,
+                     SteamVR_Actions.default_SnapTurnRight,
+                     SteamVR_Actions.default_SnapTurnLeft,
+-                    SteamVR_Actions.default_Teleport};
++                    SteamVR_Actions.default_Teleport,
++                    SteamVR_Actions.default_Radio};
+         }
+         
+         private static void PreInitActions()
+@@ -352,6 +366,7 @@ private static void PreInitActions()
+             SteamVR_Actions.p_default_SnapTurnRight = ((SteamVR_Action_Boolean)(SteamVR_Action.Create <SteamVR_Action_Boolean>(""/actions/default/in/SnapTurnRight"")));
+             SteamVR_Actions.p_default_SnapTurnLeft = ((SteamVR_Action_Boolean)(SteamVR_Action.Create <SteamVR_Action_Boolean>(""/actions/default/in/SnapTurnLeft"")));
+             SteamVR_Actions.p_default_Teleport = ((SteamVR_Action_Boolean)(SteamVR_Action.Create <SteamVR_Action_Boolean>(""/actions/default/in/Teleport"")));
++            SteamVR_Actions.p_default_Radio = ((SteamVR_Action_Boolean)(SteamVR_Action.Create <SteamVR_Action_Boolean>(""/actions/default/in/Radio"")));
+             SteamVR_Actions.p_default_Haptic = ((SteamVR_Action_Vibration)(SteamVR_Action.Create <SteamVR_Action_Vibration>(""/actions/default/out/Haptic"")));
+         }
+     }"
+Raicuparta/two-forks-vr,128,194efa4ba77ef74495cc192d94d294e69a9cdf32,UnityHelper/Assets/StreamingAssets/SteamVR/actions.json,modified,6,1,7,"@@ -83,6 +83,10 @@
+       ""name"": ""/actions/default/in/Teleport"",
+       ""type"": ""boolean""
+     },
++    {
++      ""name"": ""/actions/default/in/Radio"",
++      ""type"": ""boolean""
++    },
+     {
+       ""name"": ""/actions/default/out/Haptic"",
+       ""type"": ""vibration""
+@@ -174,7 +178,8 @@
+       ""/actions/default/in/Grip"": ""Grip"",
+       ""/actions/default/in/SnapTurnRight"": ""Snap Turn Right"",
+       ""/actions/default/in/SnapTurnLeft"": ""Snap Turn Left"",
+-      ""/actions/default/in/Teleport"": ""Teleport""
++      ""/actions/default/in/Teleport"": ""Teleport"",
++      ""/actions/default/in/Radio"": ""Radio""
+     }
+   ]
+ }
+\ No newline at end of file"
+Raicuparta/two-forks-vr,128,194efa4ba77ef74495cc192d94d294e69a9cdf32,UnityHelper/Assets/StreamingAssets/SteamVR/bindings_holographic_controller.json,modified,9,0,9,"@@ -206,6 +206,15 @@
+                   ""sub_mode"" : ""touch""
+                },
+                ""path"" : ""/user/hand/left/input/joystick""
++            },
++            {
++               ""inputs"" : {
++                  ""click"" : {
++                     ""output"" : ""/actions/default/in/radio""
++                  }
++               },
++               ""mode"" : ""button"",
++               ""path"" : ""/user/hand/left/input/grip""
+             }
+          ]
+       },"
+Raicuparta/two-forks-vr,128,194efa4ba77ef74495cc192d94d294e69a9cdf32,UnityHelper/Assets/StreamingAssets/SteamVR/bindings_knuckles.json,modified,9,0,9,"@@ -190,6 +190,15 @@
+                   ""sub_mode"" : ""touch""
+                },
+                ""path"" : ""/user/hand/left/input/thumbstick""
++            },
++            {
++               ""inputs"" : {
++                  ""click"" : {
++                     ""output"" : ""/actions/default/in/radio""
++                  }
++               },
++               ""mode"" : ""button"",
++               ""path"" : ""/user/hand/left/input/grip""
+             }
+          ]
+       }"
+Raicuparta/two-forks-vr,128,194efa4ba77ef74495cc192d94d294e69a9cdf32,UnityHelper/Assets/StreamingAssets/SteamVR/bindings_oculus_touch.json,modified,9,0,9,"@@ -190,6 +190,15 @@
+                   ""sub_mode"" : ""touch""
+                },
+                ""path"" : ""/user/hand/left/input/joystick""
++            },
++            {
++               ""inputs"" : {
++                  ""click"" : {
++                     ""output"" : ""/actions/default/in/radio""
++                  }
++               },
++               ""mode"" : ""button"",
++               ""path"" : ""/user/hand/left/input/grip""
+             }
+          ]
+       }"
+Raicuparta/two-forks-vr,128,194efa4ba77ef74495cc192d94d294e69a9cdf32,UnityHelper/Assets/StreamingAssets/SteamVR/bindings_vive_controller.json,modified,9,0,9,"@@ -172,6 +172,15 @@
+                   ""sub_mode"" : ""touch""
+                },
+                ""path"" : ""/user/hand/left/input/trackpad""
++            },
++            {
++               ""inputs"" : {
++                  ""click"" : {
++                     ""output"" : ""/actions/default/in/radio""
++                  }
++               },
++               ""mode"" : ""button"",
++               ""path"" : ""/user/hand/left/input/grip""
+             }
+          ]
+       }"

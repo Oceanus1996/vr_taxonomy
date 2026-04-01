@@ -1,0 +1,982 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vrc-get/vrc-get,1147,90accd83d4ef9d3b59c91cc6e5fa20a4803a689b,vrc-get-gui/app/globals.css,modified,5,0,5,"@@ -160,3 +160,8 @@ body {
+ 		color: hsl(var(--foreground));
+ 	}
+ }
++
++/* Radix ui sets display:block for each scroll viewport element but it seem it make worse */
++[data-radix-scroll-area-viewport] > div {
++	display: block !important;
++}"
+vrc-get/vrc-get,1147,90accd83d4ef9d3b59c91cc6e5fa20a4803a689b,vrc-get-gui/app/layout.tsx,modified,2,2,4,"@@ -18,8 +18,8 @@ export default function RootLayout({
+ 		<html>
+ 		<body className={`font-sans w-screen h-screen flex flex-row overflow-hidden whitespace-nowrap`}>
+ 		<Providers>
+-			<SideBar className={""flex-grow-0 overflow-auto""}/>
+-			<div className={""h-screen flex-grow overflow-auto flex""}>
++			<SideBar className={""flex-grow-0""}/>
++			<div className={""h-screen flex-grow overflow-hidden flex""}>
+ 				{children}
+ 			</div>
+ 		</Providers>"
+vrc-get/vrc-get,1147,90accd83d4ef9d3b59c91cc6e5fa20a4803a689b,vrc-get-gui/app/log/page.tsx,modified,7,5,12,"@@ -7,6 +7,7 @@ import {LogEntry, utilGetLogEntries} from ""@/lib/bindings"";
+ import {notoSansMono} from ""@/app/fonts"";
+ import {tc} from ""@/lib/i18n"";
+ import {useTauriListen} from ""@/lib/use-tauri-listen"";
++import {ScrollArea, ScrollBar} from ""@/components/ui/scroll-area"";
+ 
+ export default function Page() {
+ 	const [logEntries, setLogEntries] = React.useState<LogEntry[]>([]);
+@@ -29,11 +30,12 @@ export default function Page() {
+ 					{tc(""logs"")}
+ 				</p>
+ 			</HNavBar>
+-			<main className=""flex-shrink overflow-hidden flex flex-grow"">
+-				<Card className={`w-full overflow-x-auto overflow-y-scroll p-2 whitespace-pre font-mono shadow-none text-muted-foreground`}>
+-					{logEntries.map((entry) => logEntryToText(entry)).join(""\n"")}
+-				</Card>
+-			</main>
++			<Card className={`w-full p-2 whitespace-pre font-mono shadow-none text-muted-foreground overflow-hidden`}>
++				<ScrollArea type={""always""} className={""w-full h-full""}>
++						{logEntries.map((entry) => logEntryToText(entry)).join(""\n"")}
++					<ScrollBar className={""bg-background""} orientation=""horizontal"" />
++				</ScrollArea>
++			</Card>
+ 		</VStack>
+ 	);
+ }"
+vrc-get/vrc-get,1147,90accd83d4ef9d3b59c91cc6e5fa20a4803a689b,vrc-get-gui/app/projects/manage/page.tsx,modified,40,36,76,"@@ -1,7 +1,7 @@
+ ""use client""
+ 
+ import {Button} from ""@/components/ui/button"";
+-import {Card, CardHeader} from ""@/components/ui/card"";
++import {Card, CardContent} from ""@/components/ui/card"";
+ import {Checkbox} from ""@/components/ui/checkbox"";
+ import {
+ 	Dialog,
+@@ -87,6 +87,7 @@ import {useBackupProjectModal} from ""@/lib/backup-project"";
+ import {useUnity2022Migration, useUnity2022PatchMigration} from ""@/app/projects/manage/unity-migration"";
+ import {Input} from ""@/components/ui/input"";
+ import {ReorderableList, useReorderableList} from ""@/components/ReorderableList"";
++import {ScrollArea, ScrollBar} from ""@/components/ui/scroll-area"";
+ 
+ export default function Page(props: {}) {
+ 	return <Suspense><PageBody {...props}/></Suspense>
+@@ -587,9 +588,9 @@ function PageBody() {
+ 			{is2022PatchMigrationRecommended &&
+ 				<Suggest2022PatchMigrationCard disabled={isLoading}
+ 																			 onMigrateRequested={unity2022PatchMigration.request}/>}
+-			<main className=""flex-shrink overflow-hidden flex"">
+-				<Card className=""flex-grow flex-shrink flex shadow-none"">
+-					<CardHeader className=""w-full p-2 gap-2"">
++			<main className=""flex-shrink overflow-hidden flex w-full"">
++				<Card className=""flex-grow flex-shrink flex shadow-none w-full"">
++					<CardContent className=""w-full p-2 flex flex-col gap-2"">
+ 						<div className={""flex flex-wrap flex-shrink-0 flex-grow-0 flex-row gap-2 items-center""}>
+ 							<p className=""cursor-pointer py-1.5 font-bold flex-grow-0 flex-shrink-0"">
+ 								{tc(""projects:manage:manage packages"")}
+@@ -672,40 +673,41 @@ function PageBody() {
+ 							bulkInstallAll={onInstallBulkRequested}
+ 							cancel={() => setBulkUpdatePackageIds([])}
+ 						/>
+-						<Card className=""w-full overflow-x-auto overflow-y-scroll"">
+-							<CardHeader>
+-							<table className=""relative table-auto text-left"">
+-								<thead>
+-								<tr>
+-									<th className={`sticky top-0 z-10 border-b border-primary bg-secondary text-secondary-foreground`}>
+-									</th>
+-									{TABLE_HEAD.map((head, index) => (
+-										<th key={index}
+-											className={`sticky top-0 z-10 border-b border-primary bg-secondary text-secondary-foreground p-2.5`}>
+-											<small className=""font-normal leading-none"">{tc(head)}</small>
++						<Card className=""overflow-hidden"">
++							<ScrollArea className=""w-full h-full"" type={""auto""}>
++								<table className=""relative table-auto text-left w-full"">
++									<thead>
++									<tr>
++										<th className={`sticky top-0 z-10 border-b border-primary bg-secondary text-secondary-foreground`}>
+ 										</th>
+-									))}
+-									<th className={`sticky top-0 z-10 border-b border-primary bg-secondary text-secondary-foreground p-2.5`}/>
+-								</tr>
+-								</thead>
+-								<tbody>
+-								{packageRowsData.map((row) => (
+-									<tr className=""even:bg-secondary/30"" hidden={!filteredPackageIds.has(row.id)} key={row.id}>
+-										<PackageRow pkg={row}
+-												locked={isLoading}
+-												onInstallRequested={onInstallRequested}
+-												onRemoveRequested={onRemoveRequested}
+-												bulkUpdateSelected={bulkUpdatePackageIds.some(([id, _]) => id === row.id)}
+-												bulkUpdateAvailable={canBulkUpdate(bulkUpdateMode, bulkUpdateModeForPackage(row))}
+-												addBulkUpdatePackage={addBulkUpdatePackage}
+-												removeBulkUpdatePackage={removeBulkUpdatePackage}
+-										/>
+-									</tr>))}
+-								</tbody>
+-							</table>
+-							</CardHeader>
++										{TABLE_HEAD.map((head, index) => (
++											<th key={index}
++												className={`sticky top-0 z-10 border-b border-primary bg-secondary text-secondary-foreground p-2.5`}>
++												<small className=""font-normal leading-none"">{tc(head)}</small>
++											</th>
++										))}
++										<th className={`sticky top-0 z-10 border-b border-primary bg-secondary text-secondary-foreground p-2.5`}/>
++									</tr>
++									</thead>
++									<tbody>
++									{packageRowsData.map((row) => (
++										<tr className=""even:bg-secondary/30"" hidden={!filteredPackageIds.has(row.id)} key={row.id}>
++											<PackageRow pkg={row}
++													locked={isLoading}
++													onInstallRequested={onInstallRequested}
++													onRemoveRequested={onRemoveRequested}
++													bulkUpdateSelected={bulkUpdatePackageIds.some(([id, _]) => id === row.id)}
++													bulkUpdateAvailable={canBulkUpdate(bulkUpdateMode, bulkUpdateModeForPackage(row))}
++													addBulkUpdatePackage={addBulkUpdatePackage}
++													removeBulkUpdatePackage={removeBulkUpdatePackage}
++											/>
++										</tr>))}
++									</tbody>
++								</table>
++								<ScrollBar orientation=""horizontal"" className=""bg-background"" />
++							</ScrollArea>
+ 						</Card>
+-					</CardHeader>
++					</CardContent>
+ 				</Card>
+ 				{dialogForState}
+ 				{unity2022Migration.dialog}
+@@ -899,6 +901,7 @@ function ProjectChangesDialog(
+ 	return (
+ 		<DialogOpen className={""whitespace-normal""}>
+ 			<DialogTitle>{tc(""projects:manage:button:apply changes"")}</DialogTitle>
++			{/* TODO: use ScrollArea (I failed to use it inside dialog) */}
+ 			<DialogDescription className={""overflow-y-auto max-h-[50vh]""}>
+ 				<p>
+ 					{tc(""projects:manage:dialog:confirm changes description"")}
+@@ -1810,6 +1813,7 @@ function LaunchSettings(
+ 
+ 	return <>
+ 		<DialogTitle>{tc(""projects:dialog:launch options"")}</DialogTitle>
++		{/* TODO: use ScrollArea (I failed to use it inside dialog) */}
+ 		<DialogDescription className={""max-h-[50dvh] overflow-y-auto""}>
+ 			<h3 className={""text-lg""}>{tc(""projects:dialog:command-line arguments"")}</h3>
+ 			{customizeCommandline"
+vrc-get/vrc-get,1147,90accd83d4ef9d3b59c91cc6e5fa20a4803a689b,vrc-get-gui/app/projects/manage/unity-migration.tsx,modified,1,0,1,"@@ -331,6 +331,7 @@ function MigrationCallingUnityForMigrationDialog(
+ 		<p>
+ 			{tc(""projects:manage:dialog:do not close"")}
+ 		</p>
++		{/* TODO: use ScrollArea (I failed to use it inside dialog) */}
+ 		<pre className={""overflow-y-auto h-[50vh] bg-secondary text-secondary-foreground text-sm""}>
+ 					{lines.map(([lineNumber, line]) => <Fragment key={lineNumber}>{line}{""\n""}</Fragment>)}
+ 			<div ref={ref}/>"
+vrc-get/vrc-get,1147,90accd83d4ef9d3b59c91cc6e5fa20a4803a689b,vrc-get-gui/app/projects/page.tsx,modified,23,23,46,"@@ -19,6 +19,7 @@ import {
+ 	SelectTrigger,
+ 	SelectValue,
+ } from ""@/components/ui/select""
++import {ScrollArea, ScrollBar} from ""@/components/ui/scroll-area"";
+ import {Tooltip, TooltipContent, TooltipPortal, TooltipTrigger} from ""@/components/ui/tooltip"";
+ import React, {forwardRef, Fragment, useEffect, useMemo, useState} from ""react"";
+ import {
+@@ -101,28 +102,27 @@ export default function Page() {
+ 												 startCreateProject={startCreateProject}
+ 												 isLoading={loading}
+ 												 search={search} setSearch={setSearch}/>
+-			<main className=""flex-shrink overflow-hidden flex"">
+-				<Card className=""w-full overflow-x-auto overflow-y-auto shadow-none"">
+-					<CardHeader>
+-						{
+-							result.status == ""pending"" ? <Card className={""p-4""}>{tc(""general:loading..."")}</Card> :
+-								result.status == ""error"" ?
+-									<Card className={""p-4""}>{tc(""projects:error:load error"", {msg: result.error.message})}</Card> :
+-									<ProjectsTable
+-										projects={result.data}
+-										search={search}
+-										loading={loading}
+-										openUnity={openUnity.openUnity}
+-										refresh={() => result.refetch()}
+-										onRemoved={() => result.refetch()}
+-									/>
+-						}
+-					</CardHeader>
+-				</Card>
+-				{createProjectState === ""creating"" &&
+-					<CreateProject close={() => setCreateProjectState(""normal"")} refetch={() => result.refetch()}/>}
+-				{openUnity.dialog}
+-			</main>
++			<Card className=""w-full shadow-none overflow-hidden"">
++				<ScrollArea type={""auto""} className=""auto flex-shrink flex h-full w-full"">
++					{
++						result.status == ""pending"" ? <Card className={""p-4""}>{tc(""general:loading..."")}</Card> :
++							result.status == ""error"" ?
++								<Card className={""p-4""}>{tc(""projects:error:load error"", {msg: result.error.message})}</Card> :
++								<ProjectsTable
++									projects={result.data}
++									search={search}
++									loading={loading}
++									openUnity={openUnity.openUnity}
++									refresh={() => result.refetch()}
++									onRemoved={() => result.refetch()}
++								/>
++					}
++					<ScrollBar orientation=""horizontal"" className=""bg-background""/>
++				</ScrollArea>
++			</Card>
++			{createProjectState === ""creating"" &&
++				<CreateProject close={() => setCreateProjectState(""normal"")} refetch={() => result.refetch()}/>}
++			{openUnity.dialog}
+ 		</VStack>
+ 	);
+ }
+@@ -260,7 +260,7 @@ function ProjectsTable(
+ 				: <ChevronUpDownIcon className={iconClass}/>;
+ 
+ 	return (
+-		<table className=""relative table-auto text-left"">
++		<table className=""relative table-auto text-left w-full"">
+ 			<thead>
+ 			<tr>
+ 				<th className={`${thClass} bg-secondary text-secondary-foreground`}>"
+vrc-get/vrc-get,1147,90accd83d4ef9d3b59c91cc6e5fa20a4803a689b,vrc-get-gui/app/repositories/page.tsx,modified,12,8,20,"@@ -25,6 +25,7 @@ import {toastError, toastNormal, toastSuccess, toastThrownError} from ""@/lib/toa
+ import {tc, tt} from ""@/lib/i18n"";
+ import {useTauriListen} from ""@/lib/use-tauri-listen"";
+ import {ReorderableList, useReorderableList} from ""@/components/ReorderableList"";
++import {ScrollArea, ScrollBar} from ""@/components/ui/scroll-area"";
+ 
+ export default function Page(props: {}) {
+ 	return <Suspense><PageBody {...props}/></Suspense>
+@@ -155,7 +156,7 @@ function PageBody() {
+ 		</DialogOpen> : null;
+ 
+ 	return (
+-		<VStack className={""p-4 overflow-y-auto""}>
++		<VStack className={""p-4 overflow-hidden""}>
+ 			<HNavBar className={""flex-shrink-0""}>
+ 				<p className=""cursor-pointer py-1.5 font-bold flex-grow-0"">
+ 					{tc(""vpm repositories:community repositories"")}
+@@ -164,18 +165,19 @@ function PageBody() {
+ 					onClick={() => setState({type: 'enteringRepositoryInfo'})}>{tc(""vpm repositories:button:add repository"")}</Button>
+ 			</HNavBar>
+ 			<main className=""flex-shrink flex-grow overflow-hidden flex"">
+-				<Card className=""w-full overflow-x-auto overflow-y-scroll shadow-none"">
+-					<CardHeader>
++				<Card className=""w-full shadow-none overflow-hidden"">
++					<ScrollArea type={""auto""} className=""auto flex-shrink flex h-full w-full"">
+ 						<RepositoryTable
+ 							userRepos={result.data?.user_repositories || []}
+ 							hiddenUserRepos={hiddenUserRepos}
+ 							removeRepository={removeRepository}
+ 							refetch={() => result.refetch()}
+ 						/>
+-						{dialog}
+-					</CardHeader>
++						<ScrollBar orientation={""horizontal""} className={""bg-background px-2.5""}/>
++					</ScrollArea>
+ 				</Card>
+ 			</main>
++			{dialog}
+ 		</VStack>
+ 	);
+ }
+@@ -387,13 +389,14 @@ function EnteringRepositoryInfo(
+ 							 placeholder={""https://vpm.anatawa12.com/vpm.json""}></Input>
+ 				<details>
+ 					<summary className={""font-bold""}>{tc(""vpm repositories:dialog:headers"")}</summary>
++					{/* TODO: use ScrollArea (I failed to use it inside dialog) */}
+ 					<div className={""w-full max-h-[50vh] overflow-y-auto""}>
+ 						<table className={""w-full""}>
+ 							<thead>
+ 							<tr>
+-								<th className={""sticky top-0 z-10""}>{tc(""vpm repositories:dialog:header name"")}</th>
+-								<th className={""sticky top-0 z-10""}>{tc(""vpm repositories:dialog:header value"")}</th>
+-								<th className={""sticky top-0 z-10""}></th>
++								<th className={""sticky top-0 z-10 bg-background""}>{tc(""vpm repositories:dialog:header name"")}</th>
++								<th className={""sticky top-0 z-10 bg-background""}>{tc(""vpm repositories:dialog:header value"")}</th>
++								<th className={""sticky top-0 z-10 bg-background""}></th>
+ 							</tr>
+ 							</thead>
+ 							<tbody>
+@@ -496,6 +499,7 @@ function Confirming(
+ ) {
+ 	return (
+ 		<>
++			{/* TODO: use ScrollArea (I failed to use it inside dialog) */}
+ 			<DialogDescription className={""max-h-[50vh] overflow-y-auto font-normal""}>
+ 				<p
+ 					className={""font-normal""}>{tc(""vpm repositories:dialog:name"", {name: repo.display_name})}</p>"
+vrc-get/vrc-get,1147,90accd83d4ef9d3b59c91cc6e5fa20a4803a689b,vrc-get-gui/app/settings/licenses/render-client.tsx,modified,7,4,11,"@@ -4,6 +4,7 @@ import {Card} from ""@/components/ui/card"";
+ import Link from ""next/link"";
+ import {Licenses} from ""@/lib/licenses"";
+ import {shellOpen} from ""@/lib/shellOpen"";
++import {ScrollArea} from ""@/components/ui/scroll-area"";
+ 
+ export default function RenderPage({licenses}: { licenses: Licenses | null }) {
+ 	if (licenses === null) {
+@@ -15,7 +16,7 @@ export default function RenderPage({licenses}: { licenses: Licenses | null }) {
+ 	}
+ 
+ 	return (
+-		<div className={""overflow-y-scroll""}>
++		<ScrollArea>
+ 			<Card className={""m-4 p-4""}>
+ 				<p>
+ 					This project is built on top of many open-source projects.<br/>
+@@ -35,11 +36,13 @@ export default function RenderPage({licenses}: { licenses: Licenses | null }) {
+ 								onClick={() => shellOpen(pkg.url)}>{pkg.name} ({pkg.version})</a></li>
+ 						))}
+ 					</ul>
+-					<Card className={""p-3 max-h-52 overflow-y-scroll""}>
+-						<pre className={""whitespace-pre-wrap""}>{license.text}</pre>
++					<Card className={""p-3 max-h-52 flex""}>
++						<ScrollArea className={'overflow-hidden flex-shrink w-full'}>
++							<pre className={""whitespace-pre-wrap""}>{license.text}</pre>
++						</ScrollArea>
+ 					</Card>
+ 				</Card>
+ 			))}
+-		</div>
++		</ScrollArea>
+ 	);
+ }"
+vrc-get/vrc-get,1147,90accd83d4ef9d3b59c91cc6e5fa20a4803a689b,vrc-get-gui/app/settings/page.tsx,modified,152,148,300,"@@ -3,6 +3,7 @@
+ import {Button} from ""@/components/ui/button"";
+ import {Card, CardHeader} from ""@/components/ui/card"";
+ import {Checkbox} from ""@/components/ui/checkbox"";
++import {ScrollArea, ScrollBar} from ""@/components/ui/scroll-area"";
+ import {Input} from ""@/components/ui/input"";
+ import {
+ 	Select,
+@@ -286,165 +287,168 @@ function Settings(
+ 
+ 
+ 	return (
+-		<main className=""flex flex-col gap-2 flex-shrink overflow-y-auto flex-grow"">
+-			<Card className={""flex-shrink-0 p-4""}>
+-				<h2 className={""pb-2""}>{tc(""settings:unity hub path"")}</h2>
+-				<div className={""flex gap-1 items-center""}>
+-					{
+-						settings.unity_hub
+-							? <Input className=""flex-auto"" value={settings.unity_hub} disabled/>
+-							: <Input value={""Unity Hub Not Found""} disabled className={""flex-auto text-destructive""}/>
+-					}
+-					<Button className={""flex-none px-4""} onClick={selectUnityHub}>{tc(""general:button:select"")}</Button>
+-				</div>
+-			</Card>
+-			<Card className={""flex-shrink-0 p-4""}>
+-				<div className={""pb-2 flex align-middle""}>
+-					<div className={""flex-grow flex items-center""}>
+-						<h2>{tc(""settings:unity installations"")}</h2>
++		<ScrollArea>
++			<main className=""flex flex-col gap-2 flex-shrink flex-grow"">
++				<Card className={""flex-shrink-0 p-4""}>
++					<h2 className={""pb-2""}>{tc(""settings:unity hub path"")}</h2>
++					<div className={""flex gap-1 items-center""}>
++						{
++							settings.unity_hub
++								? <Input className=""flex-auto"" value={settings.unity_hub} disabled/>
++								: <Input value={""Unity Hub Not Found""} disabled className={""flex-auto text-destructive""}/>
++						}
++						<Button className={""flex-none px-4""} onClick={selectUnityHub}>{tc(""general:button:select"")}</Button>
+ 					</div>
+-					<Button onClick={addUnity} size={""sm""} className={""m-1""}>{tc(""settings:button:add unity"")}</Button>
+-				</div>
+-				<Card className=""w-full overflow-x-auto overflow-y-scroll min-h-[20vh]"">
+-					<CardHeader>
+-						<UnityTable unityPaths={settings.unity_paths}/>
+-					</CardHeader>
+ 				</Card>
+-			</Card>
+-			<Card className={""flex-shrink-0 p-4""}>
+-				<h2>{tc(""settings:default project path"")}</h2>
+-				<p className={""whitespace-normal""}>
+-					{tc(""settings:default project path description"")}
+-				</p>
+-				<div className={""flex gap-1 items-center""}>
+-					<Input className=""flex-auto"" value={settings.default_project_path} disabled/>
+-					<Button className={""flex-none px-4""}
+-									onClick={selectProjectDefaultFolder}>{tc(""general:button:select"")}</Button>
+-					<Button className={""flex-none px-4""} onClick={openProjectDefaultFolder}>
+-						{tc(""settings:button:open location"")}
+-					</Button>
+-				</div>
+-			</Card>
+-			<Card className={""flex-shrink-0 p-4""}>
+-				<h2>{tc(""projects:backup"")}</h2>
+-				<div className=""mt-2"">
+-					<h3>{tc(""settings:backup:path"")}</h3>
++				<Card className={""flex-shrink-0 p-4""}>
++					<div className={""pb-2 flex align-middle""}>
++						<div className={""flex-grow flex items-center""}>
++							<h2>{tc(""settings:unity installations"")}</h2>
++						</div>
++						<Button onClick={addUnity} size={""sm""} className={""m-1""}>{tc(""settings:button:add unity"")}</Button>
++					</div>
++					<Card className=""w-full min-h-[20vh] flex flex-col overflow-hidden"">
++						<ScrollArea className={""h-full grow""}>
++							<UnityTable unityPaths={settings.unity_paths}/>
++							<ScrollBar orientation={""horizontal""} className={""bg-background px-2.5""}/>
++						</ScrollArea>
++					</Card>
++				</Card>
++				<Card className={""flex-shrink-0 p-4""}>
++					<h2>{tc(""settings:default project path"")}</h2>
+ 					<p className={""whitespace-normal""}>
+-						{tc(""settings:backup:path description"")}
++						{tc(""settings:default project path description"")}
+ 					</p>
+ 					<div className={""flex gap-1 items-center""}>
+-						<Input className=""flex-auto"" value={settings.project_backup_path} disabled/>
++						<Input className=""flex-auto"" value={settings.default_project_path} disabled/>
+ 						<Button className={""flex-none px-4""}
+-										onClick={selectProjectBackupFolder}>{tc(""general:button:select"")}</Button>
+-						<Button className={""flex-none px-4""} onClick={openProjectBackupFolder}>
++										onClick={selectProjectDefaultFolder}>{tc(""general:button:select"")}</Button>
++						<Button className={""flex-none px-4""} onClick={openProjectDefaultFolder}>
+ 							{tc(""settings:button:open location"")}
+ 						</Button>
+ 					</div>
+-				</div>
+-				<div className=""mt-2"">
++				</Card>
++				<Card className={""flex-shrink-0 p-4""}>
++					<h2>{tc(""projects:backup"")}</h2>
++					<div className=""mt-2"">
++						<h3>{tc(""settings:backup:path"")}</h3>
++						<p className={""whitespace-normal""}>
++							{tc(""settings:backup:path description"")}
++						</p>
++						<div className={""flex gap-1 items-center""}>
++							<Input className=""flex-auto"" value={settings.project_backup_path} disabled/>
++							<Button className={""flex-none px-4""}
++											onClick={selectProjectBackupFolder}>{tc(""general:button:select"")}</Button>
++							<Button className={""flex-none px-4""} onClick={openProjectBackupFolder}>
++								{tc(""settings:button:open location"")}
++							</Button>
++						</div>
++					</div>
++					<div className=""mt-2"">
++						<label className={""flex items-center""}>
++							<h3>{tc(""settings:backup:format"")}</h3>
++							<Select defaultValue={settings.backup_format} onValueChange={setBackupFormat}>
++								<SelectTrigger>
++									<SelectValue />
++								</SelectTrigger>
++								<SelectContent>
++									<SelectGroup>
++										<SelectItem value={""default""}>{tc(""settings:backup:format:default"")}</SelectItem>
++										<SelectItem value={""zip-store""}>{tc(""settings:backup:format:zip-store"")}</SelectItem>
++										<SelectItem value={""zip-fast""}>{tc(""settings:backup:format:zip-fast"")}</SelectItem>
++										<SelectItem value={""zip-best""}>{tc(""settings:backup:format:zip-best"")}</SelectItem>
++									</SelectGroup>
++								</SelectContent>
++							</Select>
++						</label>
++					</div>
++				</Card>
++				<Card className={""flex-shrink-0 p-4""}>
++					<p className={""whitespace-normal""}>
++						{tc(""settings:show prerelease description"")}
++					</p>
+ 					<label className={""flex items-center""}>
+-						<h3>{tc(""settings:backup:format"")}</h3>
+-						<Select defaultValue={settings.backup_format} onValueChange={setBackupFormat}>
+-							<SelectTrigger>
+-								<SelectValue />
+-							</SelectTrigger>
+-							<SelectContent>
+-								<SelectGroup>
+-									<SelectItem value={""default""}>{tc(""settings:backup:format:default"")}</SelectItem>
+-									<SelectItem value={""zip-store""}>{tc(""settings:backup:format:zip-store"")}</SelectItem>
+-									<SelectItem value={""zip-fast""}>{tc(""settings:backup:format:zip-fast"")}</SelectItem>
+-									<SelectItem value={""zip-best""}>{tc(""settings:backup:format:zip-best"")}</SelectItem>
+-								</SelectGroup>
+-							</SelectContent>
+-						</Select>
++						<div className={""p-3""}>
++							<Checkbox checked={settings.show_prerelease_packages} onCheckedChange={(e) => toggleShowPrereleasePackages(e)}/>
++						</div>
++						{tc(""settings:show prerelease"")}
+ 					</label>
+-				</div>
+-			</Card>
+-			<Card className={""flex-shrink-0 p-4""}>
+-				<p className={""whitespace-normal""}>
+-					{tc(""settings:show prerelease description"")}
+-				</p>
+-				<label className={""flex items-center""}>
+-					<div className={""p-3""}>
+-						<Checkbox checked={settings.show_prerelease_packages} onCheckedChange={(e) => toggleShowPrereleasePackages(e)}/>
++				</Card>
++				<Card className={""flex-shrink-0 p-4""}>
++					<label className={""flex items-center""}>
++						<h2>{tc(""settings:language"")}: </h2>
++						{lang && (
++							<Select defaultValue={lang} onValueChange={changeLanguage}>
++								<SelectTrigger>
++									<SelectValue/>
++								</SelectTrigger>
++								<SelectContent>
++									<SelectGroup>
++										{
++											languages.map((lang) => (
++												<SelectItem key={lang} value={lang}>{tc(""settings:langName"", {lng: lang})}</SelectItem>
++											))
++										}
++									</SelectGroup>
++								</SelectContent>
++							</Select>
++						)}
++					</label>
++				</Card>
++				{unityDialog}
++				{unityHubDialog}
++				{projectDefaultDialog}
++				{projectBackupDialog}
++				<Card className={""flex-shrink-0 p-4""}>
++					<label className={""flex items-center""}>
++						<h2>{tc(""settings:theme"")}: </h2>
++						{theme && (
++							<Select defaultValue={theme} onValueChange={changeTheme}>
++								<SelectTrigger>
++									<SelectValue />
++								</SelectTrigger>
++								<SelectContent>
++									<SelectGroup>
++										<SelectItem value={""system""}>{tc(""settings:theme:system"")}</SelectItem>
++										<SelectItem value={""light""}>{tc(""settings:theme:light"")}</SelectItem>
++										<SelectItem value={""dark""}>{tc(""settings:theme:dark"")}</SelectItem>
++									</SelectGroup>
++								</SelectContent>
++							</Select>
++						)}
++					</label>
++				</Card>
++				<Card className={""flex-shrink-0 p-4""}>
++					<h2>{tc(""settings:check update"")}</h2>
++					<div>
++						<Button onClick={() => emit(""tauri://update"")}>{tc(""settings:check update"")}</Button>
+ 					</div>
+-					{tc(""settings:show prerelease"")}
+-				</label>
+-			</Card>
+-			<Card className={""flex-shrink-0 p-4""}>
+-				<label className={""flex items-center""}>
+-					<h2>{tc(""settings:language"")}: </h2>
+-					{lang && (
+-						<Select defaultValue={lang} onValueChange={changeLanguage}>
+-							<SelectTrigger>
+-								<SelectValue/>
+-							</SelectTrigger>
+-							<SelectContent>
+-								<SelectGroup>
+-									{
+-										languages.map((lang) => (
+-											<SelectItem key={lang} value={lang}>{tc(""settings:langName"", {lng: lang})}</SelectItem>
+-										))
+-									}
+-								</SelectGroup>
+-							</SelectContent>
+-						</Select>
+-					)}
+-				</label>
+-			</Card>
+-			{unityDialog}
+-			{unityHubDialog}
+-			{projectDefaultDialog}
+-			{projectBackupDialog}
+-			<Card className={""flex-shrink-0 p-4""}>
+-				<label className={""flex items-center""}>
+-					<h2>{tc(""settings:theme"")}: </h2>
+-					{theme && (
+-						<Select defaultValue={theme} onValueChange={changeTheme}>
+-							<SelectTrigger>
+-								<SelectValue />
+-							</SelectTrigger>
+-							<SelectContent>
+-								<SelectGroup>
+-									<SelectItem value={""system""}>{tc(""settings:theme:system"")}</SelectItem>
+-									<SelectItem value={""light""}>{tc(""settings:theme:light"")}</SelectItem>
+-									<SelectItem value={""dark""}>{tc(""settings:theme:dark"")}</SelectItem>
+-								</SelectGroup>
+-							</SelectContent>
+-						</Select>
+-					)}
+-				</label>
+-			</Card>
+-			<Card className={""flex-shrink-0 p-4""}>
+-				<h2>{tc(""settings:check update"")}</h2>
+-				<div>
+-					<Button onClick={() => emit(""tauri://update"")}>{tc(""settings:check update"")}</Button>
+-				</div>
+-			</Card>
+-			{osType != ""Darwin"" && <Card className={""flex-shrink-0 p-4""}>
+-				<h2>{tc(""settings:vcc scheme"")}</h2>
+-				<p className={""whitespace-normal""}>
+-					{tc(""settings:vcc scheme description"")}
+-				</p>
+-				<div>
+-					<Button onClick={installVccProtocol}>{tc(""settings:register vcc scheme"")}</Button>
+-				</div>
+-			</Card>}
+-			<Card className={""flex-shrink-0 p-4""}>
+-				<h2>{tc(""settings:report issue"")}</h2>
+-				<div>
+-					<Button onClick={reportIssue}>{tc(""settings:button:open issue"")}</Button>
+-				</div>
+-			</Card>
+-			<Card className={""flex-shrink-0 p-4""}>
+-				<h2>{tc(""settings:licenses"")}</h2>
+-				<p className={""whitespace-normal""}>
+-					{tc(""settings:licenses description"", {}, {
+-						components: {l: <Link href={""/settings/licenses""} className={""underline""}/>}
+-					})}
+-				</p>
+-			</Card>
+-		</main>
++				</Card>
++				{osType != ""Darwin"" && <Card className={""flex-shrink-0 p-4""}>
++					<h2>{tc(""settings:vcc scheme"")}</h2>
++					<p className={""whitespace-normal""}>
++						{tc(""settings:vcc scheme description"")}
++					</p>
++					<div>
++						<Button onClick={installVccProtocol}>{tc(""settings:register vcc scheme"")}</Button>
++					</div>
++				</Card>}
++				<Card className={""flex-shrink-0 p-4""}>
++					<h2>{tc(""settings:report issue"")}</h2>
++					<div>
++						<Button onClick={reportIssue}>{tc(""settings:button:open issue"")}</Button>
++					</div>
++				</Card>
++				<Card className={""flex-shrink-0 p-4""}>
++					<h2>{tc(""settings:licenses"")}</h2>
++					<p className={""whitespace-normal""}>
++						{tc(""settings:licenses description"", {}, {
++							components: {l: <Link href={""/settings/licenses""} className={""underline""}/>}
++						})}
++					</p>
++				</Card>
++			</main>
++		</ScrollArea>
+ 	)
+ }
+ 
+@@ -457,7 +461,7 @@ function UnityTable(
+ ) {
+ 	const UNITY_TABLE_HEAD = [""settings:unity:version"", ""settings:unity:path"", ""general:source""];
+ 	return (
+-		<table className=""relative table-auto text-left"">
++		<table className=""relative table-auto text-left w-full"">
+ 			<thead>
+ 			<tr>
+ 				{UNITY_TABLE_HEAD.map((head, index) => ("
+vrc-get/vrc-get,1147,90accd83d4ef9d3b59c91cc6e5fa20a4803a689b,vrc-get-gui/app/settings/palette/page.tsx,modified,78,74,152,"@@ -14,6 +14,7 @@ import {
+ } from ""@/components/ui/select""
+ import {HNavBar, VStack} from ""@/components/layout"";
+ import {toastError, toastInfo, toastNormal, toastSuccess} from ""@/lib/toast"";
++import {ScrollArea, ScrollBar} from ""@/components/ui/scroll-area"";
+ 
+ export default function Page() {
+ 	return (
+@@ -23,85 +24,88 @@ export default function Page() {
+ 					UI Palette (dev only)
+ 				</p>
+ 			</HNavBar>
+-			<main className=""flex flex-col gap-2 flex-shrink overflow-y-auto flex-grow"">
+-				<Card className={""flex-shrink-0 p-4""}>
+-					<h2 className={""pb-2""}>File Selector</h2>
+-					<div className={""flex gap-1 items-center""}>
+-						<Input className=""flex-auto"" value={""/some/path/field""} disabled/>
+-						<Button className={""flex-none px-4""}>Select</Button>
+-					</div>
+-				</Card>
+-				<Card className={""flex-shrink-0 p-4""}>
+-					<div className={""pb-2 flex align-middle""}>
+-						<div className={""flex-grow flex items-center""}>
+-							<h2>Table</h2>
++			<ScrollArea>
++				<main className=""flex flex-col gap-2 flex-shrink flex-grow"">
++					<Card className={""flex-shrink-0 p-4""}>
++						<h2 className={""pb-2""}>File Selector</h2>
++						<div className={""flex gap-1 items-center""}>
++							<Input className=""flex-auto"" value={""/some/path/field""} disabled/>
++							<Button className={""flex-none px-4""}>Select</Button>
+ 						</div>
+-						<Button size={""sm""} className={""m-1""}>Add Unity</Button>
+-					</div>
+-					<Card className=""w-full overflow-x-auto overflow-y-scroll min-h-[20vh]"">
+-						<CardHeader>
+-							<UnityTable/>
+-						</CardHeader>
+ 					</Card>
+-				</Card>
+-				<Card className={""flex-shrink-0 p-4""}>
+-					<h2>Dropdown Selector</h2>
+-					<div className=""mt-2"">
++					<Card className={""flex-shrink-0 p-4""}>
++						<div className={""pb-2 flex align-middle""}>
++							<div className={""flex-grow flex items-center""}>
++								<h2>Table</h2>
++							</div>
++							<Button size={""sm""} className={""m-1""}>Add Unity</Button>
++						</div>
++						<Card className=""w-full shadow-none overflow-hidden"">
++							<ScrollArea type={""auto""} className=""auto flex-shrink flex h-full w-full"">
++								<UnityTable/>
++								<ScrollBar orientation={""horizontal""} className={""bg-background px-2.5""}/>
++							</ScrollArea>
++						</Card>
++					</Card>
++					<Card className={""flex-shrink-0 p-4""}>
++						<h2>Dropdown Selector</h2>
++						<div className=""mt-2"">
++							<label className={""flex items-center""}>
++								<h3>Selector</h3>
++								<Select>
++									<SelectTrigger>
++										<SelectValue/>
++									</SelectTrigger>
++									<SelectContent>
++										<SelectGroup>
++											<SelectItem value={""default""}>Option 0</SelectItem>
++											<SelectItem value={""zip-store""}>Option 1</SelectItem>
++											<SelectLabel>Select Label</SelectLabel>
++											<SelectItem value={""zip-fast""}>Option 2</SelectItem>
++											<SelectItem value={""zip-best""}>Option3</SelectItem>
++										</SelectGroup>
++									</SelectContent>
++								</Select>
++							</label>
++						</div>
++					</Card>
++					<Card className={""flex-shrink-0 p-4""}>
++						<p className={""whitespace-normal""}>
++							Some Description Here
++						</p>
+ 						<label className={""flex items-center""}>
+-							<h3>Selector</h3>
+-							<Select>
+-								<SelectTrigger>
+-									<SelectValue/>
+-								</SelectTrigger>
+-								<SelectContent>
+-									<SelectGroup>
+-										<SelectItem value={""default""}>Option 0</SelectItem>
+-										<SelectItem value={""zip-store""}>Option 1</SelectItem>
+-										<SelectLabel>Select Label</SelectLabel>
+-										<SelectItem value={""zip-fast""}>Option 2</SelectItem>
+-										<SelectItem value={""zip-best""}>Option3</SelectItem>
+-									</SelectGroup>
+-								</SelectContent>
+-							</Select>
++							<div className={""p-3""}>
++								<Checkbox/>
++							</div>
++							Checkbox
+ 						</label>
+-					</div>
+-				</Card>
+-				<Card className={""flex-shrink-0 p-4""}>
+-					<p className={""whitespace-normal""}>
+-						Some Description Here
+-					</p>
+-					<label className={""flex items-center""}>
+-						<div className={""p-3""}>
+-							<Checkbox/>
+-						</div>
+-						Checkbox
+-					</label>
+-				</Card>
+-				<Card className={""flex-shrink-0 p-4""}>
+-					<h2 className={""pb-2""}>Buttons</h2>
+-					<div className={""flex gap-2 items-center""}>
+-						<Button>Normal</Button>
+-						<Button variant={""destructive""}>Destructive</Button>
+-						<Button variant={""success""}>Success</Button>
+-						<Button variant={""info""}>Info</Button>
++					</Card>
++					<Card className={""flex-shrink-0 p-4""}>
++						<h2 className={""pb-2""}>Buttons</h2>
++						<div className={""flex gap-2 items-center""}>
++							<Button>Normal</Button>
++							<Button variant={""destructive""}>Destructive</Button>
++							<Button variant={""success""}>Success</Button>
++							<Button variant={""info""}>Info</Button>
+ 
+-						<Button variant={""outline-success""}>Outline Success</Button>
+-						<Button variant={""ghost""}>Ghost</Button>
+-						<Button variant={""ghost-destructive""}>Ghost Destructive</Button>
+-					</div>
+-				</Card>
+-				<Card className={""flex-shrink-0 p-4""}>
+-					<h2 className={""pb-2""}>Toasts</h2>
+-					<div className={""flex gap-2 items-center""}>
+-						<Button onClick={() => toastNormal(""Normal Toast Body"")}>Normal</Button>
+-						<Button variant={""destructive""} onClick={() => toastError(""Error Toast Body"")}>Error</Button>
+-						<Button variant={""success""} onClick={() => toastSuccess(""Success Toast Body"")}>Success</Button>
+-						<Button variant={""info""} onClick={() => toastInfo(""Info Toast Body"")}>Info</Button>
+-					</div>
+-				</Card>
+-			</main>
++							<Button variant={""outline-success""}>Outline Success</Button>
++							<Button variant={""ghost""}>Ghost</Button>
++							<Button variant={""ghost-destructive""}>Ghost Destructive</Button>
++						</div>
++					</Card>
++					<Card className={""flex-shrink-0 p-4""}>
++						<h2 className={""pb-2""}>Toasts</h2>
++						<div className={""flex gap-2 items-center""}>
++							<Button onClick={() => toastNormal(""Normal Toast Body"")}>Normal</Button>
++							<Button variant={""destructive""} onClick={() => toastError(""Error Toast Body"")}>Error</Button>
++							<Button variant={""success""} onClick={() => toastSuccess(""Success Toast Body"")}>Success</Button>
++							<Button variant={""info""} onClick={() => toastInfo(""Info Toast Body"")}>Info</Button>
++						</div>
++					</Card>
++				</main>
++			</ScrollArea>
+ 		</VStack>
+-	)
++)
+ }
+ 
+ function UnityTable() {
+@@ -111,7 +115,7 @@ function UnityTable() {
+ 	];
+ 	const UNITY_TABLE_HEAD = [""Version"", ""Path"", ""Source""];
+ 	return (
+-		<table className=""relative table-auto text-left"">
++		<table className=""relative table-auto text-left w-full"">
+ 			<thead>
+ 			<tr>
+ 				{UNITY_TABLE_HEAD.map((head, index) => ("
+vrc-get/vrc-get,1147,90accd83d4ef9d3b59c91cc6e5fa20a4803a689b,vrc-get-gui/components/SideBar.tsx,modified,3,2,5,"@@ -10,6 +10,7 @@ import {utilGetVersion} from ""@/lib/bindings"";
+ import {useTranslation} from ""react-i18next"";
+ import {useRouter} from ""next/navigation"";
+ import {toastNormal} from ""@/lib/toast"";
++import {ScrollArea} from ""@/components/ui/scroll-area"";
+ 
+ export function SideBar({className}: { className?: string }) {
+ 	""use client""
+@@ -37,7 +38,7 @@ export function SideBar({className}: { className?: string }) {
+ 
+ 	return (
+ 		<Card
+-			className={`${className} flex w-auto max-w-[20rem] p-2 shadow-xl shadow-primary/5 ml-4 my-4 shrink-0`}>
++			className={`${className} flex w-auto max-w-[20rem] p-2 shadow-xl shadow-primary/5 ml-4 my-4 shrink-0 overflow-auto`}>
+ 			<div className=""flex flex-col gap-1 p-2 min-w-[10rem] flex-grow"">
+ 				<SideBarItem href={""/projects""} text={t(""projects"")} icon={ListBulletIcon}/>
+ 				<SideBarItem href={""/repositories""} text={t(""vpm repositories"")} icon={CloudIcon}/>
+@@ -58,7 +59,7 @@ function SideBarItem(
+ 	const router = useRouter();
+ 	const IconElenment = icon;
+ 	return (
+-		<Button variant={""ghost""} className={""justify-start""} onClick={() => router.push(href)}>
++		<Button variant={""ghost""} className={""justify-start flex-shrink-0""} onClick={() => router.push(href)}>
+ 			<div className={""mr-4""}>
+ 				<IconElenment className=""h-5 w-5""/>
+ 			</div>"
+vrc-get/vrc-get,1147,90accd83d4ef9d3b59c91cc6e5fa20a4803a689b,vrc-get-gui/components/ui/scroll-area.tsx,added,46,0,46,"@@ -0,0 +1,46 @@
++import * as React from ""react""
++import * as ScrollAreaPrimitive from ""@radix-ui/react-scroll-area""
++
++import { cn } from ""@/lib/utils""
++
++const ScrollArea = React.forwardRef<
++  React.ElementRef<typeof ScrollAreaPrimitive.Root>,
++  React.ComponentPropsWithoutRef<typeof ScrollAreaPrimitive.Root>
++>(({ className, children, ...props }, ref) => (
++  <ScrollAreaPrimitive.Root
++    ref={ref}
++    className={cn(""relative overflow-hidden"", className)}
++    {...props}
++  >
++    <ScrollAreaPrimitive.Viewport className=""h-full w-full rounded-[inherit]"">
++      {children}
++    </ScrollAreaPrimitive.Viewport>
++    <ScrollBar className={props.type == ""auto"" ? ""bg-background"" : """"} />
++    <ScrollAreaPrimitive.Corner />
++  </ScrollAreaPrimitive.Root>
++))
++ScrollArea.displayName = ScrollAreaPrimitive.Root.displayName
++
++const ScrollBar = React.forwardRef<
++  React.ElementRef<typeof ScrollAreaPrimitive.ScrollAreaScrollbar>,
++  React.ComponentPropsWithoutRef<typeof ScrollAreaPrimitive.ScrollAreaScrollbar>
++>(({ className, orientation = ""vertical"", ...props }, ref) => (
++  <ScrollAreaPrimitive.ScrollAreaScrollbar
++    ref={ref}
++    orientation={orientation}
++    className={cn(
++      ""flex touch-none select-none transition-colors z-20"",
++      orientation === ""vertical"" &&
++        ""h-full w-2.5 border-l border-l-transparent p-[1px] py-2.5"",
++      orientation === ""horizontal"" &&
++        ""h-2.5 flex-col border-t border-t-transparent p-[1px] ps-2.5"",
++      className
++    )}
++    {...props}
++  >
++    <ScrollAreaPrimitive.ScrollAreaThumb className=""relative flex-1 rounded-full bg-border"" />
++  </ScrollAreaPrimitive.ScrollAreaScrollbar>
++))
++ScrollBar.displayName = ScrollAreaPrimitive.ScrollAreaScrollbar.displayName
++
++export { ScrollArea, ScrollBar }"
+vrc-get/vrc-get,1147,90accd83d4ef9d3b59c91cc6e5fa20a4803a689b,vrc-get-gui/package-lock.json,modified,32,0,32,"@@ -14,6 +14,7 @@
+         ""@radix-ui/react-dropdown-menu"": ""^2.0.6"",
+         ""@radix-ui/react-label"": ""^2.0.2"",
+         ""@radix-ui/react-radio-group"": ""^1.1.3"",
++        ""@radix-ui/react-scroll-area"": ""^1.0.5"",
+         ""@radix-ui/react-select"": ""^2.0.0"",
+         ""@radix-ui/react-slot"": ""^1.0.2"",
+         ""@radix-ui/react-tooltip"": ""^1.0.7"",
+@@ -1010,6 +1011,37 @@
+         }
+       }
+     },
++    ""node_modules/@radix-ui/react-scroll-area"": {
++      ""version"": ""1.0.5"",
++      ""resolved"": ""https://registry.npmjs.org/@radix-ui/react-scroll-area/-/react-scroll-area-1.0.5.tgz"",
++      ""integrity"": ""sha512-b6PAgH4GQf9QEn8zbT2XUHpW5z8BzqEc7Kl11TwDrvuTrxlkcjTD5qa/bxgKr+nmuXKu4L/W5UZ4mlP/VG/5Gw=="",
++      ""dependencies"": {
++        ""@babel/runtime"": ""^7.13.10"",
++        ""@radix-ui/number"": ""1.0.1"",
++        ""@radix-ui/primitive"": ""1.0.1"",
++        ""@radix-ui/react-compose-refs"": ""1.0.1"",
++        ""@radix-ui/react-context"": ""1.0.1"",
++        ""@radix-ui/react-direction"": ""1.0.1"",
++        ""@radix-ui/react-presence"": ""1.0.1"",
++        ""@radix-ui/react-primitive"": ""1.0.3"",
++        ""@radix-ui/react-use-callback-ref"": ""1.0.1"",
++        ""@radix-ui/react-use-layout-effect"": ""1.0.1""
++      },
++      ""peerDependencies"": {
++        ""@types/react"": ""*"",
++        ""@types/react-dom"": ""*"",
++        ""react"": ""^16.8 || ^17.0 || ^18.0"",
++        ""react-dom"": ""^16.8 || ^17.0 || ^18.0""
++      },
++      ""peerDependenciesMeta"": {
++        ""@types/react"": {
++          ""optional"": true
++        },
++        ""@types/react-dom"": {
++          ""optional"": true
++        }
++      }
++    },
+     ""node_modules/@radix-ui/react-select"": {
+       ""version"": ""2.0.0"",
+       ""resolved"": ""https://registry.npmjs.org/@radix-ui/react-select/-/react-select-2.0.0.tgz"","
+vrc-get/vrc-get,1147,90accd83d4ef9d3b59c91cc6e5fa20a4803a689b,vrc-get-gui/package.json,modified,1,0,1,"@@ -18,6 +18,7 @@
+     ""@radix-ui/react-dropdown-menu"": ""^2.0.6"",
+     ""@radix-ui/react-label"": ""^2.0.2"",
+     ""@radix-ui/react-radio-group"": ""^1.1.3"",
++    ""@radix-ui/react-scroll-area"": ""^1.0.5"",
+     ""@radix-ui/react-select"": ""^2.0.0"",
+     ""@radix-ui/react-slot"": ""^1.0.2"",
+     ""@radix-ui/react-tooltip"": ""^1.0.7"","

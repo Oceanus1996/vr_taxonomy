@@ -1,0 +1,65 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+Raicuparta/nomai-vr,269,82117e3723c7782932076e39aa4cbff878dc64c6,NomaiVR/ModConfig/ModConfig.cs,modified,3,1,4,"@@ -14,7 +14,8 @@ public class ModConfig
+         public bool enableGesturePrompts = true;
+         public bool controllerOrientedMovement = false;
+         public bool autoHideToolbelt = false;
+-        public float toolbeltHeight = 0f;
++        public float toolbeltHeight = 1f;
++        public float hudScale = 1f;
+ 
+         public ModConfig(IModConfig config)
+         {
+@@ -27,6 +28,7 @@ public ModConfig(IModConfig config)
+             preventCursorLock = config.GetSettingsValue<bool>(""disableCursorLock"");
+             debugMode = config.GetSettingsValue<bool>(""debug"");
+             autoHideToolbelt = config.GetSettingsValue<bool>(""autoHideToolbelt"");
++            hudScale = config.GetSettingsValue<float>(""hudScale"");
+ 
+             // OWML doesn't support negative slider values so I subtract it here.
+             toolbeltHeight = config.GetSettingsValue<float>(""toolbeltHeight"") - 1f;"
+Raicuparta/nomai-vr,269,82117e3723c7782932076e39aa4cbff878dc64c6,NomaiVR/ModConfig/default-config.json,modified,7,0,7,"@@ -36,6 +36,13 @@
+       ""yes"": ""Visible"",
+       ""no"": ""Hidden""
+     },
++    ""hudScale"": {
++      ""type"": ""slider"",
++      ""value"": 1,
++      ""min"": 0.2,
++      ""max"": 1.8,
++      ""title"": ""Helmet HUD scale""
++	},
+     ""hideHudDuringDialogue"": {
+       ""type"": ""toggle"",
+       ""value"": false,"
+Raicuparta/nomai-vr,269,82117e3723c7782932076e39aa4cbff878dc64c6,NomaiVR/ReusableBehaviours/SmoothFollowCameraRotation.cs,modified,1,1,2,"@@ -5,7 +5,7 @@ namespace NomaiVR
+     public class SmoothFollowCameraRotation : MonoBehaviour
+     {
+         private Quaternion _lastFrameRotation;
+-        private float _speed = 1f;
++        private float _speed = 0.5f;
+ 
+         internal void Start()
+         {"
+Raicuparta/nomai-vr,269,82117e3723c7782932076e39aa4cbff878dc64c6,NomaiVR/UI/HelmetHUD.cs,modified,8,1,9,"@@ -63,7 +63,6 @@ internal void Awake()
+ 
+                     return isWearingHelmet && !hideBecauseOfConversation;
+                 };
+-
+                 surface.transform.localScale = Vector3.one * 3.28f;
+                 surface.transform.localPosition = new Vector3(-0.06f, -0.44f, 0.1f);
+                 var notifications = FindObjectOfType<SuitNotificationDisplay>().GetComponent<RectTransform>();
+@@ -81,6 +80,14 @@ internal void Awake()
+                 lockOnCanvas.planeDistance = 10;
+             }
+ 
++            internal void Update()
++            {
++                if (_helmet != null)
++                {
++                    _helmet.transform.localScale = new Vector3(NomaiVR.Config.hudScale, NomaiVR.Config.hudScale, 1f) * 0.5f;
++                }
++            }
++
+             public class Patch : NomaiVRPatch
+             {
+                 public override void ApplyPatches()"

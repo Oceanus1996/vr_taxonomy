@@ -1,0 +1,52 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+cosmoscout/cosmoscout-vr,372,66dcf99,docs/changelog.md,modified,1,0,1,"@@ -16,6 +16,7 @@ SPDX-License-Identifier: CC-BY-4.0
+ #### Bug Fixes
+ 
+ * Fixed invalid terrain height of LoD bodies after reloading of the scene settings.
++* Fixed a bug which caused red rings in the clouds deep in the shadow-side of a planet.
+ 
+ ## [v1.9.0](https://github.com/cosmoscout/cosmoscout-vr/releases)
+ "
+cosmoscout/cosmoscout-vr,372,66dcf99,plugins/csp-atmospheres/shaders/csp-atmospheres/atmosphere.frag,modified,5,0,5,"@@ -381,6 +381,11 @@ vec4 getCloudColor(vec3 rayOrigin, vec3 rayDir, vec3 sunDir, float surfaceDistan
+     return vec4(0.0);
+   }
+ 
++  // If we are below the clouds and the ray intersects the ground, we can also return early.
++  if (intersections.x < 0 && surfaceDistance < intersections.y) {
++    return vec4(0.0);
++  }
++
+   // Compute intersection point of view ray with clouds. Use this to compute the illuminance at this
+   // point as well as the transmittance of the atmosphere towards the observer.
+   vec3 p = rayOrigin + rayDir * (intersections.x < 0 ? intersections.y : intersections.x);"
+cosmoscout/cosmoscout-vr,372,66dcf99,plugins/csp-atmospheres/shaders/csp-atmospheres/models/bruneton/functions.glsl,modified,7,3,10,"@@ -473,8 +473,8 @@ vec3 computeScatteringDensity(AtmosphereComponents atmosphere, sampler2D transmi
+       // given by the precomputed scattering texture for the (n-1)-th order:
+       float nu1              = dot(omegaS, omega_i);
+       vec3  incidentRadiance = getScattering(atmosphere, singleMoleculesScatteringTexture,
+-          singleAerosolsScatteringTexture, multipleScatteringTexture, r, omega_i.z, muS, nu1,
+-          rayRThetaIntersectsGround, scatteringOrder - 1);
++           singleAerosolsScatteringTexture, multipleScatteringTexture, r, omega_i.z, muS, nu1,
++           rayRThetaIntersectsGround, scatteringOrder - 1);
+ 
+       // and of the contribution from the light paths with n-1 bounces and whose last bounce is on
+       // the ground. This contribution is the product of the transmittance to the ground, the ground
+@@ -694,7 +694,7 @@ void getCombinedScattering(sampler3D multipleScatteringTexture,
+   vec3  uvw1      = vec3((texX + 1.0 + uvwz.y) / float(SCATTERING_TEXTURE_NU_SIZE), uvwz.z, uvwz.w);
+ 
+   multipleScattering       = vec3(texture(multipleScatteringTexture, uvw0) * (1.0 - lerp) +
+-                            texture(multipleScatteringTexture, uvw1) * lerp);
++                                  texture(multipleScatteringTexture, uvw1) * lerp);
+   singleAerosolsScattering = vec3(texture(singleAerosolsScatteringTexture, uvw0) * (1.0 - lerp) +
+                                   texture(singleAerosolsScatteringTexture, uvw1) * lerp);
+ }
+@@ -806,6 +806,10 @@ vec3 getSkyRadianceToPoint(AtmosphereComponents atmosphere, sampler2D transmitta
+   multipleScattering       = multipleScattering - transmittance * multipleScatteringP;
+   singleAerosolsScattering = singleAerosolsScattering - transmittance * singleAerosolsScatteringP;
+ 
++  // Avoid negative values due to precision errors.
++  multipleScattering       = max(multipleScattering, vec3(0.0));
++  singleAerosolsScattering = max(singleAerosolsScattering, vec3(0.0));
++
+   // Hack to avoid rendering artifacts when the sun is below the horizon.
+   // singleAerosolsScattering = singleAerosolsScattering * smoothstep(0.0, 0.01, muS);
+ "

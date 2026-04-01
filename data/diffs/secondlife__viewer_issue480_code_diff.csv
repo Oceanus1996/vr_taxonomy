@@ -1,0 +1,147 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+secondlife/viewer,480,0e10127,indra/newview/llperfstats.cpp,modified,2,2,4,"@@ -64,7 +64,7 @@ namespace LLPerfStats
+     {
+         assert_main_thread();
+         // these following variables are proxies for pipeline statics we do not need a two way update (no llviewercontrol handler)
+-        if( tuningFlag & NonImpostors ){ gSavedSettings.setU32(""IndirectMaxNonImpostors"", nonImpostors); };
++        if( tuningFlag & NonImpostors ){ gSavedSettings.setU32(""RenderAvatarMaxNonImpostors"", nonImpostors); };
+         if( tuningFlag & ReflectionDetail ){ gSavedSettings.setS32(""RenderReflectionDetail"", reflectionDetail); };
+         if( tuningFlag & FarClip ){ gSavedSettings.setF32(""RenderFarClip"", farClip); };
+         if( tuningFlag & UserMinDrawDistance ){ gSavedSettings.setF32(""AutoTuneRenderFarClipMin"", userMinDrawDistance); };
+@@ -388,7 +388,7 @@ namespace LLPerfStats
+             auto count = countNearbyAvatars(std::min(LLPipeline::RenderFarClip, tunables.userImpostorDistance));
+             if( count != tunables.nonImpostors )
+             {
+-                tunables.updateNonImposters( (count < LLVOAvatar::NON_IMPOSTORS_MAX_SLIDER)?count : LLVOAvatar::NON_IMPOSTORS_MAX_SLIDER );
++                tunables.updateNonImposters( (count < LLVOAvatar::NON_IMPOSTORS_MAX_SLIDER)?count : 0 );
+                 LL_DEBUGS(""AutoTune"") << ""There are "" << count << ""avatars within "" << std::min(LLPipeline::RenderFarClip, tunables.userImpostorDistance) << ""m of the camera"" << LL_ENDL;
+             }
+         }"
+secondlife/viewer,480,d9db7bb,indra/newview/gltf/llgltfloader.cpp,modified,16,13,29,"@@ -412,17 +412,14 @@ void LLGLTFLoader::processNodeHierarchy(S32 node_idx, std::map<std::string, S32>
+     // Process this node's mesh if it has one
+     if (node.mMesh >= 0 && node.mMesh < mGLTFAsset.mMeshes.size())
+     {
+-        LLMatrix4    transformation;
+-        material_map mats;
+-
+-        LLModel* pModel = new LLModel(volume_params, 0.f);
+-        const LL::GLTF::Mesh& mesh = mGLTFAsset.mMeshes[node.mMesh];
+-
+-        // Get base mesh name and track usage
+-        std::string base_name = getLodlessLabel(mesh);
++        // Get base node name and track usage
++        // Potentially multiple nodes can reuse the same mesh and Collada used
++        // node name instead of mesh name, so for consistency use node name if
++        // avaliable, node index otherwise.
++        std::string base_name = getLodlessLabel(node);
+         if (base_name.empty())
+         {
+-            base_name = ""mesh_"" + std::to_string(node.mMesh);
++            base_name = ""node_"" + std::to_string(node_idx);
+         }
+ 
+         S32 instance_count = mesh_name_counts[base_name]++;
+@@ -433,6 +430,12 @@ void LLGLTFLoader::processNodeHierarchy(S32 node_idx, std::map<std::string, S32>
+             base_name = base_name + ""_copy_"" + std::to_string(instance_count);
+         }
+ 
++        LLMatrix4    transformation;
++        material_map mats;
++
++        LLModel* pModel = new LLModel(volume_params, 0.f);
++        const LL::GLTF::Mesh& mesh = mGLTFAsset.mMeshes[node.mMesh];
++
+         if (populateModelFromMesh(pModel, base_name, mesh, node, mats) &&
+             (LLModel::NO_ERRORS == pModel->getStatus()) &&
+             validate_model(pModel))
+@@ -1818,13 +1821,13 @@ size_t LLGLTFLoader::getSuffixPosition(const std::string &label)
+     return -1;
+ }
+ 
+-std::string LLGLTFLoader::getLodlessLabel(const LL::GLTF::Mesh& mesh)
++std::string LLGLTFLoader::getLodlessLabel(const LL::GLTF::Node& node)
+ {
+-    size_t ext_pos = getSuffixPosition(mesh.mName);
++    size_t ext_pos = getSuffixPosition(node.mName);
+     if (ext_pos != -1)
+     {
+-        return mesh.mName.substr(0, ext_pos);
++        return node.mName.substr(0, ext_pos);
+     }
+-    return mesh.mName;
++    return node.mName;
+ }
+ "
+secondlife/viewer,480,d9db7bb,indra/newview/gltf/llgltfloader.h,modified,1,1,2,"@@ -170,7 +170,7 @@ class LLGLTFLoader : public LLModelLoader
+     void notifyUnsupportedExtension(bool unsupported);
+ 
+     static size_t getSuffixPosition(const std::string& label);
+-    static std::string getLodlessLabel(const LL::GLTF::Mesh& mesh);
++    static std::string getLodlessLabel(const LL::GLTF::Node& mesh);
+ 
+     //    bool mPreprocessGLTF;
+ "
+secondlife/viewer,480,d706195,indra/newview/gltf/llgltfloader.cpp,modified,16,13,29,"@@ -412,17 +412,14 @@ void LLGLTFLoader::processNodeHierarchy(S32 node_idx, std::map<std::string, S32>
+     // Process this node's mesh if it has one
+     if (node.mMesh >= 0 && node.mMesh < mGLTFAsset.mMeshes.size())
+     {
+-        LLMatrix4    transformation;
+-        material_map mats;
+-
+-        LLModel* pModel = new LLModel(volume_params, 0.f);
+-        const LL::GLTF::Mesh& mesh = mGLTFAsset.mMeshes[node.mMesh];
+-
+-        // Get base mesh name and track usage
+-        std::string base_name = getLodlessLabel(mesh);
++        // Get base node name and track usage
++        // Potentially multiple nodes can reuse the same mesh and Collada used
++        // node name instead of mesh name, so for consistency use node name if
++        // avaliable, node index otherwise.
++        std::string base_name = getLodlessLabel(node);
+         if (base_name.empty())
+         {
+-            base_name = ""mesh_"" + std::to_string(node.mMesh);
++            base_name = ""node_"" + std::to_string(node_idx);
+         }
+ 
+         S32 instance_count = mesh_name_counts[base_name]++;
+@@ -433,6 +430,12 @@ void LLGLTFLoader::processNodeHierarchy(S32 node_idx, std::map<std::string, S32>
+             base_name = base_name + ""_copy_"" + std::to_string(instance_count);
+         }
+ 
++        LLMatrix4    transformation;
++        material_map mats;
++
++        LLModel* pModel = new LLModel(volume_params, 0.f);
++        const LL::GLTF::Mesh& mesh = mGLTFAsset.mMeshes[node.mMesh];
++
+         if (populateModelFromMesh(pModel, base_name, mesh, node, mats) &&
+             (LLModel::NO_ERRORS == pModel->getStatus()) &&
+             validate_model(pModel))
+@@ -1818,13 +1821,13 @@ size_t LLGLTFLoader::getSuffixPosition(const std::string &label)
+     return -1;
+ }
+ 
+-std::string LLGLTFLoader::getLodlessLabel(const LL::GLTF::Mesh& mesh)
++std::string LLGLTFLoader::getLodlessLabel(const LL::GLTF::Node& node)
+ {
+-    size_t ext_pos = getSuffixPosition(mesh.mName);
++    size_t ext_pos = getSuffixPosition(node.mName);
+     if (ext_pos != -1)
+     {
+-        return mesh.mName.substr(0, ext_pos);
++        return node.mName.substr(0, ext_pos);
+     }
+-    return mesh.mName;
++    return node.mName;
+ }
+ "
+secondlife/viewer,480,d706195,indra/newview/gltf/llgltfloader.h,modified,1,1,2,"@@ -170,7 +170,7 @@ class LLGLTFLoader : public LLModelLoader
+     void notifyUnsupportedExtension(bool unsupported);
+ 
+     static size_t getSuffixPosition(const std::string& label);
+-    static std::string getLodlessLabel(const LL::GLTF::Mesh& mesh);
++    static std::string getLodlessLabel(const LL::GLTF::Node& mesh);
+ 
+     //    bool mPreprocessGLTF;
+ "

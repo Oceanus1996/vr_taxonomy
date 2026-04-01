@@ -1,0 +1,237 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+OpenKneeboard/OpenKneeboard,506,bcb8abe,src/app/app-common/Tab/NavigationTab.cpp,modified,54,38,92,"@@ -212,20 +212,24 @@ void NavigationTab::RenderPage(
+ 
+   ctx->FillRectangle(canvasRect, mBackgroundBrush.get());
+ 
++  this->CalculatePreviewMetrics(pageID);
++
+   const D2D1_POINT_2F origin {canvasRect.left, canvasRect.top};
+   const auto pageTransform = D2D1::Matrix3x2F::Translation(origin.x, origin.y)
+     * D2D1::Matrix3x2F::Scale({scale, scale}, origin);
+   ctx->SetTransform(pageTransform);
+ 
+   const auto [hoverButton, buttons] = mButtonTrackers.at(pageID)->GetState();
+ 
++  const auto& previewMetrics = mPreviewMetrics.at(pageID);
++
+   for (int i = 0; i < buttons.size(); ++i) {
+     const auto& button = buttons.at(i);
+     const auto& rect = button.mRect;
+ 
+     if (button == hoverButton) {
+       ctx->FillRectangle(rect, mHighlightBrush.get());
+-      ctx->FillRectangle(mPreviewMetrics.mRects.at(i), mBackgroundBrush.get());
++      ctx->FillRectangle(previewMetrics.mRects.at(i), mBackgroundBrush.get());
+     } else {
+       ctx->FillRectangle(rect, mInactiveBrush.get());
+     }
+@@ -246,32 +250,29 @@ void NavigationTab::RenderPage(
+ 
+   ctx.Reacquire();
+ 
+-  ctx->SetTransform(D2D1::Matrix3x2F::Translation(origin.x, origin.y));
++  ctx->SetTransform(pageTransform);
+ 
+   std::vector<float> columnPreviewRightEdge(mRenderColumns);
+   for (auto i = 0; i < buttons.size(); ++i) {
+     const auto& button = buttons.at(i);
+-    const auto& previewRect = mPreviewMetrics.mRects.at(i);
++    const auto& previewRect = previewMetrics.mRects.at(i);
+     auto& rightEdge = columnPreviewRightEdge.at(button.mRenderColumn);
+-    if (previewRect.right > rightEdge) {
+-      rightEdge = previewRect.right;
++    if (previewRect.Right() > rightEdge) {
++      rightEdge = previewRect.Right();
+     }
+     if (button == hoverButton) {
+       ctx->DrawRectangle(
+-        previewRect, mHighlightBrush.get(), mPreviewMetrics.mStroke);
++        previewRect, mHighlightBrush.get(), previewMetrics.mStroke);
+     } else {
+       ctx->DrawRectangle(
+-        previewRect, mPreviewOutlineBrush.get(), mPreviewMetrics.mStroke / 2);
++        previewRect, mPreviewOutlineBrush.get(), previewMetrics.mStroke / 2);
+     }
+   }
+ 
+-  ctx->SetTransform(pageTransform);
+-
+   for (const auto& button: buttons) {
+     auto rect = button.mRect;
+-    rect.left = (columnPreviewRightEdge.at(button.mRenderColumn)
+-                 + mPreviewMetrics.mBleed)
+-      / scale;
++    rect.left
++      = columnPreviewRightEdge.at(button.mRenderColumn) + previewMetrics.mBleed;
+     ctx->DrawTextW(
+       button.mName.data(),
+       static_cast<UINT32>(button.mName.size()),
+@@ -296,50 +297,65 @@ void NavigationTab::RenderPage(
+     {0.0f,
+      0.0f,
+      static_cast<FLOAT>(mPreferredSize.mWidth),
+-     static_cast<FLOAT>(mPreferredSize.mHeight) - mPreviewMetrics.mBleed},
++     static_cast<FLOAT>(mPreferredSize.mHeight) - previewMetrics.mBleed},
+     mTextBrush.get(),
+     D2D1_DRAW_TEXT_OPTIONS_NO_SNAP);
+ }
+ 
+-void NavigationTab::RenderPreviewLayer(
+-  PageID pageID,
+-  RenderTarget* rt,
+-  const D2D1_SIZE_U& size) {
+-  OPENKNEEBOARD_TraceLoggingScope(""NavigationTab::RenderPreviewLayer()"");
+-  auto& m = mPreviewMetrics;
+-  m = {};
+-
+-  const auto navigationTabScale = size.height / mPreferredSize.Height<float>();
++void NavigationTab::CalculatePreviewMetrics(PageID pageID) {
++  if (mPreviewMetrics.contains(pageID)) {
++    return;
++  }
++  PreviewMetrics m {};
++  const auto buttons = mButtonTrackers.at(pageID)->GetButtons();
+ 
+-  const auto& buttons = mButtonTrackers.at(pageID)->GetButtons();
+-  m.mRects.clear();
+   m.mRects.resize(buttons.size());
+-
+   const auto& first = buttons.front();
+ 
+   // just a little less than the padding
+-  m.mBleed = (first.mRect.bottom - first.mRect.top) * PaddingRatio * 0.1f
+-    * navigationTabScale;
++  m.mBleed = (first.mRect.bottom - first.mRect.top) * PaddingRatio * 0.1f;
+   // arbitrary LGTM value
+   m.mStroke = m.mBleed * 0.3f;
+-  const auto height
+-    = (navigationTabScale * (first.mRect.bottom - first.mRect.top))
+-    + (m.mBleed * 2);
++  const auto height = (first.mRect.bottom - first.mRect.top) + (m.mBleed * 2);
+ 
+   for (auto i = 0; i < buttons.size(); ++i) {
+     const auto& button = buttons.at(i);
+ 
+-    auto& rect = m.mRects.at(i);
+-    rect.top = (button.mRect.top * navigationTabScale) - m.mBleed;
+-    rect.bottom = (button.mRect.bottom * navigationTabScale) + m.mBleed;
+-    rect.left = (button.mRect.left * navigationTabScale) + m.mBleed;
+-
++    const auto height
++      = (button.mRect.bottom - button.mRect.top) + (2 * m.mBleed);
+     const auto nativeSize
+       = mRootTab->GetPreferredSize(button.mPageID).mPixelSize;
+-    const auto contentScale = (rect.bottom - rect.top) / nativeSize.mHeight;
+-    rect.right = rect.left + (nativeSize.mWidth * contentScale);
++    const auto contentScale = height / nativeSize.mHeight;
++
++    m.mRects.at(i) = PixelRect {
++      Geometry2D::Point<float>(
++        button.mRect.left + m.mBleed, button.mRect.top - m.mBleed)
++        .Rounded<uint32_t>(),
++      Geometry2D::Size<float>(
++        static_cast<uint32_t>(nativeSize.mWidth * contentScale), height)
++        .Rounded<uint32_t>(),
++    };
++  }
++
++  mPreviewMetrics.emplace(pageID, std::move(m));
++}
+ 
+-    mRootTab->RenderPage(rt, button.mPageID, rect);
++void NavigationTab::RenderPreviewLayer(
++  PageID pageID,
++  RenderTarget* rt,
++  const D2D1_SIZE_U& size) {
++  OPENKNEEBOARD_TraceLoggingScope(""NavigationTab::RenderPreviewLayer()"");
++  const auto& m = mPreviewMetrics.at(pageID);
++  const auto buttons = mButtonTrackers.at(pageID)->GetButtons();
++
++  const auto scale = static_cast<float>(size.height)
++    / this->GetPreferredSize(pageID).mPixelSize.mHeight;
++
++  for (auto i = 0; i < buttons.size(); ++i) {
++    const auto& button = buttons.at(i);
++    const auto& rect = m.mRects.at(i);
++    const auto scaled = rect.StaticCast<float>() * scale;
++    mRootTab->RenderPage(rt, button.mPageID, scaled);
+   }
+ }
+ "
+OpenKneeboard/OpenKneeboard,506,bcb8abe,src/app/app-common/Tab/include/OpenKneeboard/NavigationTab.h,modified,9,7,16,"@@ -69,7 +69,8 @@ class NavigationTab final : public TabBase,
+   audited_ptr<DXResources> mDXR;
+   std::shared_ptr<ITab> mRootTab;
+   PixelSize mPreferredSize;
+-  std::unordered_map<RenderTargetID, std::unique_ptr<CachedLayer>> mPreviewCache;
++  std::unordered_map<RenderTargetID, std::unique_ptr<CachedLayer>>
++    mPreviewCache;
+ 
+   uint16_t mRenderColumns;
+ 
+@@ -84,6 +85,12 @@ class NavigationTab final : public TabBase,
+   using ButtonTracker = CursorClickableRegions<Button>;
+   std::vector<PageID> mPageIDs;
+   std::unordered_map<PageID, std::shared_ptr<ButtonTracker>> mButtonTrackers;
++  struct PreviewMetrics {
++    float mBleed;
++    float mStroke;
++    std::vector<PixelRect> mRects;
++  };
++  std::unordered_map<PageID, PreviewMetrics> mPreviewMetrics;
+ 
+   winrt::com_ptr<IDWriteTextFormat> mTextFormat;
+   winrt::com_ptr<IDWriteTextFormat> mPageNumberTextFormat;
+@@ -93,12 +100,7 @@ class NavigationTab final : public TabBase,
+   winrt::com_ptr<ID2D1SolidColorBrush> mPreviewOutlineBrush;
+   winrt::com_ptr<ID2D1SolidColorBrush> mTextBrush;
+ 
+-  struct {
+-    float mBleed;
+-    float mStroke;
+-    std::vector<D2D1_RECT_F> mRects;
+-  } mPreviewMetrics;
+-
++  void CalculatePreviewMetrics(PageID);
+   // PageID is first for `std::bind_front()`
+   void RenderPreviewLayer(PageID, RenderTarget*, const D2D1_SIZE_U& size);
+ "
+OpenKneeboard/OpenKneeboard,506,bcb8abe,src/lib/include/OpenKneeboard/Geometry2D.h,modified,25,1,26,"@@ -164,7 +164,17 @@ struct Rect {
+     };
+   }
+ 
+-  constexpr Rect<T> operator*(const T operand) const noexcept {
++  template <std::integral TValue>
++  constexpr Rect<T> operator*(const TValue operand) const noexcept {
++    return {
++      mOffset * operand,
++      mSize * operand,
++    };
++  }
++
++  template <std::floating_point TValue>
++    requires std::floating_point<T>
++  constexpr Rect<T> operator*(const TValue operand) const noexcept {
+     return {
+       mOffset * operand,
+       mSize * operand,
+@@ -215,6 +225,20 @@ struct Rect {
+ 
+   constexpr auto operator<=>(const Rect<T>&) const noexcept = default;
+ 
++  template <class TValue, class TRect = Rect<TValue>>
++  constexpr TRect StaticCast() const noexcept {
++    return {
++      {
++        static_cast<TValue>(mOffset.mX),
++        static_cast<TValue>(mOffset.mY),
++      },
++      {
++        static_cast<TValue>(mSize.mWidth),
++        static_cast<TValue>(mSize.mHeight),
++      },
++    };
++  }
++
+   template <class TValue, class TRect>
+   constexpr TRect StaticCastWithBottomRight() const noexcept {
+     return {"

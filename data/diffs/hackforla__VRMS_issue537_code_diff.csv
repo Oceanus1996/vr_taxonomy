@@ -1,0 +1,43 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+hackforla/VRMS,537,0060155fa993b4a2d7016786576cdd989f00a911,backend/controllers/user.controller.js,modified,3,2,5,"@@ -170,8 +170,9 @@ UserController.verifySignIn = async function (req, res) {
+   }
+ };
+ 
+-UserController.verifyMe = function (req, res) {
+-  return res.sendStatus(200);
++UserController.verifyMe = async function (req, res) {
++  const user = await User.findById(req.userId);
++  return res.status(200).send(user);
+ };
+ 
+ module.exports = UserController;"
+hackforla/VRMS,537,0060155fa993b4a2d7016786576cdd989f00a911,client/src/components/Footer.js,modified,1,1,2,"@@ -22,7 +22,7 @@ const Footer = () => {
+ 
+                 {auth.user ? (
+                     <div className=""footer-greeting"">
+-                        <p className=""footer-text"">{`Hi ${auth.user.email}`}</p>
++                        <p className=""footer-text"">{`Hi ${auth.user.name.firstName}`}</p>
+                         <button className=""logout-button"" onClick={handleLogout}>{`(LOGOUT)`}</button>
+                     </div>
+                 ) : ("
+hackforla/VRMS,537,0060155fa993b4a2d7016786576cdd989f00a911,client/src/hooks/useProvideAuth.js,modified,4,3,7,"@@ -14,16 +14,17 @@ export default function useProvideAuth() {
+           ""x-customrequired-header"": headerToSend
+         },
+       });
+-      setUser(response.status === 200);
+-      setIsAdmin(response.status === 200);
++      const user = await response.json();
++      setUser(user);
++      setIsAdmin(user.accessLevel === 'admin');
+     } catch (err) {
+       console.log(err);
+     }
+   }
+ 
+   useEffect(() => {
+     checkUser();
+-  }, [user, isAdmin]);
++  }, []);
+ 
+   return { user, isAdmin };
+ }"

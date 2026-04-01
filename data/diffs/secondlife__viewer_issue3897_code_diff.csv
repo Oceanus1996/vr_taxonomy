@@ -1,0 +1,307 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+secondlife/viewer,3897,fd22a15,indra/llui/llfolderview.cpp,modified,5,0,5,"@@ -1693,6 +1693,11 @@ LLRect LLFolderView::getVisibleRect()
+     return visible_rect;
+ }
+ 
++S32 LLFolderView::getVisibleContentWidth()
++{
++    return (mScrollContainer ? mScrollContainer->getVisibleContentRect().getWidth() : 0);
++}
++
+ bool LLFolderView::getShowSelectionContext()
+ {
+     if (mShowSelectionContext)"
+secondlife/viewer,3897,fd22a15,indra/llui/llfolderview.h,modified,1,0,1,"@@ -222,6 +222,7 @@ class LLFolderView : public LLFolderViewFolder, public LLEditMenuHandler
+     void scrollToShowItem(LLFolderViewItem* item, const LLRect& constraint_rect);
+     void setScrollContainer( LLScrollContainer* parent ) { mScrollContainer = parent; }
+     LLRect getVisibleRect();
++    S32 getVisibleContentWidth();
+ 
+     bool search(LLFolderViewItem* first_item, const std::string &search_string, bool backward);
+     void setShowSelectionContext(bool show) { mShowSelectionContext = show; }"
+secondlife/viewer,3897,fd22a15,indra/llui/llfolderviewitem.cpp,modified,7,1,8,"@@ -828,8 +828,14 @@ void LLFolderViewItem::drawFavoriteIcon()
+         constexpr S32 PAD = 3;
+         constexpr S32 image_size = 14;
+ 
++        S32 width = mRoot->getVisibleContentWidth(); // star should stick to scroller's right side
++        if (width <= 0)
++        {
++            width = getRect().getWidth();
++        }
++
+         gl_draw_scaled_image(
+-            getRect().getWidth() - image_size - PAD, getRect().getHeight() - mItemHeight + PAD,
++            width - image_size - PAD, getRect().getHeight() - mItemHeight + PAD,
+             image_size, image_size, favorite_image->getImage(), sFgColor);
+     }
+ }"
+secondlife/viewer,3897,207ef20,indra/llui/llfolderview.cpp,modified,5,0,5,"@@ -1693,6 +1693,11 @@ LLRect LLFolderView::getVisibleRect()
+     return visible_rect;
+ }
+ 
++S32 LLFolderView::getVisibleContentWidth()
++{
++    return (mScrollContainer ? mScrollContainer->getVisibleContentRect().getWidth() : 0);
++}
++
+ bool LLFolderView::getShowSelectionContext()
+ {
+     if (mShowSelectionContext)"
+secondlife/viewer,3897,207ef20,indra/llui/llfolderview.h,modified,1,0,1,"@@ -222,6 +222,7 @@ class LLFolderView : public LLFolderViewFolder, public LLEditMenuHandler
+     void scrollToShowItem(LLFolderViewItem* item, const LLRect& constraint_rect);
+     void setScrollContainer( LLScrollContainer* parent ) { mScrollContainer = parent; }
+     LLRect getVisibleRect();
++    S32 getVisibleContentWidth();
+ 
+     bool search(LLFolderViewItem* first_item, const std::string &search_string, bool backward);
+     void setShowSelectionContext(bool show) { mShowSelectionContext = show; }"
+secondlife/viewer,3897,207ef20,indra/llui/llfolderviewitem.cpp,modified,7,1,8,"@@ -828,8 +828,14 @@ void LLFolderViewItem::drawFavoriteIcon()
+         constexpr S32 PAD = 3;
+         constexpr S32 image_size = 14;
+ 
++        S32 width = mRoot->getVisibleContentWidth(); // star should stick to scroller's right side
++        if (width <= 0)
++        {
++            width = getRect().getWidth();
++        }
++
+         gl_draw_scaled_image(
+-            getRect().getWidth() - image_size - PAD, getRect().getHeight() - mItemHeight + PAD,
++            width - image_size - PAD, getRect().getHeight() - mItemHeight + PAD,
+             image_size, image_size, favorite_image->getImage(), sFgColor);
+     }
+ }"
+secondlife/viewer,3897,6be5ce4,indra/llui/llfolderview.cpp,modified,0,5,5,"@@ -1693,11 +1693,6 @@ LLRect LLFolderView::getVisibleRect()
+     return visible_rect;
+ }
+ 
+-S32 LLFolderView::getVisibleContentWidth()
+-{
+-    return (mScrollContainer ? mScrollContainer->getVisibleContentRect().getWidth() : 0);
+-}
+-
+ bool LLFolderView::getShowSelectionContext()
+ {
+     if (mShowSelectionContext)"
+secondlife/viewer,3897,6be5ce4,indra/llui/llfolderview.h,modified,1,1,2,"@@ -221,8 +221,8 @@ class LLFolderView : public LLFolderViewFolder, public LLEditMenuHandler
+     void scrollToShowSelection();
+     void scrollToShowItem(LLFolderViewItem* item, const LLRect& constraint_rect);
+     void setScrollContainer( LLScrollContainer* parent ) { mScrollContainer = parent; }
++    LLScrollContainer* getScrollContainer() { return mScrollContainer; }
+     LLRect getVisibleRect();
+-    S32 getVisibleContentWidth();
+ 
+     bool search(LLFolderViewItem* first_item, const std::string &search_string, bool backward);
+     void setShowSelectionContext(bool show) { mShowSelectionContext = show; }"
+secondlife/viewer,3897,6be5ce4,indra/llui/llfolderviewitem.cpp,modified,23,9,32,"@@ -73,6 +73,9 @@ const F32 LLFolderViewItem::FOLDER_OPEN_TIME_CONSTANT = 0.03f;
+ 
+ const LLColor4U DEFAULT_WHITE(255, 255, 255);
+ 
++constexpr S32 FAVORITE_IMAGE_SIZE = 14;
++constexpr S32 FAVORITE_IMAGE_PAD = 3;
++
+ 
+ //static
+ LLFontGL* LLFolderViewItem::getLabelFontForStyle(U8 style)
+@@ -460,6 +463,10 @@ S32 LLFolderViewItem::arrange( S32* width, S32* height )
+         }
+         mLabelWidth = getLabelXPos() + getLabelFontForStyle(mLabelStyle)->getWidth(mLabel.c_str()) + getLabelFontForStyle(LLFontGL::NORMAL)->getWidth(mLabelSuffix.c_str()) + mLabelPaddingRight;
+         mLabelWidthDirty = false;
++        if (mIsFavorite)
++        {
++            mLabelWidth += FAVORITE_IMAGE_SIZE + FAVORITE_IMAGE_PAD;
++        }
+     }
+ 
+     *width = llmax(*width, mLabelWidth);
+@@ -825,18 +832,25 @@ void LLFolderViewItem::drawFavoriteIcon()
+ 
+     if (favorite_image)
+     {
+-        constexpr S32 PAD = 3;
+-        constexpr S32 image_size = 14;
+-
+-        S32 width = mRoot->getVisibleContentWidth(); // star should stick to scroller's right side
+-        if (width <= 0)
++        S32 x_offset = 0;
++        LLScrollContainer* scroll = mRoot->getScrollContainer();
++        if (scroll)
+         {
+-            width = getRect().getWidth();
++            S32 width = scroll->getVisibleContentRect().getWidth();
++            S32 offset = scroll->getDocPosHorizontal();
++            x_offset = width + offset;
++        }
++        else
++        {
++            x_offset = getRect().getWidth();
+         }
+-
+         gl_draw_scaled_image(
+-            width - image_size - PAD, getRect().getHeight() - mItemHeight + PAD,
+-            image_size, image_size, favorite_image->getImage(), sFgColor);
++            x_offset - FAVORITE_IMAGE_SIZE - FAVORITE_IMAGE_PAD,
++            getRect().getHeight() - mItemHeight + FAVORITE_IMAGE_PAD,
++            FAVORITE_IMAGE_SIZE,
++            FAVORITE_IMAGE_SIZE,
++            favorite_image->getImage(),
++            sFgColor);
+     }
+ }
+ "
+secondlife/viewer,3897,1d39251,indra/llui/llfolderview.cpp,modified,0,5,5,"@@ -1693,11 +1693,6 @@ LLRect LLFolderView::getVisibleRect()
+     return visible_rect;
+ }
+ 
+-S32 LLFolderView::getVisibleContentWidth()
+-{
+-    return (mScrollContainer ? mScrollContainer->getVisibleContentRect().getWidth() : 0);
+-}
+-
+ bool LLFolderView::getShowSelectionContext()
+ {
+     if (mShowSelectionContext)"
+secondlife/viewer,3897,1d39251,indra/llui/llfolderview.h,modified,1,1,2,"@@ -221,8 +221,8 @@ class LLFolderView : public LLFolderViewFolder, public LLEditMenuHandler
+     void scrollToShowSelection();
+     void scrollToShowItem(LLFolderViewItem* item, const LLRect& constraint_rect);
+     void setScrollContainer( LLScrollContainer* parent ) { mScrollContainer = parent; }
++    LLScrollContainer* getScrollContainer() { return mScrollContainer; }
+     LLRect getVisibleRect();
+-    S32 getVisibleContentWidth();
+ 
+     bool search(LLFolderViewItem* first_item, const std::string &search_string, bool backward);
+     void setShowSelectionContext(bool show) { mShowSelectionContext = show; }"
+secondlife/viewer,3897,1d39251,indra/llui/llfolderviewitem.cpp,modified,23,9,32,"@@ -73,6 +73,9 @@ const F32 LLFolderViewItem::FOLDER_OPEN_TIME_CONSTANT = 0.03f;
+ 
+ const LLColor4U DEFAULT_WHITE(255, 255, 255);
+ 
++constexpr S32 FAVORITE_IMAGE_SIZE = 14;
++constexpr S32 FAVORITE_IMAGE_PAD = 3;
++
+ 
+ //static
+ LLFontGL* LLFolderViewItem::getLabelFontForStyle(U8 style)
+@@ -460,6 +463,10 @@ S32 LLFolderViewItem::arrange( S32* width, S32* height )
+         }
+         mLabelWidth = getLabelXPos() + getLabelFontForStyle(mLabelStyle)->getWidth(mLabel.c_str()) + getLabelFontForStyle(LLFontGL::NORMAL)->getWidth(mLabelSuffix.c_str()) + mLabelPaddingRight;
+         mLabelWidthDirty = false;
++        if (mIsFavorite)
++        {
++            mLabelWidth += FAVORITE_IMAGE_SIZE + FAVORITE_IMAGE_PAD;
++        }
+     }
+ 
+     *width = llmax(*width, mLabelWidth);
+@@ -825,18 +832,25 @@ void LLFolderViewItem::drawFavoriteIcon()
+ 
+     if (favorite_image)
+     {
+-        constexpr S32 PAD = 3;
+-        constexpr S32 image_size = 14;
+-
+-        S32 width = mRoot->getVisibleContentWidth(); // star should stick to scroller's right side
+-        if (width <= 0)
++        S32 x_offset = 0;
++        LLScrollContainer* scroll = mRoot->getScrollContainer();
++        if (scroll)
+         {
+-            width = getRect().getWidth();
++            S32 width = scroll->getVisibleContentRect().getWidth();
++            S32 offset = scroll->getDocPosHorizontal();
++            x_offset = width + offset;
++        }
++        else
++        {
++            x_offset = getRect().getWidth();
+         }
+-
+         gl_draw_scaled_image(
+-            width - image_size - PAD, getRect().getHeight() - mItemHeight + PAD,
+-            image_size, image_size, favorite_image->getImage(), sFgColor);
++            x_offset - FAVORITE_IMAGE_SIZE - FAVORITE_IMAGE_PAD,
++            getRect().getHeight() - mItemHeight + FAVORITE_IMAGE_PAD,
++            FAVORITE_IMAGE_SIZE,
++            FAVORITE_IMAGE_SIZE,
++            favorite_image->getImage(),
++            sFgColor);
+     }
+ }
+ "
+secondlife/viewer,3897,f8782b0,indra/llui/llfolderview.cpp,modified,0,5,5,"@@ -1693,11 +1693,6 @@ LLRect LLFolderView::getVisibleRect()
+     return visible_rect;
+ }
+ 
+-S32 LLFolderView::getVisibleContentWidth()
+-{
+-    return (mScrollContainer ? mScrollContainer->getVisibleContentRect().getWidth() : 0);
+-}
+-
+ bool LLFolderView::getShowSelectionContext()
+ {
+     if (mShowSelectionContext)"
+secondlife/viewer,3897,f8782b0,indra/llui/llfolderview.h,modified,1,1,2,"@@ -221,8 +221,8 @@ class LLFolderView : public LLFolderViewFolder, public LLEditMenuHandler
+     void scrollToShowSelection();
+     void scrollToShowItem(LLFolderViewItem* item, const LLRect& constraint_rect);
+     void setScrollContainer( LLScrollContainer* parent ) { mScrollContainer = parent; }
++    LLScrollContainer* getScrollContainer() { return mScrollContainer; }
+     LLRect getVisibleRect();
+-    S32 getVisibleContentWidth();
+ 
+     bool search(LLFolderViewItem* first_item, const std::string &search_string, bool backward);
+     void setShowSelectionContext(bool show) { mShowSelectionContext = show; }"
+secondlife/viewer,3897,f8782b0,indra/llui/llfolderviewitem.cpp,modified,23,9,32,"@@ -73,6 +73,9 @@ const F32 LLFolderViewItem::FOLDER_OPEN_TIME_CONSTANT = 0.03f;
+ 
+ const LLColor4U DEFAULT_WHITE(255, 255, 255);
+ 
++constexpr S32 FAVORITE_IMAGE_SIZE = 14;
++constexpr S32 FAVORITE_IMAGE_PAD = 3;
++
+ 
+ //static
+ LLFontGL* LLFolderViewItem::getLabelFontForStyle(U8 style)
+@@ -460,6 +463,10 @@ S32 LLFolderViewItem::arrange( S32* width, S32* height )
+         }
+         mLabelWidth = getLabelXPos() + getLabelFontForStyle(mLabelStyle)->getWidth(mLabel.c_str()) + getLabelFontForStyle(LLFontGL::NORMAL)->getWidth(mLabelSuffix.c_str()) + mLabelPaddingRight;
+         mLabelWidthDirty = false;
++        if (mIsFavorite)
++        {
++            mLabelWidth += FAVORITE_IMAGE_SIZE + FAVORITE_IMAGE_PAD;
++        }
+     }
+ 
+     *width = llmax(*width, mLabelWidth);
+@@ -825,18 +832,25 @@ void LLFolderViewItem::drawFavoriteIcon()
+ 
+     if (favorite_image)
+     {
+-        constexpr S32 PAD = 3;
+-        constexpr S32 image_size = 14;
+-
+-        S32 width = mRoot->getVisibleContentWidth(); // star should stick to scroller's right side
+-        if (width <= 0)
++        S32 x_offset = 0;
++        LLScrollContainer* scroll = mRoot->getScrollContainer();
++        if (scroll)
+         {
+-            width = getRect().getWidth();
++            S32 width = scroll->getVisibleContentRect().getWidth();
++            S32 offset = scroll->getDocPosHorizontal();
++            x_offset = width + offset;
++        }
++        else
++        {
++            x_offset = getRect().getWidth();
+         }
+-
+         gl_draw_scaled_image(
+-            width - image_size - PAD, getRect().getHeight() - mItemHeight + PAD,
+-            image_size, image_size, favorite_image->getImage(), sFgColor);
++            x_offset - FAVORITE_IMAGE_SIZE - FAVORITE_IMAGE_PAD,
++            getRect().getHeight() - mItemHeight + FAVORITE_IMAGE_PAD,
++            FAVORITE_IMAGE_SIZE,
++            FAVORITE_IMAGE_SIZE,
++            favorite_image->getImage(),
++            sFgColor);
+     }
+ }
+ "

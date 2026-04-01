@@ -1,0 +1,48 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+Raicuparta/two-forks-vr,83,17a9673a987c66ee6a09aff3c4b74ade3e27a3b5,TwoForksVr/src/PlayerBody/RoomScaleBodyTransform.cs,modified,8,13,21,"@@ -10,12 +10,10 @@ public class RoomScaleBodyTransform : MonoBehaviour
+         private CharacterController characterController;
+         private vgPlayerNavigationController navigationController;
+         private Vector3 prevCameraPosition;
+-        private Vector3 prevForward;
+         private Transform henryTransform;
+ 
+         private void Start()
+         {
+-            prevForward = GetCameraForward();
+             prevCameraPosition = cameraTransform.position;
+         }
+ 
+@@ -38,11 +36,6 @@ public static void Create(CharacterController characterController, Camera camera
+             instance.navigationController = characterController.GetComponentInChildren<vgPlayerNavigationController>();
+         }
+ 
+-        private Vector3 GetCameraForward()
+-        {
+-            return cameraTransform.parent.InverseTransformDirection(MathHelper.GetProjectedForward(cameraTransform));
+-        }
+-
+         private void UpdateRoomScalePosition()
+         {
+             var cameraPosition = cameraTransform.localPosition;
+@@ -70,12 +63,14 @@ private void UpdateRoomScalePosition()
+ 
+         private void UpdateRotation()
+         {
+-            if (!navigationController.onGround || !navigationController.enabled) return;
+-
+-            var cameraForward = GetCameraForward();
+-            var angleDelta = MathHelper.SignedAngle(prevForward, cameraForward, Vector3.up);
+-            prevForward = cameraForward;
+-            henryTransform.Rotate(Vector3.up, angleDelta);
++            if (!navigationController.onGround || !navigationController.enabled)
++            {
++                henryTransform.localRotation = Quaternion.identity;
++                return;
++            };
++
++            var cameraForward = MathHelper.GetProjectedForward(cameraTransform);
++            henryTransform.rotation = Quaternion.LookRotation(cameraForward, Vector3.up);
+         }
+     }
+ }
+\ No newline at end of file"

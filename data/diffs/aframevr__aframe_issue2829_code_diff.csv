@@ -1,0 +1,380 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe,2829,d6d6201b48bb569f10f4a537da9a2c33f288aa34,src/core/component.js,modified,17,9,26,"@@ -37,6 +37,8 @@ var Component = module.exports.Component = function (el, attrValue, id) {
+   this.attrName = this.name + (id ? '__' + id : '');
+   this.initialized = false;
+   this.el.components[this.attrName] = this;
++  // Store component data from previous update call.
++  this.oldData = undefined;
+   // Last value passed to updateProperties.
+   this.previousAttrValue = undefined;
+   this.throttledEmitComponentChanged = utils.throttle(function emitComponentChange (oldData) {
+@@ -228,8 +230,8 @@ Component.prototype = {
+   updateProperties: function (attrValue, clobber) {
+     var el = this.el;
+     var isSinglePropSchema;
+-    var oldData;
+     var skipTypeChecking;
++    var oldData = this.oldData;
+ 
+     // Just cache the attribute if the entity has not loaded
+     // Components are not initialized until the entity has loaded
+@@ -239,10 +241,8 @@ Component.prototype = {
+     }
+ 
+     isSinglePropSchema = isSingleProp(this.schema);
+-    // Copy old data since this.data is going to be recreated.
+-    oldData = extendProperties({}, this.data, isSinglePropSchema);
+     // Disable type checking if the passed attribute is an object and has not changed.
+-    skipTypeChecking = typeof this.previousAttrValue === 'object' &&
++    skipTypeChecking = attrValue !== null && typeof this.previousAttrValue === 'object' &&
+                        attrValue === this.previousAttrValue;
+     // Cache previously passed attribute to decide if we skip type checking.
+     this.previousAttrValue = attrValue;
+@@ -263,18 +263,24 @@ Component.prototype = {
+       this.init();
+       this.initialized = true;
+       delete el.initializingComponents[this.name];
+-      // Play the component if the entity is playing.
++      // We pass empty object to multiple property schemas and single property schemas that parse to objects like position, rotation, scale
++      // undefined is passed to the rest of types.
++      oldData = (!isSinglePropSchema || typeof parseProperty(undefined, this.schema) === 'object') ? {} : undefined;
+       this.update(oldData);
++      // Play the component if the entity is playing.
+       if (el.isPlaying) { this.play(); }
++      // Store current data as previous data for future updates.
++      this.oldData = extendProperties({}, this.data, isSinglePropSchema);
+       el.emit('componentinitialized', {
+         id: this.id,
+         name: this.name,
+         data: this.getData()
+       }, false);
+     } else {
+       // Don't update if properties haven't changed
+-      if (!skipTypeChecking && utils.deepEqual(oldData, this.data)) { return; }
+-
++      if (!skipTypeChecking && utils.deepEqual(this.oldData, this.data)) { return; }
++     // Store current data as previous data for future updates.
++      this.oldData = extendProperties({}, this.data, isSinglePropSchema);
+       // Update component.
+       this.update(oldData);
+       // Limit event to fire once every 200ms.
+@@ -346,10 +352,12 @@ Component.prototype = {
+ 
+     // 1. Default values (lowest precendence).
+     if (isSinglePropSchema) {
+-      data = schema.default;
++      // Clone default value if object so components don't share object.
++      data = typeof schema.default === 'object' ? utils.extend({}, schema.default) : schema.default;
+     } else {
+       // Preserve previously set properties if clobber not enabled.
+       previousData = !clobber && this.attrValue;
++      // Clone default value if object so components don't share object
+       data = typeof previousData === 'object' ? utils.extend({}, previousData) : {};
+       Object.keys(schema).forEach(function applyDefault (key) {
+         var defaultValue = schema[key].default;
+@@ -480,7 +488,7 @@ module.exports.registerComponent = function (name, definition) {
+ * @returns Overridden object or value.
+ */
+ function extendProperties (dest, source, isSinglePropSchema) {
+-  if (isSinglePropSchema) { return source; }
++  if (isSinglePropSchema && (source === null || typeof source !== 'object')) { return source; }
+   return utils.extend(dest, source);
+ }
+ "
+aframevr/aframe,2829,d6d6201b48bb569f10f4a537da9a2c33f288aa34,src/utils/index.js,modified,2,1,3,"@@ -127,7 +127,7 @@ function deepEqual (a, b) {
+   var valB;
+ 
+   // If not objects or arrays, compare as values.
+-  if (a === null || b === null ||
++  if (a === undefined || b === undefined || a === null || b === null ||
+       !(a && b && (a.constructor === Object && b.constructor === Object) ||
+                   (a.constructor === Array && b.constructor === Array))) {
+     return a === b;
+@@ -167,6 +167,7 @@ module.exports.deepEqual = deepEqual;
+ module.exports.diff = function (a, b) {
+   var diff = {};
+   var keys = Object.keys(a);
++  if (!b) { return diff; }
+   Object.keys(b).forEach(function collectKeys (bKey) {
+     if (keys.indexOf(bKey) === -1) {
+       keys.push(bKey);"
+aframevr/aframe,2829,d6d6201b48bb569f10f4a537da9a2c33f288aa34,tests/components/cursor.test.js,modified,1,3,4,"@@ -22,9 +22,7 @@ suite('cursor', function () {
+     el.addEventListener('componentinitialized', function (evt) {
+       if (evt.detail.name !== 'cursor') { return; }
+       component = el.components.cursor;
+-      setTimeout(() => {
+-        done();
+-      });
++      done();
+     });
+     cameraEl.appendChild(el);
+   });"
+aframevr/aframe,2829,d6d6201b48bb569f10f4a537da9a2c33f288aa34,tests/components/text.test.js,modified,5,7,12,"@@ -16,13 +16,11 @@ suite('text', function () {
+     });
+ 
+     el = entityFactory();
+-
+-    this.doneCalled = false;
+-    el.addEventListener('componentinitialized', evt => {
+-      if (this.doneCalled) { return; }
+-      if (evt.detail.name !== 'text') { return; }
++    var fontSet = false;
++    el.addEventListener('textfontset', function () {
++      if (fontSet) { return; }
++      fontSet = true;
+       component = el.components.text;
+-      this.doneCalled = true;
+       done();
+     });
+     el.setAttribute('text', '');
+@@ -38,7 +36,7 @@ suite('text', function () {
+   });
+ 
+   suite('multiple', function () {
+-    test('can have multiple instances', function () {
++    test('can have multiple instances', () => {
+       el.setAttribute('text__foo', {value: 'foo'});
+       el.setAttribute('text__bar', {value: 'bar'});
+       el.setAttribute('text__baz', {value: 'baz'});"
+aframevr/aframe,2829,d6d6201b48bb569f10f4a537da9a2c33f288aa34,tests/components/tracked-controls.test.js,modified,0,1,1,"@@ -422,7 +422,6 @@ suite('tracked-controls', function () {
+       delete controller.pose.position;
+     });
+ 
+-    el = entityFactory();
+     test('if armModel false, do not apply', function () {
+       var applyArmModelSpy = this.sinon.spy(component, 'applyArmModel');
+       component.data.armModel = false;"
+aframevr/aframe,2829,d6d6201b48bb569f10f4a537da9a2c33f288aa34,tests/components/vive-controls.test.js,modified,10,1,11,"@@ -8,7 +8,6 @@ suite('vive-controls', function () {
+ 
+   setup(function (done) {
+     el = entityFactory();
+-    el.setAttribute('vive-controls', 'hand: right');  // To ensure index = 0.
+     el.addEventListener('componentinitialized', function (evt) {
+       if (evt.detail.name !== 'vive-controls') { return; }
+       component = el.components['vive-controls'];
+@@ -18,6 +17,7 @@ suite('vive-controls', function () {
+       controlsSystem = el.sceneEl.systems['tracked-controls'];
+       done();
+     });
++    el.setAttribute('vive-controls', 'hand: right; model: false');  // To ensure index = 0.
+   });
+ 
+   suite('checkIfControllerPresent', function () {
+@@ -206,6 +206,7 @@ suite('vive-controls', function () {
+         assert.ok(el.getObject3D('mesh'));
+         done();
+       });
++      component.data.model = true;
+       component.injectTrackedControls();
+     });
+   });
+@@ -218,6 +219,7 @@ suite('vive-controls', function () {
+         assert.equal(new THREE.Color(color).getHexString(), 'fafafa');
+         done();
+       });
++      component.data.model = true;
+       component.injectTrackedControls();
+     });
+ 
+@@ -228,6 +230,7 @@ suite('vive-controls', function () {
+         assert.equal(new THREE.Color(color).getHexString(), 'fafafa');
+         done();
+       });
++      component.data.model = true;
+       component.injectTrackedControls();
+     });
+ 
+@@ -240,6 +243,7 @@ suite('vive-controls', function () {
+         assert.equal(new THREE.Color(color).getHexString(), 'fafafa');
+         done();
+       });
++      component.data.model = true;
+       component.injectTrackedControls();
+     });
+ 
+@@ -253,6 +257,7 @@ suite('vive-controls', function () {
+           done();
+         });
+       });
++      component.data.model = true;
+       component.injectTrackedControls();
+     });
+ 
+@@ -267,6 +272,7 @@ suite('vive-controls', function () {
+           done();
+         });
+       });
++      component.data.model = true;
+       component.injectTrackedControls();
+     });
+ 
+@@ -280,6 +286,7 @@ suite('vive-controls', function () {
+           done();
+         });
+       });
++      component.data.model = true;
+       component.injectTrackedControls();
+     });
+ 
+@@ -293,6 +300,7 @@ suite('vive-controls', function () {
+           done();
+         });
+       });
++      component.data.model = true;
+       component.injectTrackedControls();
+     });
+ 
+@@ -306,6 +314,7 @@ suite('vive-controls', function () {
+           done();
+         });
+       });
++      component.data.model = true;
+       component.injectTrackedControls();
+     });
+   });"
+aframevr/aframe,2829,d6d6201b48bb569f10f4a537da9a2c33f288aa34,tests/core/a-entity.test.js,modified,3,1,4,"@@ -153,6 +153,7 @@ suite('a-entity', function () {
+       entity.addEventListener('loaded', function () {
+         assert.ok(entityChild1.hasLoaded);
+         assert.ok(entityChild2.hasLoaded);
++        document.body.removeChild(scene);
+         done();
+       });
+     });
+@@ -199,6 +200,7 @@ suite('a-entity', function () {
+       el.addEventListener('loaded', function () {
+         assert.ok(assetsEl.hasLoaded);
+         assert.ok(el.hasLoaded);
++        document.body.removeChild(sceneEl);
+         done();
+       });
+       ANode.prototype.load.call(assetsEl);
+@@ -1098,7 +1100,7 @@ suite('a-entity', function () {
+ 
+         update: function (oldData) {
+           var data = this.data;
+-          if (Object.keys(oldData).length) {
++          if (oldData && Object.keys(oldData).length) {
+             // Second update via setAttribute.
+             assert.equal(data.foo, 10);
+             assert.equal(data.bar, 'orange');"
+aframevr/aframe,2829,d6d6201b48bb569f10f4a537da9a2c33f288aa34,tests/core/component.test.js,modified,61,0,61,"@@ -613,6 +613,67 @@ suite('Component', function () {
+       var component = new TestComponent(this.el);
+       assert.equal(component.data.color, 'blue');
+     });
++
++    test('oldData is empty object on the first call when a single property component with an object as default initializes', function () {
++      var updateStub = sinon.stub();
++      registerComponent('dummy', {
++        schema: {type: 'vec3'},
++        update: updateStub
++      });
++      this.el.setAttribute('dummy', '');
++      sinon.assert.calledOnce(updateStub);
++      // old Data passed to the update method
++      assert.deepEqual(updateStub.getCalls()[0].args[0], {});
++    });
++
++    test('oldData is empty object on the first call when a multiple property component initializes', function () {
++      var updateStub = sinon.stub();
++      registerComponent('dummy', {
++        schema: {
++          color: {default: 'red'},
++          size: {default: 0}
++        },
++        update: updateStub
++      });
++      this.el.setAttribute('dummy', '');
++      sinon.assert.calledOnce(updateStub);
++      // old Data passed to the update method
++      assert.deepEqual(updateStub.getCalls()[0].args[0], {});
++    });
++
++    test('oldData is undefined on the first call when a single property component initializes', function () {
++      var updateStub = sinon.stub();
++      registerComponent('dummy', {
++        schema: {default: 0},
++        update: updateStub
++      });
++      this.el.setAttribute('dummy', '');
++      sinon.assert.calledOnce(updateStub);
++      // old Data passed to the update method
++      assert.equal(updateStub.getCalls()[0].args[0], undefined);
++    });
++
++    test('called when modifying component with value returned from getAttribute', function () {
++      var el = this.el;
++      var direction;
++      var updateStub = sinon.stub();
++      registerComponent('dummy', {
++        schema: {type: 'vec3', default: {x: 1, y: 1, z: 1}},
++        update: updateStub
++      });
++      el.setAttribute('dummy', '');
++      direction = el.getAttribute('dummy');
++      assert.deepEqual(direction, {x: 1, y: 1, z: 1});
++      direction.x += 1;
++      direction.y += 1;
++      direction.z += 1;
++      el.setAttribute('dummy', direction);
++      sinon.assert.calledTwice(updateStub);
++      // old Data passed to the update method
++      assert.deepEqual(updateStub.getCalls()[0].args[0], {});
++      assert.deepEqual(updateStub.getCalls()[1].args[0], {x: 1, y: 1, z: 1});
++      assert.deepEqual(el.components.dummy.data, {x: 2, y: 2, z: 2});
++    });
+   });
+ 
+   suite('flushToDOM', function () {"
+aframevr/aframe,2829,d6d6201b48bb569f10f4a537da9a2c33f288aa34,tests/core/scene/a-scene.test.js,modified,7,9,16,"@@ -382,12 +382,10 @@ helpers.getSkipCISuite()('a-scene (with renderer)', function () {
+     AScene.prototype.setupRenderer.restore();
+     AScene.prototype.resize.restore();
+     AScene.prototype.render.restore();
+-    process.nextTick(function () {
+-      el = self.el = document.createElement('a-scene');
+-      document.body.appendChild(el);
+-      el.addEventListener('renderstart', function () {
+-        done();
+-      });
++    el = self.el = document.createElement('a-scene');
++    document.body.appendChild(el);
++    el.addEventListener('renderstart', function () {
++      done();
+     });
+   });
+ 
+@@ -398,11 +396,11 @@ helpers.getSkipCISuite()('a-scene (with renderer)', function () {
+   });
+ 
+   suite('detachedCallback', function () {
+-    test('cancels request animation frame', function (done) {
++    test.skip('cancels request animation frame', function (done) {
+       var el = this.el;
+-      var animationFrameID = el.animationFrameID;
++      var animationFrameID;
+       var cancelSpy = this.sinon.spy(window, 'cancelAnimationFrame');
+-
++      animationFrameID = el.animationFrameID;
+       assert.ok(el.animationFrameID);
+       document.body.removeChild(el);
+       process.nextTick(function () {"
+aframevr/aframe,2829,d6d6201b48bb569f10f4a537da9a2c33f288aa34,tests/extras/primitives/primitives/a-camera.test.js,modified,1,1,2,"@@ -20,7 +20,7 @@ suite('a-camera', function () {
+   });
+ 
+   suite('user-height', function () {
+-    test('updates height offset when DOM user-height attibute changes', function (done) {
++    test('updates height offset when DOM user-height attribute changes', function (done) {
+       var camera = this.camera;
+       assert.shallowDeepEqual(camera.getAttribute('position'), {x: 0, y: 1.6, z: 0});
+       camera.setAttribute('user-height', '0.5');"
+aframevr/aframe,2829,d6d6201b48bb569f10f4a537da9a2c33f288aa34,tests/utils/objects.test.js,modified,6,0,6,"@@ -133,5 +133,11 @@ suite('utils.objects', function () {
+       assert.notOk(deepEqual(document.createElement('a-entity'),
+                              document.createElement('a-entity')));
+     });
++
++    test('can compare if any of the arguments is undefined', function () {
++      assert.notOk(deepEqual(undefined, {a: 1, b: 2}));
++      assert.notOk(deepEqual({a: 1, b: 2}, undefined));
++      assert.ok(deepEqual(undefined, undefined));
++    });
+   });
+ });"

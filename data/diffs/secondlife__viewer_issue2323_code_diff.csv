@@ -1,0 +1,210 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+secondlife/viewer,2323,0a879c4,indra/llrender/llshadermgr.cpp,modified,1,0,1,"@@ -1295,6 +1295,7 @@ void LLShaderMgr::initAttribsAndUniforms()
+ 
+     mReservedUniforms.push_back(""minimum_alpha"");
+     mReservedUniforms.push_back(""emissive_brightness"");
++    mReservedUniforms.push_back(""alpha_gamma"");
+ 
+     // Deferred
+     mReservedUniforms.push_back(""shadow_matrix"");"
+secondlife/viewer,2323,0a879c4,indra/llrender/llshadermgr.h,modified,1,0,1,"@@ -153,6 +153,7 @@ class LLShaderMgr
+ 
+         MINIMUM_ALPHA,                      //  ""minimum_alpha""
+         EMISSIVE_BRIGHTNESS,                //  ""emissive_brightness""
++        ALPHA_GAMMA,
+ 
+         DEFERRED_SHADOW_MATRIX,             //  ""shadow_matrix""
+         DEFERRED_ENV_MAT,                   //  ""env_mat"""
+secondlife/viewer,2323,0a879c4,indra/newview/app_settings/shaders/class2/deferred/alphaF.glsl,modified,2,1,3,"@@ -36,6 +36,7 @@ out vec4 frag_color;
+ uniform mat3 env_mat;
+ uniform vec3 sun_dir;
+ uniform vec3 moon_dir;
++uniform float alpha_gamma;
+ 
+ #ifdef USE_DIFFUSE_TEX
+ uniform sampler2D diffuseMap;
+@@ -258,7 +259,7 @@ void main()
+ 
+     vec4 color = vec4(0.0);
+ 
+-    color.a   = final_alpha;
++    color.a   = pow(final_alpha, alpha_gamma);
+ 
+     vec3 sun_contrib = min(final_da, shadow) * sunlit_linear;
+ "
+secondlife/viewer,2323,0a879c4,indra/newview/app_settings/shaders/class3/deferred/materialF.glsl,modified,3,1,4,"@@ -87,6 +87,8 @@ uniform vec3 light_direction[8];
+ uniform vec4 light_attenuation[8];
+ uniform vec3 light_diffuse[8];
+ 
++uniform float alpha_gamma;
++
+ float getAmbientClamp();
+ void waterClip(vec3 pos);
+ 
+@@ -403,7 +405,7 @@ void main()
+ 
+     glare *= 1.0-emissive;
+     glare = min(glare, 1.0);
+-    float al = max(diffcol.a, glare) * vertex_color.a;
++    float al = pow(max(diffcol.a, glare) * vertex_color.a, alpha_gamma);
+ 
+     frag_color = max(vec4(color, al), vec4(0));
+ "
+secondlife/viewer,2323,0a879c4,indra/newview/lldrawpoolalpha.cpp,modified,5,0,5,"@@ -746,6 +746,10 @@ void LLDrawPoolAlpha::renderAlpha(U32 mask, bool depth_only, bool rigged)
+                     LLVector4 spec_color(1, 1, 1, 1);
+                     F32 env_intensity = 0.0f;
+                     F32 brightness = 1.0f;
++                    F32 alpha_gam = 1.f;
++
++                    if (params.mAlphaGamma != 0)
++                        alpha_gam = (F32)params.mAlphaGamma * 0.01f;
+ 
+                     // We have a material.  Supply the appropriate data here.
+                     if (mat)
+@@ -757,6 +761,7 @@ void LLDrawPoolAlpha::renderAlpha(U32 mask, bool depth_only, bool rigged)
+ 
+                     if (current_shader)
+                     {
++                        current_shader->uniform1f(LLShaderMgr::ALPHA_GAMMA, alpha_gam);
+                         current_shader->uniform4f(LLShaderMgr::SPECULAR_COLOR, spec_color.mV[VRED], spec_color.mV[VGREEN], spec_color.mV[VBLUE], spec_color.mV[VALPHA]);
+                         current_shader->uniform1f(LLShaderMgr::ENVIRONMENT_INTENSITY, env_intensity);
+                         current_shader->uniform1f(LLShaderMgr::EMISSIVE_BRIGHTNESS, brightness);"
+secondlife/viewer,2323,0a879c4,indra/newview/llspatialpartition.cpp,modified,2,1,3,"@@ -3838,7 +3838,7 @@ LLDrawable* LLSpatialGroup::lineSegmentIntersect(const LLVector4a& start, const
+ 
+ LLDrawInfo::LLDrawInfo(U16 start, U16 end, U32 count, U32 offset,
+                        LLViewerTexture* texture, LLVertexBuffer* buffer,
+-                       bool fullbright, U8 bump)
++                       bool fullbright, U8 bump, U8 alpha_gamma)
+ :   mVertexBuffer(buffer),
+     mTexture(texture),
+     mStart(start),
+@@ -3847,6 +3847,7 @@ LLDrawInfo::LLDrawInfo(U16 start, U16 end, U32 count, U32 offset,
+     mOffset(offset),
+     mFullbright(fullbright),
+     mBump(bump),
++    mAlphaGamma(alpha_gamma),
+     mBlendFuncSrc(LLRender::BF_SOURCE_ALPHA),
+     mBlendFuncDst(LLRender::BF_ONE_MINUS_SOURCE_ALPHA),
+     mHasGlow(false),"
+secondlife/viewer,2323,0a879c4,indra/newview/llspatialpartition.h,modified,2,1,3,"@@ -87,7 +87,7 @@ class LLDrawInfo final : public LLRefCount
+ 
+     LLDrawInfo(U16 start, U16 end, U32 count, U32 offset,
+                 LLViewerTexture* image, LLVertexBuffer* buffer,
+-                bool fullbright = false, U8 bump = 0);
++                bool fullbright = false, U8 bump = 0, U8 alpha_gamma = 100);
+ 
+ 
+     void validate();
+@@ -134,6 +134,7 @@ class LLDrawInfo final : public LLRefCount
+     U8   mDiffuseAlphaMode = 0;
+     U8   mBump = 0;
+     U8   mShiny = 0;
++    U8   mAlphaGamma = 100;
+     bool mFullbright = false;
+     bool mHasGlow = false;
+ "
+secondlife/viewer,2323,0a879c4,indra/newview/llvograss.cpp,modified,2,1,3,"@@ -702,6 +702,7 @@ void LLGrassPartition::getGeometry(LLSpatialGroup* group)
+         S32 idx = static_cast<S32>(draw_vec.size()) - 1;
+ 
+         bool fullbright = facep->isState(LLFace::FULLBRIGHT);
++        U8   alpha_gamma = 100;
+ 
+         if (idx >= 0 && draw_vec[idx]->mEnd == facep->getGeomIndex()-1 &&
+             draw_vec[idx]->mTexture == facep->getTexture() &&
+@@ -721,7 +722,7 @@ void LLGrassPartition::getGeometry(LLSpatialGroup* group)
+             U32 count = facep->getIndicesCount();
+             LLDrawInfo* info = new LLDrawInfo(start,end,count,offset,facep->getTexture(),
+                 //facep->getTexture(),
+-                buffer, object->isSelected(), fullbright);
++                buffer, object->isSelected(), fullbright, (F32)alpha_gamma * 0.01f);
+ 
+             draw_vec.push_back(info);
+             //for alpha sorting"
+secondlife/viewer,2323,0a879c4,indra/newview/llvopartgroup.cpp,modified,6,2,8,"@@ -845,6 +845,9 @@ void LLParticlePartition::getGeometry(LLSpatialGroup* group)
+         S32 idx = static_cast<S32>(draw_vec.size()) - 1;
+ 
+         bool fullbright = facep->isState(LLFace::FULLBRIGHT);
++        U8   alpha_gamma = 100;
++        if (facep->getTextureEntry())
++            alpha_gamma = facep->getTextureEntry()->getAlphaGamma();
+ 
+         bool batched = false;
+ 
+@@ -862,7 +865,8 @@ void LLParticlePartition::getGeometry(LLSpatialGroup* group)
+                 info->mHasGlow == has_glow &&
+                 info->mFullbright == fullbright &&
+                 info->mBlendFuncDst == bf_dst &&
+-                info->mBlendFuncSrc == bf_src)
++                info->mBlendFuncSrc == bf_src &&
++                info->mAlphaGamma == alpha_gamma)
+             {
+                 if (draw_vec[idx]->mEnd == facep->getGeomIndex()-1)
+                 {
+@@ -887,7 +891,7 @@ void LLParticlePartition::getGeometry(LLSpatialGroup* group)
+             U32 offset = facep->getIndicesStart();
+             U32 count = facep->getIndicesCount();
+             LLDrawInfo* info = new LLDrawInfo(start,end,count,offset,facep->getTexture(),
+-                buffer, fullbright);
++                buffer, fullbright, 0, alpha_gamma);
+ 
+             info->mBlendFuncDst = bf_dst;
+             info->mBlendFuncSrc = bf_src;"
+secondlife/viewer,2323,0a879c4,indra/newview/llvovolume.cpp,modified,4,2,6,"@@ -5288,6 +5288,7 @@ void LLVolumeGeometryManager::registerFace(LLSpatialGroup* group, LLFace* facep,
+     const LLTextureEntry* te = facep->getTextureEntry();
+     U8 bump = (type == LLRenderPass::PASS_BUMP || type == LLRenderPass::PASS_POST_BUMP) ? te->getBumpmap() : 0;
+     U8 shiny = te->getShiny();
++    U8 alpha_gamma = te->getAlphaGamma();
+ 
+     LLViewerTexture* tex = facep->getTexture();
+ 
+@@ -5370,6 +5371,7 @@ void LLVolumeGeometryManager::registerFace(LLSpatialGroup* group, LLFace* facep,
+         info->mMaterialID == mat_id &&
+         info->mFullbright == fullbright &&
+         info->mBump == bump &&
++        info->mAlphaGamma == alpha_gamma &&
+         (!mat || (info->mShiny == shiny)) && // need to break batches when a material is shared, but legacy settings are different
+         info->mTextureMatrix == tex_mat &&
+         info->mModelMatrix == model_mat &&
+@@ -5393,8 +5395,7 @@ void LLVolumeGeometryManager::registerFace(LLSpatialGroup* group, LLFace* facep,
+         U32 end = start + facep->getGeomCount()-1;
+         U32 offset = facep->getIndicesStart();
+         U32 count = facep->getIndicesCount();
+-        LLPointer<LLDrawInfo> draw_info = new LLDrawInfo(start,end,count,offset, tex,
+-            facep->getVertexBuffer(), fullbright, bump);
++        LLPointer<LLDrawInfo> draw_info = new LLDrawInfo(start,end,count,offset, tex, facep->getVertexBuffer(), fullbright, bump, alpha_gamma);
+ 
+         info = draw_info;
+ 
+@@ -5422,6 +5423,7 @@ void LLVolumeGeometryManager::registerFace(LLSpatialGroup* group, LLFace* facep,
+         draw_info->mShaderMask = shader_mask;
+         draw_info->mAvatar = facep->mAvatar;
+         draw_info->mSkinInfo = facep->mSkinInfo;
++        draw_info->mAlphaGamma = alpha_gamma;
+ 
+         if (gltf_mat)
+         {"
+secondlife/viewer,2323,53958ec,indra/newview/llvograss.cpp,modified,1,2,3,"@@ -702,7 +702,6 @@ void LLGrassPartition::getGeometry(LLSpatialGroup* group)
+         S32 idx = static_cast<S32>(draw_vec.size()) - 1;
+ 
+         bool fullbright = facep->isState(LLFace::FULLBRIGHT);
+-        U8   alpha_gamma = 100;
+ 
+         if (idx >= 0 && draw_vec[idx]->mEnd == facep->getGeomIndex()-1 &&
+             draw_vec[idx]->mTexture == facep->getTexture() &&
+@@ -722,7 +721,7 @@ void LLGrassPartition::getGeometry(LLSpatialGroup* group)
+             U32 count = facep->getIndicesCount();
+             LLDrawInfo* info = new LLDrawInfo(start,end,count,offset,facep->getTexture(),
+                 //facep->getTexture(),
+-                buffer, object->isSelected(), fullbright, (F32)alpha_gamma * 0.01f);
++                buffer, object->isSelected(), fullbright, 100);
+ 
+             draw_vec.push_back(info);
+             //for alpha sorting"
+secondlife/viewer,2323,53958ec,indra/newview/llvovolume.cpp,modified,1,0,1,"@@ -5377,6 +5377,7 @@ void LLVolumeGeometryManager::registerFace(LLSpatialGroup* group, LLFace* facep,
+         info->mModelMatrix == model_mat &&
+         info->mShaderMask == shader_mask &&
+         info->mAvatar == facep->mAvatar &&
++        info->mAlphaGamma == alpha_gamma &&
+         info->getSkinHash() == facep->getSkinHash())
+     {
+         info->mCount += facep->getIndicesCount();"

@@ -1,0 +1,70 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+musehq/spacesvr,173,14bb8bf73efd17a9103ede534a0d751a289e17b3,package.json,modified,1,1,2,"@@ -1,6 +1,6 @@
+ {
+   ""name"": ""spacesvr"",
+-  ""version"": ""2.12.0"",
++  ""version"": ""2.12.1"",
+   ""private"": true,
+   ""description"": ""A standardized reality for future of the 3D Web"",
+   ""keywords"": ["
+musehq/spacesvr,173,14bb8bf73efd17a9103ede534a0d751a289e17b3,src/layers/Environment/ui/PauseMenu/index.tsx,modified,1,1,2,"@@ -40,7 +40,7 @@ export default function PauseMenu(props: PauseMenuProps) {
+   const PAUSE_ITEMS: MenuItem[] = [
+     ...pauseMenuItems,
+     {
+-      text: ""v2.12.0"",
++      text: ""v2.12.1"",
+       link: ""https://www.npmjs.com/package/spacesvr"",
+     },
+     ...menuItems,"
+musehq/spacesvr,173,14bb8bf73efd17a9103ede534a0d751a289e17b3,src/layers/Toolbelt/ideas/ToolSwitcher.tsx,modified,1,0,1,"@@ -22,6 +22,7 @@ const Container = styled.div<{ open: boolean }>`
+   z-index: 2;
+   padding: ${FIXED_PADDING}px ${FIXED_PADDING}px 0 ${FIXED_PADDING}px;
+   border-radius: ${OUTER_BORDER_RADIUS}px;
++  pointer-events: ${(props) => (props.open ? ""all"" : ""none"")};
+ 
+   display: flex;
+   max-width: calc(100% - 80px);"
+musehq/spacesvr,173,14bb8bf73efd17a9103ede534a0d751a289e17b3,src/logic/toggle.ts,modified,18,10,28,"@@ -1,25 +1,33 @@
+-import { useCallback, useRef, useState } from ""react"";
++import { useCallback, useEffect, useRef, useState } from ""react"";
++import Timeout = NodeJS.Timeout;
+ 
+ /**
+  * A hook that allows you to toggle a boolean value.
+  * @param delay time in ms
+  */
+ export const useDelayedToggle = (delay = 1000) => {
+-  const lastTimeSet = useRef(0);
++  const timeoutId = useRef<Timeout | null>(null);
+   const [active, setActiveState] = useState(false);
+ 
+-  if (active && Date.now() - lastTimeSet.current > delay) {
+-    lastTimeSet.current = Date.now();
+-    setActiveState(!active);
+-  }
+-
+   const setActive = useCallback(() => {
++    if (timeoutId.current !== null) {
++      clearTimeout(timeoutId.current);
++    }
++
+     setActiveState(true);
+-    lastTimeSet.current = Date.now();
+-    setTimeout(() => {
+-      if (Date.now() - lastTimeSet.current > delay) setActiveState(false);
++
++    timeoutId.current = setTimeout(() => {
++      setActiveState(false);
+     }, delay);
+   }, [delay]);
+ 
++  useEffect(() => {
++    return () => {
++      if (timeoutId.current !== null) {
++        clearTimeout(timeoutId.current);
++      }
++    };
++  }, []);
++
+   return { active, setActive };
+ };"

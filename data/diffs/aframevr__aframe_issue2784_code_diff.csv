@@ -1,0 +1,305 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe,2784,3c0c74372ef536f1f9ae602d28cadf5a7c874cf1,src/components/index.js,modified,0,1,1,"@@ -26,7 +26,6 @@ require('./visible');
+ require('./vive-controls');
+ require('./wasd-controls');
+ 
+-require('./scene/auto-enter-vr');
+ require('./scene/canvas');
+ require('./scene/debug');
+ require('./scene/embedded');"
+aframevr/aframe,2784,3c0c74372ef536f1f9ae602d28cadf5a7c874cf1,src/components/scene/auto-enter-vr.js,removed,0,58,58,"@@ -1,58 +0,0 @@
+-var registerComponent = require('../../core/component').registerComponent;
+-var utils = require('../../utils');
+-
+-/**
+- * Automatically enter VR either upon `vrdisplayactivate` (e.g. putting on Rift headset)
+- * or immediately (if possible) if display name contains data string.
+- * Default data string is `GearVR` for Carmel browser which only does VR.
+- */
+-module.exports.Component = registerComponent('auto-enter-vr', {
+-  schema: {
+-    display: {type: 'string', default: 'GearVR'},
+-    enabled: {type: 'boolean', default: true}
+-  },
+-
+-  init: function () {
+-    var scene = this.el;
+-    var self = this;
+-
+-    // Define methods to allow mock testing.
+-    this.enterVR = scene.enterVR.bind(scene);
+-    this.exitVR = scene.exitVR.bind(scene);
+-    this.shouldAutoEnterVR = this.shouldAutoEnterVR.bind(this);
+-
+-    if (utils.getUrlParameter('auto-enter-vr') === 'false') { return; }
+-
+-    // Enter VR on `vrdisplayactivate` (e.g. putting on Rift headset).
+-    window.addEventListener('vrdisplayactivate', function () { self.enterVR(); }, false);
+-
+-    // Exit VR on `vrdisplaydeactivate` (e.g. taking off Rift headset).
+-    window.addEventListener('vrdisplaydeactivate', function () { self.exitVR(); }, false);
+-
+-    // Check if we should try to enter VR. Need to wait for next tick.
+-    setTimeout(function () {
+-      if (self.shouldAutoEnterVR()) {
+-        self.enterVR();
+-      }
+-    });
+-  },
+-
+-  shouldAutoEnterVR: function () {
+-    var data = this.data;
+-    var display;
+-    var scene = this.el;
+-
+-    if (!data.enabled) { return false; }
+-
+-    // If we have data string to match against display name, try and get it.
+-    // If we can't get display name or it doesn't match, do not auto-enter VR.
+-    if (data.display && data.display !== 'all') {
+-      display = scene.effect && scene.effect.getVRDisplay && scene.effect.getVRDisplay();
+-      if (!display || !display.displayName || display.displayName.indexOf(data.display) < 0) {
+-        return false;
+-      }
+-    }
+-
+-    return true;
+-  }
+-});"
+aframevr/aframe,2784,3c0c74372ef536f1f9ae602d28cadf5a7c874cf1,src/core/scene/a-scene.js,modified,11,3,14,"@@ -43,8 +43,7 @@ module.exports.AScene = registerElement('a-scene', {
+         'inspector': '',
+         'keyboard-shortcuts': '',
+         'screenshot': '',
+-        'vr-mode-ui': '',
+-        'auto-enter-vr': ''
++        'vr-mode-ui': ''
+       }
+     },
+ 
+@@ -98,11 +97,14 @@ module.exports.AScene = registerElement('a-scene', {
+ 
+     attachedCallback: {
+       value: function () {
+-        var resize = bind(this.resize, this);
++        var resize;
++        var self = this;
++
+         initMetaTags(this);
+         initWakelock(this);
+         this.initSystems();
+ 
++        resize = bind(this.resize, this);
+         window.addEventListener('load', resize);
+         window.addEventListener('resize', resize);
+         this.play();
+@@ -113,6 +115,12 @@ module.exports.AScene = registerElement('a-scene', {
+         // Handler to exit VR (e.g., Oculus Browser back button).
+         this.onVRPresentChangeBound = bind(this.onVRPresentChange, this);
+         window.addEventListener('vrdisplaypresentchange', this.onVRPresentChangeBound);
++
++        // Enter VR on `vrdisplayactivate` (e.g. putting on Rift headset).
++        window.addEventListener('vrdisplayactivate', function () { self.enterVR(); });
++
++        // Exit VR on `vrdisplaydeactivate` (e.g. taking off Rift headset).
++        window.addEventListener('vrdisplaydeactivate', function () { self.exitVR(); });
+       },
+       writable: window.debug
+     },"
+aframevr/aframe,2784,3c0c74372ef536f1f9ae602d28cadf5a7c874cf1,tests/components/scene/auto-enter-vr.test.js,removed,0,164,164,"@@ -1,164 +0,0 @@
+-/* global assert, process, setup, suite, test */
+-var entityFactory = require('../../helpers').entityFactory;
+-
+-suite('auto-enter-vr', function () {
+-  suite('no getVRDisplay', function () {
+-    setup(function (done) {
+-      this.entityEl = entityFactory();
+-      var el = this.el = this.entityEl.parentNode;
+-      var resolvePromise = function () { return Promise.resolve(); };
+-      el.setAttribute('auto-enter-vr', '');
+-      el.effect = {
+-        requestPresent: resolvePromise,
+-        exitPresent: resolvePromise
+-      };
+-      var self = this;
+-      var autoEnterVR = el.components['auto-enter-vr'];
+-      el.addEventListener('loaded', function () {
+-        self.enterVRSpy = self.sinon.spy(autoEnterVR, 'enterVR');
+-        self.exitVRSpy = self.sinon.spy(autoEnterVR, 'exitVR');
+-        done();
+-      });
+-    });
+-
+-    test('if no getVRDisplay, then !shouldAutoEnterVR and !enterVR', function () {
+-      var el = this.el;
+-      var autoEnterVR = el.components['auto-enter-vr'];
+-      assert.notOk(el.effect.getVRDisplay);
+-      assert.notOk(autoEnterVR.shouldAutoEnterVR());
+-      process.nextTick(function () {
+-        assert.notOk(this.enterVRSpy.called);
+-      });
+-    });
+-  });
+-
+-  suite('!getVRDisplay()', function () {
+-    setup(function (done) {
+-      this.entityEl = entityFactory();
+-      var el = this.el = this.entityEl.parentNode;
+-      var resolvePromise = function () { return Promise.resolve(); };
+-      el.setAttribute('auto-enter-vr', '');
+-      el.effect = {
+-        getVRDisplay: function () { return null; },
+-        requestPresent: resolvePromise,
+-        exitPresent: resolvePromise
+-      };
+-      var self = this;
+-      var autoEnterVR = el.components['auto-enter-vr'];
+-      el.addEventListener('loaded', function () {
+-        self.enterVRSpy = self.sinon.spy(autoEnterVR, 'enterVR');
+-        self.exitVRSpy = self.sinon.spy(autoEnterVR, 'exitVR');
+-        done();
+-      });
+-    });
+-
+-    test('if !getVRDisplay(), then !shouldAutoEnterVR and !enterVR', function () {
+-      var el = this.el;
+-      var autoEnterVR = el.components['auto-enter-vr'];
+-      assert.ok(el.effect.getVRDisplay);
+-      assert.notOk(el.effect.getVRDisplay());
+-      assert.notOk(autoEnterVR.shouldAutoEnterVR());
+-      process.nextTick(function () {
+-        assert.notOk(this.enterVRSpy.called);
+-      });
+-    });
+-  });
+-
+-  suite('no getVRDisplay() displayName', function () {
+-    setup(function (done) {
+-      this.entityEl = entityFactory();
+-      var el = this.el = this.entityEl.parentNode;
+-      var resolvePromise = function () { return Promise.resolve(); };
+-      el.setAttribute('auto-enter-vr', '');
+-      el.effect = {
+-        getVRDisplay: function () { return {}; },
+-        requestPresent: resolvePromise,
+-        exitPresent: resolvePromise
+-      };
+-      var self = this;
+-      var autoEnterVR = el.components['auto-enter-vr'];
+-      el.addEventListener('loaded', function () {
+-        self.enterVRSpy = self.sinon.spy(autoEnterVR, 'enterVR');
+-        self.exitVRSpy = self.sinon.spy(autoEnterVR, 'exitVR');
+-        done();
+-      });
+-    });
+-
+-    test('if no getVRDisplay().displayName, then !shouldAutoEnterVR and !enterVR', function () {
+-      var el = this.el;
+-      var autoEnterVR = el.components['auto-enter-vr'];
+-      assert.ok(el.effect.getVRDisplay);
+-      assert.notOk(el.effect.getVRDisplay().displayName);
+-      assert.notOk(autoEnterVR.shouldAutoEnterVR());
+-      process.nextTick(function () {
+-        assert.notOk(this.enterVRSpy.called);
+-      });
+-    });
+-  });
+-
+-  suite('getVRDisplay() displayName something else', function () {
+-    setup(function (done) {
+-      this.entityEl = entityFactory();
+-      var el = this.el = this.entityEl.parentNode;
+-      var resolvePromise = function () { return Promise.resolve(); };
+-      el.setAttribute('auto-enter-vr', '');
+-      el.effect = {
+-        getVRDisplay: function () { return {displayName: 'something else'}; },
+-        requestPresent: resolvePromise,
+-        exitPresent: resolvePromise
+-      };
+-      var self = this;
+-      var autoEnterVR = el.components['auto-enter-vr'];
+-      el.addEventListener('loaded', function () {
+-        self.enterVRSpy = self.sinon.spy(autoEnterVR, 'enterVR');
+-        self.exitVRSpy = self.sinon.spy(autoEnterVR, 'exitVR');
+-        done();
+-      });
+-    });
+-
+-    test('if getVRDisplay().displayName something else, then !shouldAutoEnterVR and !enterVR', function () {
+-      var el = this.el;
+-      var autoEnterVR = el.components['auto-enter-vr'];
+-      assert.ok(el.effect.getVRDisplay);
+-      assert.ok(el.effect.getVRDisplay().displayName);
+-      assert.notOk(el.effect.getVRDisplay().displayName.indexOf('GearVR') >= 0);
+-      assert.notOk(autoEnterVR.shouldAutoEnterVR());
+-      process.nextTick(function () {
+-        assert.notOk(this.enterVRSpy.called);
+-      });
+-    });
+-  });
+-
+-  suite('getVRDisplay() displayName GearVR something', function () {
+-    setup(function (done) {
+-      this.entityEl = entityFactory();
+-      var el = this.el = this.entityEl.parentNode;
+-      var resolvePromise = function () { return Promise.resolve(); };
+-      el.setAttribute('auto-enter-vr', '');
+-      el.effect = {
+-        getVRDisplay: function () { return {displayName: 'GearVR something'}; },
+-        requestPresent: resolvePromise,
+-        exitPresent: resolvePromise
+-      };
+-      var self = this;
+-      var autoEnterVR = el.components['auto-enter-vr'];
+-      el.addEventListener('loaded', function () {
+-        self.enterVRSpy = self.sinon.spy(autoEnterVR, 'enterVR');
+-        self.exitVRSpy = self.sinon.spy(autoEnterVR, 'exitVR');
+-        done();
+-      });
+-    });
+-
+-    test('if getVRDisplay().displayName has GearVR, then shouldAutoEnterVR and enterVR', function () {
+-      var el = this.el;
+-      var autoEnterVR = el.components['auto-enter-vr'];
+-      assert.ok(el.effect.getVRDisplay);
+-      assert.ok(el.effect.getVRDisplay().displayName);
+-      assert.ok(el.effect.getVRDisplay().displayName.indexOf('GearVR') >= 0);
+-      assert.ok(autoEnterVR.shouldAutoEnterVR());
+-      process.nextTick(function () {
+-        assert.ok(this.enterVRSpy.called);
+-      });
+-    });
+-  });
+-});"
+aframevr/aframe,2784,3c0c74372ef536f1f9ae602d28cadf5a7c874cf1,tests/core/scene/a-scene.test.js,modified,15,3,18,"@@ -64,10 +64,7 @@ suite('a-scene (without renderer)', function () {
+     test('tells A-Frame about entering VR if now presenting', function (done) {
+       var event;
+       var sceneEl = this.el;
+-      console.log('start test');
+ 
+-      sceneEl.setAttribute('id', 'vrdisplay');
+-      sceneEl.canvas = document.createElement('canvas');
+       sceneEl.addEventListener('enter-vr', function () {
+         assert.ok(sceneEl.is('vr-mode'));
+         done();
+@@ -77,6 +74,21 @@ suite('a-scene (without renderer)', function () {
+       event.display = {isPresenting: true};
+       window.dispatchEvent(event);
+     });
++
++    test('tells A-Frame about exiting VR if no longer presenting', function (done) {
++      var event;
++      var sceneEl = this.el;
++      sceneEl.addState('vr-mode');
++
++      sceneEl.addEventListener('exit-vr', function () {
++        assert.notOk(sceneEl.is('vr-mode'));
++        done();
++      });
++
++      event = new CustomEvent('vrdisplaypresentchange');
++      event.display = {isPresenting: false};
++      window.dispatchEvent(event);
++    });
+   });
+ 
+   suite('enterVR', function () {"

@@ -1,0 +1,223 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+secondlife/viewer,1494,33bb511,indra/newview/llheroprobemanager.cpp,modified,13,23,36,"@@ -112,7 +112,6 @@ void LLHeroProbeManager::update()
+ 
+     LLVector4a probe_pos;
+     LLVector3 camera_pos = LLViewerCamera::instance().mOrigin;
+-    F32        near_clip  = 0.1f;
+     bool       probe_present = false;
+     LLQuaternion cameraOrientation = LLViewerCamera::instance().getQuaternion();
+     LLVector3    cameraDirection   = LLVector3::z_axis * cameraOrientation;
+@@ -192,20 +191,15 @@ void LLHeroProbeManager::update()
+             // Iterate through each face of the cube
+             for (int i = 0; i < 6; i++)
+             {
+-                float cube_facing = fmax(-1, fmin(1.0f, cameraDirection * cubeFaces[i])) * 0.6 + 0.4;
++                float cube_facing = fmax(-1, fmin(1.0f, cameraDirection * cubeFaces[i]));
+ 
+-                float updateRate;
+-                if (cube_facing < 0.1f)
+-                {
+-                    updateRate = 0;
+-                }
+-                else
+-                {
+-                    updateRate = ceilf(cube_facing * gPipeline.RenderHeroProbeConservativeUpdateMultiplier);
+-                }
++                cube_facing = 1 - cube_facing;
+ 
+-                mFaceUpdateList[i] = updateRate;
++                mFaceUpdateList[i] = ceilf(cube_facing * gPipeline.RenderHeroProbeConservativeUpdateMultiplier);
+             }
++
++            
++            mProbes[0]->mOrigin = probe_pos;
+         }
+         else
+         {
+@@ -214,25 +208,23 @@ void LLHeroProbeManager::update()
+ 
+         mHeroProbeStrength = 1;
+     }
+-    else
+-    {
+-        probe_pos.load3(camera_pos.mV);
+-    }
+-
++}
+ 
++void LLHeroProbeManager::renderProbes()
++{
+     static LLCachedControl<S32> sDetail(gSavedSettings, ""RenderHeroReflectionProbeDetail"", -1);
+     static LLCachedControl<S32> sLevel(gSavedSettings, ""RenderHeroReflectionProbeLevel"", 3);
+ 
+-    if (mNearestHero != nullptr)
++    F32 near_clip = 0.01f;
++    if (mNearestHero != nullptr && (gPipeline.RenderHeroProbeUpdateRate == 0 || (gFrameCount % gPipeline.RenderHeroProbeUpdateRate) == 0) &&
++        !gTeleportDisplay && !gDisconnected && !LLAppViewer::instance()->logoutRequestSent())
+     {
+         LL_PROFILE_ZONE_NAMED_CATEGORY_DISPLAY(""hpmu - realtime"");
+-        // Probe 0 is always our mirror probe.
+-        mProbes[0]->mOrigin = probe_pos;
+ 
+         bool radiance_pass = gPipeline.mReflectionMapManager.isRadiancePass();
+ 
+         gPipeline.mReflectionMapManager.mRadiancePass = true;
+-        mRenderingMirror = true;
++        mRenderingMirror                              = true;
+ 
+         doOcclusion();
+ 
+@@ -585,8 +577,6 @@ void LLHeroProbeManager::cleanup()
+ 
+     mDefaultProbe = nullptr;
+     mUpdatingProbe = nullptr;
+-    /*
+-    */
+ }
+ 
+ void LLHeroProbeManager::doOcclusion()"
+secondlife/viewer,1494,33bb511,indra/newview/llheroprobemanager.h,modified,3,0,3,"@@ -68,6 +68,8 @@ class alignas(16) LLHeroProbeManager
+     // maintain reflection probes
+     void update();
+ 
++    void renderProbes();
++
+     // debug display, called from llspatialpartition if reflection
+     // probe debug display is active
+     void renderDebug();
+@@ -152,5 +154,6 @@ class alignas(16) LLHeroProbeManager
+     std::vector<LLPointer<LLVOVolume>>                       mHeroVOList;
+     LLPointer<LLVOVolume>                                 mNearestHero;
+ 
++
+ };
+ "
+secondlife/viewer,1494,33bb511,indra/newview/llviewerdisplay.cpp,modified,3,2,5,"@@ -658,10 +658,11 @@ void display(BOOL rebuild, F32 zoom_factor, int subfield, BOOL for_snapshot)
+     {
+         // Render mirrors and associated hero probes before we render the rest of the scene.
+         // This ensures the scene state in the hero probes are exactly the same as the rest of the scene before we render it.
+-        if (gPipeline.RenderMirrors && !gSnapshot && (gPipeline.RenderHeroProbeUpdateRate == 0 || (gFrameCount % gPipeline.RenderHeroProbeUpdateRate) == 0))
++        if (gPipeline.RenderMirrors && !gSnapshot)
+         {
+             LL_PROFILE_ZONE_NAMED_CATEGORY_DISPLAY(""Update hero probes"");
+             gPipeline.mHeroProbeManager.update();
++            gPipeline.mHeroProbeManager.renderProbes();
+         }
+ 
+         LL_PROFILE_ZONE_NAMED_CATEGORY_DISPLAY(""display - 1"");
+@@ -1072,7 +1073,7 @@ void display_cube_face()
+     LLSpatialGroup::sNoDelete = TRUE;
+ 
+     S32 occlusion = LLPipeline::sUseOcclusion;
+-    LLPipeline::sUseOcclusion = 1; // occlusion data is from main camera point of view, don't read or write it during cube snapshots
++    LLPipeline::sUseOcclusion = 0; // occlusion data is from main camera point of view, don't read or write it during cube snapshots
+     //gDepthDirty = TRUE; //let ""real"" render pipe know it can't trust the depth buffer for occlusion data
+ 
+     static LLCullResult result;"
+secondlife/viewer,1494,1265289,indra/newview/llheroprobemanager.cpp,modified,3,11,14,"@@ -192,19 +192,11 @@ void LLHeroProbeManager::update()
+             // Iterate through each face of the cube
+             for (int i = 0; i < 6; i++)
+             {
+-                float cube_facing = fmax(-1, fmin(1.0f, cameraDirection * cubeFaces[i])) * 0.6 + 0.4;
++                float cube_facing = fmax(-1, fmin(1.0f, cameraDirection * cubeFaces[i]));
+ 
+-                float updateRate;
+-                if (cube_facing < 0.1f)
+-                {
+-                    updateRate = 0;
+-                }
+-                else
+-                {
+-                    updateRate = ceilf(cube_facing * gPipeline.RenderHeroProbeConservativeUpdateMultiplier);
+-                }
++                cube_facing = 1 - cube_facing;
+ 
+-                mFaceUpdateList[i] = updateRate;
++                mFaceUpdateList[i] = ceilf(cube_facing * gPipeline.RenderHeroProbeConservativeUpdateMultiplier);
+             }
+         }
+         else"
+secondlife/viewer,1494,0a63cc2,indra/newview/llheroprobemanager.cpp,modified,10,10,20,"@@ -112,7 +112,6 @@ void LLHeroProbeManager::update()
+ 
+     LLVector4a probe_pos;
+     LLVector3 camera_pos = LLViewerCamera::instance().mOrigin;
+-    F32        near_clip  = 0.1f;
+     bool       probe_present = false;
+     LLQuaternion cameraOrientation = LLViewerCamera::instance().getQuaternion();
+     LLVector3    cameraDirection   = LLVector3::z_axis * cameraOrientation;
+@@ -198,6 +197,9 @@ void LLHeroProbeManager::update()
+ 
+                 mFaceUpdateList[i] = ceilf(cube_facing * gPipeline.RenderHeroProbeConservativeUpdateMultiplier);
+             }
++
++            
++            mProbes[0]->mOrigin = probe_pos;
+         }
+         else
+         {
+@@ -206,25 +208,23 @@ void LLHeroProbeManager::update()
+ 
+         mHeroProbeStrength = 1;
+     }
+-    else
+-    {
+-        probe_pos.load3(camera_pos.mV);
+-    }
+-
++}
+ 
++void LLHeroProbeManager::renderProbes()
++{
+     static LLCachedControl<S32> sDetail(gSavedSettings, ""RenderHeroReflectionProbeDetail"", -1);
+     static LLCachedControl<S32> sLevel(gSavedSettings, ""RenderHeroReflectionProbeLevel"", 3);
+ 
+-    if (mNearestHero != nullptr && (gPipeline.RenderHeroProbeUpdateRate == 0 || (gFrameCount % gPipeline.RenderHeroProbeUpdateRate) == 0))
++    F32 near_clip = 0.01f;
++    if (mNearestHero != nullptr && (gPipeline.RenderHeroProbeUpdateRate == 0 || (gFrameCount % gPipeline.RenderHeroProbeUpdateRate) == 0) &&
++        !gTeleportDisplay && !gDisconnected && !LLAppViewer::instance()->logoutRequestSent())
+     {
+         LL_PROFILE_ZONE_NAMED_CATEGORY_DISPLAY(""hpmu - realtime"");
+-        // Probe 0 is always our mirror probe.
+-        mProbes[0]->mOrigin = probe_pos;
+ 
+         bool radiance_pass = gPipeline.mReflectionMapManager.isRadiancePass();
+ 
+         gPipeline.mReflectionMapManager.mRadiancePass = true;
+-        mRenderingMirror = true;
++        mRenderingMirror                              = true;
+ 
+         doOcclusion();
+ "
+secondlife/viewer,1494,0a63cc2,indra/newview/llheroprobemanager.h,modified,3,0,3,"@@ -68,6 +68,8 @@ class alignas(16) LLHeroProbeManager
+     // maintain reflection probes
+     void update();
+ 
++    void renderProbes();
++
+     // debug display, called from llspatialpartition if reflection
+     // probe debug display is active
+     void renderDebug();
+@@ -152,5 +154,6 @@ class alignas(16) LLHeroProbeManager
+     std::vector<LLPointer<LLVOVolume>>                       mHeroVOList;
+     LLPointer<LLVOVolume>                                 mNearestHero;
+ 
++
+ };
+ "
+secondlife/viewer,1494,0a63cc2,indra/newview/llviewerdisplay.cpp,modified,2,1,3,"@@ -662,6 +662,7 @@ void display(BOOL rebuild, F32 zoom_factor, int subfield, BOOL for_snapshot)
+         {
+             LL_PROFILE_ZONE_NAMED_CATEGORY_DISPLAY(""Update hero probes"");
+             gPipeline.mHeroProbeManager.update();
++            gPipeline.mHeroProbeManager.renderProbes();
+         }
+ 
+         LL_PROFILE_ZONE_NAMED_CATEGORY_DISPLAY(""display - 1"");
+@@ -1072,7 +1073,7 @@ void display_cube_face()
+     LLSpatialGroup::sNoDelete = TRUE;
+ 
+     S32 occlusion = LLPipeline::sUseOcclusion;
+-    LLPipeline::sUseOcclusion = 1; // occlusion data is from main camera point of view, don't read or write it during cube snapshots
++    LLPipeline::sUseOcclusion = 0; // occlusion data is from main camera point of view, don't read or write it during cube snapshots
+     //gDepthDirty = TRUE; //let ""real"" render pipe know it can't trust the depth buffer for occlusion data
+ 
+     static LLCullResult result;"

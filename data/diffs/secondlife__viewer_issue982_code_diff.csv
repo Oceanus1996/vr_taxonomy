@@ -1,0 +1,380 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+secondlife/viewer,982,2f452d0,autobuild.xml,modified,0,48,48,"@@ -959,54 +959,6 @@
+         <key>description</key>
+         <string>Havok source code for libs and demos</string>
+       </map>
+-      <key>icu4c</key>
+-      <map>
+-        <key>canonical_repo</key>
+-        <string>https://bitbucket.org/lindenlab/3p-icu4c</string>
+-        <key>copyright</key>
+-        <string>Copyright (c) 1995-2011 International Business Machines Corporation and others &lt;http://source.icu-project.org&gt;</string>
+-        <key>description</key>
+-        <string>ICU is a mature, widely used set of C/C++ and Java libraries providing Unicode and Globalization support for software applications. ICU is widely portable and gives applications the same results on all platforms and between C/C++ and Java software.</string>
+-        <key>license</key>
+-        <string>ICU, permissive non-copyleft free software license</string>
+-        <key>license_file</key>
+-        <string>LICENSES/icu.txt</string>
+-        <key>name</key>
+-        <string>icu4c</string>
+-        <key>platforms</key>
+-        <map>
+-          <key>darwin64</key>
+-          <map>
+-            <key>archive</key>
+-            <map>
+-              <key>hash</key>
+-              <string>47bc32b991385f1a6530e4c6179b07f64ca6edc7</string>
+-              <key>hash_algorithm</key>
+-              <string>sha1</string>
+-              <key>url</key>
+-              <string>https://github.com/secondlife/3p-icu4c/releases/download/v4.8.1-7d08d82/icu4c-4.8.1-darwin64-7d08d82.tar.zst</string>
+-            </map>
+-            <key>name</key>
+-            <string>darwin64</string>
+-          </map>
+-          <key>windows64</key>
+-          <map>
+-            <key>archive</key>
+-            <map>
+-              <key>hash</key>
+-              <string>b7db881dac80302e4d9010af34c0bf6ca9897df9</string>
+-              <key>hash_algorithm</key>
+-              <string>sha1</string>
+-              <key>url</key>
+-              <string>https://github.com/secondlife/3p-icu4c/releases/download/v4.8.1-7d08d82/icu4c-4.8.1-windows64-7d08d82.tar.zst</string>
+-            </map>
+-            <key>name</key>
+-            <string>windows64</string>
+-          </map>
+-        </map>
+-        <key>version</key>
+-        <string>4.8.1-7d08d82</string>
+-      </map>
+       <key>jpegencoderbasic</key>
+       <map>
+         <key>platforms</key>"
+secondlife/viewer,982,2f452d0,indra/cmake/CMakeLists.txt,modified,0,1,1,"@@ -30,7 +30,6 @@ set(cmake_SOURCE_FILES
+         GoogleMock.cmake
+         Havok.cmake
+         Hunspell.cmake
+-        ICU4C.cmake
+         JsonCpp.cmake
+         LLAddBuildTest.cmake
+         LLAppearance.cmake"
+secondlife/viewer,982,2f452d0,indra/cmake/Copy3rdPartyLibs.cmake,modified,0,9,9,"@@ -62,15 +62,6 @@ if(WINDOWS)
+         uriparser.dll
+         )
+ 
+-    # ICU4C (same filenames for 32 and 64 bit builds)
+-    set(release_files ${release_files} icudt48.dll)
+-    set(release_files ${release_files} icuin48.dll)
+-    set(release_files ${release_files} icuio48.dll)
+-    set(release_files ${release_files} icule48.dll)
+-    set(release_files ${release_files} iculx48.dll)
+-    set(release_files ${release_files} icutu48.dll)
+-    set(release_files ${release_files} icuuc48.dll)
+-
+     # OpenSSL
+     if(ADDRESS_SIZE EQUAL 64)
+         set(release_files ${release_files} libcrypto-1_1-x64.dll)"
+secondlife/viewer,982,2f452d0,indra/cmake/ICU4C.cmake,removed,0,23,23,"@@ -1,23 +0,0 @@
+-# -*- cmake -*-
+-include(Prebuilt)
+-
+-include_guard()
+-
+-add_library( ll::icu4c INTERFACE IMPORTED )
+-
+-
+-use_system_binary(icu4c)
+-use_prebuilt_binary(icu4c)
+-if (WINDOWS)
+-  target_link_libraries( ll::icu4c INTERFACE  icuuc)
+-elseif(DARWIN)
+-  target_link_libraries( ll::icu4c INTERFACE  icuuc)
+-#elseif(LINUX)
+-##  target_link_libraries( ll::icu4c INTERFACE  )
+-else()
+-  message(FATAL_ERROR ""Invalid platform"")
+-endif()
+-
+-target_include_directories( ll::icu4c SYSTEM INTERFACE  ${LIBS_PREBUILT_DIR}/include/unicode )
+-
+-use_prebuilt_binary(dictionaries)"
+secondlife/viewer,982,2f452d0,indra/llcommon/CMakeLists.txt,modified,0,2,2,"@@ -3,7 +3,6 @@
+ project(llcommon)
+ 
+ include(00-Common)
+-include(ICU4C)
+ include(LLCommon)
+ include(bugsplat)
+ include(Linking)
+@@ -283,7 +282,6 @@ target_link_libraries(
+         ll::uriparser
+         ll::oslibraries
+         ll::tracy
+-        ll::icu4c
+     )
+ 
+ target_include_directories(llcommon INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})"
+secondlife/viewer,982,2f452d0,indra/llcommon/llstring.cpp,modified,9,32,41,"@@ -30,7 +30,6 @@
+ #include ""llerror.h""
+ #include ""llfasttimer.h""
+ #include ""llsd.h""
+-#include <unicode/uchar.h>
+ #include <vector>
+ 
+ #if LL_WINDOWS
+@@ -1008,40 +1007,18 @@ std::string LLStringOps::sAM;
+ std::string LLStringOps::sPM;
+ 
+ // static
+-bool LLStringOps::isEmoji(llwchar wch)
+-{
+-	int ublock = ublock_getCode(wch);
+-	switch (ublock)
+-	{
+-		case UBLOCK_GENERAL_PUNCTUATION:
+-		case UBLOCK_LETTERLIKE_SYMBOLS:
+-		case UBLOCK_ARROWS:
+-		case UBLOCK_MISCELLANEOUS_TECHNICAL:
+-		case UBLOCK_ENCLOSED_ALPHANUMERICS:
+-		case UBLOCK_GEOMETRIC_SHAPES:
+-		case UBLOCK_MISCELLANEOUS_SYMBOLS:
+-		case UBLOCK_DINGBATS:
+-		case UBLOCK_CJK_SYMBOLS_AND_PUNCTUATION:
+-		case UBLOCK_ENCLOSED_CJK_LETTERS_AND_MONTHS:
+-		case UBLOCK_MISCELLANEOUS_SYMBOLS_AND_PICTOGRAPHS:
+-		case UBLOCK_EMOTICONS:
+-		case UBLOCK_TRANSPORT_AND_MAP_SYMBOLS:
+-#if U_ICU_VERSION_MAJOR_NUM > 56
+-		// Boost uses ICU so we can't update it independently
+-		case UBLOCK_SUPPLEMENTAL_SYMBOLS_AND_PICTOGRAPHS:
+-#endif // U_ICU_VERSION_MAJOR_NUM > 56
+-			return true;
+-		default:
+-#if U_ICU_VERSION_MAJOR_NUM > 56
+-			return false;
++bool LLStringOps::isEmoji(llwchar a)
++{
++#if 0   // Do not consider special characters that might have a corresponding
++        // glyph in the monochorme fallback fonts as a ""genuine"" emoji. HB
++    return a == 0xa9 || a == 0xae || (a >= 0x2000 && a < 0x3300) ||
++           (a >= 0x1f000 && a < 0x20000);
+ #else
+-			// See https://en.wikipedia.org/wiki/Supplemental_Symbols_and_Pictographs
+-			return wch >= 0x1F900 && wch <= 0x1F9FF;
+-#endif // U_ICU_VERSION_MAJOR_NUM > 56
+-	}
++    // These are indeed ""genuine"" emojis, we *do want* rendered as such. HB
++    return a >= 0x1f000 && a < 0x20000;
++#endif
+ }
+ 
+-
+ S32	LLStringOps::collate(const llwchar* a, const llwchar* b)
+ { 
+ 	#if LL_WINDOWS"
+secondlife/viewer,982,2f452d0,indra/llcommon/llstring.h,modified,2,1,3,"@@ -189,7 +189,8 @@ class LL_COMMON_API LLStringOps
+ 	static bool isAlnum(char a) { return isalnum((unsigned char)a) != 0; }
+ 	static bool isAlnum(llwchar a) { return iswalnum(a) != 0; }
+ 
+-	static bool isEmoji(llwchar wch);
++    // Returns true when 'a' corresponds to a ""genuine"" emoji. HB
++	static bool isEmoji(llwchar a);
+ 
+ 	static S32	collate(const char* a, const char* b) { return strcoll(a, b); }
+ 	static S32	collate(const llwchar* a, const llwchar* b);"
+secondlife/viewer,982,2f452d0,indra/llrender/llfontfreetype.cpp,modified,97,53,150,"@@ -354,11 +354,10 @@ void LLFontFreetype::clearFontStreams()
+ }
+ #endif
+ 
+-void LLFontFreetype::addFallbackFont(const LLPointer<LLFontFreetype>& fallback_font, const char_functor_t& functor)
++void LLFontFreetype::addFallbackFont(const LLPointer<LLFontFreetype>& fallback_font,
++                                     const char_functor_t& functor)
+ {
+-	// Insert functor fallbacks before generic fallbacks
+-	mFallbackFonts.insert((functor) ? std::find_if(mFallbackFonts.begin(), mFallbackFonts.end(), [](const fallback_font_t& fe) { return !fe.second; }) : mFallbackFonts.end(),
+-	                      std::make_pair(fallback_font, functor));
++    mFallbackFonts.emplace_back(fallback_font, functor);
+ }
+ 
+ F32 LLFontFreetype::getLineHeight() const
+@@ -450,55 +449,100 @@ BOOL LLFontFreetype::hasGlyph(llwchar wch) const
+ 
+ LLFontGlyphInfo* LLFontFreetype::addGlyph(llwchar wch, EFontGlyphType glyph_type) const
+ {
+-	if (mFTFace == NULL)
+-		return FALSE;
+-
+-	llassert(!mIsFallback);
+-	llassert(glyph_type < EFontGlyphType::Count);
+-	//LL_DEBUGS() << ""Adding new glyph for "" << wch << "" to font"" << LL_ENDL;
+-
+-	FT_UInt glyph_index;
+-
+-	// Fallback fonts with a functor have precedence over everything else
+-	fallback_font_vector_t::const_iterator it_fallback = mFallbackFonts.cbegin();
+-	/* This leads to a bug SL-19831 ""Check marks in the menu are less visible.""
+-	** Also, LLFontRegistry::createFont() says: ""Fallback fonts don't render""
+-	for (; it_fallback != mFallbackFonts.cend() && it_fallback->second; ++it_fallback)
+-	{
+-		if (it_fallback->second(wch))
+-		{
+-			glyph_index = FT_Get_Char_Index(it_fallback->first->mFTFace, wch);
+-			if (glyph_index)
+-			{
+-				return addGlyphFromFont(it_fallback->first, wch, glyph_index, glyph_type);
+-			}
+-		}
+-	}
+-	*/
+-
+-	// Initialize char to glyph map
+-	glyph_index = FT_Get_Char_Index(mFTFace, wch);
+-	if (glyph_index == 0)
+-	{
+-		//LL_INFOS() << ""Trying to add glyph from fallback font!"" << LL_ENDL;
+-		for (; it_fallback != mFallbackFonts.cend(); ++it_fallback)
+-		{
+-			glyph_index = FT_Get_Char_Index(it_fallback->first->mFTFace, wch);
+-			if (glyph_index)
+-			{
+-				return addGlyphFromFont(it_fallback->first, wch, glyph_index, glyph_type);
+-			}
+-		}
+-	}
+-	
+-	std::pair<char_glyph_info_map_t::iterator, char_glyph_info_map_t::iterator> range_it = mCharGlyphInfoMap.equal_range(wch);
+-	char_glyph_info_map_t::iterator iter = 
+-		std::find_if(range_it.first, range_it.second, [&glyph_type](const char_glyph_info_map_t::value_type& entry) { return entry.second->mGlyphType == glyph_type; });
+-	if (iter == range_it.second)
+-	{
+-		return addGlyphFromFont(this, wch, glyph_index, glyph_type);
+-	}
+-	return NULL;
++    if (!mFTFace)
++    {
++        return NULL;
++    }
++
++    llassert(!mIsFallback);
++    llassert(glyph_type < EFontGlyphType::Count);
++    //LL_DEBUGS() << ""Adding new glyph for "" << wch << "" to font"" << LL_ENDL;
++
++    // Initialize char to glyph map
++    FT_UInt glyph_index = FT_Get_Char_Index(mFTFace, wch);
++    if (glyph_index == 0)
++    {
++        // No corresponding glyph in this font: look for a glyph in fallback
++        // fonts.
++        size_t count = mFallbackFonts.size();
++        if (LLStringOps::isEmoji(wch))
++        {
++            // This is a ""genuine"" emoji (in the range 0x1f000-0x20000): print
++            // it using the emoji font(s) if possible. HB
++            for (size_t i = 0; i < count; ++i)
++            {
++                const fallback_font_t& pair = mFallbackFonts[i];
++                if (!pair.second || !pair.second(wch))
++                {
++                    // If this font does not have a functor, or the character
++                    // does not pass the functor, reject it. Note: we keep the
++                    // functor test (despite the fact we already tested for
++                    // LLStringOps::isEmoji(wch) above), in case we would use
++                    // different, more restrictive or partionned functors in
++                    // the future with several different emoji fonts. HB
++                    continue;
++                }
++                glyph_index = FT_Get_Char_Index(pair.first->mFTFace, wch);
++                if (glyph_index)
++                {
++                    return addGlyphFromFont(pair.first, wch, glyph_index,
++                                            glyph_type);
++                }
++            }
++        }
++        // Then try and find a monochrome fallback font that could print this
++        // glyph: such fonts do *not* have a functor. We give priority to
++        // monochrome fonts for non-genuine emojis so that UI elements which
++        // used to render with them before the emojis font introduction (e.g.
++        // check marks in menus, or LSL dialogs text and buttons) do render the
++        // same way as they always did. HB
++        std::vector<size_t> emoji_fonts_idx;
++        for (size_t i = 0; i < count; ++i)
++        {
++            const fallback_font_t& pair = mFallbackFonts[i];
++            if (pair.second)
++            {
++                // If this font got a functor, remember the index for later and
++                // try the next fallback font. HB
++                emoji_fonts_idx.push_back(i);
++                continue;
++            }
++            glyph_index = FT_Get_Char_Index(pair.first->mFTFace, wch);
++            if (glyph_index)
++            {
++                return addGlyphFromFont(pair.first, wch, glyph_index,
++                                        glyph_type);
++            }
++        }
++        // Everything failed so far: this character is not a genuine emoji,
++        // neither a special character known from our monochrome fallback
++        // fonts: make a last try, using the emoji font(s), but ignoring the
++        // functor to render using whatever (colorful) glyph that might be
++        // available in such fonts for this character. HB
++        for (size_t j = 0, count2 = emoji_fonts_idx.size(); j < count2; ++j)
++        {
++            const fallback_font_t& pair = mFallbackFonts[emoji_fonts_idx[j]];
++            glyph_index = FT_Get_Char_Index(pair.first->mFTFace, wch);
++            if (glyph_index)
++            {
++                return addGlyphFromFont(pair.first, wch, glyph_index,
++                                        glyph_type);
++            }
++        }
++    }
++
++    auto range_it = mCharGlyphInfoMap.equal_range(wch);
++    char_glyph_info_map_t::iterator iter = 
++        std::find_if(range_it.first, range_it.second,
++                     [&glyph_type](const char_glyph_info_map_t::value_type& entry)
++                     {
++                        return entry.second->mGlyphType == glyph_type;
++                     });
++    if (iter == range_it.second)
++    {
++        return addGlyphFromFont(this, wch, glyph_index, glyph_type);
++    }
++    return NULL;
+ }
+ 
+ LLFontGlyphInfo* LLFontFreetype::addGlyphFromFont(const LLFontFreetype *fontp, llwchar wch, U32 glyph_index, EFontGlyphType requested_glyph_type) const"
+secondlife/viewer,982,2f452d0,indra/newview/CMakeLists.txt,modified,0,2,2,"@@ -18,7 +18,6 @@ include(DragDrop)
+ include(EXPAT)
+ include(FMODSTUDIO)
+ include(Hunspell)
+-include(ICU4C)
+ include(JPEGEncoderBasic)
+ include(JsonCpp)
+ include(LLAppearance)
+@@ -1934,7 +1933,6 @@ target_link_libraries(${VIEWER_BINARY_NAME}
+         ${LLPHYSICSEXTENSIONS_LIBRARIES}
+         ll::bugsplat
+         ll::tracy
+-        ll::icu4c
+         )
+ 
+ if( TARGET ll::intel_memops )"
+secondlife/viewer,982,2f452d0,indra/newview/viewer_manifest.py,modified,0,4,4,"@@ -559,10 +559,6 @@ def construct(self):
+                 self.path(""OpenAL32.dll"")
+                 self.path(""alut.dll"")
+ 
+-            # For ICU4C
+-            self.path(""icudt48.dll"")
+-            self.path(""icuuc48.dll"")
+-
+             # For textures
+             self.path(""openjp2.dll"")
+ "

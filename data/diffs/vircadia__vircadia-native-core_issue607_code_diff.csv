@@ -1,0 +1,422 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vircadia/vircadia-native-core,607,9d6f08b,interface/resources/qml/hifi/tablet/ControllerSettings.qml,modified,1,1,2,"@@ -335,7 +335,7 @@ Item {
+             anchors.fill: stackView
+             id: controllerPrefereneces
+             objectName: ""TabletControllerPreferences""
+-            showCategories: [""VR Movement"", ""Game Controller"", ""Sixense Controllers"", ""Perception Neuron"", ""Leap Motion"", ""Open Sound Control (OSC)""]
++            showCategories: [""Desktop Movement"", ""VR Movement"", ""Game Controller"", ""Sixense Controllers"", ""Perception Neuron"", ""Leap Motion"", ""Open Sound Control (OSC)""]
+             categoryProperties: {
+                 ""VR Movement"" : {
+                     ""User real-world height (meters)"" : { ""anchors.right"" : ""undefined"" },"
+vircadia/vircadia-native-core,607,9d6f08b,interface/src/Application.cpp,modified,19,1,20,"@@ -868,6 +868,22 @@ bool setupEssentials(int& argc, char** argv, const QCommandLineParser& parser, b
+     DependencyManager::set<SceneScriptingInterface>();
+ #if !defined(DISABLE_QML)
+     DependencyManager::set<OffscreenUi>();
++    {
++        auto window = DependencyManager::get<OffscreenUi>()->getWindow();
++        auto desktopScriptingInterface = DependencyManager::get<DesktopScriptingInterface>();
++        QObject::connect(window, &QQuickWindow::focusObjectChanged, [desktopScriptingInterface](QObject *object) {
++            if (object) {
++                if (object->objectName() == QString(""desktop"")) {
++                    emit desktopScriptingInterface->uiFocusChanged(false);
++                    return;
++                }
++                // Signal with empty object name happens in addition to regular named ones and is not necessary here
++                if (!object->objectName().isEmpty()) {
++                    emit desktopScriptingInterface->uiFocusChanged(true);
++                }
++            }
++        });
++    }
+ #endif
+     DependencyManager::set<Midi>();
+     DependencyManager::set<PathUtils>();
+@@ -1489,7 +1505,6 @@ Application::Application(
+     qCDebug(interfaceapp, ""Initialized Display"");
+ 
+     if (_displayPlugin && !_displayPlugin->isHmd()) {
+-        _preferredCursor.set(Cursor::Manager::getIconName(Cursor::Icon::SYSTEM));
+         showCursor(Cursor::Manager::lookupIcon(_preferredCursor.get()));
+     }
+     // An audio device changed signal received before the display plugins are set up will cause a crash,
+@@ -6311,6 +6326,9 @@ void Application::update(float deltaTime) {
+         if (QCursor::pos() != point) {
+             _mouseCaptureTarget = point;
+             _ignoreMouseMove = true;
++            if (_captureMouse) {
++                _keyboardMouseDevice->updateMousePositionForCapture(QCursor::pos(), _mouseCaptureTarget);
++            }
+             QCursor::setPos(point);
+         }
+     }"
+vircadia/vircadia-native-core,607,9d6f08b,interface/src/scripting/DesktopScriptingInterface.cpp,modified,3,1,4,"@@ -60,7 +60,9 @@ static const QVariantMap RELATIVE_POSITION_ANCHOR {
+ };
+ 
+ DesktopScriptingInterface::DesktopScriptingInterface(QObject* parent, bool restricted) 
+-    : QObject(parent), _restricted(restricted) { }
++    : QObject(parent), _restricted(restricted) {
++    connect(this, &DesktopScriptingInterface::uiFocusChanged, [this] (bool isActive) { _isOverlayWindowFocused = isActive; });
++}
+ 
+ int DesktopScriptingInterface::getWidth() {
+     QSize size = qApp->getWindow()->windowHandle()->screen()->virtualSize();"
+vircadia/vircadia-native-core,607,9d6f08b,interface/src/scripting/DesktopScriptingInterface.h,modified,17,0,17,"@@ -104,6 +104,22 @@ class DesktopScriptingInterface : public QObject, public Dependency {
+     int getWidth();
+     int getHeight();
+ 
++    /*@jsdoc
++     * Checks whether the keyboard focus belongs to overlay UI window.
++     * @function Desktop.isOverlayWindowFocused
++     * @returns {boolean} <code>true</code> if the keyboard focus is on overlay UI window, <code>false</code> if not.
++     */
++    Q_INVOKABLE bool isOverlayWindowFocused() { return _isOverlayWindowFocused; };
++
++signals:
++
++    /*@jsdoc
++     * Triggered when keyboard focus changes to another overlay UI window.
++     * @param {boolean} isActive - <code>true</code> if the keyboard focus is on overlay UI window, <code>false</code> if not.
++     * @function Desktop.uiFocusChanged
++     * @returns {Signal}
++     */
++    void uiFocusChanged(bool isActive);
+ 
+ private:
+     static int flagAlwaysOnTop() { return AlwaysOnTop; }
+@@ -115,6 +131,7 @@ class DesktopScriptingInterface : public QObject, public Dependency {
+     static QVariantMap getRelativePositionAnchor();
+     Q_INVOKABLE static QVariantMap getPresentationMode();
+     const bool _restricted;
++    std::atomic<bool> _isOverlayWindowFocused { false };
+ };
+ 
+ "
+vircadia/vircadia-native-core,607,9d6f08b,interface/src/ui/LoginDialog.cpp,modified,2,0,2,"@@ -33,6 +33,7 @@
+ #include ""Application.h""
+ #include ""scripting/HMDScriptingInterface.h""
+ #include ""Constants.h""
++#include ""scripting/DesktopScriptingInterface.h""
+ 
+ HIFI_QML_DEF(LoginDialog)
+ 
+@@ -67,6 +68,7 @@ void LoginDialog::showWithSelection() {
+     auto hmd = DependencyManager::get<HMDScriptingInterface>();
+ 
+     if (!qApp->isHMDMode()) {
++        emit DependencyManager::get<DesktopScriptingInterface>()->uiFocusChanged(true);
+         if (qApp->getLoginDialogPoppedUp()) {
+             LoginDialog::show();
+             return;"
+vircadia/vircadia-native-core,607,9d6f08b,interface/src/ui/PreferencesDialog.cpp,modified,7,0,7,"@@ -343,6 +343,13 @@ void setupPreferences() {
+         preferences->addPreference(preference);
+     }
+ 
++    static const QString DESKTOP_MOVEMENT{ ""Desktop Movement"" };
++    {
++        auto getter = []()->bool { return qApp->getCamera().getMouseLook(); };
++        auto setter = [](bool value) { qApp->getCamera().setMouseLook(value); };
++        auto preference = new CheckPreference(DESKTOP_MOVEMENT, ""Mouse look (toggle with M key)"", getter, setter);
++        preferences->addPreference(preference);
++    }
+     static const QString VR_MOVEMENT{ ""VR Movement"" };
+     {
+         auto getter = [myAvatar]()->bool { return myAvatar->getAllowTeleporting(); };"
+vircadia/vircadia-native-core,607,9d6f08b,libraries/input-plugins/src/input-plugins/KeyboardMouseDevice.cpp,modified,7,3,10,"@@ -113,14 +113,18 @@ void KeyboardMouseDevice::eraseMouseClicked() {
+     _inputDevice->_buttonPressedMap.erase(_inputDevice->makeInput(Qt::RightButton, true).getChannel());
+ }
+ 
++void KeyboardMouseDevice::updateMousePositionForCapture(QPoint globalPos, QPointF captureTarget) {
++    if (!isNaN(captureTarget.x())) {
++        QPointF change = globalPos - captureTarget;
++        _accumulatedMove += QPoint(change.x(), change.y());
++    }
++}
++
+ void KeyboardMouseDevice::mouseMoveEvent(QMouseEvent* event, bool capture, QPointF captureTarget) {
+     QPoint currentPos = event->pos();
+ 
+     if (!capture) {
+         _accumulatedMove += currentPos - _lastCursor;
+-    } else if (!isNaN(captureTarget.x())) {
+-        QPointF change = event->globalPos() - captureTarget;
+-        _accumulatedMove += QPoint(change.x(), change.y());
+     }
+ 
+     // FIXME - this has the characteristic that it will show large jumps when you move the cursor"
+vircadia/vircadia-native-core,607,9d6f08b,libraries/input-plugins/src/input-plugins/KeyboardMouseDevice.h,modified,3,0,3,"@@ -93,6 +93,9 @@ class KeyboardMouseDevice : public InputPlugin {
+     void wheelEvent(QWheelEvent* event);
+     bool isWheelByTouchPad(QWheelEvent* event);
+ 
++    // This gets called from Application::update just before resetting cursor position when mouse capture is enabled
++    void updateMousePositionForCapture(QPoint globalPos, QPointF captureTarget);
++
+     static void enableTouch(bool enableTouch) { _enableTouch = enableTouch; }
+ 
+     static const char* NAME;"
+vircadia/vircadia-native-core,607,9d6f08b,libraries/shared/src/shared/Camera.cpp,modified,7,0,7,"@@ -189,6 +189,13 @@ QString Camera::getModeString() const {
+     return modeToString(_mode);
+ }
+ 
++void Camera::setMouseLook(bool mouseLook) { Setting::Handle<bool>{""MouseLookAllowed"", false }.set(mouseLook);
++    if (!mouseLook) {
++        setCaptureMouse(false);
++    }
++    emit mouseLookChanged(mouseLook);
++}
++
+ void Camera::lookAt(const glm::vec3& lookAt) {
+     glm::vec3 up = IDENTITY_UP;
+     glm::mat4 lookAtMatrix = glm::lookAt(_position, lookAt, up);"
+vircadia/vircadia-native-core,607,9d6f08b,libraries/shared/src/shared/Camera.h,modified,32,0,32,"@@ -15,6 +15,7 @@
+ #include ""../GLMHelpers.h""
+ #include ""../RegisteredMetaTypes.h""
+ #include ""../ViewFrustum.h""
++#include ""../SettingHandle.h""
+ 
+ enum CameraMode
+ {
+@@ -130,6 +131,23 @@ public slots:
+      */
+     void setCaptureMouse(bool captureMouse) { _captureMouse = captureMouse; emit captureMouseChanged(captureMouse); }
+ 
++    /*@jsdoc
++     * Gets the current mouse look setting state.
++     * @function Camera.getMouseLook
++     * @returns {boolean} <code>true</code> if the mouse look setting is enabled (mouse look can be toggled with M key in this
++     * mode), <code>false</code> if the mouse look setting is disabled.
++     */
++    bool getMouseLook() const { return Setting::Handle<bool>{""MouseLookAllowed"", false }.get(); }
++
++    /*@jsdoc
++     * Sets the mouse look setting state.  When <code>true</code>, the mouse look setting is enabled (mouse look can be toggled
++     * with M key in this mode).  When <code>false</code>, the mouse behaves normally.
++     * @function Camera.setMouseLook
++     * @param {boolean} mouseLook - <code>true</code> to enable mouse look setting, <code>false</code> to disable mouse look
++     * setting.
++     */
++    void setMouseLook(bool mouseLook);
++
+     /*@jsdoc
+      * Gets the current camera sensitivity.
+      * @function Camera.getSensitivity
+@@ -229,6 +247,20 @@ public slots:
+      */
+     void captureMouseChanged(bool newCaptureMouse);
+ 
++    /*@jsdoc
++     * Triggered when mouse look setting changes.
++     * @function Camera.mouseLookChanged
++     * @param {boolean} mouseLookChanged - The new mouse look state.
++     * @returns {Signal}
++     * @example <caption>Report mouse look state changes.</caption>
++     * function onMouseLookChanged(newMouseLook) {
++     *     print(""The mouse look has changed to "" + newMouseLook);
++     * }
++     *
++     * Camera.mouseLookChanged.connect(onMouseLookChanged);
++     */
++    void mouseLookChanged(bool newMouseLook);
++
+ private:
+     void recompose();
+     void decompose();"
+vircadia/vircadia-native-core,607,9d6f08b,scripts/system/controllers/controllerScripts.js,modified,1,0,1,"@@ -19,6 +19,7 @@ var CONTOLLER_SCRIPTS = [
+     ""grab.js"",
+     ""toggleAdvancedMovementForHandControllers.js"",
+     ""handTouch.js"",
++    ""mouseLook.js"",
+     ""controllerModules/nearParentGrabOverlay.js"",
+     ""controllerModules/stylusInput.js"",
+     ""controllerModules/equipEntity.js"","
+vircadia/vircadia-native-core,607,9d6f08b,scripts/system/controllers/mouseLook.js,added,191,0,191,"@@ -0,0 +1,191 @@
++/*
++mouseLook.js – mouse look switching script
++by rampa3 (https://github.com/rampa3) and vegaslon (https://github.com/vegaslon)
++*/
++(function() { // BEGIN LOCAL_SCOPE
++
++    var away;
++
++    var hmd = HMD.active;
++
++    var mouseLookEnabled = Camera.getMouseLook();
++
++    var tablet = Tablet.getTablet(""com.highfidelity.interface.tablet.system"");
++
++    var tabletUp;
++    
++    var keysOnOverlay = Desktop.isOverlayWindowFocused();
++
++    var tempOff = false;
++
++    Camera.mouseLookChanged.connect(onMouseLookChanged);
++
++    function onMouseLookChanged(newMouseLook) {
++        mouseLookEnabled = newMouseLook;
++    }
++
++    if (!hmd){
++        if (mouseLookEnabled) {
++            if (!keysOnOverlay) {
++                if (!tablet.tabletShown){
++                    Window.displayAnnouncement(""Mouse look: ON"");
++                    mouseLookOn();
++                } else {
++                    Window.displayAnnouncement(""Tablet is up – mouse look temporarily OFF."");
++                }
++            }
++        }
++    }
++
++    Controller.keyPressEvent.connect(onKeyPressEvent);
++
++    function onKeyPressEvent(event) {
++        if (!hmd){
++            if (event.text === 'm') {
++                if (!keysOnOverlay) {
++                    if (mouseLookEnabled) {
++                        if (!Camera.getCaptureMouse()){
++                            tempOff = false;
++                            Window.displayAnnouncement(""Mouse look: ON"");
++                            mouseLookOn();
++                        } else {
++                            tempOff = true;
++                            Window.displayAnnouncement(""Mouse look: Temporarily OFF"");
++                            mouseLookOff();
++                        }
++                    }
++                }
++            }
++        }
++    }
++
++    tablet.tabletShownChanged.connect(onTabletShownChanged);
++
++    function onTabletShownChanged() {
++        if (!hmd) {
++            if (mouseLookEnabled) {
++                if (!tablet.toolbarMode) {
++                    if (!keysOnOverlay) {
++                        if (tablet.tabletShown) {
++                            tabletUp = true;
++                            if (!tempOff) {
++                                if (!away) {
++                                    Window.displayAnnouncement(""Tablet is up – mouse look temporarily OFF."");
++                                    mouseLookOff();
++                                }
++                            }
++                        } else if (!tablet.tabletShown) {
++                            tabletUp = false;
++                            if (!tempOff) {
++                                if (!away && !keysOnOverlay) {
++                                    Window.displayAnnouncement(""Tablet hidden – mouse look ON."");
++                                    mouseLookOn();
++                                }
++                            }
++                        }
++                    }
++                }
++            }
++        }
++    }
++
++    MyAvatar.wentAway.connect(onWentAway);
++
++    function onWentAway() {
++        if (!hmd) {
++            if (mouseLookEnabled) {
++                away = true;
++                if (!keysOnOverlay) {
++                    if (!tabletUp){
++                        Window.displayAnnouncement(""Away state ON – mouse look temporarily OFF."")
++                        tempOff = false;
++                        mouseLookOff()
++                    }
++                }
++            }
++        }
++    }
++
++    MyAvatar.wentActive.connect(onWentActive);
++
++    function onWentActive() {
++        if (!hmd) {
++            if (mouseLookEnabled) {
++                away = false;
++                if (!keysOnOverlay) {
++                    if (!tabletUp) {
++                        Window.displayAnnouncement(""Away state OFF – mouse look ON."");
++                        mouseLookOn();
++                    }
++                }
++            }
++        }
++    }
++
++    HMD.displayModeChanged.connect(onDisplayModeChanged);
++
++    function onDisplayModeChanged() {
++        if (mouseLookEnabled) {
++            if (HMD.active) {
++                hmd = true;
++                mouseLookOff();
++            } else {
++                hmd = false;
++                if (!tempOff) {
++                    if (!keysOnOverlay) {
++                        if (!tabletUp) {
++                            mouseLookOn();
++                        }
++                    }
++                }
++            }
++        }
++    }
++
++    function mouseLookOn() {
++        Camera.captureMouse = true;
++    }
++
++    function mouseLookOff() {
++        Camera.captureMouse = false;
++    }
++    
++    Desktop.uiFocusChanged.connect(onUiFocusChanged);
++    
++    function onUiFocusChanged(keyFocus) {
++        if (!hmd) {
++            if (mouseLookEnabled) {
++                if (keyFocus) {
++                    keysOnOverlay = true;
++                    if (Camera.captureMouse) {
++                        mouseLookOff();
++                    }
++                } else {
++                    keysOnOverlay = false;
++                    if (!tablet.tabletShown) {
++                        if (!tempOff) {
++                            if (!away) {
++                                mouseLookOn();
++                            }
++                        }
++                    }
++                }
++            }
++        }
++    }
++
++    Script.scriptEnding.connect(onScriptEnding);
++
++    function onScriptEnding() {
++        Camera.captureMouse = false;
++        Camera.mouseLookChanged.disconnect(onMouseLookChanged);
++        Controller.keyPressEvent.disconnect(onKeyPressEvent);
++        tablet.tabletShownChanged.disconnect(onTabletShownChanged);
++        MyAvatar.wentAway.disconnect(onWentAway);
++        MyAvatar.wentActive.disconnect(onWentActive);
++        HMD.displayModeChanged.disconnect(onDisplayModeChanged);
++        Desktop.uiFocusChanged.disconnect(onUiFocusChanged);
++        Script.scriptEnding.disconnect(onScriptEnding);
++    }
++
++}()); // END LOCAL_SCOPE"

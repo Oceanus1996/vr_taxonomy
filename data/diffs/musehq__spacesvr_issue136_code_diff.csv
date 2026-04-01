@@ -1,0 +1,1113 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+musehq/spacesvr,136,419b7a35ce0410bb4cb251a7e32c3a6b0b7a8827,examples/ideas/Wings.tsx,added,26,0,26,"@@ -0,0 +1,26 @@
++import { useEffect, useState } from ""react"";
++import { usePlayer, isTyping } from ""spacesvr"";
++import { Vector3 } from ""three"";
++
++export default function Wings() {
++  const { velocity } = usePlayer();
++
++  const [dummy] = useState(() => new Vector3());
++
++  useEffect(() => {
++    const jump = (e: KeyboardEvent) => {
++      if (e.key.toLowerCase() === "" "" && !isTyping() && !e.metaKey) {
++        dummy.copy(velocity.get());
++        dummy.y = 5;
++        velocity.set(dummy);
++      }
++    };
++
++    document.addEventListener(""keypress"", jump);
++    return () => {
++      document.removeEventListener(""keypress"", jump);
++    };
++  }, [dummy, velocity]);
++
++  return null;
++}"
+musehq/spacesvr,136,419b7a35ce0410bb4cb251a7e32c3a6b0b7a8827,examples/worlds/Workshop.tsx,modified,2,0,2,"@@ -13,6 +13,7 @@ import Title from ""../ideas/Title"";
+ import Link from ""../ideas/Link"";
+ import Analytics from ""../ideas/Analytics"";
+ import Bloom from ""../ideas/Bloom"";
++import Wings from ""../ideas/Wings"";
+ 
+ export default function Workshop() {
+   const [value, setValue] = useState(""hello world"");
+@@ -45,6 +46,7 @@ export default function Workshop() {
+     <StandardReality
+       environmentProps={{ dev: process.env.NODE_ENV === ""development"" }}
+     >
++      <Wings />
+       <Image
+         src=""https://uploads.codesandbox.io/uploads/user/b3e56831-8b98s-4fee-b941-0e27f39883ab/I9vI-RoNmD7W.png""
+         position={[-8, 2, 6.4]}"
+musehq/spacesvr,136,419b7a35ce0410bb4cb251a7e32c3a6b0b7a8827,package.json,modified,1,1,2,"@@ -1,6 +1,6 @@
+ {
+   ""name"": ""spacesvr"",
+-  ""version"": ""2.6.0"",
++  ""version"": ""2.6.1"",
+   ""private"": true,
+   ""description"": ""A standardized reality for future of the 3D Web"",
+   ""keywords"": ["
+musehq/spacesvr,136,419b7a35ce0410bb4cb251a7e32c3a6b0b7a8827,src/ideas/basis/VisualSite/index.tsx,modified,1,0,1,"@@ -20,6 +20,7 @@ export default function VisualSite(props: VisualSiteProps) {
+           color=""white""
+           outlineWidth={0.025}
+           rotation-y={-Math.PI / 2}
++          renderOrder={2}
+         >
+           /{site.slug}
+         </Text>"
+musehq/spacesvr,136,419b7a35ce0410bb4cb251a7e32c3a6b0b7a8827,src/ideas/modifiers/Interactable/components/MobileDesktopInteractable.tsx,modified,4,2,6,"@@ -34,12 +34,14 @@ export default function MobileDesktopInteractable(props: InteractableProps) {
+ 
+   const getIntersection = useCallback(() => {
+     if (!group.current) return undefined;
++    RAYCASTER.firstHitOnly = true;
+     const intersects = RAYCASTER.intersectObject(group.current, true);
++    RAYCASTER.firstHitOnly = false;
+     return intersects.length > 0 ? intersects[0] : undefined;
+   }, [RAYCASTER]);
+ 
+   // continuously update the hover state if we have a hover handler
+-  useLimitedFrame(20, () => {
++  useLimitedFrame(17, () => {
+     if (!group.current || !DETECT_HOVER) return;
+ 
+     const inter = getIntersection();
+@@ -62,7 +64,7 @@ export default function MobileDesktopInteractable(props: InteractableProps) {
+ 
+     group.current.traverse((obj) => {
+       const mesh = obj as Mesh;
+-      if (mesh.isMesh) enableBVHRaycast(mesh, 500);
++      if (mesh.isMesh) enableBVHRaycast(mesh, 50);
+     });
+   }, []);
+ "
+musehq/spacesvr,136,419b7a35ce0410bb4cb251a7e32c3a6b0b7a8827,src/ideas/modifiers/Tool/index.tsx,modified,11,1,12,"@@ -15,6 +15,7 @@ type ToolProps = {
+   pinY?: boolean;
+   range?: number;
+   orderIndex?: number;
++  bobStrength?: number;
+   onSwitch?: (enabled: boolean) => void;
+ };
+ 
+@@ -35,6 +36,7 @@ export function Tool(props: ToolProps) {
+     face = true,
+     pinY = false,
+     range,
++    bobStrength,
+     orderIndex,
+     onSwitch,
+   } = props;
+@@ -59,11 +61,19 @@ export function Tool(props: ToolProps) {
+     if (onSwitch) onSwitch(toolbelt.activeTool?.name === name);
+   }, [toolbelt.activeTool, onSwitch, name]);
+ 
++  if (!visible) return null;
++
+   return (
+     <>
+       {createPortal(
+         <group name={`tool-${name}`} visible={visible}>
+-          <HUD pos={pos} pinY={pinY} distance={DISTANCE} range={range}>
++          <HUD
++            pos={pos}
++            pinY={pinY}
++            distance={DISTANCE}
++            range={range}
++            bobStrength={bobStrength}
++          >
+             <OnScreen distance={DISTANCE} name={name} pos={pos}>
+               <FacePlayer enabled={face}>{visible && children}</FacePlayer>
+             </OnScreen>"
+musehq/spacesvr,136,419b7a35ce0410bb4cb251a7e32c3a6b0b7a8827,src/ideas/modifiers/Tool/logic/quat.ts,added,100,0,100,"@@ -0,0 +1,100 @@
++import { Quaternion } from ""three"";
++
++const dummy = new Quaternion();
++
++// taken from https://gist.github.com/sketchpunk/3568150a04b973430dfe8fd29bf470c8
++export class QuaterionSpring {
++  velocity: Float32Array;
++  stiffness: number;
++  damping: number;
++
++  constructor(damping = 5, stiffness = 30) {
++    this.velocity = new Float32Array(4);
++    this.stiffness = stiffness;
++    this.damping = damping;
++  }
++
++  _velLenSqr() {
++    return (
++      this.velocity[0] ** 2 +
++      this.velocity[1] ** 2 +
++      this.velocity[2] ** 2 +
++      this.velocity[3] ** 2
++    );
++  }
++
++  // Harmonic oscillation
++  // https://stackoverflow.com/questions/44688112/spring-physics-applied-to-quaternions-using-python
++  oscillationStep(cq: Quaternion, target: Quaternion, dt: number) {
++    // Check when the spring is done.
++    const dot = cq.dot(target);
++    if (dot >= 0.9999 && this._velLenSqr() < 0.000001) {
++      cq.copy(target);
++      return;
++    }
++
++    const tq = dummy;
++    if (dot < 0) {
++      // Use the closest rotation
++      tq.x = -target.x;
++      tq.y = -target.y;
++      tq.z = -target.z;
++      tq.w = -target.w;
++    } else {
++      tq.copy(target);
++    }
++
++    this.velocity[0] +=
++      (-this.stiffness * (cq.x - tq.x) - this.damping * this.velocity[0]) * dt;
++    this.velocity[1] +=
++      (-this.stiffness * (cq.y - tq.y) - this.damping * this.velocity[1]) * dt;
++    this.velocity[2] +=
++      (-this.stiffness * (cq.z - tq.z) - this.damping * this.velocity[2]) * dt;
++    this.velocity[3] +=
++      (-this.stiffness * (cq.w - tq.w) - this.damping * this.velocity[3]) * dt;
++
++    cq.x += this.velocity[0] * dt;
++    cq.y += this.velocity[1] * dt;
++    cq.z += this.velocity[2] * dt;
++    cq.w += this.velocity[3] * dt;
++    cq.normalize();
++  }
++
++  // Critically Damped Spring
++  criticallyStep(cq: Quaternion, target: Quaternion, dt: number) {
++    // Check when the spring is done.
++    const dot = cq.dot(target);
++    if (dot >= 0.9999 && this._velLenSqr() < 0.000001) {
++      cq.copy(target);
++      return;
++    }
++
++    const tq = dummy;
++    if (dot < 0) {
++      // Use the closest rotation
++      tq.x = -target.x;
++      tq.y = -target.y;
++      tq.z = -target.z;
++      tq.w = -target.w;
++    } else {
++      tq.copy(target);
++    }
++
++    const dSqrDt = this.damping * this.damping * dt,
++      n2 = 1 + this.damping * dt,
++      n2Sqr = n2 * n2;
++
++    this.velocity[0] = (this.velocity[0] - (cq.x - tq.x) * dSqrDt) / n2Sqr;
++    this.velocity[1] = (this.velocity[1] - (cq.y - tq.y) * dSqrDt) / n2Sqr;
++    this.velocity[2] = (this.velocity[2] - (cq.z - tq.z) * dSqrDt) / n2Sqr;
++    this.velocity[3] = (this.velocity[3] - (cq.w - tq.w) * dSqrDt) / n2Sqr;
++
++    cq.x += this.velocity[0] * dt;
++    cq.y += this.velocity[1] * dt;
++    cq.z += this.velocity[2] * dt;
++    cq.w += this.velocity[3] * dt;
++    cq.normalize();
++
++    return cq;
++  }
++}"
+musehq/spacesvr,136,419b7a35ce0410bb4cb251a7e32c3a6b0b7a8827,src/ideas/modifiers/Tool/modifiers/HUD.tsx,modified,99,28,127,"@@ -1,56 +1,97 @@
+-import { ReactNode, useRef, useState } from ""react"";
+-import { useFrame, useThree } from ""@react-three/fiber"";
+-import { Group, PerspectiveCamera, Quaternion, Vector2 } from ""three"";
++import { ReactNode, useMemo, useRef, useState } from ""react"";
++import { useFrame } from ""@react-three/fiber"";
++import {
++  Euler,
++  Group,
++  MathUtils,
++  PerspectiveCamera,
++  Quaternion,
++  Vector2,
++} from ""three"";
+ import { getHudPos } from ""../../../../logic/hud"";
++import { QuaterionSpring } from ""../logic/quat"";
++import { config, useSpring } from ""@react-spring/three"";
++import { usePlayer } from ""../../../../layers/Player/"";
+ 
+ type HUDProps = {
+   children?: ReactNode | ReactNode[];
+   pos: [number, number];
+   distance: number;
+   pinY?: boolean;
+   range?: number;
++  bobStrength?: number;
+ };
+ 
+ /**
+- * Place the children in front of the camera
++ * Place the children in front of the camera with some sway
++ * 1. I tried springing the quaternion, but it's not continuous and causes a jump
++ * 2. I found a continuous quaternion spring, but it was not tight enough https://gist.github.com/sketchpunk/3568150a04b973430dfe8fd29bf470c8
++ * 3. solution was to move tool in screen spacing by springing pos value offsets based on rotation velocity
++ *    springed quat rotation still used for range
++ *
+  * @param props
+  * @constructor
+  */
+ export default function HUD(props: HUDProps) {
+-  const { children, pos, pinY = false, distance, range = 0 } = props;
++  const {
++    children,
++    pos,
++    pinY = false,
++    distance,
++    range = 0,
++    bobStrength,
++  } = props;
+ 
+-  const t = 0.01;
++  const { velocity } = usePlayer();
+ 
+-  const camera = useThree((state) => state.camera);
+-  const size = useThree((state) => state.size);
++  const t = 0.00001;
+ 
+   const group = useRef<Group>(null);
+-  const [vecPos] = useState(new Vector2());
+-  const [lerpPos] = useState(new Vector2().fromArray(pos));
++  const [targetPos] = useState(new Vector2());
++  const [lerpedPos] = useState(new Vector2().fromArray(pos));
+   const [lerpedQuat] = useState(new Quaternion());
++  const [targetQuat] = useState(new Quaternion());
++  const [lastQuat] = useState(new Quaternion());
++  const [lastEuler] = useState(new Euler(0, 0, 0, ""YXZ""));
++  const [thisEuler] = useState(new Euler(0, 0, 0, ""YXZ""));
+   const [dummy1] = useState(new Quaternion());
+   const [dummy2] = useState(new Quaternion());
+ 
+-  useFrame((_, delta) => {
++  const [spring, set] = useSpring(() => ({
++    offset: [0, 0],
++    config: config.stiff,
++  }));
++
++  const qs = useMemo(() => new QuaterionSpring(50, 100), []);
++
++  useFrame(({ camera, clock }, delta) => {
+     if (!group.current) return;
+ 
+-    const alpha = 1 - Math.pow(t * 0.0005 * size.width, delta);
++    const alpha = 1 - Math.pow(t, delta);
+ 
+-    vecPos.fromArray(pos);
+-    lerpPos.lerp(vecPos, alpha);
++    // apply passes pos and offset pos
++    const off = spring.offset.get();
++    targetPos.fromArray(pos);
++    targetPos.x += off[0];
++    targetPos.y += off[1];
++    lerpedPos.lerp(targetPos, alpha);
+ 
+     // calculate x position based on camera and screen width
+-    const { x, y } = getHudPos(
+-      lerpPos.toArray(),
+-      camera as PerspectiveCamera,
+-      distance
+-    );
++    const hud = getHudPos(lerpedPos, camera as PerspectiveCamera, distance);
++    const { x, y } = hud;
+     group.current.position.set(x, y, -distance);
+ 
+-    const RANGE_SET = range > 0;
++    // calculate rotation velocities about the respective ROTATION axis (not screen space)
++    dummy1.copy(lastQuat);
++    dummy2.copy(camera.quaternion);
++    thisEuler.setFromQuaternion(camera.quaternion);
++    let y_axis_vel = dummy1.multiply(dummy2.invert()).y / delta;
++    let x_axis_vel = (thisEuler.x - lastEuler.x) / delta;
+ 
++    // implement range
++    const RANGE_SET = range > 0;
+     if (!RANGE_SET) {
+-      lerpedQuat.slerp(camera.quaternion, alpha);
++      lerpedQuat.copy(camera.quaternion);
+     } else {
+       // find angle along y axis
+       dummy1.copy(lerpedQuat);
+@@ -63,19 +104,49 @@ export default function HUD(props: HUDProps) {
+       dummy2.normalize();
+       const angle = dummy1.angleTo(dummy2);
+ 
+-      if (angle > range) lerpedQuat.slerp(camera.quaternion, alpha);
+-    }
+-
+-    if (!pinY) {
+-      lerpedQuat.x = 0;
+-      lerpedQuat.z = 0;
++      // if out of range, move it back
++      if (angle > range) {
++        const diff = angle - range;
++        targetQuat.copy(lerpedQuat);
++        targetQuat.rotateTowards(camera.quaternion, diff);
++        if (!pinY) {
++          targetQuat.x = 0;
++          targetQuat.z = 0;
++          targetQuat.normalize();
++        }
++      } else {
++        // disable offsets if moving camera within range
++        x_axis_vel = 0;
++        y_axis_vel = 0;
++      }
++      qs.criticallyStep(lerpedQuat, targetQuat, delta);
+     }
+ 
++    // bob a bit based on player velocity
++    const vel_len = velocity.get().length() > 1 ? 1 : 0;
++    const strength = bobStrength || Math.max(lerpedPos.length(), 0.05);
++    x_axis_vel +=
++      Math.sin(clock.getElapsedTime() * 15) * vel_len * 0.2 * strength;
++    y_axis_vel +=
++      Math.cos(clock.getElapsedTime() * 20 + 12) * vel_len * 0.1 * strength;
++
++    // set spring targets based on velocities
++    const scale_ang = 0.1;
++    const max_ang = 0.3;
++    const x_off = MathUtils.clamp(-y_axis_vel * scale_ang, -max_ang, max_ang);
++    const y_off = MathUtils.clamp(-x_axis_vel * scale_ang, -max_ang, max_ang);
++    set({ offset: [x_off, y_off] });
++
++    // range dependent, move items to camera quat
+     group.current.position.applyQuaternion(lerpedQuat);
+ 
+-    // needed to that children positions are applied in screen space
++    // needed so that children positions are applied in screen space
+     // should probably be moved to draggable .. ? idk, maybe the supposition is that children of hud are in screen space
+     group.current.quaternion.copy(camera.quaternion);
++
++    // update last values
++    lastQuat.copy(camera.quaternion);
++    lastEuler.setFromQuaternion(camera.quaternion);
+   });
+ 
+   return ("
+musehq/spacesvr,136,419b7a35ce0410bb4cb251a7e32c3a6b0b7a8827,src/ideas/ui/Button.tsx,modified,7,3,10,"@@ -12,6 +12,7 @@ type ButtonProps = {
+   font?: string;
+   fontSize?: number;
+   maxWidth?: number;
++  width?: number;
+   textColor?: string;
+   color?: string;
+   outline?: boolean;
+@@ -26,6 +27,7 @@ export function Button(props: ButtonProps) {
+     onClick,
+     font = ""https://d27rt3a60hh1lx.cloudfront.net/fonts/Quicksand_Bold.otf"",
+     fontSize = 0.05,
++    width,
+     maxWidth = 0.25,
+     textColor = ""black"",
+     color = ""#fff"",
+@@ -83,7 +85,8 @@ export function Button(props: ButtonProps) {
+   }, []);
+ 
+   const PADDING = fontSize * 0.9;
+-  const WIDTH = dims[0] + PADDING * 2;
++  const MAX_WIDTH = width ? Math.min(width, maxWidth) : maxWidth;
++  const WIDTH = (width || dims[0]) + PADDING * 2;
+   const HEIGHT = dims[1] + PADDING;
+   const DEPTH = fontSize * 1.1;
+   const OUTLINE_WIDTH = outline ? fontSize * 0.075 : 0;
+@@ -97,12 +100,13 @@ export function Button(props: ButtonProps) {
+           color={textColor}
+           font={font}
+           fontSize={fontSize}
+-          maxWidth={maxWidth}
++          maxWidth={MAX_WIDTH}
+           outlineWidth={OUTLINE_WIDTH}
+           outlineColor={outlineColor}
+           anchorY=""middle""
+           textAlign=""center""
+-          position-z={DEPTH / 2 + 0.0025}
++          position-z={DEPTH / 2 + 0.001}
++          renderOrder={2}
+         >
+           {children}
+         </Text>"
+musehq/spacesvr,136,419b7a35ce0410bb4cb251a7e32c3a6b0b7a8827,src/ideas/ui/Key.tsx,modified,8,6,14,"@@ -20,6 +20,8 @@ export function Key(props: Props) {
+     ...config.stiff,
+   });
+ 
++  const DEPTH = 0.25;
++
+   useEffect(() => {
+     const pressed = (e: KeyboardEvent) =>
+       keyPress.map((k) => k.toLowerCase()).includes(e.key.toLowerCase());
+@@ -49,19 +51,19 @@ export function Key(props: Props) {
+ 
+   return (
+     <group name=""spacesvr-key"" {...rest}>
+-      <group position-z={-0.5}>
++      <group position-z={-DEPTH}>
+         <animated.group scale-z={scale}>
+-          <group position-z={0.25}>
++          <group position-z={DEPTH / 2}>
+             <RoundedBox
+-              args={[1, 1, 0.5]}
+-              radius={0.125}
+-              position-z={-0.25 - 0.01}
++              args={[1, 1, DEPTH]}
++              radius={DEPTH * 0.5}
++              position-z={-DEPTH / 2 - 0.01}
+               smoothness={10}
+             >
+               {/* @ts-ignore */}
+               <animated.meshStandardMaterial color={color} />
+             </RoundedBox>
+-            <Text color=""black"" fontSize={0.5}>
++            <Text color=""black"" fontSize={0.5} renderOrder={2}>
+               {keyCode}
+             </Text>
+           </group>"
+musehq/spacesvr,136,419b7a35ce0410bb4cb251a7e32c3a6b0b7a8827,src/ideas/ui/TextInput/index.tsx,modified,1,0,1,"@@ -322,6 +322,7 @@ export function TextInput(props: TextProps) {
+             maxWidth={INNER_WIDTH}
+             // @ts-ignore
+             whiteSpace=""nowrap""
++            renderOrder={2}
+           >
+             {""""}
+           </Text>"
+musehq/spacesvr,136,419b7a35ce0410bb4cb251a7e32c3a6b0b7a8827,src/layers/Environment/ui/PauseMenu/index.tsx,modified,1,1,2,"@@ -48,7 +48,7 @@ export default function PauseMenu(props: PauseMenuProps) {
+   const PAUSE_ITEMS: PauseItem[] = [
+     ...pauseMenuItems,
+     {
+-      text: ""v2.6.0"",
++      text: ""v2.6.1"",
+       link: ""https://www.npmjs.com/package/spacesvr"",
+     },
+     ...menuItems,"
+musehq/spacesvr,136,419b7a35ce0410bb4cb251a7e32c3a6b0b7a8827,src/layers/Network/index.tsx,modified,1,1,2,"@@ -41,7 +41,7 @@ export function Network(props: NetworkLayerProps) {
+   return (
+     <NetworkContext.Provider value={connection}>
+       {!disableEntities && <NetworkedEntities />}
+-      {connectionConfig.voice && <WalkieTalkie />}
++      {connection.voice && <WalkieTalkie />}
+       {children}
+     </NetworkContext.Provider>
+   );"
+musehq/spacesvr,136,419b7a35ce0410bb4cb251a7e32c3a6b0b7a8827,src/layers/Player/components/colliders/CapsuleCollider.tsx,renamed,1,1,2,"@@ -1,6 +1,6 @@
+ import { ShapeType, Triplet, useCompoundBody } from ""@react-three/cannon"";
+ import { useEffect, useRef } from ""react"";
+-import { useEnvironment } from ""../../Environment"";
++import { useEnvironment } from ""../../../Environment"";
+ import { Group } from ""three"";
+ 
+ // height of 0.9 (eye level) for a perceived height of 1"
+musehq/spacesvr,136,419b7a35ce0410bb4cb251a7e32c3a6b0b7a8827,src/layers/Player/components/controls/DragControls.tsx,renamed,1,1,2,"@@ -2,7 +2,7 @@ import { useRef, useEffect, useState } from ""react"";
+ import { useFrame, useThree } from ""@react-three/fiber"";
+ import { config, useSpring } from ""@react-spring/three"";
+ import { Vector2, Euler } from ""three"";
+-import { useEnvironment } from ""../../Environment"";
++import { useEnvironment } from ""../../../Environment"";
+ 
+ const DRAG_SENSITIVITY = new Vector2(0.16, 0.16);
+ const HOVER_SENSITIVITY = new Vector2(0.02, 0.02);"
+musehq/spacesvr,136,419b7a35ce0410bb4cb251a7e32c3a6b0b7a8827,src/layers/Player/components/controls/GyroControls.tsx,renamed,2,2,4,"@@ -7,8 +7,8 @@ import {
+   DefaultTouch,
+   getCurrentTouch,
+   tappedNipple,
+-} from ""../utils/touch"";
+-import { DeviceOrientationControls } from ""../lib/DeviceOrientationControls"";
++} from ""../../logic/touch"";
++import { DeviceOrientationControls } from ""three-stdlib"";
+ 
+ const ALPHA_SENSITIVITY = 0.008;
+ "
+musehq/spacesvr,136,419b7a35ce0410bb4cb251a7e32c3a6b0b7a8827,src/layers/Player/components/controls/HoverControls.tsx,renamed,0,0,0,
+musehq/spacesvr,136,419b7a35ce0410bb4cb251a7e32c3a6b0b7a8827,src/layers/Player/components/controls/KeyboardMovement.tsx,renamed,1,1,2,"@@ -1,6 +1,6 @@
+ import { useRef, useEffect, MutableRefObject } from ""react"";
+ import { Vector3 } from ""three"";
+-import { useEnvironment } from ""../../Environment"";
++import { useEnvironment } from ""../../../Environment"";
+ 
+ type KeyboardMovementProps = {
+   direction: MutableRefObject<Vector3>;"
+musehq/spacesvr,136,419b7a35ce0410bb4cb251a7e32c3a6b0b7a8827,src/layers/Player/components/controls/NippleMovement.tsx,renamed,1,1,2,"@@ -2,7 +2,7 @@ import { useRef, useEffect, MutableRefObject } from ""react"";
+ import { Global, css } from ""@emotion/react"";
+ import { Vector3 } from ""three"";
+ import nipplejs, { JoystickManager } from ""nipplejs"";
+-import { useEnvironment } from ""../../Environment"";
++import { useEnvironment } from ""../../../Environment"";
+ 
+ type NippleMovementProps = {
+   direction: MutableRefObject<Vector3>;"
+musehq/spacesvr,136,419b7a35ce0410bb4cb251a7e32c3a6b0b7a8827,src/layers/Player/components/controls/PointerLockControls.tsx,renamed,6,4,10,"@@ -1,7 +1,7 @@
+-import { useEffect, useCallback, useRef } from ""react"";
++import { useEffect, useCallback, useRef, useState } from ""react"";
+ import { useFrame, useThree } from ""@react-three/fiber"";
+-import { Euler } from ""three"";
+-import { PauseEvent, useEnvironment } from ""../../Environment"";
++import { Euler, Vector3 } from ""three"";
++import { PauseEvent, useEnvironment } from ""../../../Environment"";
+ import * as THREE from ""three"";
+ 
+ const MIN_POLAR_ANGLE = 0; // radians
+@@ -25,6 +25,7 @@ export default function PointerLockCamera() {
+   const { paused, setPaused, events } = useEnvironment();
+ 
+   const { current: euler } = useRef(new Euler(0, 0, 0, ""YXZ""));
++  const [dummy] = useState(new Vector3());
+   const isLocked = useRef(false);
+   const lock = () => domElement.requestPointerLock();
+   const unlock = () => domElement.ownerDocument.exitPointerLock();
+@@ -33,7 +34,8 @@ export default function PointerLockCamera() {
+     if (isLocked.current) {
+       const lookAt = new THREE.Vector3(0, 0, -1);
+       lookAt.applyQuaternion(camera.quaternion);
+-      lookAt.multiply(new THREE.Vector3(1, 0, 1)).normalize();
++      dummy.set(1, 0, 1);
++      lookAt.multiply(dummy).normalize();
+     }
+   });
+ "
+musehq/spacesvr,136,419b7a35ce0410bb4cb251a7e32c3a6b0b7a8827,src/layers/Player/components/controls/TouchFPSCamera.tsx,renamed,1,1,2,"@@ -6,7 +6,7 @@ import {
+   DefaultTouch,
+   getCurrentTouch,
+   tappedNipple,
+-} from ""../utils/touch"";
++} from ""../../logic/touch"";
+ 
+ const DRAG_SENSITIVITY = new Vector2(0.7, 0.7);
+ "
+musehq/spacesvr,136,419b7a35ce0410bb4cb251a7e32c3a6b0b7a8827,src/layers/Player/components/controls/VRControllerMovement.tsx,renamed,0,0,0,
+musehq/spacesvr,136,419b7a35ce0410bb4cb251a7e32c3a6b0b7a8827,src/layers/Player/index.tsx,modified,77,25,102,"@@ -5,23 +5,42 @@ import {
+   useMemo,
+   createContext,
+   useContext,
++  useCallback,
+ } from ""react"";
+ import { useFrame, useThree } from ""@react-three/fiber"";
+ import { Camera, Quaternion, Raycaster, Vector3 } from ""three"";
+-import NippleMovement from ""./controls/NippleMovement"";
+-import KeyboardMovement from ""./controls/KeyboardMovement"";
+-import PointerLockControls from ""./controls/PointerLockControls"";
+-import TouchFPSCamera from ""./controls/TouchFPSCamera"";
++import NippleMovement from ""./components/controls/NippleMovement"";
++import KeyboardMovement from ""./components/controls/KeyboardMovement"";
++import PointerLockControls from ""./components/controls/PointerLockControls"";
++import TouchFPSCamera from ""./components/controls/TouchFPSCamera"";
+ import {
+   useCapsuleCollider,
+   VisibleCapsuleCollider,
+-} from ""./colliders/CapsuleCollider"";
+-import { GyroControls } from ""./controls/GyroControls"";
+-import { useSpringVelocity } from ""./utils/velocity"";
+-import { createPlayerState } from ""./utils/player"";
++} from ""./components/colliders/CapsuleCollider"";
++import { GyroControls } from ""./components/controls/GyroControls"";
++import { useSpringVelocity } from ""./logic/velocity"";
+ import { useEnvironment } from ""../Environment"";
+-import VRControllerMovement from ""./controls/VRControllerMovement"";
+-import { PlayerState } from ""./types/player"";
++import VRControllerMovement from ""./components/controls/VRControllerMovement"";
++import { useControlLock } from ""./logic/controls"";
++import { useBob } from ""./logic/bob"";
++
++type PlayerVec = {
++  set: (vec: Vector3) => void;
++  get: () => Vector3;
++};
++
++type PlayerControls = {
++  lock: () => void;
++  unlock: () => void;
++  isLocked: () => boolean;
++};
++
++type PlayerState = {
++  position: PlayerVec;
++  velocity: PlayerVec;
++  controls: PlayerControls;
++  raycaster: Raycaster;
++};
+ 
+ export const PlayerContext = createContext({} as PlayerState);
+ export const usePlayer = () => useContext(PlayerContext);
+@@ -38,19 +57,27 @@ export type PlayerProps = {
+   };
+ };
+ 
+-type PlayerLayer = { children: ReactNode[] | ReactNode } & PlayerProps;
++type PlayerLayer = {
++  children: ReactNode[] | ReactNode;
++} & PlayerProps;
+ 
+ /**
+  * Player represents a user controlled entity, complete with a
+  * control scheme and a physical representation that interacts with other physics-
+  * enabled objects.
+  *
+- *
+- *
+  * @constructor
+  */
+ export function Player(props: PlayerLayer) {
+-  const { children, pos = [0, 1, 0], rot = 0, speed = SPEED, controls } = props;
++  const {
++    children,
++    pos = [0, 1, 0],
++    rot = 0,
++    speed = SPEED,
++    controls = {
++      disableGyro: true,
++    },
++  } = props;
+ 
+   const camera = useThree((state) => state.camera);
+   const gl = useThree((state) => state.gl);
+@@ -71,6 +98,8 @@ export function Player(props: PlayerLayer) {
+     []
+   );
+ 
++  const bob = useBob(velocity, direction);
++
+   // initial rotation
+   useEffect(() => {
+     // rotation happens before position move
+@@ -92,7 +121,7 @@ export function Player(props: PlayerLayer) {
+     };
+   }, [bodyApi, bodyApi.position, bodyApi.velocity]);
+ 
+-  useFrame(() => {
++  useFrame(({ clock }) => {
+     const cam: Camera = device.xr ? gl.xr.getCamera(camera) : camera;
+ 
+     // update raycaster on desktop (mobile uses default)
+@@ -106,24 +135,47 @@ export function Player(props: PlayerLayer) {
+ 
+     if (!lockControls.current) {
+       updateVelocity(cam, velocity.current);
++      bob.update(clock);
+     }
+   });
+ 
+-  const state = createPlayerState(
+-    bodyApi,
+-    position,
+-    velocity,
+-    lockControls,
+-    device.mobile ? defaultRaycaster : raycaster
++  const setPosition = useCallback(
++    (pos: Vector3) => {
++      bodyApi.position.set(pos.x, pos.y, pos.z);
++      position.current.copy(pos);
++    },
++    [bodyApi.position]
++  );
++
++  const setVelocity = useCallback(
++    (vel: Vector3) => {
++      bodyApi.velocity.set(vel.x, vel.y, vel.z);
++      velocity.current.copy(vel);
++    },
++    [bodyApi.velocity]
+   );
+ 
++  const controlLock = useControlLock(lockControls);
++
++  const value = {
++    position: {
++      get: () => position.current.clone(),
++      set: setPosition,
++    },
++    velocity: {
++      get: () => velocity.current.clone(),
++      set: setVelocity,
++    },
++    controls: controlLock,
++    raycaster: device.mobile ? defaultRaycaster : raycaster,
++  };
++
+   return (
+-    <PlayerContext.Provider value={state}>
++    <PlayerContext.Provider value={value}>
+       {device.mobile && (
+         <>
+-          {controls?.disableGyro ? (
+-            <TouchFPSCamera />
+-          ) : (
++          {controls?.disableGyro && <TouchFPSCamera />}
++          {!controls?.disableGyro && (
+             <GyroControls fallback={<TouchFPSCamera />} />
+           )}
+           <NippleMovement direction={direction} />"
+musehq/spacesvr,136,419b7a35ce0410bb4cb251a7e32c3a6b0b7a8827,src/layers/Player/lib/DeviceOrientationControls.js,removed,0,157,157,"@@ -1,157 +0,0 @@
+-import { Euler, EventDispatcher, MathUtils, Quaternion, Vector3 } from ""three"";
+-
+-const _zee = new Vector3(0, 0, 1);
+-const _euler = new Euler();
+-const _q0 = new Quaternion();
+-const _q1 = new Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5)); // - PI/2 around the x-axis
+-
+-const _changeEvent = { type: ""change"" };
+-
+-class DeviceOrientationControls extends EventDispatcher {
+-  constructor(object) {
+-    super();
+-
+-    if (window.isSecureContext === false) {
+-      console.error(
+-        ""THREE.DeviceOrientationControls: DeviceOrientationEvent is only available in secure contexts (https)""
+-      );
+-    }
+-
+-    const scope = this;
+-
+-    const EPS = 0.000001;
+-    const lastQuaternion = new Quaternion();
+-
+-    this.object = object;
+-    this.object.rotation.reorder(""YXZ"");
+-
+-    this.enabled = true;
+-
+-    this.deviceOrientation = {};
+-    this.screenOrientation = 0;
+-
+-    this.alphaOffset = 0; // radians
+-
+-    const onDeviceOrientationChangeEvent = function (event) {
+-      scope.deviceOrientation = event;
+-    };
+-
+-    const onScreenOrientationChangeEvent = function () {
+-      scope.screenOrientation = window.orientation || 0;
+-    };
+-
+-    // The angles alpha, beta and gamma form a set of intrinsic Tait-Bryan angles of type Z-X'-Y''
+-
+-    const setObjectQuaternion = function (
+-      quaternion,
+-      alpha,
+-      beta,
+-      gamma,
+-      orient
+-    ) {
+-      _euler.set(beta, alpha, -gamma, ""YXZ""); // 'ZXY' for the device, but 'YXZ' for us
+-
+-      quaternion.setFromEuler(_euler); // orient the device
+-
+-      quaternion.multiply(_q1); // camera looks out the back of the device, not the top
+-
+-      quaternion.multiply(_q0.setFromAxisAngle(_zee, -orient)); // adjust for screen orientation
+-    };
+-
+-    this.connect = function () {
+-      onScreenOrientationChangeEvent(); // run once on load
+-
+-      // iOS 13+
+-
+-      if (
+-        window.DeviceOrientationEvent !== undefined &&
+-        typeof window.DeviceOrientationEvent.requestPermission === ""function""
+-      ) {
+-        window.DeviceOrientationEvent.requestPermission()
+-          .then(function (response) {
+-            if (response == ""granted"") {
+-              window.addEventListener(
+-                ""orientationchange"",
+-                onScreenOrientationChangeEvent
+-              );
+-              window.addEventListener(
+-                ""deviceorientation"",
+-                onDeviceOrientationChangeEvent
+-              );
+-            }
+-          })
+-          .catch(function (error) {
+-            console.error(
+-              ""THREE.DeviceOrientationControls: Unable to use DeviceOrientation API:"",
+-              error
+-            );
+-          });
+-      } else {
+-        window.addEventListener(
+-          ""orientationchange"",
+-          onScreenOrientationChangeEvent
+-        );
+-        window.addEventListener(
+-          ""deviceorientation"",
+-          onDeviceOrientationChangeEvent
+-        );
+-      }
+-
+-      scope.enabled = true;
+-    };
+-
+-    this.disconnect = function () {
+-      window.removeEventListener(
+-        ""orientationchange"",
+-        onScreenOrientationChangeEvent
+-      );
+-      window.removeEventListener(
+-        ""deviceorientation"",
+-        onDeviceOrientationChangeEvent
+-      );
+-
+-      scope.enabled = false;
+-    };
+-
+-    this.update = function () {
+-      if (scope.enabled === false) return;
+-
+-      const device = scope.deviceOrientation;
+-
+-      if (device) {
+-        const alpha = device.alpha
+-          ? MathUtils.degToRad(device.alpha) + scope.alphaOffset
+-          : 0; // Z
+-
+-        const beta = device.beta ? MathUtils.degToRad(device.beta) : 0; // X'
+-
+-        const gamma = device.gamma ? MathUtils.degToRad(device.gamma) : 0; // Y''
+-
+-        const orient = scope.screenOrientation
+-          ? MathUtils.degToRad(scope.screenOrientation)
+-          : 0; // O
+-
+-        setObjectQuaternion(
+-          scope.object.quaternion,
+-          alpha,
+-          beta,
+-          gamma,
+-          orient
+-        );
+-
+-        if (8 * (1 - lastQuaternion.dot(scope.object.quaternion)) > EPS) {
+-          lastQuaternion.copy(scope.object.quaternion);
+-          scope.dispatchEvent(_changeEvent);
+-        }
+-      }
+-    };
+-
+-    this.dispose = function () {
+-      scope.disconnect();
+-    };
+-
+-    this.connect();
+-  }
+-}
+-
+-export { DeviceOrientationControls };"
+musehq/spacesvr,136,419b7a35ce0410bb4cb251a7e32c3a6b0b7a8827,src/layers/Player/logic/bob.ts,added,29,0,29,"@@ -0,0 +1,29 @@
++import { config, useSpring } from ""@react-spring/three"";
++import { useThree } from ""@react-three/fiber"";
++import { MutableRefObject, useState } from ""react"";
++import { Clock, Vector3 } from ""three"";
++
++export const useBob = (
++  velocity: MutableRefObject<Vector3>,
++  direction: MutableRefObject<Vector3>
++) => {
++  const camera = useThree((st) => st.camera);
++
++  const { bob } = useSpring({ bob: 0, config: config.default });
++
++  const [offset] = useState(new Vector3());
++
++  const update = (clock: Clock) => {
++    const IS_MOVING = direction.current.length() > 0.1;
++    const IS_GROUNDED = Math.abs(velocity.current.y) < 0.01;
++    bob.set(IS_MOVING && IS_GROUNDED ? 1 : 0);
++    const amt = bob.get();
++    const y = Math.sin(clock.getElapsedTime() * 20) * 0.0055 * amt;
++    const x = Math.cos(clock.getElapsedTime() * 15 + 0.3) * 0.002 * amt;
++    offset.set(x, y, 0);
++    offset.applyQuaternion(camera.quaternion);
++    camera.position.add(offset);
++  };
++
++  return { update };
++};"
+musehq/spacesvr,136,419b7a35ce0410bb4cb251a7e32c3a6b0b7a8827,src/layers/Player/logic/controls.ts,added,20,0,20,"@@ -0,0 +1,20 @@
++import { MutableRefObject, useMemo } from ""react"";
++
++type PlayerControls = {
++  lock: () => void;
++  unlock: () => void;
++  isLocked: () => boolean;
++};
++
++export const useControlLock = (
++  lockControls: MutableRefObject<boolean>
++): PlayerControls => {
++  return useMemo(
++    () => ({
++      lock: () => (lockControls.current = true),
++      unlock: () => (lockControls.current = false),
++      isLocked: () => lockControls.current,
++    }),
++    [lockControls]
++  );
++};"
+musehq/spacesvr,136,419b7a35ce0410bb4cb251a7e32c3a6b0b7a8827,src/layers/Player/logic/touch.ts,renamed,0,0,0,
+musehq/spacesvr,136,419b7a35ce0410bb4cb251a7e32c3a6b0b7a8827,src/layers/Player/logic/velocity.ts,renamed,0,0,0,
+musehq/spacesvr,136,419b7a35ce0410bb4cb251a7e32c3a6b0b7a8827,src/layers/Player/types/player.ts,removed,0,19,19,"@@ -1,19 +0,0 @@
+-import { Raycaster, Vector3 } from ""three"";
+-
+-export type PlayerState = {
+-  position: PlayerVec;
+-  velocity: PlayerVec;
+-  controls: PlayerControls;
+-  raycaster: Raycaster;
+-};
+-
+-export type PlayerVec = {
+-  set: (vec: Vector3) => void;
+-  get: () => Vector3;
+-};
+-
+-export type PlayerControls = {
+-  lock: () => void;
+-  unlock: () => void;
+-  isLocked: () => boolean;
+-};"
+musehq/spacesvr,136,419b7a35ce0410bb4cb251a7e32c3a6b0b7a8827,src/layers/Player/utils/player.ts,removed,0,35,35,"@@ -1,35 +0,0 @@
+-import { Group, Raycaster, Vector3 } from ""three"";
+-import { Api } from ""@react-three/cannon"";
+-import { MutableRefObject } from ""react"";
+-import { PlayerState } from ""../types/player"";
+-
+-export function createPlayerState(
+-  bodyApi: Api<Group>[1],
+-  position: MutableRefObject<Vector3>,
+-  velocity: MutableRefObject<Vector3>,
+-  lockControls: MutableRefObject<boolean>,
+-  raycaster: Raycaster
+-): PlayerState {
+-  return {
+-    position: {
+-      set: (pos: Vector3) => {
+-        bodyApi.position.copy(pos);
+-        position.current.copy(pos);
+-      },
+-      get: () => position.current,
+-    },
+-    velocity: {
+-      set: (vec: Vector3) => {
+-        bodyApi.velocity.copy(vec);
+-        velocity.current.copy(vec);
+-      },
+-      get: () => velocity.current,
+-    },
+-    controls: {
+-      lock: () => (lockControls.current = true),
+-      unlock: () => (lockControls.current = false),
+-      isLocked: () => lockControls.current,
+-    },
+-    raycaster,
+-  };
+-}"
+musehq/spacesvr,136,419b7a35ce0410bb4cb251a7e32c3a6b0b7a8827,src/layers/Visual/index.tsx,modified,4,2,6,"@@ -39,15 +39,17 @@ export function Visual(props: VisualLayerProps) {
+     rerender();
+   }, []);
+ 
++  const USE_EFFECTS = childPasses.current.length > 0;
++
+   useFrame(() => {
+-    if (childPasses.current.length > 0) return;
++    if (USE_EFFECTS) return;
+     gl.autoClear = true;
+     gl.render(scene, camera);
+   }, 1);
+ 
+   return (
+     <VisualContext.Provider value={{ registerPass, unregisterPass }}>
+-      {childPasses.current.length > 0 && (
++      {USE_EFFECTS && (
+         <Effects>{childPasses.current.map((p) => p.node)}</Effects>
+       )}
+       {children}"
+musehq/spacesvr,136,419b7a35ce0410bb4cb251a7e32c3a6b0b7a8827,src/layers/Visual/modifiers/Effects.tsx,modified,0,7,7,"@@ -63,13 +63,6 @@ export function Effects(props: EffectsProps) {
+       args={[scene, camera]}
+     />
+   );
+-  passes.push(
+-    <shaderPass
+-      attach={`passes-${passes.length}`}
+-      key=""gammapass""
+-      args={[GammaCorrectionShader]}
+-    />
+-  );
+   Children.forEach(children, (el: any) => {
+     el &&
+       passes.push("
+musehq/spacesvr,136,419b7a35ce0410bb4cb251a7e32c3a6b0b7a8827,src/logic/hud.ts,modified,7,4,11,"@@ -1,17 +1,20 @@
+-import { PerspectiveCamera } from ""three"";
++import { PerspectiveCamera, Vector2 } from ""three"";
+ 
+ const PADDING_X = 0.125;
+ const PADDING_Y = 0.125;
+ 
+ export const getHudPos = (
+-  pos: [number, number],
++  pos: [number, number] | Vector2,
+   camera: PerspectiveCamera,
+   distance: number
+ ) => {
+   const { width, height } = getHudDims(camera, distance);
+ 
+-  const x = pos[0] * (width - PADDING_X * 2) * 0.5;
+-  const y = pos[1] * (height - PADDING_Y * 2) * 0.5;
++  const px = Array.isArray(pos) ? pos[0] : pos.x;
++  const py = Array.isArray(pos) ? pos[1] : pos.y;
++
++  const x = px * (width - PADDING_X * 2) * 0.5;
++  const y = py * (height - PADDING_Y * 2) * 0.5;
+ 
+   return { x, y };
+ };"
+musehq/spacesvr,136,419b7a35ce0410bb4cb251a7e32c3a6b0b7a8827,src/tools/Camera/index.tsx,modified,4,7,11,"@@ -6,12 +6,7 @@ import {
+   Mesh,
+   PerspectiveCamera as ThrPerspectiveCamera,
+ } from ""three"";
+-import {
+-  createPortal,
+-  MeshProps,
+-  useFrame,
+-  useThree,
+-} from ""@react-three/fiber"";
++import { createPortal, MeshProps, useThree } from ""@react-three/fiber"";
+ import { PerspectiveCamera, Text } from ""@react-three/drei"";
+ import CameraModel from ""./models/Camera"";
+ import { usePhotography } from ""./utils/photo"";
+@@ -20,6 +15,7 @@ import { config, useSpring, animated } from ""@react-spring/three"";
+ import { Tool } from ""../../ideas/modifiers/Tool"";
+ import { useToolbelt } from ""../../layers/Toolbelt"";
+ import { Interactable } from ""../../ideas"";
++import { useLimitedFrame } from ""../../logic"";
+ 
+ const AUDIO_URL =
+   ""https://d27rt3a60hh1lx.cloudfront.net/tools/camera/shutter-sound.mp3"";
+@@ -44,7 +40,7 @@ export function Camera() {
+ 
+   const dummy = useMemo(() => new Vector3(), []);
+   const qummy = useMemo(() => new Quaternion(), []);
+-  useFrame((state) => {
++  useLimitedFrame(24, (state) => {
+     if (!cam.current || !mesh.current || !group.current || !ENABLED) return;
+ 
+     // move mesh to camera's position
+@@ -55,6 +51,7 @@ export function Camera() {
+     cam.current.rotation.setFromQuaternion(qummy);
+ 
+     // render to camera viewfinder
++    state.gl.autoClear = true;
+     state.gl.setRenderTarget(photo.target);
+     state.gl.render(scene, cam.current);
+     state.gl.setRenderTarget(null);"

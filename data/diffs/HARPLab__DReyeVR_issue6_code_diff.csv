@@ -1,0 +1,947 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+HARPLab/DReyeVR,6,dead5b5,Blueprints/DReyeVR/BP_EgoVehicle_DReyeVR.uasset,modified,0,0,0,
+HARPLab/DReyeVR,6,dead5b5,Blueprints/DReyeVR/Mesh/SM_VehicleMesh_DReyeVR.uasset,modified,0,0,0,
+HARPLab/DReyeVR,6,dead5b5,Blueprints/DReyeVR/Mesh/SM_VehicleSkeleton_DReyeVR.uasset,modified,0,0,0,
+HARPLab/DReyeVR,6,dead5b5,Blueprints/DReyeVR/Mirrors/LeftMirror_DReyeVR_SM.uasset,added,0,0,0,
+HARPLab/DReyeVR,6,dead5b5,Blueprints/DReyeVR/Mirrors/RearMirror_DReyeVR_Glass_SM.uasset,added,0,0,0,
+HARPLab/DReyeVR,6,dead5b5,Blueprints/DReyeVR/Mirrors/RearMirror_DReyeVR_SM.uasset,added,0,0,0,
+HARPLab/DReyeVR,6,dead5b5,Blueprints/DReyeVR/Mirrors/RightMirror_DReyeVR_SM.uasset,added,0,0,0,
+HARPLab/DReyeVR,6,dead5b5,Carla/Sensor/DReyeVRData.h,modified,23,10,33,"@@ -106,15 +106,20 @@ struct EgoVariables
+     // World coordinate Ego vehicle location & rotation
+     FVector VehicleLocation = FVector::ZeroVector;
+     FRotator VehicleRotation = FRotator::ZeroRotator;
+-    // Relative Camera position and orientation
++    // Relative Camera position and orientation (for HMD offsets)
+     FVector CameraLocation = FVector::ZeroVector;
+     FRotator CameraRotation = FRotator::ZeroRotator;
++    // Absolute Camera position and orientation (includes vehicle & HMD offset)
++    FVector CameraLocationAbs = FVector::ZeroVector;
++    FRotator CameraRotationAbs = FRotator::ZeroRotator;
+     // Ego variables
+     float Velocity = 0.f; // note this is in cm/s (default UE4 units)
+     void Read(std::ifstream &InFile)
+     {
+         ReadFVector(InFile, CameraLocation);
+         ReadFRotator(InFile, CameraRotation);
++        ReadFVector(InFile, CameraLocationAbs);
++        ReadFRotator(InFile, CameraRotationAbs);
+         ReadFVector(InFile, VehicleLocation);
+         ReadFRotator(InFile, VehicleRotation);
+         ReadValue<float>(InFile, Velocity);
+@@ -123,6 +128,8 @@ struct EgoVariables
+     {
+         WriteFVector(OutFile, CameraLocation);
+         WriteFRotator(OutFile, CameraRotation);
++        WriteFVector(OutFile, CameraLocationAbs);
++        WriteFRotator(OutFile, CameraRotationAbs);
+         WriteFVector(OutFile, VehicleLocation);
+         WriteFRotator(OutFile, VehicleRotation);
+         WriteValue<float>(OutFile, Velocity);
+@@ -135,6 +142,8 @@ struct EgoVariables
+         Print += FString::Printf(TEXT(""VehicleVel:%.4f,""), Velocity);
+         Print += FString::Printf(TEXT(""CameraLoc:%s,""), *CameraLocation.ToString());
+         Print += FString::Printf(TEXT(""CameraRot:%s,""), *CameraRotation.ToString());
++        Print += FString::Printf(TEXT(""CameraLocAbs:%s,""), *CameraLocationAbs.ToString());
++        Print += FString::Printf(TEXT(""CameraRotAbs:%s,""), *CameraRotationAbs.ToString());
+         return Print;
+     }
+ };
+@@ -189,8 +198,7 @@ struct FocusInfo
+ {
+     // substitute for SRanipal FFocusInfo in SRanipal_Eyes_Enums.h
+     TWeakObjectPtr<class AActor> Actor;
+-    FVector HitPointRelative;
+-    FVector HitPointAbsolute;
++    FVector HitPoint; // in world space (absolute location)
+     FVector Normal;
+     FString ActorNameTag = ""None""; // Tag of the actor being focused on
+     float Distance;
+@@ -200,17 +208,15 @@ struct FocusInfo
+     {
+         ReadFString(InFile, ActorNameTag);
+         ReadValue<bool>(InFile, bDidHit);
+-        ReadFVector(InFile, HitPointRelative);
+-        ReadFVector(InFile, HitPointAbsolute);
++        ReadFVector(InFile, HitPoint);
+         ReadFVector(InFile, Normal);
+         ReadValue<float>(InFile, Distance);
+     }
+     void Write(std::ofstream &OutFile) const
+     {
+         WriteFString(OutFile, ActorNameTag);
+         WriteValue<bool>(OutFile, bDidHit);
+-        WriteFVector(OutFile, HitPointRelative);
+-        WriteFVector(OutFile, HitPointAbsolute);
++        WriteFVector(OutFile, HitPoint);
+         WriteFVector(OutFile, Normal);
+         WriteValue<float>(OutFile, Distance);
+     }
+@@ -219,8 +225,7 @@ struct FocusInfo
+         FString Print;
+         Print += FString::Printf(TEXT(""Hit:%d,""), bDidHit);
+         Print += FString::Printf(TEXT(""Distance:%.4f,""), Distance);
+-        Print += FString::Printf(TEXT(""HitPointRelative:%s,""), *HitPointRelative.ToString());
+-        Print += FString::Printf(TEXT(""HitPointAbsolute:%s,""), *HitPointAbsolute.ToString());
++        Print += FString::Printf(TEXT(""HitPoint:%s,""), *HitPoint.ToString());
+         Print += FString::Printf(TEXT(""HitNormal:%s,""), *Normal.ToString());
+         Print += FString::Printf(TEXT(""ActorName:%s,""), *ActorNameTag);
+         return Print;
+@@ -409,6 +414,14 @@ class AggregateData // all DReyeVR sensor data is held here
+     {
+         return EgoVars.CameraRotation;
+     }
++    const FVector &GetCameraLocationAbs() const
++    {
++        return EgoVars.CameraLocationAbs;
++    }
++    const FRotator &GetCameraRotationAbs() const
++    {
++        return EgoVars.CameraRotationAbs;
++    }
+     float GetVehicleVelocity() const
+     {
+         return EgoVars.Velocity; // returns ego velocity in cm/s
+@@ -428,7 +441,7 @@ class AggregateData // all DReyeVR sensor data is held here
+     }
+     const FVector &GetFocusActorPoint() const
+     {
+-        return FocusData.HitPointAbsolute;
++        return FocusData.HitPoint;
+     }
+     float GetFocusActorDistance() const
+     {"
+HARPLab/DReyeVR,6,dead5b5,Configs/CarlaUE4.uproject,modified,5,0,5,"@@ -100,6 +100,11 @@
+ 				""Win64"",
+ 				""Linux"",
+ 				""Mac""
++			],
++			""WhitelistPlatforms"": [
++				""Win32"",
++				""Win64"",
++				""Linux""
+ 			]
+ 		},
+ 		{"
+HARPLab/DReyeVR,6,dead5b5,Configs/DReyeVRConfig.ini,modified,38,3,41,"@@ -4,7 +4,7 @@
+ ; [sections] also work as intended, see ReadConfigValue for more info
+ 
+ [EgoVehicle]
+-CameraInit=(X=21.0, Y=-40.0, Z=120.0); position offset of camera in vehicle
++CameraInit=(X=20.0, Y=-40.0, Z=120.0); position offset of camera in vehicle
+ DashLocation=(X=110.0, Y=0.0, Z=105.0); position offset of dash in vehicle
+ SpeedometerInMPH=True; set to False to use KPH
+ TurnSignalDuration=3.0; time (in s) that the turn signals stay on for
+@@ -14,16 +14,50 @@ FieldOfView=90.0
+ ActorRegistryID=501; desired (but not guaranteed) ID for the ActorRegistry (can be any nonzero number)
+ DrawDebugEditor=False; draw debug lines/sphere for eye gaze in the editor
+ 
++[Mirrors]
++; rear view mirror
++RearMirrorEnabled=True
++RearMirrorChassisPos=(X=48.0, Y=0.0, Z=123.0)
++RearMirrorChassisRot=(R=0.0, P=0.0, Y=25.06)
++RearMirrorChassisScale=(X=1.0, Y=1.0, Z=1.0)
++RearMirrorPos=(X=-0.5, Y=0.0, Z=0.0)
++RearMirrorRot=(R=0.0, P=1.0, Y=0.0)
++RearMirrorScale=(X=0.9, Y=0.98, Z=0.9)
++RearReflectionPos=(X=-7, Y=0.0, Z=0.0)
++RearReflectionRot=(R=0.0, P=90.0, Y=0.0)
++RearReflectionScale=(X=0.002, Y=0.007, Z=1.0)
++RearScreenPercentage=85; used very frequently
++; left view side mirror
++LeftMirrorEnabled=True
++LeftMirrorPos=(X=62.0, Y=-98.0, Z=105.5)
++LeftMirrorRot=(R=0.0, P=0.0, Y=0.0)
++LeftMirrorScale=(X=0.9, Y=0.9, Z=0.9)
++LeftReflectionPos=(X=0, Y=0, Z=-3.0)
++LeftReflectionRot=(R=43.2, P=81, Y=22.5)
++LeftReflectionScale=(X=0.003, Y=0.005, Z=1.0)
++LeftScreenPercentage=65; used quite a bit
++; right view side mirror
++RightMirrorEnabled=True
++RightMirrorPos=(X=62, Y=98, Z=100.5)
++RightMirrorRot=(R=0, P=-4, Y=2.79)
++RightMirrorScale=(X=0.9, Y=0.9, Z=0.9)
++RightReflectionPos=(X=0.0, Y=0.0, Z=2.22)
++RightReflectionRot=(R=-1, P=90.0, Y=21.6)
++RightReflectionScale=(X=0.003, Y=0.005, Z=1.0)
++RightScreenPercentage=50; used very rarely if ever
++
+ [SteeringWheel]
+ InitLocation=(X=85.0, Y=-40.0, Z=85.0); position of the steering wheel in the vehicle
+ InitRotation=(R=0.0, P=-10.0, Y=0.0); tilt of the steering wheel at rest
+ MaxSteerAngleDeg=900; max wheel rotation in degrees (pos and negative)
+ MaxSteerVelocity=90; maximum velocity (degrees per second)
+-SteeringScale=180; scale with which to rotate the wheel
++SteeringScale=360; scale with which to rotate the wheel (normalized [-1, 1] -> degrees)
+ 
+ [EgoSensor]
+ ActorRegistryID=502; desired (but not guaranteed) ID for the ActorRegistry (can be any nonzero number)
+ StreamSensorData=True; Set to False to skip streaming sensor data (for PythonAPI) on every tick
++MaxTraceLenM=100.0; maximum trace length (in meters) to use for world-hit point calculation
++DrawDebugFocusTrace=True; draw the debug focus trace & hit point in editor
+ RecordFrames=False; additionally capture camera screenshots on every tick (WARNING: expensive!)
+ FrameWidth=250; resolution x for screenshot
+ FrameHeight=200; resolution y for screenshot
+@@ -32,13 +66,14 @@ FrameName=tick; title of screenshot (differentiated via tick-suffix)
+ 
+ [VehicleInputs]
+ ScaleSteeringDamping=0.6
+-ScaleThrottleInput=1.0
++ScaleThrottleInput=10.0
+ ScaleBrakeInput=1.0
+ InvertMouseY=False; use inverted-flight controls for moving camera with mouse inputs
+ ScaleMouseY=1.0
+ ScaleMouseX=1.0
+ 
+ [EgoVehicleHUD]
++HUDScaleVR=6; scale all  HUD elements in VR mode only
+ DrawFPSCounter=True; draw's FPS (frames per second) in top right corner of flat screen
+ DrawFlatReticle=True; reticle in flat-screen mode
+ DrawGaze=False; draw debug gaze lines on flat-screen hud"
+HARPLab/DReyeVR,6,dead5b5,Configs/DefaultInput.ini,modified,1,1,2,"@@ -94,7 +94,7 @@ DoubleClickTime=0.200000
+ +ActionMappings=(ActionName=""RestartLevel"",bShift=False,bCtrl=False,bAlt=False,bCmd=False,Key=R)
+ +ActionMappings=(ActionName=""Handbrake"",bShift=False,bCtrl=False,bAlt=False,bCmd=False,Key=SpaceBar)
+ +ActionMappings=(ActionName=""ToggleManualMode"",bShift=False,bCtrl=False,bAlt=False,bCmd=False,Key=M)
+-+ActionMappings=(ActionName=""ToggleHUD"",bShift=False,bCtrl=False,bAlt=False,bCmd=False,Key=G)
+++ActionMappings=(ActionName=""ResetCamera_DReyeVR"",bShift=False,bCtrl=False,bAlt=False,bCmd=False,Key=G)
+ +ActionMappings=(ActionName=""Jump"",bShift=False,bCtrl=False,bAlt=False,bCmd=False,Key=Enter)
+ +ActionMappings=(ActionName=""ToggleReverse"",bShift=False,bCtrl=False,bAlt=False,bCmd=False,Key=Q)
+ +ActionMappings=(ActionName=""UseTheForce"",bShift=False,bCtrl=False,bAlt=False,bCmd=False,Key=F)"
+HARPLab/DReyeVR,6,dead5b5,Content/DReyeVR_Signs/FullSign/SM_DReyeVR_sign_goal.uasset,added,0,0,0,
+HARPLab/DReyeVR,6,dead5b5,Content/DReyeVR_Signs/M_DReyeVR_Goal.uasset,added,0,0,0,
+HARPLab/DReyeVR,6,dead5b5,Content/DReyeVR_Signs/SM_DReyeVR_Goal.uasset,added,0,0,0,
+HARPLab/DReyeVR,6,dead5b5,Content/DReyeVR_Signs/SM_DReyeVR_Goal__0.uasset,added,0,0,0,
+HARPLab/DReyeVR,6,dead5b5,Content/DReyeVR_Signs/SM_DReyeVR_Goal_n.uasset,added,0,0,0,
+HARPLab/DReyeVR,6,dead5b5,Content/Default.Package.json,modified,5,0,5,"@@ -459,6 +459,11 @@
+ 			""name"": ""DReyeVR_sign_right"",
+ 			""path"": ""/Game/DReyeVR/DReyeVR_Signs/FullSign/SM_DReyeVR_sign_right.SM_DReyeVR_sign_right"",
+ 			""size"": ""Big""
++		},
++		{
++			""name"": ""DReyeVR_sign_goal"",
++			""path"": ""/Game/DReyeVR/DReyeVR_Signs/FullSign/SM_DReyeVR_sign_goal.SM_DReyeVR_sign_goal"",
++			""size"": ""Big""
+ 		}
+ 	]
+ }"
+HARPLab/DReyeVR,6,dead5b5,Content/Static/Goal.png,added,0,0,0,
+HARPLab/DReyeVR,6,dead5b5,Content/Static/Goal_n.png,added,0,0,0,
+HARPLab/DReyeVR,6,dead5b5,DReyeVR/DReyeVRUtils.h,modified,1,1,2,"@@ -217,7 +217,7 @@ static void GenerateCrosshairImage(TArray<FColor> &Src, const float Size, const
+             const int x = i - Size / 2;
+             const int y = j - Size / 2;
+             const float Radius = Size / 3.f;
+-            const int RadThickness = 3;
++            const int RadThickness = 3 * Size / 100.f;
+             const int LineLen = 4 * RadThickness;
+             const float RadLo = Radius - LineLen;
+             const float RadHi = Radius + LineLen;"
+HARPLab/DReyeVR,6,dead5b5,DReyeVR/EgoInputs.cpp,modified,105,20,125,"@@ -1,5 +1,7 @@
+ #include ""EgoVehicle.h""
+-#include ""Math/NumericLimits.h"" // TNumericLimits<float>::Max
++#include ""Math/NumericLimits.h""                // TNumericLimits<float>::Max
++#include ""HeadMountedDisplayFunctionLibrary.h"" // SetTrackingOrigin, GetWorldToMetersScale
++#include ""HeadMountedDisplayTypes.h""           // EOrientPositionSelector
+ 
+ ////////////////:INPUTS:////////////////
+ /// NOTE: Here we define all the Input functions for the EgoVehicle just to keep them
+@@ -18,9 +20,9 @@ void AEgoVehicle::SetupPlayerInputComponent(UInputComponent *PlayerInputComponen
+ 
+     /// NOTE: an Action is a digital input, an Axis is an analog input
+     // steering and throttle analog inputs (axes)
+-    PlayerInputComponent->BindAxis(""Steer_DReyeVR"", this, &AEgoVehicle::SetSteering);
+-    PlayerInputComponent->BindAxis(""Throttle_DReyeVR"", this, &AEgoVehicle::SetThrottle);
+-    PlayerInputComponent->BindAxis(""Brake_DReyeVR"", this, &AEgoVehicle::SetBrake);
++    PlayerInputComponent->BindAxis(""Steer_DReyeVR"", this, &AEgoVehicle::SetSteeringKbd);
++    PlayerInputComponent->BindAxis(""Throttle_DReyeVR"", this, &AEgoVehicle::SetThrottleKbd);
++    PlayerInputComponent->BindAxis(""Brake_DReyeVR"", this, &AEgoVehicle::SetBrakeKbd);
+     // button actions (press & release)
+     PlayerInputComponent->BindAction(""ToggleReverse_DReyeVR"", IE_Pressed, this, &AEgoVehicle::PressReverse);
+     PlayerInputComponent->BindAction(""TurnSignalRight_DReyeVR"", IE_Pressed, this, &AEgoVehicle::PressTurnSignalR);
+@@ -30,6 +32,8 @@ void AEgoVehicle::SetupPlayerInputComponent(UInputComponent *PlayerInputComponen
+     PlayerInputComponent->BindAction(""TurnSignalLeft_DReyeVR"", IE_Released, this, &AEgoVehicle::ReleaseTurnSignalL);
+     PlayerInputComponent->BindAction(""HoldHandbrake_DReyeVR"", IE_Pressed, this, &AEgoVehicle::HoldHandbrake);
+     PlayerInputComponent->BindAction(""HoldHandbrake_DReyeVR"", IE_Released, this, &AEgoVehicle::ReleaseHandbrake);
++    PlayerInputComponent->BindAction(""ResetCamera_DReyeVR"", IE_Pressed, this, &AEgoVehicle::PressResetCamera);
++    PlayerInputComponent->BindAction(""ResetCamera_DReyeVR"", IE_Released, this, &AEgoVehicle::ReleaseResetCamera);
+     /// Mouse X and Y input for looking up and turning
+     PlayerInputComponent->BindAxis(""MouseLookUp_DReyeVR"", this, &AEgoVehicle::MouseLookUp);
+     PlayerInputComponent->BindAxis(""MouseTurn_DReyeVR"", this, &AEgoVehicle::MouseTurn);
+@@ -78,8 +82,41 @@ void AEgoVehicle::CameraPositionAdjust(const FVector &displacement)
+     VRCameraRoot->SetRelativeLocation(CurrentRelLocation + displacement);
+ }
+ 
+-/// NOTE: the CarlaVehicle does not actually move the vehicle, only its state/animations
+-// to actually move the vehicle we'll use GetVehicleMovementComponent() which is part of AWheeledVehicle
++void AEgoVehicle::PressResetCamera()
++{
++    if (!bCanResetCamera)
++        return;
++    bCanResetCamera = false;
++    ResetCamera();
++}
++
++void AEgoVehicle::ReleaseResetCamera()
++{
++    bCanResetCamera = true;
++}
++
++void AEgoVehicle::ResetCamera()
++{
++    // First, set the root of the camera to the driver's seat head pos
++    VRCameraRoot->SetRelativeLocation(CameraLocnInVehicle);
++    // Then set the actual camera to be at its origin (attached to VRCameraRoot)
++    FirstPersonCam->SetRelativeLocation(FVector::ZeroVector);
++    FirstPersonCam->SetRelativeRotation(FRotator::ZeroRotator);
++    if (bIsHMDConnected)
++    {
++        UHeadMountedDisplayFunctionLibrary::ResetOrientationAndPosition(0, EOrientPositionSelector::OrientationAndPosition);
++        // reload world
++        UGameplayStatics::OpenLevel(this, FName(*GetWorld()->GetName()), false);
++    }
++}
++
++void AEgoVehicle::SetSteeringKbd(const float SteeringInput)
++{
++    if (SteeringInput == 0.f && bIsLogiConnected)
++        return;
++    SetSteering(SteeringInput);
++}
++
+ void AEgoVehicle::SetSteering(const float SteeringInput)
+ {
+     float ScaledSteeringInput = this->ScaleSteeringInput * SteeringInput;
+@@ -89,6 +126,13 @@ void AEgoVehicle::SetSteering(const float SteeringInput)
+     VehicleInputs.Steering = ScaledSteeringInput;
+ }
+ 
++void AEgoVehicle::SetThrottleKbd(const float ThrottleInput)
++{
++    if (ThrottleInput == 0.f && bIsLogiConnected)
++        return;
++    SetThrottle(ThrottleInput);
++}
++
+ void AEgoVehicle::SetThrottle(const float ThrottleInput)
+ {
+     float ScaledThrottleInput = this->ScaleThrottleInput * ThrottleInput;
+@@ -105,6 +149,13 @@ void AEgoVehicle::SetThrottle(const float ThrottleInput)
+     VehicleInputs.Throttle = ScaledThrottleInput;
+ }
+ 
++void AEgoVehicle::SetBrakeKbd(const float BrakeInput)
++{
++    if (BrakeInput == 0.f && bIsLogiConnected)
++        return;
++    SetBrake(BrakeInput);
++}
++
+ void AEgoVehicle::SetBrake(const float BrakeInput)
+ {
+     float ScaledBrakeInput = this->ScaleBrakeInput * BrakeInput;
+@@ -172,6 +223,8 @@ void AEgoVehicle::PressTurnSignalR()
+ 
+ void AEgoVehicle::ReleaseTurnSignalR()
+ {
++    if (bCanPressTurnSignalR)
++        return;
+     VehicleInputs.TurnSignalRight = false;
+     RightSignalTimeToDie = FPlatformTime::Seconds() + this->TurnSignalDuration; // reset counter
+     bCanPressTurnSignalR = true;
+@@ -198,6 +251,8 @@ void AEgoVehicle::PressTurnSignalL()
+ 
+ void AEgoVehicle::ReleaseTurnSignalL()
+ {
++    if (bCanPressTurnSignalL)
++        return;
+     VehicleInputs.TurnSignalLeft = false;
+     LeftSignalTimeToDie = FPlatformTime::Seconds() + this->TurnSignalDuration; // reset counter
+     bCanPressTurnSignalL = true;
+@@ -263,13 +318,19 @@ void AEgoVehicle::InitLogiWheel()
+ #if USE_LOGITECH_PLUGIN
+     LogiSteeringInitialize(false);
+     bIsLogiConnected = LogiIsConnected(0); // get status of connected device
+-    if (!bIsLogiConnected)
++    if (bIsLogiConnected)
+     {
+-        UE_LOG(LogTemp, Log, TEXT(""WARNING: Could not find Logitech device connected on input 0""));
++        UE_LOG(LogTemp, Log, TEXT(""Found a Logitech device connected on input 0""));
+     }
+     else
+     {
+-        UE_LOG(LogTemp, Log, TEXT(""Found a Logitech device connected on input 0""));
++        const FString LogiError = ""Could not find Logitech device connected on input 0"";
++        const bool PrintToLog = false;
++        const bool PrintToScreen = true;
++        const float ScreenDurationSec = 20.f;
++        const FLinearColor MsgColour = FLinearColor(1, 0, 0, 1); // RED
++        UKismetSystemLibrary::PrintString(World, LogiError, PrintToScreen, PrintToLog, MsgColour, ScreenDurationSec);
++        UE_LOG(LogTemp, Error, TEXT(""%s""), *LogiError); // Error is RED
+     }
+ #endif
+ }
+@@ -290,7 +351,13 @@ void AEgoVehicle::TickLogiWheel()
+ 
+ #if USE_LOGITECH_PLUGIN
+ 
+-const std::vector<FString> VarNames = {""rgdwPOV[0]"", ""rgdwPOV[1]"", ""rgdwPOV[2]"", ""rgdwPOV[3]""};
++// const std::vector<FString> VarNames = {""rgdwPOV[0]"", ""rgdwPOV[1]"", ""rgdwPOV[2]"", ""rgdwPOV[3]""};
++const std::vector<FString> VarNames = {                                                    // 34 values
++    ""lX"",           ""lY"",           ""lZ"",         ""lRz"",           ""lRy"",           ""lRz"", // variable names
++    ""rglSlider[0]"", ""rglSlider[1]"", ""rgdwPOV[0]"", ""rgbButtons[0]"", ""lVX"",           ""lVY"",           ""lVZ"",
++    ""lVRx"",         ""lVRy"",         ""lVRz"",       ""rglVSlider[0]"", ""rglVSlider[1]"", ""lAX"",           ""lAY"",
++    ""lAZ"",          ""lARx"",         ""lARy"",       ""lARz"",          ""rglASlider[0]"", ""rglASlider[1]"", ""lFX"",
++    ""lFY"",          ""lFZ"",          ""lFRx"",       ""lFRy"",          ""lFRz"",          ""rglFSlider[0]"", ""rglFSlider[1]""};
+ /// NOTE: this is a debug function used to dump all the information we can regarding
+ // the Logitech wheel hardware we used since the exact buttons were not documented in
+ // the repo: https://github.com/HARPLab/LogitechWheelPlugin
+@@ -302,12 +369,21 @@ void AEgoVehicle::LogLogitechPluginStruct(const DIJOYSTATE2 *Now)
+         (*Old) = (*Now); // assign to the new (current) dijoystate struct
+         return;          // initializing the Old struct ptr
+     }
+-    // Getting all (4) values from the current struct
+-    const std::vector<int> NowVals = {int(Now->rgdwPOV[0]), int(Now->rgdwPOV[1]), int(Now->rgdwPOV[2]),
+-                                      int(Now->rgdwPOV[3])};
+-    // Getting the (4) values from the old struct
+-    const std::vector<int> OldVals = {int(Old->rgdwPOV[0]), int(Old->rgdwPOV[1]), int(Old->rgdwPOV[2]),
+-                                      int(Old->rgdwPOV[3])};
++    const std::vector<int> NowVals = {
++        Now->lX, Now->lY, Now->lZ, Now->lRx, Now->lRy, Now->lRz, Now->rglSlider[0], Now->rglSlider[1],
++        // Converting unsigned int & unsigned char to int
++        int(Now->rgdwPOV[0]), int(Now->rgbButtons[0]), Now->lVX, Now->lVY, Now->lVZ, Now->lVRx, Now->lVRy, Now->lVRz,
++        Now->rglVSlider[0], Now->rglVSlider[1], Now->lAX, Now->lAY, Now->lAZ, Now->lARx, Now->lARy, Now->lARz,
++        Now->rglASlider[0], Now->rglASlider[1], Now->lFX, Now->lFY, Now->lFZ, Now->lFRx, Now->lFRy, Now->lFRz,
++        Now->rglFSlider[0], Now->rglFSlider[1]}; // 32 elements
++    // Getting the (34) values from the old struct
++    const std::vector<int> OldVals = {
++        Old->lX, Old->lY, Old->lZ, Old->lRx, Old->lRy, Old->lRz, Old->rglSlider[0], Old->rglSlider[1],
++        // Converting unsigned int & unsigned char to int
++        int(Old->rgdwPOV[0]), int(Old->rgbButtons[0]), Old->lVX, Old->lVY, Old->lVZ, Old->lVRx, Old->lVRy, Old->lVRz,
++        Old->rglVSlider[0], Old->rglVSlider[1], Old->lAX, Old->lAY, Old->lAZ, Old->lARx, Old->lARy, Old->lARz,
++        Old->rglASlider[0], Old->rglASlider[1], Old->lFX, Old->lFY, Old->lFZ, Old->lFRx, Old->lFRy, Old->lFRz,
++        Old->rglFSlider[0], Old->rglFSlider[1]};
+ 
+     check(NowVals.size() == OldVals.size() && NowVals.size() == VarNames.size());
+ 
+@@ -350,7 +426,7 @@ void AEgoVehicle::LogitechWheelUpdate()
+     // only execute this in Windows, the Logitech plugin is incompatible with Linux
+     LogiUpdate(); // update the logitech wheel
+     DIJOYSTATE2 *WheelState = LogiGetState(0);
+-    LogLogitechPluginStruct(WheelState);
++    // LogLogitechPluginStruct(WheelState);
+     /// NOTE: obtained these from LogitechWheelInputDevice.cpp:~111
+     // -32768 to 32767. -32768 = all the way to the left. 32767 = all the way to the right.
+     const float WheelRotation = FMath::Clamp(float(WheelState->lX), -32767.0f, 32767.0f) / 32767.0f; // (-1, 1)
+@@ -361,9 +437,13 @@ void AEgoVehicle::LogitechWheelUpdate()
+     // -1 = not pressed. 0 = Top. 0.25 = Right. 0.5 = Bottom. 0.75 = Left.
+     const float Dpad = fabs(((WheelState->rgdwPOV[0] - 32767.0f) / (65535.0f)));
+     // apply to DReyeVR inputs
+-    SetSteering(WheelRotation);
+-    SetThrottle(AccelerationPedal);
+-    SetBrake(BrakePedal);
++    /// (NOTE: these function calls occur in the EgoVehicle::Tick, meaning other
++    // control calls could theoretically conflict/override them if called later. This is
++    // the case with the keyboard inputs which is why there are wrappers (suffixed with ""Kbd"")
++    // that always override logi inputs IF their values are nonzero
++    this->SetSteering(WheelRotation);
++    this->SetThrottle(AccelerationPedal);
++    this->SetBrake(BrakePedal);
+ 
+     //    UE_LOG(LogTemp, Log, TEXT(""Dpad value %f""), Dpad);
+     //    if (WheelState->rgdwPOV[0] == 0) // should work now
+@@ -385,6 +465,11 @@ void AEgoVehicle::LogitechWheelUpdate()
+     else
+         ReleaseTurnSignalL();
+ 
++    if (WheelState->rgbButtons[23]) // big red button on right side of g923
++        PressResetCamera();
++    else
++        ReleaseResetCamera();
++
+     // VRCamerRoot base position adjustment
+     if (WheelState->rgdwPOV[0] == 0) // positive in X
+         CameraPositionAdjust(FVector(1.f, 0.f, 0.f));"
+HARPLab/DReyeVR,6,dead5b5,DReyeVR/EgoSensor.cpp,modified,28,17,45,"@@ -37,6 +37,8 @@ void AEgoSensor::ReadConfigVariables()
+ {
+     ReadConfigValue(""EgoSensor"", ""ActorRegistryID"", EgoSensorID);
+     ReadConfigValue(""EgoSensor"", ""StreamSensorData"", bStreamData);
++    ReadConfigValue(""EgoSensor"", ""MaxTraceLenM"", MaxTraceLenM);
++    ReadConfigValue(""EgoSensor"", ""DrawDebugFocusTrace"", bDrawDebugFocusTrace);
+     ReadConfigValue(""EgoSensor"", ""RecordFrames"", bCaptureFrameData);
+     ReadConfigValue(""EgoSensor"", ""FrameWidth"", FrameCapWidth);
+     ReadConfigValue(""EgoSensor"", ""FrameHeight"", FrameCapHeight);
+@@ -225,12 +227,11 @@ void AEgoSensor::ComputeDummyEyeData()
+ 
+ void AEgoSensor::ComputeTraceFocusInfo(const ECollisionChannel TraceChannel, float TraceRadius)
+ {
+-    const float TraceLen = 100.f * 100.f; // 100m in world space
+-    const FRotator &WorldRot = GetData()->GetCameraRotation();
+-    const FVector &WorldPos = GetData()->GetCameraLocation();
+-    const FVector GazeOrigin = WorldRot.RotateVector(GetData()->GetGazeOrigin()) + WorldPos;
+-    const FVector GazeDir = WorldRot.RotateVector(TraceLen * GetData()->GetGazeDir());
+-
++    const float TraceLen = MaxTraceLenM * 100.f; // convert to m from cm
++    const FRotator &WorldRot = GetData()->GetCameraRotationAbs();
++    const FVector &WorldPos = GetData()->GetCameraLocationAbs();
++    const FVector GazeOrigin = WorldPos + WorldRot.RotateVector(GetData()->GetGazeOrigin());
++    const FVector GazeRay = TraceLen * WorldRot.RotateVector(GetData()->GetGazeDir());
+     // Create collision information container.
+     FCollisionQueryParams TraceParam;
+     TraceParam = FCollisionQueryParams(FName(""TraceParam""), true);
+@@ -245,29 +246,36 @@ void AEgoSensor::ComputeTraceFocusInfo(const ECollisionChannel TraceChannel, flo
+ 
+     if (TraceRadius == 0.f) // Single ray/line trace
+     {
+-        bDidHit = World->LineTraceSingleByChannel(Hit, GazeOrigin, GazeDir, TraceChannel, TraceParam);
++        bDidHit = World->LineTraceSingleByChannel(Hit, GazeOrigin, GazeOrigin + GazeRay, TraceChannel, TraceParam);
+     }
+     else // Sphear line trace
+     {
+         FCollisionShape Sphear = FCollisionShape();
+         Sphear.SetSphere(TraceRadius);
+-        bDidHit = World->SweepSingleByChannel(Hit, GazeOrigin, GazeDir, FQuat(0.f, 0.f, 0.f, 0.f), TraceChannel, Sphear,
+-                                              TraceParam);
++        bDidHit = World->SweepSingleByChannel(Hit, GazeOrigin, GazeOrigin + GazeRay, FQuat(0.f, 0.f, 0.f, 0.f),
++                                              TraceChannel, Sphear, TraceParam);
+     }
+     // Update fields
+     FString ActorName = ""None"";
+     if (Hit.Actor != nullptr)
+         Hit.Actor->GetName(ActorName);
+-    // update internal data structure
++    // update internal data structure (see DReyeVRData::FocusInfo for default constructor)
+     FocusInfoData = {
+-        Hit.Actor,
+-        Hit.Location,              // world location of hit point
+-        Hit.Location - GazeOrigin, // relative location of hit point
+-        Hit.Normal,
+-        ActorName,
+-        Hit.Distance,
+-        bDidHit,
++        Hit.Actor,    // pointer to actor being hit (if any, else nullptr)
++        Hit.Location, // absolute (world) location of hit
++        Hit.Normal,   // normal of hit surface (if hit)
++        ActorName,    // name of the actor being hit (if any, else ""None"")
++        Hit.Distance, // distance from ray start
++        bDidHit,      // whether or not there was a hit
+     };
++    if (bDrawDebugFocusTrace)
++    {
++        DrawDebugSphere(World, FocusInfoData.HitPoint, 8.0f, 30, FColor::Blue);
++        DrawDebugLine(World,
++                      GazeOrigin,           // start line
++                      GazeOrigin + GazeRay, // end line
++                      FColor::Purple, false, -1, 0, 1);
++    }
+ }
+ 
+ float AEgoSensor::ComputeVergence(const FVector &L0, const FVector &LDir, const FVector &R0, const FVector &RDir) const
+@@ -289,10 +297,13 @@ void AEgoSensor::SetEgoVehicle(class AEgoVehicle *NewEgoVehicle)
+ 
+ void AEgoSensor::ComputeEgoVars()
+ {
++    // See DReyeVRData::EgoVariables
+     EgoVars.VehicleLocation = Vehicle->GetActorLocation();
+     EgoVars.VehicleRotation = Vehicle->GetActorRotation();
+     EgoVars.CameraLocation = Camera->GetRelativeLocation();
+     EgoVars.CameraRotation = Camera->GetRelativeRotation();
++    EgoVars.CameraLocationAbs = Camera->GetComponentLocation();
++    EgoVars.CameraRotationAbs = Camera->GetComponentRotation();
+     EgoVars.Velocity = Vehicle->GetVehicleForwardSpeed();
+ }
+ "
+HARPLab/DReyeVR,6,dead5b5,DReyeVR/EgoSensor.h,modified,2,0,2,"@@ -57,6 +57,8 @@ class CARLAUE4_API AEgoSensor : public ADReyeVRSensor
+     void ComputeDummyEyeData(); // when no hardware sensor is present
+     void TickEyeTracker();      // tick hardware sensor
+     void ComputeTraceFocusInfo(const ECollisionChannel TraceChannel, float TraceRadius = 0.f);
++    float MaxTraceLenM = 100.f;        // maximum trace length in m
++    bool bDrawDebugFocusTrace = false; // draw the trace ray and hit point or not
+     float ComputeVergence(const FVector &L0, const FVector &LDir, const FVector &R0, const FVector &RDir) const;
+ #if USE_SRANIPAL_PLUGIN
+     SRanipalEye_Core *SRanipal;               // SRanipalEye_Core.h"
+HARPLab/DReyeVR,6,dead5b5,DReyeVR/EgoVehicle.cpp,modified,146,18,164,"@@ -37,6 +37,9 @@ AEgoVehicle::AEgoVehicle(const FObjectInitializer &ObjectInitializer) : Super(Ob
+     // Initialize audio components
+     ConstructEgoSounds();
+ 
++    // Initialize mirrors
++    ConstructMirrors();
++
+     // Initialize text render components
+     ConstructDashText();
+ 
+@@ -50,18 +53,38 @@ void AEgoVehicle::ReadConfigVariables()
+     ReadConfigValue(""EgoVehicle"", ""DashLocation"", DashboardLocnInVehicle);
+     ReadConfigValue(""EgoVehicle"", ""SpeedometerInMPH"", bUseMPH);
+     ReadConfigValue(""EgoVehicle"", ""TurnSignalDuration"", TurnSignalDuration);
++    // mirrors
++    auto InitMirrorParams = [](const FString &Name, struct MirrorParams &Params) {
++        Params.Name = Name;
++        ReadConfigValue(""Mirrors"", Params.Name + ""MirrorEnabled"", Params.Enabled);
++        ReadConfigValue(""Mirrors"", Params.Name + ""MirrorPos"", Params.MirrorPos);
++        ReadConfigValue(""Mirrors"", Params.Name + ""MirrorRot"", Params.MirrorRot);
++        ReadConfigValue(""Mirrors"", Params.Name + ""MirrorScale"", Params.MirrorScale);
++        ReadConfigValue(""Mirrors"", Params.Name + ""ReflectionPos"", Params.ReflectionPos);
++        ReadConfigValue(""Mirrors"", Params.Name + ""ReflectionRot"", Params.ReflectionRot);
++        ReadConfigValue(""Mirrors"", Params.Name + ""ReflectionScale"", Params.ReflectionScale);
++        ReadConfigValue(""Mirrors"", Params.Name + ""ScreenPercentage"", Params.ScreenPercentage);
++    };
++    InitMirrorParams(""Rear"", RearMirrorParams);
++    InitMirrorParams(""Left"", LeftMirrorParams);
++    InitMirrorParams(""Right"", RightMirrorParams);
++    // rear mirror chassis
++    ReadConfigValue(""Mirrors"", ""RearMirrorChassisPos"", RearMirrorChassisPos);
++    ReadConfigValue(""Mirrors"", ""RearMirrorChassisRot"", RearMirrorChassisRot);
++    ReadConfigValue(""Mirrors"", ""RearMirrorChassisScale"", RearMirrorChassisScale);
+     // steering wheel
+     ReadConfigValue(""SteeringWheel"", ""InitLocation"", InitWheelLocation);
+     ReadConfigValue(""SteeringWheel"", ""InitRotation"", InitWheelRotation);
+     ReadConfigValue(""SteeringWheel"", ""MaxSteerAngleDeg"", MaxSteerAngleDeg);
+     ReadConfigValue(""SteeringWheel"", ""MaxSteerVelocity"", MaxSteerVelocity);
+-    ReadConfigValue(""SteeringWheel"", ""SteeringScale"", SteeringScale);
++    ReadConfigValue(""SteeringWheel"", ""SteeringScale"", SteeringAnimScale);
+     // camera
+     ReadConfigValue(""EgoVehicle"", ""FieldOfView"", FieldOfView);
+     // other/cosmetic
+     ReadConfigValue(""EgoVehicle"", ""ActorRegistryID"", EgoVehicleID);
+     ReadConfigValue(""EgoVehicle"", ""DrawDebugEditor"", bDrawDebugEditor);
+     // HUD (Head's Up Display)
++    ReadConfigValue(""EgoVehicleHUD"", ""HUDScaleVR"", HUDScaleVR);
+     ReadConfigValue(""EgoVehicleHUD"", ""DrawFPSCounter"", bDrawFPSCounter);
+     ReadConfigValue(""EgoVehicleHUD"", ""DrawFlatReticle"", bDrawFlatReticle);
+     ReadConfigValue(""EgoVehicleHUD"", ""ReticleSize"", ReticleSize);
+@@ -181,15 +204,16 @@ void AEgoVehicle::ConstructCamera()
+ {
+     // Spawn the RootComponent and Camera for the VR camera
+     VRCameraRoot = CreateDefaultSubobject<USceneComponent>(TEXT(""VRCameraRoot""));
+-    VRCameraRoot->SetupAttachment(GetRootComponent());      // The vehicle blueprint itself
+-    VRCameraRoot->SetRelativeLocation(CameraLocnInVehicle); // Offset from center of camera
++    VRCameraRoot->SetupAttachment(GetRootComponent()); // The vehicle blueprint itself
+ 
+     // Create a camera and attach to root component
+     FirstPersonCam = CreateDefaultSubobject<UCameraComponent>(TEXT(""FirstPersonCam""));
+     FirstPersonCam->SetupAttachment(VRCameraRoot);
+     FirstPersonCam->bUsePawnControlRotation = false; // free for VR movement
+     FirstPersonCam->bLockToHmd = true;               // lock orientation and position to HMD
+     FirstPersonCam->FieldOfView = FieldOfView;       // editable
++
++    ResetCamera();
+ }
+ 
+ const UCameraComponent *AEgoVehicle::GetCamera() const
+@@ -284,6 +308,98 @@ void AEgoVehicle::UpdateSensor(const float DeltaSeconds)
+     RightOrigin = WorldPos + WorldRot.RotateVector(Data->GetGazeOrigin(DReyeVR::Gaze::RIGHT));
+ }
+ 
++/// ========================================== ///
++/// ----------------:MIRROR:------------------ ///
++/// ========================================== ///
++
++void AEgoVehicle::MirrorParams::Initialize(class UStaticMeshComponent *MirrorSM,
++                                           class UPlanarReflectionComponent *Reflection,
++                                           class USkeletalMeshComponent *VehicleMesh)
++{
++    UE_LOG(LogTemp, Log, TEXT(""Initializing %s mirror""), *Name)
++
++    check(MirrorSM != nullptr);
++    MirrorSM->SetupAttachment(VehicleMesh);
++    MirrorSM->SetRelativeLocation(MirrorPos);
++    MirrorSM->SetRelativeRotation(MirrorRot);
++    MirrorSM->SetRelativeScale3D(MirrorScale);
++    MirrorSM->SetGenerateOverlapEvents(false); // don't collide with itself
++    MirrorSM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
++    MirrorSM->SetVisibility(true);
++
++    check(Reflection != nullptr);
++    Reflection->SetupAttachment(MirrorSM);
++    Reflection->SetRelativeLocation(ReflectionPos);
++    Reflection->SetRelativeRotation(ReflectionRot);
++    Reflection->SetRelativeScale3D(ReflectionScale);
++    Reflection->NormalDistortionStrength = 0.0f;
++    Reflection->PrefilterRoughness = 0.0f;
++    Reflection->DistanceFromPlaneFadeoutStart = 1500.f;
++    Reflection->DistanceFromPlaneFadeoutEnd = 0.f;
++    Reflection->AngleFromPlaneFadeStart = 0.f;
++    Reflection->AngleFromPlaneFadeEnd = 90.f;
++    Reflection->PrefilterRoughnessDistance = 10000.f;
++    Reflection->ScreenPercentage = ScreenPercentage; // change this to reduce quality & improve performance
++    Reflection->bShowPreviewPlane = false;
++    Reflection->HideComponent(VehicleMesh);
++    Reflection->SetVisibility(true);
++    /// TODO: use USceneCaptureComponent::ShowFlags to define what gets rendered in the mirror
++    // https://docs.unrealengine.com/4.27/en-US/API/Runtime/Engine/FEngineShowFlags/
++}
++
++void AEgoVehicle::ConstructMirrors()
++{
++
++    class USkeletalMeshComponent *VehicleMesh = GetMesh();
++    /// Rear mirror
++    if (RearMirrorParams.Enabled)
++    {
++        static ConstructorHelpers::FObjectFinder<UStaticMesh> RearSM(
++            TEXT(""StaticMesh'/Game/Carla/Blueprints/Vehicles/DReyeVR/Mirrors/""
++                 ""RearMirror_DReyeVR_Glass_SM.RearMirror_DReyeVR_Glass_SM'""));
++        RearMirrorSM = CreateDefaultSubobject<UStaticMeshComponent>(FName(*(RearMirrorParams.Name + ""MirrorSM"")));
++        RearMirrorSM->SetStaticMesh(RearSM.Object);
++        RearReflection = CreateDefaultSubobject<UPlanarReflectionComponent>(FName(*(RearMirrorParams.Name + ""Refl"")));
++        RearMirrorParams.Initialize(RearMirrorSM, RearReflection, VehicleMesh);
++        // also add the chassis for this mirror
++        static ConstructorHelpers::FObjectFinder<UStaticMesh> RearChassisSM(TEXT(
++            ""StaticMesh'/Game/Carla/Blueprints/Vehicles/DReyeVR/Mirrors/RearMirror_DReyeVR_SM.RearMirror_DReyeVR_SM'""));
++        RearMirrorChassisSM =
++            CreateDefaultSubobject<UStaticMeshComponent>(FName(*(RearMirrorParams.Name + ""MirrorChassisSM"")));
++        RearMirrorChassisSM->SetStaticMesh(RearChassisSM.Object);
++        RearMirrorChassisSM->SetupAttachment(VehicleMesh);
++        RearMirrorChassisSM->SetRelativeLocation(RearMirrorChassisPos);
++        RearMirrorChassisSM->SetRelativeRotation(RearMirrorChassisRot);
++        RearMirrorChassisSM->SetRelativeScale3D(RearMirrorChassisScale);
++        RearMirrorChassisSM->SetGenerateOverlapEvents(false); // don't collide with itself
++        RearMirrorChassisSM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
++        RearMirrorChassisSM->SetVisibility(true);
++        RearMirrorSM->SetupAttachment(RearMirrorChassisSM);
++        RearReflection->HideComponent(RearMirrorChassisSM); // don't show this in the reflection
++    }
++    /// Left mirror
++    if (LeftMirrorParams.Enabled)
++    {
++        static ConstructorHelpers::FObjectFinder<UStaticMesh> LeftSM(TEXT(
++            ""StaticMesh'/Game/Carla/Blueprints/Vehicles/DReyeVR/Mirrors/LeftMirror_DReyeVR_SM.LeftMirror_DReyeVR_SM'""));
++        LeftMirrorSM = CreateDefaultSubobject<UStaticMeshComponent>(FName(*(LeftMirrorParams.Name + ""MirrorSM"")));
++        LeftMirrorSM->SetStaticMesh(LeftSM.Object);
++        LeftReflection = CreateDefaultSubobject<UPlanarReflectionComponent>(FName(*(LeftMirrorParams.Name + ""Refl"")));
++        LeftMirrorParams.Initialize(LeftMirrorSM, LeftReflection, VehicleMesh);
++    }
++    /// Right mirror
++    if (RightMirrorParams.Enabled)
++    {
++        static ConstructorHelpers::FObjectFinder<UStaticMesh> RightSM(
++            TEXT(""StaticMesh'/Game/Carla/Blueprints/Vehicles/DReyeVR/Mirrors/""
++                 ""RightMirror_DReyeVR_SM.RightMirror_DReyeVR_SM'""));
++        RightMirrorSM = CreateDefaultSubobject<UStaticMeshComponent>(FName(*(RightMirrorParams.Name + ""MirrorSM"")));
++        RightMirrorSM->SetStaticMesh(RightSM.Object);
++        RightReflection = CreateDefaultSubobject<UPlanarReflectionComponent>(FName(*(RightMirrorParams.Name + ""Refl"")));
++        RightMirrorParams.Initialize(RightMirrorSM, RightReflection, VehicleMesh);
++    }
++}
++
+ /// ========================================== ///
+ /// ----------------:SOUNDS:------------------ ///
+ /// ========================================== ///
+@@ -355,6 +471,8 @@ void AEgoVehicle::InitSpectator()
+ 
+ void AEgoVehicle::InitReticleTexture()
+ {
++    if (bIsHMDConnected)
++        ReticleSize *= HUDScaleVR;
+ 
+     /// NOTE: need to create transient like this bc of a UE4 bug in release mode
+     // https://forums.unrealengine.com/development-discussion/rendering/1767838-fimageutils-createtexture2d-crashes-in-packaged-build
+@@ -388,24 +506,25 @@ void AEgoVehicle::DrawSpectatorScreen()
+     Player->GetViewportSize(ViewSize.X, ViewSize.Y);
+     // Get eye tracker variables
+     const FRotator WorldRot = GetCamera()->GetComponentRotation();
+-    const FVector CombinedGazePosn = CombinedOrigin + WorldRot.RotateVector(this->CombinedGaze);
++    const FVector LeftGazePosn = LeftOrigin + WorldRot.RotateVector(this->LeftGaze);
+ 
+     /// TODO: draw other things on the spectator screen?
+     if (bDrawSpectatorReticle)
+     {
+         /// NOTE: this is the better way to get the ViewportSize
+         FVector2D ReticlePos;
+-        UGameplayStatics::ProjectWorldToScreen(Player, CombinedGazePosn, ReticlePos, true);
++        UGameplayStatics::ProjectWorldToScreen(Player, LeftGazePosn, ReticlePos, true);
+         /// NOTE: the SetSpectatorScreenModeTexturePlusEyeLayout expects normalized positions on the screen
+         /// NOTE: to get the best drawing, the texture is offset slightly by this vector
+-        const FVector2D ScreenOffset(ReticleSize * 0.5f, -ReticleSize);
+-        ReticlePos += ScreenOffset; // move X right by Dim.X/2, move Y up by Dim.Y
++        // const FVector2D ScreenOffset(ReticleSize * 0.5f, -ReticleSize);
++        // ReticlePos += ScreenOffset; // move X right by Dim.X/2, move Y up by Dim.Y
+         // define min and max bounds
+         FVector2D TextureRectMin(FMath::Clamp(ReticlePos.X / ViewSize.X, 0.f, 1.f),
+                                  FMath::Clamp(ReticlePos.Y / ViewSize.Y, 0.f, 1.f));
+-        // max needs to define the bottom right corner, so needs to be +Dim.X right, and +Dim.Y down
+-        FVector2D TextureRectMax(FMath::Clamp((ReticlePos.X + ReticleSize) / ViewSize.X, 0.f, 1.f),
+-                                 FMath::Clamp((ReticlePos.Y + ReticleSize) / ViewSize.Y, 0.f, 1.f));
++        // max needs to define the bottom right corner, so needs to be +Dim.X ri// max needs to define the bottom
++        // right corner, so needs to be +Dim.X right, and +Dim.Y down
++        FVector2D TextureRectMax(FMath::Clamp((ReticlePos.X + ReticleSize) / ViewSize.X, TextureRectMin.X, 1.f),
++                                 FMath::Clamp((ReticlePos.Y + ReticleSize) / ViewSize.Y, TextureRectMin.Y, 1.f));
+         UHeadMountedDisplayFunctionLibrary::SetSpectatorScreenModeTexturePlusEyeLayout(
+             FVector2D{0.f, 0.f}, // whole window (top left)
+             FVector2D{1.f, 1.f}, // whole window (top ->*bottom? right)
+@@ -602,17 +721,26 @@ void AEgoVehicle::ConstructSteeringWheel()
+ void AEgoVehicle::TickSteeringWheel(const float DeltaTime)
+ {
+     const FRotator CurrentRotation = SteeringWheel->GetRelativeRotation();
+-    const float TargetAngle = GetVehicleInputs().Steering * SteeringScale;
+-    float DeltaAngle = (TargetAngle - CurrentRotation.Roll);
++    const float RawSteering = GetVehicleInputs().Steering; // this is scaled in SetSteering
++    const float TargetAngle = (RawSteering / ScaleSteeringInput) * SteeringAnimScale;
++    FRotator NewRotation = CurrentRotation;
++    if (bIsLogiConnected)
++    {
++        NewRotation.Roll = TargetAngle;
++    }
++    else
++    {
++        float DeltaAngle = (TargetAngle - CurrentRotation.Roll);
+ 
+-    // place a speed-limit on the steering wheel
+-    DeltaAngle = FMath::Clamp(DeltaAngle, -MaxSteerVelocity, MaxSteerVelocity);
++        // place a speed-limit on the steering wheel
++        DeltaAngle = FMath::Clamp(DeltaAngle, -MaxSteerVelocity, MaxSteerVelocity);
+ 
+-    // create the new rotation using the deltas
+-    FRotator NewRotation = CurrentRotation + DeltaTime * FRotator(0.f, 0.f, DeltaAngle);
++        // create the new rotation using the deltas
++        NewRotation += DeltaTime * FRotator(0.f, 0.f, DeltaAngle);
+ 
+-    // Clamp the roll amount so the wheel can't spin infinitely
+-    NewRotation.Roll = FMath::Clamp(NewRotation.Roll, -MaxSteerAngleDeg, MaxSteerAngleDeg);
++        // Clamp the roll amount so the wheel can't spin infinitely
++        NewRotation.Roll = FMath::Clamp(NewRotation.Roll, -MaxSteerAngleDeg, MaxSteerAngleDeg);
++    }
+     SteeringWheel->SetRelativeRotation(NewRotation);
+ }
+ "
+HARPLab/DReyeVR,6,dead5b5,DReyeVR/EgoVehicle.h,modified,58,16,74,"@@ -1,19 +1,20 @@
+ #pragma once
+ 
+-#include ""Camera/CameraComponent.h""            // UCameraComponent
+-#include ""Carla/Game/CarlaEpisode.h""           // CarlaEpisode
+-#include ""Carla/Sensor/DReyeVRData.h""          // DReyeVR namespace
+-#include ""Carla/Vehicle/CarlaWheeledVehicle.h"" // ACarlaWheeledVehicle
+-#include ""Components/AudioComponent.h""         // UAudioComponent
+-#include ""Components/InputComponent.h""         // InputComponent
+-#include ""Components/SceneComponent.h""         // USceneComponent
+-#include ""CoreMinimal.h""                       // Unreal functions
+-#include ""DReyeVRUtils.h""                      // ReadConfigValue
+-#include ""EgoSensor.h""                         // AEgoSensor
+-#include ""FlatHUD.h""                           // ADReyeVRHUD
+-#include ""ImageUtils.h""                        // CreateTexture2D
+-#include ""LevelScript.h""                       // ADReyeVRLevel
+-#include ""WheeledVehicle.h""                    // VehicleMovementComponent
++#include ""Camera/CameraComponent.h""               // UCameraComponent
++#include ""Carla/Game/CarlaEpisode.h""              // CarlaEpisode
++#include ""Carla/Sensor/DReyeVRData.h""             // DReyeVR namespace
++#include ""Carla/Vehicle/CarlaWheeledVehicle.h""    // ACarlaWheeledVehicle
++#include ""Components/AudioComponent.h""            // UAudioComponent
++#include ""Components/InputComponent.h""            // InputComponent
++#include ""Components/PlanarReflectionComponent.h"" // Planar Reflection
++#include ""Components/SceneComponent.h""            // USceneComponent
++#include ""CoreMinimal.h""                          // Unreal functions
++#include ""DReyeVRUtils.h""                         // ReadConfigValue
++#include ""EgoSensor.h""                            // AEgoSensor
++#include ""FlatHUD.h""                              // ADReyeVRHUD
++#include ""ImageUtils.h""                           // CreateTexture2D
++#include ""LevelScript.h""                          // ADReyeVRLevel
++#include ""WheeledVehicle.h""                       // VehicleMovementComponent
+ #include <stdio.h>
+ #include <vector>
+ 
+@@ -81,7 +82,7 @@ class CARLAUE4_API AEgoVehicle : public ACarlaWheeledVehicle
+     void InitSteamVR();     // Initialize the Head Mounted Display
+     UPROPERTY(Category = Camera, EditDefaultsOnly, BlueprintReadWrite, meta = (AllowPrivateAccess = ""true""))
+     class USceneComponent *VRCameraRoot;
+-    UPROPERTY(Category = Camera, EditDefaultsOnly, BlueprintReadWrite, meta = (AllowPrivateAccess = ""true""))
++    UPROPERTY(Category = Camera, EditAnywhere, BlueprintReadWrite, meta = (AllowPrivateAccess = ""true""))
+     class UCameraComponent *FirstPersonCam;
+     FVector CameraLocnInVehicle{21.0f, -40.0f, 120.0f}; // depends on vehicle mesh (units in cm)
+     float FieldOfView = 90.f;                           // in degrees
+@@ -95,13 +96,48 @@ class CARLAUE4_API AEgoVehicle : public ACarlaWheeledVehicle
+     FVector LeftGaze, LeftOrigin;
+     FVector RightGaze, RightOrigin;
+ 
++    ////////////////:MIRRORS:////////////////
++    void ConstructMirrors();
++    struct MirrorParams
++    {
++        bool Enabled;
++        FVector MirrorPos, MirrorScale, ReflectionPos, ReflectionScale;
++        FRotator MirrorRot, ReflectionRot;
++        float ScreenPercentage;
++        FString Name;
++        void Initialize(class UStaticMeshComponent *SM, class UPlanarReflectionComponent *Reflection,
++                        class USkeletalMeshComponent *VehicleMesh);
++    };
++    struct MirrorParams RearMirrorParams, LeftMirrorParams, RightMirrorParams;
++    UPROPERTY(Category = Mirrors, EditAnywhere, BlueprintReadWrite, meta = (AllowPrivateAccess = ""true""))
++    class UStaticMeshComponent *RightMirrorSM;
++    UPROPERTY(Category = Mirrors, EditAnywhere, BlueprintReadWrite, meta = (AllowPrivateAccess = ""true""))
++    class UPlanarReflectionComponent *RightReflection;
++    UPROPERTY(Category = Mirrors, EditAnywhere, BlueprintReadWrite, meta = (AllowPrivateAccess = ""true""))
++    class UStaticMeshComponent *LeftMirrorSM;
++    UPROPERTY(Category = Mirrors, EditAnywhere, BlueprintReadWrite, meta = (AllowPrivateAccess = ""true""))
++    class UPlanarReflectionComponent *LeftReflection;
++    UPROPERTY(Category = Mirrors, EditAnywhere, BlueprintReadWrite, meta = (AllowPrivateAccess = ""true""))
++    class UStaticMeshComponent *RearMirrorSM;
++    UPROPERTY(Category = Mirrors, EditAnywhere, BlueprintReadWrite, meta = (AllowPrivateAccess = ""true""))
++    class UPlanarReflectionComponent *RearReflection;
++    // rear mirror chassis (dynamic)
++    UPROPERTY(Category = Mirrors, EditAnywhere, BlueprintReadWrite, meta = (AllowPrivateAccess = ""true""))
++    class UStaticMeshComponent *RearMirrorChassisSM;
++    FVector RearMirrorChassisPos, RearMirrorChassisScale;
++    FRotator RearMirrorChassisRot;
++
+     ////////////////:INPUTS:////////////////
+     /// NOTE: since there are so many functions here, they are defined in EgoInputs.cpp
+     struct DReyeVR::UserInputs VehicleInputs; // struct for user inputs
+     // Vehicle control functions
+     void SetSteering(const float SteeringInput);
+     void SetThrottle(const float ThrottleInput);
+     void SetBrake(const float BrakeInput);
++    // keyboard mechanisms to access Axis vehicle control (steering, throttle, brake)
++    void SetSteeringKbd(const float SteeringInput);
++    void SetThrottleKbd(const float ThrottleInput);
++    void SetBrakeKbd(const float BrakeInput);
+     bool bReverse;
+     // ""button presses"" should have both a ""Press"" and ""Release"" function
+     // And, if using the logitech plugin, should also have an ""is rising edge"" bool so they can only
+@@ -137,6 +173,11 @@ class CARLAUE4_API AEgoVehicle : public ACarlaWheeledVehicle
+     void CameraUp();
+     void CameraDown();
+ 
++    void PressResetCamera();
++    void ReleaseResetCamera();
++    void ResetCamera();
++    bool bCanResetCamera = true;
++
+     // Vehicle parameters
+     float ScaleSteeringInput;
+     float ScaleThrottleInput;
+@@ -170,6 +211,7 @@ class CARLAUE4_API AEgoVehicle : public ACarlaWheeledVehicle
+     void InitReticleTexture();  // initializes the spectator-reticle texture
+     void DrawSpectatorScreen(); // called on every tick
+     UTexture2D *ReticleTexture; // UE4 texture for eye reticle
++    float HUDScaleVR;           // How much to scale the HUD in VR
+ 
+     ////////////////:FLATHUD:////////////////
+     // (Flat) HUD (NOTE: ONLY FOR NON VR)
+@@ -210,7 +252,7 @@ class CARLAUE4_API AEgoVehicle : public ACarlaWheeledVehicle
+     FRotator InitWheelRotation;
+     float MaxSteerAngleDeg;
+     float MaxSteerVelocity;
+-    float SteeringScale;
++    float SteeringAnimScale;
+ 
+     ////////////////:OTHER:////////////////
+ "
+HARPLab/DReyeVR,6,dead5b5,Maps/Town03.umap,modified,0,0,0,
+HARPLab/DReyeVR,6,dead5b5,PythonAPI/start_recording.py,modified,4,0,4,"@@ -78,6 +78,9 @@ def main():
+         client.set_timeout(2.0)
+         world = client.get_world()
+         blueprints = world.get_blueprint_library().filter('vehicle.*')
++        # never spawn another dreyevr vehicle!
++        blueprints = [x for x in blueprints if ""dreyevr"" not in x.id]
++        assert blueprints is not None
+ 
+         # NO FIXED TIMESTEP (DEBUG ONLY)
+         settings = world.get_settings()
+@@ -123,6 +126,7 @@ def main():
+             if n >= count:
+                 break
+             blueprint = random.choice(blueprints)
++            assert blueprint is not None
+             if blueprint.has_attribute('color'):
+                 color = random.choice(blueprint.get_attribute('color').recommended_values)
+                 blueprint.set_attribute('color', color)"

@@ -1,0 +1,122 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+VRCFury/VRCFury,153,43658f1e126f30415735be7fbb2d165372634cef,com.vrcfury.vrcfury/Editor/VF/Feature/ToggleBuilder.cs,modified,19,17,36,"@@ -86,11 +86,11 @@ public void Apply() {
+                 paramName,
+                 synced: synced,
+                 saved: model.saved,
+-                def: model.defaultOn ? model.defaultSliderValue : 0,
++                def: model.defaultSliderValue,
+                 usePrefix: usePrefixOnParam
+             );
+             exclusiveParam = param;
+-            onCase = param.IsGreaterThan(0);
++            onCase = model.sliderInactiveAtZero ? param.IsGreaterThan(0) : fx.Always();
+             weight = param;
+             if (addMenuItem) {
+                 manager.GetMenu().NewMenuSlider(
+@@ -352,7 +352,7 @@ public override VisualElement CreateEditor(SerializedProperty prop) {
+                 });
+             }
+ 
+-            if (defaultOnProp != null) {
++            if (defaultOnProp != null && !sliderProp.boolValue) {
+                 advMenu.AddItem(new GUIContent(""Default On""), defaultOnProp.boolValue, () => {
+                     defaultOnProp.boolValue = !defaultOnProp.boolValue;
+                     prop.serializedObject.ApplyModifiedProperties();
+@@ -458,14 +458,6 @@ public override VisualElement CreateEditor(SerializedProperty prop) {
+             }, useGlobalParamProp));
+         }
+ 
+-        content.Add(VRCFuryEditorUtils.RefreshOnChange(() => {
+-            var c = new VisualElement();
+-            if (sliderProp.boolValue && defaultOnProp.boolValue) {
+-                c.Add(VRCFuryEditorUtils.Prop(prop.FindPropertyRelative(""defaultSliderValue""), ""Default Value""));
+-            }
+-            return c;
+-        }, sliderProp, defaultOnProp));
+-
+         if (enableIconProp != null) {
+             content.Add(VRCFuryEditorUtils.RefreshOnChange(() => {
+                 var c = new VisualElement();
+@@ -536,16 +528,26 @@ VisualElement MakeSingle(string tin, string state, string tout, string timeIn, s
+             return MakeTabbed(""When toggle is enabled:"", c);
+         }, separateLocalProp, hasTransitionProp, simpleOutTransitionProp));
+ 
++        content.Add(VRCFuryEditorUtils.RefreshOnChange(() => {
++            if (sliderProp.boolValue) {
++                var sliderOptions = new VisualElement();
++                sliderOptions.Add(VRCFuryEditorUtils.Prop(prop.FindPropertyRelative(""defaultSliderValue""), ""Default value""));
++                sliderOptions.Add(VRCFuryEditorUtils.Prop(prop.FindPropertyRelative(""sliderInactiveAtZero""), ""Zero is 'Off' (Advanced)"", tooltip: """" +
++                    ""When checked, the toggle will be considered to be entirely 'off' when the slider is at 0, meaning that NOTHING will be animated at 0."" +
++                    "" It is unusual to check this, but is required if you want this slider to interact with Exclusive Tags or transitions.""));
++                return MakeTabbed(""This toggle is a slider"", sliderOptions);
++            }
++            return new VisualElement();
++        }, sliderProp));
++
+         // Tags
+         content.Add(VRCFuryEditorUtils.RefreshOnChange(() => {
+                 var tags = new List<string>();
+                 if (savedProp != null && savedProp.boolValue)
+                     tags.Add(""Saved"");
+-                if (sliderProp != null && sliderProp.boolValue)
+-                    tags.Add(""Slider"");
+                 if (securityEnabledProp != null && securityEnabledProp.boolValue)
+                     tags.Add(""Security"");
+-                if (defaultOnProp != null && defaultOnProp.boolValue)
++                if (defaultOnProp.boolValue && !sliderProp.boolValue)
+                     tags.Add(""Default On"");
+                 if (includeInRestProp != null && includeInRestProp.boolValue)
+                     tags.Add(""Shown in Rest Pose"");
+@@ -572,13 +574,13 @@ VisualElement MakeSingle(string tin, string state, string tout, string timeIn, s
+                 return row;
+             },
+             savedProp,
+-            sliderProp,
+             securityEnabledProp,
+             defaultOnProp,
+             includeInRestProp,
+             exclusiveOffStateProp,
+             holdButtonProp,
+-            hasExitTimeProp
++            hasExitTimeProp,
++            sliderProp
+         ));
+ 
+         var toggleOffWarning = VRCFuryEditorUtils.Error(
+@@ -613,7 +615,7 @@ VisualElement MakeSingle(string tin, string state, string tout, string timeIn, s
+     private VisualElement MakeTabbed(string label, VisualElement child) {
+         var output = new VisualElement();
+         output.Add(VRCFuryEditorUtils.WrappedLabel(label, style: s => s.unityFontStyleAndWeight = FontStyle.Bold));
+-        var tabbed = new VisualElement { style = { paddingLeft = 5 } };
++        var tabbed = new VisualElement { style = { paddingLeft = 10 } };
+         tabbed.Add(child);
+         output.Add(tabbed);
+         return output;"
+VRCFury/VRCFury,153,43658f1e126f30415735be7fbb2d165372634cef,com.vrcfury.vrcfury/Runtime/VF/Model/Feature.cs,modified,8,1,9,"@@ -248,6 +248,7 @@ public class Toggle : LegacyFeatureModel2 {
+         public State state = new State();
+         public bool saved;
+         public bool slider;
++        public bool sliderInactiveAtZero;
+         public bool securityEnabled;
+         public bool defaultOn;
+         public bool includeInRest;
+@@ -298,12 +299,18 @@ public override bool Upgrade(int fromVersion) {
+                     }
+                 }
+             }
++            if (fromVersion < 2) {
++                if (!defaultOn) {
++                    defaultSliderValue = 0;
++                }
++                sliderInactiveAtZero = true;
++            }
+             return false;
+ #pragma warning restore 0612
+         }
+ 
+         public override int GetLatestVersion() {
+-            return 1;
++            return 2;
+         }
+     }
+ "

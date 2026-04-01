@@ -1,0 +1,220 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,133,bcdf87b0f5a0810289fc761c8e7c74e01fe2937d,build_scripts/win/common.py,modified,1,1,2,"@@ -11,7 +11,7 @@
+ #Const globals
+ #Version string must be bumped every release.
+ #TODO: See developer documentation.
+-VERSION_STRING = ""3-0-0""
++VERSION_STRING = ""3-0-1""
+ 
+ EXIT_CODE_SUCCESS = 0
+ EXIT_CODE_FAILURE_BUILD_APP = 1"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,133,bcdf87b0f5a0810289fc761c8e7c74e01fe2937d,installer/installer.nsi,modified,1,1,2,"@@ -11,7 +11,7 @@
+ 		!define THIRDDIR ""..\third-party""
+         !define PACKAGEDIR ""..\src\package_files""
+         !define PROJECTDIR ""..\""
+-        !define VERSION_STRING ""3-0-0""
++        !define VERSION_STRING ""3-0-1""
+ 
+         
+     ;Installer icon"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,133,bcdf87b0f5a0810289fc761c8e7c74e01fe2937d,src/overlaycontroller.cpp,modified,4,0,4,"@@ -855,6 +855,7 @@ void OverlayController::AddOffsetToUniverseCenter(
+     {
+         if ( commit )
+         {
++            vr::VRChaperoneSetup()->HideWorkingSetPreview();
+             vr::VRChaperoneSetup()->RevertWorkingCopy();
+         }
+         vr::HmdMatrix34_t curPos;
+@@ -907,6 +908,7 @@ void OverlayController::RotateUniverseCenter(
+     {
+         if ( commit )
+         {
++            vr::VRChaperoneSetup()->HideWorkingSetPreview();
+             vr::VRChaperoneSetup()->RevertWorkingCopy();
+         }
+         vr::HmdMatrix34_t curPos;
+@@ -969,6 +971,7 @@ void OverlayController::AddOffsetToCollisionBounds( float offset[3],
+     // y-coordinates reset to the defaults.
+     if ( commit )
+     {
++        vr::VRChaperoneSetup()->HideWorkingSetPreview();
+         vr::VRChaperoneSetup()->RevertWorkingCopy();
+     }
+     unsigned collisionBoundsCount = 0;
+@@ -1012,6 +1015,7 @@ void OverlayController::RotateCollisionBounds( float angle, bool commit )
+ {
+     if ( commit )
+     {
++        vr::VRChaperoneSetup()->HideWorkingSetPreview();
+         vr::VRChaperoneSetup()->RevertWorkingCopy();
+     }
+     unsigned collisionBoundsCount = 0;"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,133,bcdf87b0f5a0810289fc761c8e7c74e01fe2937d,src/overlaycontroller.h,modified,1,1,2,"@@ -46,7 +46,7 @@ constexpr auto applicationOrganizationName = ""AdvancedSettings-Team"";
+ constexpr auto applicationName = ""OpenVRAdvancedSettings"";
+ constexpr const char* applicationKey = ""OVRAS-Team.AdvancedSettings"";
+ constexpr const char* applicationDisplayName = ""Advanced Settings"";
+-constexpr const char* applicationVersionString = ""v3.0.0"";
++constexpr const char* applicationVersionString = ""v3.0.1"";
+ } // namespace application_strings
+ 
+ // application namespace"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,133,bcdf87b0f5a0810289fc761c8e7c74e01fe2937d,src/res/qml/FixFloorPage.qml,modified,7,3,10,"@@ -67,6 +67,8 @@ MyStackViewPage {
+         MyPushButton {
+             id: undoFixButton
+             enabled: false
++            // TODO re-enable undo and remove visible: false
++            visible: false
+             Layout.fillWidth: true
+             text: ""Undo Fix""
+             onClicked: {
+@@ -90,7 +92,7 @@ MyStackViewPage {
+ 
+         Component.onCompleted: {
+             statusMessageText.text = """"
+-            undoFixButton.enabled = FixFloorTabController.canUndo
++            //undoFixButton.enabled = FixFloorTabController.canUndo
+             fixButton.enabled = true
+         }
+ 
+@@ -118,10 +120,12 @@ MyStackViewPage {
+             }
+             onMeasureEndSignal: {
+                 fixButton.enabled = true
+-                undoFixButton.enabled = FixFloorTabController.canUndo
++                // undoFixButton.enabled = FixFloorTabController.canUndo
+             }
+             onCanUndoChanged: {
+-                undoFixButton.enabled = FixFloorTabController.canUndo
++                //undoFixButton.enabled = FixFloorTabController.canUndo
++                // revert below to this -^
++                undoFixButton.enabled = false
+             }
+         }
+ "
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,133,bcdf87b0f5a0810289fc761c8e7c74e01fe2937d,src/tabcontrollers/ChaperoneTabController.cpp,modified,7,3,10,"@@ -812,7 +812,8 @@ void ChaperoneTabController::setHeight( float value, bool notify )
+     if ( m_height != value )
+     {
+         m_height = value;
+-        vr::VRChaperoneSetup()->RevertWorkingCopy();
++        // TODO revert?
++        // vr::VRChaperoneSetup()->RevertWorkingCopy();
+         unsigned collisionBoundsCount = 0;
+         vr::VRChaperoneSetup()->GetWorkingCollisionBoundsInfo(
+             nullptr, &collisionBoundsCount );
+@@ -831,8 +832,9 @@ void ChaperoneTabController::setHeight( float value, bool notify )
+             }
+             vr::VRChaperoneSetup()->SetWorkingCollisionBoundsInfo(
+                 collisionBounds, collisionBoundsCount );
+-            vr::VRChaperoneSetup()->CommitWorkingCopy(
+-                vr::EChaperoneConfigFile_Live );
++            // TODO revert?
++            // vr::VRChaperoneSetup()->CommitWorkingCopy(
++            //    vr::EChaperoneConfigFile_Live );
+             delete[] collisionBounds;
+         }
+         if ( notify )
+@@ -1358,6 +1360,7 @@ void ChaperoneTabController::addChaperoneProfile(
+     profile->includesChaperoneGeometry = includeGeometry;
+     if ( includeGeometry )
+     {
++        vr::VRChaperoneSetup()->HideWorkingSetPreview();
+         vr::VRChaperoneSetup()->RevertWorkingCopy();
+         uint32_t quadCount = 0;
+         vr::VRChaperoneSetup()->GetLiveCollisionBoundsInfo( nullptr,
+@@ -1505,6 +1508,7 @@ void ChaperoneTabController::applyChaperoneProfile( unsigned index )
+         if ( profile.includesChaperoneGeometry )
+         {
+             parent->m_moveCenterTabController.reset();
++            vr::VRChaperoneSetup()->HideWorkingSetPreview();
+             vr::VRChaperoneSetup()->RevertWorkingCopy();
+             vr::VRChaperoneSetup()->SetWorkingCollisionBoundsInfo(
+                 profile.chaperoneGeometryQuads.get(),"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,133,bcdf87b0f5a0810289fc761c8e7c74e01fe2937d,src/tabcontrollers/FixFloorTabController.cpp,modified,10,3,13,"@@ -161,7 +161,10 @@ void FixFloorTabController::eventLoopTick(
+                         floorOffsetY;
+                         */
+                     }
+-                    floorOffsetY = static_cast<float>( tempOffsetY );
++                    else
++                    {
++                        floorOffsetY = static_cast<float>( tempOffsetY );
++                    }
+                 }
+                 else
+                 {
+@@ -188,7 +191,10 @@ void FixFloorTabController::eventLoopTick(
+                         floorOffsetY;
+                         */
+                     }
+-                    floorOffsetY = static_cast<float>( tempOffsetY );
++                    else
++                    {
++                        floorOffsetY = static_cast<float>( tempOffsetY );
++                    }
+                 }
+ 
+                 floorOffsetX = static_cast<float>( tempOffsetX );
+@@ -205,7 +211,6 @@ void FixFloorTabController::eventLoopTick(
+                     offset[0] = floorOffsetX;
+                     offset[2] = floorOffsetZ;
+                 }
+-                parent->m_moveCenterTabController.reset();
+                 parent->AddOffsetToUniverseCenter(
+                     vr::TrackingUniverseStanding, offset, true );
+                 statusMessage
+@@ -291,6 +296,7 @@ void FixFloorTabController::setCanUndo( bool value, bool notify )
+ 
+ void FixFloorTabController::fixFloorClicked()
+ {
++    parent->m_moveCenterTabController.reset();
+     statusMessage = ""Fixing ..."";
+     statusMessageTimeout = 1.0;
+     emit statusMessageSignal();
+@@ -301,6 +307,7 @@ void FixFloorTabController::fixFloorClicked()
+ 
+ void FixFloorTabController::recenterClicked()
+ {
++    parent->m_moveCenterTabController.reset();
+     statusMessage = ""Fixing ..."";
+     statusMessageTimeout = 1.0;
+     emit statusMessageSignal();"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,133,bcdf87b0f5a0810289fc761c8e7c74e01fe2937d,src/tabcontrollers/MoveCenterTabController.cpp,modified,9,1,10,"@@ -731,6 +731,7 @@ void MoveCenterTabController::clampVelocity( double* velocity )
+ 
+ void MoveCenterTabController::updateChaperoneResetData()
+ {
++    vr::VRChaperoneSetup()->HideWorkingSetPreview();
+     vr::VRChaperoneSetup()->RevertWorkingCopy();
+     unsigned currentQuadCount = 0;
+     vr::VRChaperoneSetup()->GetWorkingCollisionBoundsInfo( nullptr,
+@@ -768,16 +769,22 @@ void MoveCenterTabController::updateChaperoneResetData()
+                 -universeCenterForResetYaw );
+         }
+     }
++    // update the working set preview for potential Oculus and WMR issues
++    vr::VRChaperoneSetup()->ShowWorkingSetPreview();
+ }
+ 
+ void MoveCenterTabController::applyChaperoneResetData()
+ {
++    vr::VRChaperoneSetup()->HideWorkingSetPreview();
+     vr::VRChaperoneSetup()->RevertWorkingCopy();
+     vr::VRChaperoneSetup()->SetWorkingCollisionBoundsInfo(
+         m_collisionBoundsForReset, m_collisionBoundsCountForReset );
+     vr::VRChaperoneSetup()->SetWorkingStandingZeroPoseToRawTrackingPose(
+         &m_universeCenterForReset );
+     vr::VRChaperoneSetup()->CommitWorkingCopy( vr::EChaperoneConfigFile_Live );
++    // update the working set preview otherwise Oculus and WMR users may not see
++    // results of the reset
++    vr::VRChaperoneSetup()->ShowWorkingSetPreview();
+ }
+ 
+ // START of drag bindings:
+@@ -1487,7 +1494,8 @@ void MoveCenterTabController::saveUncommittedChaperone()
+     {
+         vr::VRChaperoneSetup()->CommitWorkingCopy(
+             vr::EChaperoneConfigFile_Live );
+-        vr::VRChaperoneSetup()->HideWorkingSetPreview();
++        // test removal for oculus and WMR users
++        // vr::VRChaperoneSetup()->HideWorkingSetPreview();
+         m_chaperoneCommitted = true;
+     }
+ }"

@@ -1,0 +1,469 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vizorvr/patches,655,c6ac3d1,browser/scripts/ui-core.js,modified,246,6,252,"@@ -8,7 +8,7 @@ var uiKeys = {
+ 	spacebar: 32,
+ 
+ 	openInspector	: 73,			//	i
+-	toggleUILayer 	: 9,			// 	(shift+) tab,
++	toggleUILayer	: 9,			// 	(shift+) tab,
+ 	togglePatchEditor : 9,			// 	tab
+ 	toggleFullScreen : 70,			// 	f,
+ 	toggleFloatingPanels : 66,		// 	(ctrl+) b
+@@ -29,21 +29,26 @@ var uiViewMode = {
+ 	world_editor : 'editor'
+ };
+ 
+-
+ VizorUI = function VizorUI() {	// E2.ui
+ 	var that = this;
+-	this.dom = {};				// init sets this to E2.dom
++	this.dom = {				// init sets this to E2.dom
++		chatWindow : null,
++		presetsLib : null,
++		assetsLib : null
++	};
+ 
++	this._initialised = false;
+ 	this.visible = true;		// overall visibility of the UI
+ 	this.visibility = {			// granular flags
+ 		floating_panels: true,
+ 		panel_chat: true,
+ 		panel_assets: false,
+ 		panel_presets: true,
+ 		patch_editor: true,
+-		breadcrumb: true,
+-		player_controls : true,
+-		main_toolbar : true
++		breadcrumb: true,		// always true	(20151012)
++		player_controls : true,	// always true	(20151012)
++		main_toolbar : true,	// always true	(20151012)
++		inspector	: false		// always false (20151012)
+ 	};
+ 	this.viewmode = uiViewMode.patch_editor; // one of uiViewMode keys
+ 	this.flags = {
+@@ -67,7 +72,240 @@ VizorUI.prototype._init = function(e2) {	// called by .init() in ui.js
+ 	e2.core.on('progress', this.updateProgressBar.bind(this));
+ };
+ 
++VizorUI.prototype.getZoom = function() {
++	return 1;
++}
++
++/**
++ * get the state of a UI (tabbed) panel. if no $domElement provided, then _found = false
++ * @param $domElement
++ * @returns {{_found: boolean, visible: boolean, collapsed: boolean, selectedTab: null, x: boolean, y: boolean}}
++ */
++VizorUI.prototype.getDomPanelState = function($domElement) {	/* @var $domElement jQuery */
++	var state = {
++		_found: false,
++		visible : true,
++		collapsed : false,
++		selectedTab : null,
++		x: false,
++		y: false,
++		w: -1,
++		h: -1
++	};
++	if ((typeof $domElement === 'object') && ($domElement.length > 0)) {
++		state._found = true;
++		state.visible = $domElement.is(':visible') && $domElement.hasClass('uiopen');
++		state.collapsed = $domElement.hasClass('collapsed');
++		var pos = $domElement.position();
++		if (pos) {
++			state.x = pos.left;
++			state.y = pos.top;
++		}
++		state.w = $domElement.width();
++		state.h = $domElement.height();
++		// get the active tab
++		var $activeLi = $domElement.find('li.active');
++		if ($activeLi.length>0) {
++			var tabName, tabLink;
++			tabName = $activeLi.data('tabname');			// data-tabname='presets' preferred
++			if (tabName) {
++				state.selectedTab = tabName;
++			} else {
++				tabLink = $activeLi.find('a');
++				state.selectedTab = tabLink.attr('href');	// #something
++			}
++		}
++		// else this isn't tabbed so selectedTab does not apply
++	}
++	return state;
++}
++
++VizorUI.prototype.getState = function() {
++	if (typeof clone !== 'function') return null;	// why are we here?
++	if (!this._initialised) return false;
++	var s = {};
++	s['visible'] = this.visible;
++	s['visibility'] = clone(this.visibility);		// util.js
++	s['viewmode'] = this.viewmode;
++	s['panelStates'] = {
++		chat:		null,
++		presets:	null,
++		assets:		null
++	};
++	var ps = s['panelStates'];					// ref
++	ps.chat = this.getDomPanelState(this.dom.chatWindow);
++	ps.presets = this.getDomPanelState(this.dom.presetsLib);
++	ps.assets = this.getDomPanelState(this.dom.assetsLib);
++	return s;
++};
++
++
++VizorUI.prototype.setState = function(state) {
++	if ((!this._initialised) || (typeof state !== 'object')) return false;
++	if (typeof clone !== 'function') return null;	// why are we here?
++	this.visible = state.visible;
++	this.visibility = clone(state.visibility);
++	this.updateVisibility();
++	this.setWorldEditorMode(state.viewmode === uiViewMode.world_editor);
++
++	var that=this;
++	var applyPanelState = function($el, state, collapse_callback) {
++		if ((typeof $el !== 'object') || ($el.length === 0)) return false;
++		// ignores visibility which is already applied
++		var collapsed = state.collapsed || false;
++		var selectedTab = state.selectedTab || false;
++		var x = state.x || 0;
++		var y = state.y || 0;
++		var w = state.w || 0;	// w currently ignored
++		var h = state.h || 0;	// h only applied to chat window
++		// collapse if needed
++		if (typeof collapse_callback === 'function') {	// collapse callback will collapse the window or not
++			if (collapsed) {
++				$el.removeClass('collapsed');
++			} else {
++				$el.addClass('collapsed');
++			}
++			collapse_callback.apply(that);
++		} else {										// we collapse or expand the window
++			if (collapsed) {
++				$el.addClass('collapsed');
++			} else {
++				$el.removeClass('collapsed');
++			}
++		}
++		if (!((x===0) && (y === 0))) {
++			var parent = $el.parent();
++			var parentHeight = parent.innerHeight();
++			var parentWidth = parent.innerWidth();
++			if ((parentWidth>0) && (parentHeight>0)) {	// constrain these
++				var oh = $el.outerHeight;
++				var ow = $el.outerWidth();
++				if (oh < 50) oh = 100;
++				if (ow < 50) ow = 100;
++				if (y > parentHeight) {
++					y = parentHeight - oh;
++				}
++				if (x > parentWidth) {
++					x = parentWidth - ow;
++				}
++			}
++			$el.css({
++				'left' : '' + x + 'px',
++				'top' : '' + y + 'px'
++			});
++		}
++		//
++		if (selectedTab) {
++			if (selectedTab.indexOf('#') === 0) {	// this is a href, so find link to click
++				var $a = $el.find(""a[href='""+selectedTab+""']"");
++				$a.parent().removeClass('active')
++				$a.trigger('click');
++			} else {
++				$el.find(""li[data-tabname='""+selectedTab+""'"").find('a').trigger('click');
++			}
++		}
++		return true;
++	};
++
++	if (typeof state.panelStates !== 'undefined') {
++		var ps = state.panelStates;
++		if (typeof ps.chat !== 'undefined') {
++			var $chatPanel = this.dom.chatWindow;
++			applyPanelState($chatPanel, ps.chat, this.onChatToggleClicked);
++			var activeTabIsChat = (ps.chat.selectedTab === '#chatTab') || (ps.chat.selectedTab === 'chat');
++			if (activeTabIsChat && (ps.chat.h > 0)) {	// only apply height if the state had chat selected
++				this.dom.chatWindow.height(ps.chat.h);
++				this.onChatResize();
++			}
++		}
++		if (typeof ps.presets !== 'undefined') {
++			applyPanelState(this.dom.presetsLib, ps.presets, this.onPresetsToggleClicked);
++		}
++		if (typeof ps.assets !== 'undefined') {
++			applyPanelState(this.dom.assetsLib, ps.assets, this.onAssetsToggleClicked);
++		}
++	}
+ 
++	this.enforceStateConstraints();
++	return true;
++};
++
++VizorUI.prototype.getStateJSON = function() {
++	var state = this.getState();
++	return (typeof state === 'object') ? JSON.stringify(state, null, '  ') : state;
++}
++
++VizorUI.prototype.setStateJSON = function(stateJSON) {
++	var state = JSON.parse(stateJSON);
++	return (typeof state === 'object') ? this.setState(state) : false;
++}
++
++VizorUI.prototype.enforceStateConstraints = function() {
++
++	var referenceTop	= jQuery('#canvases').offset().top;
++	var referenceBottom	= 45;	// #652
++	var referenceLeft	= 0;
++	var that = this;
++
++	var constrainPanel = function($panel, constrainHeight, callback) {
++		if (!$panel.is(':visible')) return false;
++		constrainHeight = !!(constrainHeight || false);
++		var panelHeight = $panel.outerHeight(true);
++		var panelWidth = $panel.outerWidth(true);
++		var parentHeight = $panel.parent().innerHeight();
++		var parentWidth = $panel.parent().innerWidth();
++		var availableHeight = parentHeight - referenceBottom;	// #652
++		var availableWidth = parentWidth;
++		console.log('css height is: ' + $panel.css('height'));
++		var isAutoHeight = ($panel.css('height') === 'auto');
++
++		var pos = $panel.position();
++		if (pos.left === 0) pos = $panel.offset();
++
++		var panelTop = pos.top;
++		var panelLeft = pos.left;
++		var newX = panelLeft, newY = panelTop, newH = panelHeight;
++
++		if (panelHeight > parentHeight) {
++			$panel.height(parentHeight - 10);
++		}
++		if (panelTop + panelHeight > availableHeight) {	// uh oh
++
++			if (newH > availableHeight) {
++				newH = availableHeight;
++			}
++			if (newH <= availableHeight) {	// change the top only
++				newY -= ((newY + newH) - availableHeight);
++			}
++			if (newY < referenceTop) {
++				newH = newH - (referenceTop - newY) - 10;
++				newY = referenceTop + 5;
++			}
++
++		}
++		if (panelLeft + panelWidth > parentWidth) {
++			newX -= ((newX + panelWidth) - availableWidth);
++		}
++		if (newX < referenceLeft) newX = referenceLeft + 5;
++
++
++		if (constrainHeight) $panel.height(newH);
++		$panel.css({top: newY, left: newX});
++
++		if (typeof callback === 'function') setTimeout(callback.bind(that), 200);
++		return true;
++	}
++
++	if (this.isVisible()) {
++		if (this.visibility.panel_chat) constrainPanel(this.dom.chatWindow, true, this.onChatResize);
++		if (this.visibility.panel_assets) constrainPanel(this.dom.assetsLib);
++		if (this.visibility.panel_presets) constrainPanel(this.dom.presetsLib);
++	}
++
++
++
++
++}
+ 
+ /***** IS... *****/
+ 
+@@ -235,6 +473,7 @@ VizorUI.prototype.onFullScreenChanged = function() {	// placeholder
+ };
+ 
+ VizorUI.prototype.onWindowResize = function() {	// placeholder
++	this.enforceStateConstraints();
+ 	return true;
+ };
+ 
+@@ -258,6 +497,7 @@ VizorUI.prototype.updateVisibility = function() {
+ 	$chat.toggle(show_panels && this.visibility.panel_chat);
+ 	$patch_editor.toggle(this.visible && this.visibility.patch_editor);
+ 	E2.app.noodlesVisible = this.visibility.patch_editor;
++	this.enforceStateConstraints();
+ };
+ 
+ "
+vizorvr/patches,655,c6ac3d1,browser/scripts/ui.js,modified,51,30,81,"@@ -2,7 +2,7 @@
+ 
+ 
+ VizorUI.prototype.setupEventHandlers = function(e2, dom) {
+-	if (typeof e2 == 'undefined') return false;
++	if (typeof e2 === 'undefined') return false;
+ 	dom = dom || this.dom;
+ 	e2.app.openPresetSaveDialog = this.openPresetSaveDialog.bind(e2);
+ 
+@@ -43,9 +43,14 @@ VizorUI.prototype.init = function(e2) {	// normally the global E2 object
+ 	dom.presetsLib.movable();
+ 	dom.assetsLib.movable();
+ 
+-	var chatTop = $(window).height() - $('.chat-users').height() - $('.bottom-panel').height() - 40;
+-	if (chatTop<($('.editor-header').height()+$('#breadcrumb').height())) {
+-		chatTop= $('.editor-header').height() + $('#breadcrumb').height() + 40;
++	var chatUsersHeight = jQuery('.chat-users').height();
++	var bottomPanelHeight = jQuery('.bottom-panel').height();
++	var editorHeaderHeight = jQuery('.editor-header').height();
++	var breadcrumbHeight = jQuery('#breadcrumb').height();
++
++	var chatTop = $(window).height() - chatUsersHeight - bottomPanelHeight - 40;
++	if (chatTop < (editorHeaderHeight + breadcrumbHeight)) {
++		chatTop = breadcrumbHeight + breadcrumbHeight + 40;
+ 	}
+ 	dom.chatWindow.css({'top': chatTop});
+ 	dom.chatWindow.movable();
+@@ -54,6 +59,8 @@ VizorUI.prototype.init = function(e2) {	// normally the global E2 object
+ 	this.setWorldEditorMode(e2.app.worldEditor.isActive());
+ 	
+ 	this.setPageTitle();
++
++	this._initialised = true;
+ }
+ 
+ 
+@@ -73,19 +80,20 @@ VizorUI.prototype.showLoadingIndicator = function() {
+ // VizorUI.prototype.closeModal
+ 
+ VizorUI.prototype.setPageTitle = function() {
+-	var graphname = E2.app.path;
+ 	var isLoggedIn = E2.models.user.get('username');
+-	var newTitle = ""Vizor"";
+-	
+ 	if (!isLoggedIn)
+ 		return false;
+ 
++	var graphname = E2.app.path;
++	var newTitle = ""Vizor"";
++
+ 	graphname = graphname.split('/')
+ 	if (graphname.length > 1)
+ 		graphname=graphname[1];
+ 	
+ 	newTitle = graphname + "" | "" + newTitle;	
+ 	document.title = newTitle;
++	return newTitle;
+ }
+ 
+ VizorUI.prototype.openLoginModal = function() {
+@@ -127,7 +135,7 @@ VizorUI.prototype.openPublishGraphModal = function() {
+ 	bootbox.dialog({
+ 		show: true,
+ 		animate: false,
+-		message: 'Rendering',
++		message: 'Rendering'
+ 	}).init(function() {
+ 		E2.app.useCustomBootboxTemplate(publishTemplate);
+ 		$('#userGraphName_id').val(graphname);
+@@ -232,12 +240,28 @@ VizorUI.prototype.enterVRView = function() {
+ 
+ VizorUI.prototype.onChatResize = function() {
+ 	var dom = this.dom;
+-	var restHeight = dom.chatWindow.find('.drag-handle').height()
+-				   + dom.chatTabs.height()
+-				   + dom.chat.find('.chat-nav').outerHeight(true)
+-				   + dom.chat.find('.composer').outerHeight(true);
+-	var newHeight = dom.chatWindow.height() - restHeight;
+-	dom.chat.height('auto').find('.messages').height(newHeight);
++	var $chatPanel = dom.chatWindow;
++	var $chat = dom.chat;
++
++	var panelHeight = $chatPanel.outerHeight(true);
++	if (panelHeight < 120) {
++		panelHeight = 120;
++		$chatPanel.height(panelHeight);
++	}
++	var chatParentHeight = $chatPanel.parent().height();
++	if (panelHeight > chatParentHeight) {
++		$chatPanel.height(chatParentHeight - 10);
++	}
++
++	var restHeight = $chatPanel.find('.drag-handle').height()
++	restHeight += dom.chatTabs.height();
++	restHeight += $chat.find('.chat-nav').outerHeight(true);
++	restHeight += $chat.find('.composer').outerHeight(true);
++
++	var newHeight = panelHeight - restHeight - 2;
++	$chat.height('auto').find('.messages').height(newHeight);
++
++
+ };
+ 
+ 
+@@ -258,7 +282,7 @@ VizorUI.prototype.onTreeClicked = function(e) {
+ 	return true;
+ }
+ 
+-VizorUI.prototype.onPresetsToggleClicked = function(e) {
++VizorUI.prototype.onPresetsToggleClicked = function(e) {	// this = ui
+ 	var dom = this.dom;
+ 
+ 	var $graphTab = jQuery('div#graph.tab-pane');
+@@ -367,10 +391,8 @@ VizorUI.prototype.onPeopleListChanged = function(storeAction) {
+ 			dom.chatWindow.height(dom.chatWindow.find('.drag-handle').height()
+ 								   + dom.chatTabs.height()
+ 								   + $peopleList.find('.meta').outerHeight(true)
+-								   + itemHeight * ($('.graph-users>li').length
+-								   + listChange));
+-			$peopleScroll.height($('.chat-users').height()
+-									 - $('.chat-tabs').height());
++								   + itemHeight * ($('.graph-users>li').length + listChange));
++			$peopleScroll.height($('.chat-users').height() - $('.chat-tabs').height());
+ 			$peopleList.height($peopleScroll.height());
+ 		} else {
+ 			dom.chatWindow.height(dom.chatWindow.find('.drag-handle').height()
+@@ -385,27 +407,26 @@ VizorUI.prototype.onPeopleListChanged = function(storeAction) {
+ }
+ 
+ 
+-VizorUI.prototype.onChatToggleClicked = function() {
++VizorUI.prototype.onChatToggleClicked = function() {	// this = ui
+ 	var dom = this.dom;
+-	if (dom.chatWindow.hasClass('collapsed')) {
++	var $chatWindow = dom.chatWindow;
++	var dragHandleHeight = $chatWindow.find('.drag-handle').height();
++	var chatTabHeight = dom.chatTabs.height();
++	if ($chatWindow.hasClass('collapsed')) {
++		$chatWindow.removeClass('collapsed');
+ 		if (dom.peopleTab.hasClass('active')) {
+-			dom.chatWindow.removeClass('collapsed');
+ 			this.onPeopleListChanged(null);
+ 		} else {
+-			dom.chatWindow.removeClass('collapsed')
+-							 .height(dom.chatWindow.find('.drag-handle').height()
+-								   + dom.chatTabs.height()
+-								   + dom.chat.height());
++			$chatWindow.height(dragHandleHeight + chatTabHeight + dom.chat.height());
+ 		}
+ 	} else {
+-		dom.chatWindow.addClass('collapsed')
+-						 .height(dom.chatWindow.find('.drag-handle').height()
+-							   + dom.chatTabs.height());
++		$chatWindow.addClass('collapsed');
++		$chatWindow.height(dragHandleHeight + chatTabHeight);
+ 	}
+ 	return false;
+ };
+ 
+-VizorUI.prototype.onAssetsToggleClicked = function() {
++VizorUI.prototype.onAssetsToggleClicked = function() {	// this = ui
+ 	var dom = this.dom;
+ 	var controlsHeight = dom.assetsLib.find('.drag-handle').outerHeight(true)
+ 					   + dom.assetsLib.find('.block-header').outerHeight(true)"
+vizorvr/patches,655,c6ac3d1,less/patch_editor.less,modified,2,0,2,"@@ -715,3 +715,5 @@ div.graph-node.p_cat_io.p_id_variable_local_write .p_header
+ 	background: #17820B;
+   }
+ }
++
++div.ace_content {text-align: left;}"

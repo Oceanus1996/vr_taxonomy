@@ -1,0 +1,113 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+OpenKneeboard/OpenKneeboard,517,0dbbf48,src/app/app-common/UILayers/BookmarksUILayer.cpp,modified,23,2,25,"@@ -46,10 +46,18 @@ BookmarksUILayer::BookmarksUILayer(
+   auto d2d = dxr->mD2DDeviceContext;
+   d2d->CreateSolidColorBrush(
+     {0.7f, 0.7f, 0.7f, 0.8f}, D2D1::BrushProperties(), mBackgroundBrush.put());
+-  d2d->CreateSolidColorBrush(
+-    {0.0f, 0.0f, 0.0f, 1.0f}, D2D1::BrushProperties(), mTextBrush.put());
++  mTextBrush = dxr->mBlackBrush;
+   d2d->CreateSolidColorBrush(
+     {0.0f, 0.8f, 1.0f, 1.0f}, D2D1::BrushProperties(), mHoverBrush.put());
++  mCurrentPageStrokeBrush = dxr->mWhiteBrush;
++
++  winrt::check_hresult(mDXResources->mD2DFactory->CreateStrokeStyle(
++    D2D1_STROKE_STYLE_PROPERTIES {
++      .dashStyle = D2D1_DASH_STYLE_DASH,
++    },
++    nullptr,
++    0,
++    mCurrentPageStrokeStyle.put()));
+ }
+ 
+ void BookmarksUILayer::Init() {
+@@ -179,6 +187,9 @@ void BookmarksUILayer::Render(
+   textFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+ 
+   size_t buttonNumber = 0;
++  const auto currentTab = mKneeboardView->GetCurrentTabView();
++  const auto currentTabID = currentTab->GetTab()->GetRuntimeID();
++  const auto currentPageID = currentTab->GetPageID();
+   for (const auto& button: buttons) {
+     const D2D1_RECT_F buttonRect {
+       rect.Left<float>(),
+@@ -195,6 +206,16 @@ void BookmarksUILayer::Render(
+ 
+     d2d->DrawTextW(
+       text.data(), text.size(), textFormat.get(), buttonRect, textBrush.get());
++    if (
++      button.mBookmark.mTabID == currentTabID
++      && button.mBookmark.mPageID == currentPageID) {
++      d2d->DrawLine(
++        {buttonRect.right - 5, buttonRect.top + 1},
++        {buttonRect.right - 5, buttonRect.bottom},
++        mCurrentPageStrokeBrush.get(),
++        4.0f,
++        mCurrentPageStrokeStyle.get());
++    }
+     if (buttonNumber != 1) {
+       d2d->DrawLine(
+         {rect.Left<FLOAT>(), buttonRect.top},"
+OpenKneeboard/OpenKneeboard,517,0dbbf48,src/app/app-common/UILayers/include/OpenKneeboard/BookmarksUILayer.h,modified,3,0,3,"@@ -73,6 +73,9 @@ class BookmarksUILayer final
+   winrt::com_ptr<ID2D1SolidColorBrush> mTextBrush;
+   winrt::com_ptr<ID2D1SolidColorBrush> mHoverBrush;
+ 
++  winrt::com_ptr<ID2D1SolidColorBrush> mCurrentPageStrokeBrush;
++  winrt::com_ptr<ID2D1StrokeStyle> mCurrentPageStrokeStyle;
++
+   struct Button {
+     D2D1_RECT_F mRect {};
+     Bookmark mBookmark {};"
+OpenKneeboard/OpenKneeboard,517,82ad04e,src/app/app-common/UILayers/HeaderUILayer.cpp,modified,15,8,23,"@@ -63,23 +63,18 @@ HeaderUILayer::HeaderUILayer(
+     {0.7f, 0.7f, 0.7f, 0.8f},
+     D2D1::BrushProperties(),
+     reinterpret_cast<ID2D1SolidColorBrush**>(mHeaderBGBrush.put()));
+-  ctx->CreateSolidColorBrush(
+-    {0.0f, 0.0f, 0.0f, 1.0f},
+-    D2D1::BrushProperties(),
+-    reinterpret_cast<ID2D1SolidColorBrush**>(mHeaderTextBrush.put()));
++  mHeaderTextBrush = dxr->mBlackBrush;
+   ctx->CreateSolidColorBrush(
+     {0.4f, 0.4f, 0.4f, 0.5f},
+     D2D1::BrushProperties(),
+     reinterpret_cast<ID2D1SolidColorBrush**>(mDisabledButtonBrush.put()));
+-  ctx->CreateSolidColorBrush(
+-    {0.0f, 0.0f, 0.0f, 1.0f},
+-    D2D1::BrushProperties(),
+-    reinterpret_cast<ID2D1SolidColorBrush**>(mButtonBrush.put()));
++  mButtonBrush = dxr->mBlackBrush;
+   ctx->CreateSolidColorBrush(
+     {0.0f, 0.8f, 1.0f, 1.0f},
+     D2D1::BrushProperties(),
+     reinterpret_cast<ID2D1SolidColorBrush**>(mHoverButtonBrush.put()));
+   mActiveButtonBrush = mHoverButtonBrush;
++  mActiveViewSeparatorBrush = mDXResources->mBlackBrush;
+ }
+ 
+ HeaderUILayer::~HeaderUILayer() {
+@@ -219,6 +214,18 @@ void HeaderUILayer::DrawToolbar(
+     return;
+   }
+ 
++  auto tablets = mKneeboardState->GetTabletInputAdapter();
++  if (!(tablets && tablets->HaveAnyTablet())) {
++    // If the tablet is present, the buttons indicate the active view
++    d2d->DrawLine(
++      {headerRect.Left<FLOAT>(), headerRect.Bottom()},
++      {headerRect.Right<FLOAT>(), headerRect.Bottom()},
++      mActiveViewSeparatorBrush.get(),
++      1.0f,
++      nullptr);
++    return;
++  }
++
+   this->LayoutToolbar(context, fullRect, headerRect, headerTextRect);
+ 
+   if (*headerTextRect == headerRect) {"
+OpenKneeboard/OpenKneeboard,517,82ad04e,src/app/app-common/UILayers/include/OpenKneeboard/HeaderUILayer.h,modified,1,0,1,"@@ -91,6 +91,7 @@ class HeaderUILayer final : public UILayerBase,
+   winrt::com_ptr<ID2D1Brush> mDisabledButtonBrush;
+   winrt::com_ptr<ID2D1Brush> mHoverButtonBrush;
+   winrt::com_ptr<ID2D1Brush> mActiveButtonBrush;
++  winrt::com_ptr<ID2D1Brush> mActiveViewSeparatorBrush;
+   EventContext mEventContext;
+ 
+   struct Button {"

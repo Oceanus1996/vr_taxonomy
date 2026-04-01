@@ -1,0 +1,93 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+Samsung/GearVRf,306,f49d9f4362ff09e27a74fe98ba9e2fc5ed4a5910,GVRf/Framework/jni/sensor/ksensor/k_sensor.cpp,modified,29,30,59,"@@ -246,14 +246,13 @@ void KSensor::updateQ(KTrackerMessage *msg, vec3& corrected_gyro,
+     vec3 filteredGyro = applyGyroFilter(msg->RotationRate, msg->Temperature);
+ 
+     const float deltaT = msg->TimeDelta;
+-    corrected_gyro = applyTiltCorrection(filteredGyro, msg->Acceleration,
++    std::pair<vec3, float> axisAndMagnitude = applyTiltCorrection(filteredGyro, msg->Acceleration,
+             deltaT, q);
+ 
+-    float gyroLength = filteredGyro.Length();
+-    if (gyroLength != 0.0f) {
++    if (0.0f != axisAndMagnitude.second) {
+         q = q
+-                * Quaternion::CreateFromAxisAngle(corrected_gyro.Normalized(),
+-                        gyroLength * deltaT);
++                * Quaternion::CreateFromAxisAngle(axisAndMagnitude.first,
++                        axisAndMagnitude.second * deltaT);
+     }
+ 
+ #ifdef LOG_SUMMARY
+@@ -318,38 +317,38 @@ vec3 KSensor::applyGyroFilter(const vec3& rawGyro,
+     return factoryGyroMatrix_.Transform(rawGyro - gyroOffset_);
+ }
+ 
+-vec3 KSensor::applyTiltCorrection(const vec3& gyro, const vec3& accel,
++std::pair<vec3, float> KSensor::applyTiltCorrection(const vec3& gyro, const vec3& accel,
+         const float DeltaT, Quaternion& q) {
+-    vec3 gyroCorrected = gyro;
++    if (accel.Length() <= 0.001f) {
++        return std::make_pair(gyro.Normalized(), gyro.Length());
++    }
++
++    Quaternion Qinv = q.Inverted();
++    vec3 up = Qinv.Rotate(vec3(0, 1, 0));
+ 
+-    if (accel.Length() > 0.001f) {
+-        Quaternion Qinv = q.Inverted();
+-        vec3 up = Qinv.Rotate(vec3(0, 1, 0));
++    vec3 accel_normalize = accel.Normalized();
++    vec3 up_normalize = up.Normalized();
++    vec3 correction = accel_normalize.Cross(up_normalize);
++
++    float proportionalGain = 0.25f;
++    const int startupThreshold = 5;
++    if (step_ > startupThreshold) {
++        // Spike detection
++        float tiltAngle = up.Angle(accel);
++        tiltFilter_.push(tiltAngle);
+ 
+         const float spikeThreshold = 0.01f;
+-        float proportionalGain = 0.25f;
+-
+-        vec3 accel_normalize = accel.Normalized();
+-        vec3 up_normalize = up.Normalized();
+-        vec3 correction = accel_normalize.Cross(up_normalize);
+-        float cosError = accel_normalize.Dot(up_normalize);
+-
+-        if (step_ > 5) {
+-            // Spike detection
+-            float tiltAngle = up.Angle(accel);
+-            tiltFilter_.push(tiltAngle);
+-            if (tiltAngle > tiltFilter_.mean() + spikeThreshold) {
+-                proportionalGain = 0;
+-            }
+-        } else {
+-            // Apply full correction at the startup
+-            proportionalGain = 1 / DeltaT;
++        if (tiltAngle > tiltFilter_.mean() + spikeThreshold) {
++            proportionalGain = 0;
+         }
+-
+-        gyroCorrected += (correction * proportionalGain);
++    } else {
++        // Apply full correction at the startup
++        proportionalGain = 1 / DeltaT;
+     }
+ 
+-    return gyroCorrected;
++    vec3 gyroCorrected = gyro + (correction * proportionalGain);
++    float magnitude = startupThreshold < step_ ? gyro.Length() : gyroCorrected.Length();
++    return std::make_pair(gyroCorrected.Normalized(), magnitude);
+ }
+ 
+ void KSensor::readFactoryCalibration() {"
+Samsung/GearVRf,306,f49d9f4362ff09e27a74fe98ba9e2fc5ed4a5910,GVRf/Framework/jni/sensor/ksensor/k_sensor.h,modified,1,1,2,"@@ -60,7 +60,7 @@ class KSensor {
+     bool pollSensor(KTrackerSensorZip* data);
+     void process(KTrackerSensorZip* data, vec3& corrected_gyro, Quaternion& q);
+     void updateQ(KTrackerMessage *msg, vec3& corrected_gyro, Quaternion& q);
+-    vec3 applyTiltCorrection(const vec3& gyro, const vec3& accel, const float DeltaT, Quaternion& q);
++    std::pair<vec3, float> applyTiltCorrection(const vec3& gyro, const vec3& accel, const float DeltaT, Quaternion& q);
+     void readerThreadFunc();
+     vec3 applyGyroFilter(const vec3& rawGyro, const float currentTemperature);
+     void readFactoryCalibration();"

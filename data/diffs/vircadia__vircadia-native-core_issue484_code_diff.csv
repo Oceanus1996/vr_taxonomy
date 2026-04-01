@@ -1,0 +1,311 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vircadia/vircadia-native-core,484,7b225b6,cmake/ports/sranipal/portfile.cmake,modified,3,3,6,"@@ -7,9 +7,9 @@ file(READ ""${VCPKG_ROOT_DIR}/_env/EXTERNAL_BUILD_ASSETS.txt"" EXTERNAL_BUILD_ASSE
+ if (WIN32)
+     vcpkg_download_distfile(
+         SRANIPAL_SOURCE_ARCHIVE
+-        URLS ""${EXTERNAL_BUILD_ASSETS}/seth/sranipal-1.1.0.1-windows.zip""
+-        SHA512 b09ce012abe4e3c71e8e69626bdd7823ff6576601a821ab365275f2764406a3e5f7b65fcf2eb1d0962eff31eb5958a148b00901f67c229dc6ace56eb5e6c9e1b
+-        FILENAME sranipal-1.1.0.1-windows.zip
++        URLS ""${EXTERNAL_BUILD_ASSETS}/seth/sranipal-1.1.0.1-2-windows.zip""
++        SHA512 f1f68f6beef52ae5e034bc3f44932ae0800ee187b75d80e76ae7b17b8ddd7bc54c039ce5594d231035e3caf3a61fed36f38621a860b4fb20170cb0176d9c28f0
++        FILENAME sranipal-1.1.0.1-2-windows.zip
+     )
+ 
+     vcpkg_extract_source_archive(${SRANIPAL_SOURCE_ARCHIVE})"
+vircadia/vircadia-native-core,484,7b225b6,interface/resources/qml/hifi/tablet/ControllerSettings.qml,modified,4,2,6,"@@ -1,6 +1,7 @@
+ //
+ //  Created by Dante Ruiz on 6/1/17.
+ //  Copyright 2017 High Fidelity, Inc.
++//  Copyright 2020 Vircadia contributors.
+ //
+ //  Distributed under the Apache License, Version 2.0.
+ //  See the accompanying file LICENSE or http://www.apache.org/licenses/LICENSE-2.0.html
+@@ -96,7 +97,8 @@ Item {
+ 
+                 HifiControls.ImageMessageBox {
+                     id: imageMessageBox
+-                    anchors.fill: parent
++                    anchors.top: parent.top
++                    anchors.topMargin: 444
+                     z: 2000
+                     imageWidth: 442
+                     imageHeight: 670
+@@ -179,7 +181,7 @@ Item {
+                     HifiControls.CheckBox {
+                         id: checkBox
+                         colorScheme: hifi.colorSchemes.dark
+-                        text: ""show all input devices""
++                        text: ""Show all input devices""
+ 
+                         onClicked: {
+                             box.model = inputPlugins();"
+vircadia/vircadia-native-core,484,7b225b6,interface/resources/qml/hifi/tablet/OpenVrConfiguration.qml,modified,78,8,86,"@@ -1,6 +1,7 @@
+ //
+ //  Created by Dante Ruiz on 6/5/17.
+ //  Copyright 2017 High Fidelity, Inc.
++//  Copyright 2020 Vircadia contributors.
+ //
+ //  Distributed under the Apache License, Version 2.0.
+ //  See the accompanying file LICENSE or http://www.apache.org/licenses/LICENSE-2.0.html
+@@ -71,6 +72,7 @@ Flickable {
+ 
+             property int state: buttonState.disabled
+             property var lastConfiguration:  null
++            property bool isConfiguring: false
+ 
+             HifiConstants { id: hifi }
+ 
+@@ -360,9 +362,9 @@ Flickable {
+             RalewayRegular {
+                 id: info
+ 
+-                text: ""See Recommended Tracker Placement""
++                text: ""See Recommended Placement""
+                 color: hifi.colors.blueHighlight
+-                size: 10
++                size: 12
+                 anchors {
+                     left: additional.right
+                     leftMargin: 10
+@@ -415,7 +417,6 @@ Flickable {
+                     id: feetBox
+                     width: 15
+                     height: 15
+-                    boxRadius: 7
+ 
+                     onClicked: {
+                         if (!checked) {
+@@ -446,7 +447,6 @@ Flickable {
+                     id: hipBox
+                     width: 15
+                     height: 15
+-                    boxRadius: 7
+ 
+                     onClicked: {
+                         if (checked) {
+@@ -486,7 +486,6 @@ Flickable {
+                     id: chestBox
+                     width: 15
+                     height: 15
+-                    boxRadius: 7
+ 
+                     onClicked: {
+                         if (checked) {
+@@ -524,7 +523,6 @@ Flickable {
+                     id: shoulderBox
+                     width: 15
+                     height: 15
+-                    boxRadius: 7
+ 
+                     onClicked: {
+                         if (checked) {
+@@ -823,7 +821,6 @@ Flickable {
+                 id: viveInDesktop
+                 width: 15
+                 height: 15
+-                boxRadius: 7
+ 
+                 anchors.top: advanceSettings.bottom
+                 anchors.topMargin: 5
+@@ -840,9 +837,71 @@ Flickable {
+                 }
+             }
+ 
++
++            HifiControls.CheckBox {
++                id: eyeTracking
++                width: 15
++                height: 15
++
++                anchors.top: viveInDesktop.bottom
++                anchors.topMargin: 5
++                anchors.left: openVrConfiguration.left
++                anchors.leftMargin: leftMargin + 10
++
++                onClicked: {
++                    sendConfigurationSettings();
++                }
++            }
++
++            RalewayBold {
++                id: eyeTrackingLabel
++                size: 12
++                text: ""Use eye tracking (if available).""
++                color: hifi.colors.lightGrayText
++                anchors {
++                    left: eyeTracking.right
++                    leftMargin: 5
++                    verticalCenter: eyeTracking.verticalCenter
++                }
++            }
++
++            RalewayRegular {
++                id: privacyPolicy
++                text: ""Privacy Policy""
++                color: hifi.colors.blueHighlight
++                size: 12
++                anchors {
++                    left: eyeTrackingLabel.right
++                    leftMargin: 10
++                    verticalCenter: eyeTrackingLabel.verticalCenter
++                }
++
++                Rectangle {
++                    id: privacyPolicyUnderline
++                    color: hifi.colors.blueHighlight
++                    width: privacyPolicy.width
++                    height: 1
++                    anchors {
++                        top: privacyPolicy.bottom
++                        topMargin: 1
++                        left: privacyPolicy.left
++                    }
++                    visible: false
++                }
++
++                MouseArea {
++                    anchors.fill: parent;
++                    hoverEnabled: true
++                    onEntered: privacyPolicyUnderline.visible = true;
++                    onExited: privacyPolicyUnderline.visible = false;
++                    onClicked: HiFiAbout.openUrl(""https://vircadia.com/privacy-policy"");
++                }
++            }
++
++
+             Row {
+                 id: outOfRangeDataStrategyRow
+-                anchors.top: viveInDesktop.bottom
++                anchors.top: eyeTracking.bottom
+                 anchors.topMargin: 5
+                 anchors.left: openVrConfiguration.left
+                 anchors.leftMargin: leftMargin + 10
+@@ -966,6 +1025,8 @@ Flickable {
+             }
+ 
+             function displayConfiguration() {
++                isConfiguring = true;
++
+                 var settings = InputConfiguration.configurationSettings(openVrConfiguration.pluginName);
+                 var configurationType = settings[""trackerConfiguration""];
+                 displayTrackerConfiguration(configurationType);
+@@ -982,6 +1043,7 @@ Flickable {
+                 var viveController = settings[""handController""];
+                 var desktopMode = settings[""desktopMode""];
+                 var hmdDesktopPosition = settings[""hmdDesktopTracking""];
++                var eyeTrackingEnabled = settings[""eyeTrackingEnabled""];
+ 
+                 armCircumference.realValue = settings.armCircumference;
+                 shoulderWidth.realValue = settings.shoulderWidth;
+@@ -1004,6 +1066,7 @@ Flickable {
+ 
+                 viveInDesktop.checked = desktopMode;
+                 hmdInDesktop.checked = hmdDesktopPosition;
++                eyeTracking.checked = eyeTrackingEnabled;
+                 outOfRangeDataStrategyComboBox.currentIndex = outOfRangeDataStrategyComboBox.model.indexOf(settings.outOfRangeDataStrategy);
+ 
+                 initializeButtonState();
+@@ -1014,6 +1077,8 @@ Flickable {
+                 };
+ 
+                 UserActivityLogger.logAction(""mocap_ui_open_dialog"", data);
++
++                isConfiguring = false;
+             }
+ 
+             function displayTrackerConfiguration(type) {
+@@ -1170,13 +1235,18 @@ Flickable {
+                     ""shoulderWidth"": shoulderWidth.realValue,
+                     ""desktopMode"": viveInDesktop.checked,
+                     ""hmdDesktopTracking"": hmdInDesktop.checked,
++                    ""eyeTrackingEnabled"": eyeTracking.checked,
+                     ""outOfRangeDataStrategy"": outOfRangeDataStrategyComboBox.model[outOfRangeDataStrategyComboBox.currentIndex]
+                 }
+ 
+                 return settingsObject;
+             }
+ 
+             function sendConfigurationSettings() {
++                if (isConfiguring) {
++                    // Ignore control value changes during dialog initialization.
++                    return;
++                }
+                 var settings = composeConfigurationSettings();
+                 InputConfiguration.setConfigurationSettings(settings, openVrConfiguration.pluginName);
+                 updateCalibrationButton();"
+vircadia/vircadia-native-core,484,7b225b6,plugins/openvr/src/ViveControllerManager.cpp,modified,14,1,15,"@@ -264,6 +264,10 @@ void ViveControllerManager::setConfigurationSettings(const QJsonObject configura
+             _hmdDesktopTracking = configurationSettings[""hmdDesktopTracking""].toBool();
+         }
+ 
++        if (configurationSettings.contains(""eyeTrackingEnabled"")) {
++            _eyeTrackingEnabled = configurationSettings[""eyeTrackingEnabled""].toBool();
++        }
++
+         _inputDevice->configureCalibrationSettings(configurationSettings);
+         saveSettings();
+     }
+@@ -274,6 +278,7 @@ QJsonObject ViveControllerManager::configurationSettings() {
+         QJsonObject configurationSettings = _inputDevice->configurationSettings();
+         configurationSettings[""desktopMode""] = _desktopMode;
+         configurationSettings[""hmdDesktopTracking""] = _hmdDesktopTracking;
++        configurationSettings[""eyeTrackingEnabled""] = _eyeTrackingEnabled;
+         return configurationSettings;
+     }
+ 
+@@ -793,7 +798,7 @@ void ViveControllerManager::pluginUpdate(float deltaTime, const controller::Inpu
+     }
+ 
+ #ifdef VIVE_PRO_EYE
+-    if (_viveProEye) {
++    if (_viveProEye && _eyeTrackingEnabled) {
+         updateEyeTracker(deltaTime, inputCalibrationData);
+     }
+ 
+@@ -815,6 +820,9 @@ void ViveControllerManager::loadSettings() {
+             _inputDevice->_shoulderWidth = settings.value(""shoulderWidth"", QVariant(DEFAULT_SHOULDER_WIDTH)).toDouble();
+             _inputDevice->_outOfRangeDataStrategy = stringToOutOfRangeDataStrategy(settings.value(""outOfRangeDataStrategy"", QVariant(DEFAULT_OUT_OF_RANGE_STRATEGY)).toString());
+         }
++
++        const bool DEFAULT_EYE_TRACKING_ENABLED = false;
++        _eyeTrackingEnabled = settings.value(""eyeTrackingEnabled"", QVariant(DEFAULT_EYE_TRACKING_ENABLED)).toBool();
+     }
+     settings.endGroup();
+ }
+@@ -829,6 +837,8 @@ void ViveControllerManager::saveSettings() const {
+             settings.setValue(QString(""shoulderWidth""), _inputDevice->_shoulderWidth);
+             settings.setValue(QString(""outOfRangeDataStrategy""), outOfRangeDataStrategyToString(_inputDevice->_outOfRangeDataStrategy));
+         }
++
++        settings.setValue(QString(""eyeTrackingEnabled""), _eyeTrackingEnabled);
+     }
+     settings.endGroup();
+ }
+@@ -857,6 +867,9 @@ void ViveControllerManager::InputDevice::update(float deltaTime, const controlle
+         if (_headsetName == ""HTC"") {
+             _headsetName += "" Vive"";
+         }
++        if (oculusViaOpenVR()) {
++            _headsetName = ""OpenVR"";  // Enables calibration dialog to function when debugging using Oculus.
++        }
+     }
+     // While the keyboard is open, we defer strictly to the keyboard values
+     if (isOpenVrKeyboardShown()) {"
+vircadia/vircadia-native-core,484,7b225b6,plugins/openvr/src/ViveControllerManager.h,modified,2,0,2,"@@ -262,6 +262,8 @@ class ViveControllerManager : public InputPlugin {
+     vr::IVRSystem* _system { nullptr };
+     std::shared_ptr<InputDevice> _inputDevice { std::make_shared<InputDevice>(_system) };
+ 
++    bool _eyeTrackingEnabled{ false };
++
+ #ifdef VIVE_PRO_EYE
+     bool _viveProEye { false };
+     std::shared_ptr<ViveProEyeReadThread> _viveProEyeReadThread;"
+vircadia/vircadia-native-core,484,d60cce0,interface/src/CrashRecoveryHandler.cpp,modified,0,3,3,"@@ -36,9 +36,6 @@
+ #include <UserActivityLogger.h>
+ #include <BuildInfo.h>
+ 
+- static const QString BACKTRACE_URL{ CMAKE_BACKTRACE_URL };
+-
+-
+ bool CrashRecoveryHandler::checkForResetSettings(bool wasLikelyCrash, bool suppressPrompt) {
+     Setting::Handle<bool> crashReportingAsked { ""CrashReportingAsked"", false };
+ "

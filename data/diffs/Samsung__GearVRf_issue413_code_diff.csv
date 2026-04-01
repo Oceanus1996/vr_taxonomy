@@ -1,0 +1,285 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+Samsung/GearVRf,413,6411b1ea19cb3bd8114756bcc4b78a34980d2271,GVRf/Framework/jni/engine/renderer/renderer.cpp,modified,29,0,29,"@@ -510,6 +510,12 @@ void Renderer::renderRenderData(RenderData* render_data,
+                 set_face_culling(render_data->pass(curr_pass)->cull_face());
+                 Material* curr_material =
+                         render_data->pass(curr_pass)->material();
++
++                //Skip the material whose texture is not ready with some exceptions
++                if (!checkTextureReady(curr_material)) {
++                    continue;
++                }
++
+                 Transform* const t = render_data->owner_object()->transform();
+ 
+                 if (curr_material != nullptr && nullptr != t) {
+@@ -612,6 +618,29 @@ void Renderer::renderRenderData(RenderData* render_data,
+     }
+ }
+ 
++bool Renderer::checkTextureReady(Material* material) {
++    int shaderType = material->shader_type();
++
++    //Skip custom shader here since they are rendering multiple textures
++    //Check the textures later inside the rendering pass inside the custom shader
++    if (shaderType < 0
++            || shaderType >= Material::ShaderType::BUILTIN_SHADER_SIZE) {
++        return true;
++    }
++    //For regular shaders, check its main texture
++    else if (shaderType != Material::ShaderType::ASSIMP_SHADER) {
++        return material->isMainTextureReady();
++    }
++    //For ASSIMP_SHADER as diffused texture, check its main texture
++    //For non diffused texture, the rendering doesn't take any textures and needs to be skipped
++    else if (ISSET(material->get_shader_feature_set(), AS_DIFFUSE_TEXTURE)) {
++        return material->isMainTextureReady();
++    }
++    else {
++        return true;
++    }
++}
++
+ void Renderer::renderPostEffectData(Camera* camera,
+         RenderTexture* render_texture, PostEffectData* post_effect_data,
+         PostEffectShaderManager* post_effect_shader_manager) {"
+Samsung/GearVRf,413,6411b1ea19cb3bd8114756bcc4b78a34980d2271,GVRf/Framework/jni/engine/renderer/renderer.h,modified,2,0,2,"@@ -96,6 +96,8 @@ class Renderer {
+             RenderTexture* render_texture, PostEffectData* post_effect_data,
+             PostEffectShaderManager* post_effect_shader_manager);
+ 
++    static bool checkTextureReady(Material* material);
++
+     static void occlusion_cull(Scene* scene,
+             std::vector<SceneObject*>& scene_objects,
+             ShaderManager *shader_manager, glm::mat4 vp_matrix);"
+Samsung/GearVRf,413,6411b1ea19cb3bd8114756bcc4b78a34980d2271,GVRf/Framework/jni/objects/material.h,modified,45,13,58,"@@ -47,7 +47,8 @@ class Material: public HybridObject {
+         ASSIMP_SHADER = 9,
+         BOUNDING_BOX_SHADER = 10,
+         DISTORTION_SHADER = 90, // this shader is implemented and loaded in the distorter
+-        TEXTURE_SHADER_NOLIGHT = 100
++        TEXTURE_SHADER_NOLIGHT = 100,
++        BUILTIN_SHADER_SIZE = 101
+     };
+ 
+     explicit Material(ShaderType shader_type) :
+@@ -72,7 +73,7 @@ class Material: public HybridObject {
+         shader_type_ = shader_type;
+     }
+ 
+-    Texture* getTexture(std::string key) const {
++    Texture* getTexture(const std::string& key) const {
+         auto it = textures_.find(key);
+         if (it != textures_.end()) {
+             return it->second;
+@@ -83,11 +84,28 @@ class Material: public HybridObject {
+         }
+     }
+ 
+-    void setTexture(std::string key, Texture* texture) {
++    //A new api to return a texture even it is NULL without throwing a error,
++    //otherwise it will be captured abruptly by the error handler
++    Texture* getTextureNoError(const std::string& key) const {
++        auto it = textures_.find(key);
++        if (it != textures_.end()) {
++            return it->second;
++        } else {
++            return NULL;
++        }
++    }
++
++    void setTexture(const std::string& key, Texture* texture) {
+         textures_[key] = texture;
++        //By the time the texture is being set to its attaching material, it is ready
++        //This is guaranteed by upper java layer scheduling
++        texture->setReady(true);
++        if (key == ""main_texture"") {
++            main_texture = texture;
++        }
+     }
+ 
+-    float getFloat(std::string key) {
++    float getFloat(const std::string& key) {
+         auto it = floats_.find(key);
+         if (it != floats_.end()) {
+             return it->second;
+@@ -96,11 +114,11 @@ class Material: public HybridObject {
+             throw error;
+         }
+     }
+-    void setFloat(std::string key, float value) {
++    void setFloat(const std::string& key, float value) {
+         floats_[key] = value;
+     }
+ 
+-    glm::vec2 getVec2(std::string key) {
++    glm::vec2 getVec2(const std::string& key) {
+         auto it = vec2s_.find(key);
+         if (it != vec2s_.end()) {
+             return it->second;
+@@ -110,11 +128,11 @@ class Material: public HybridObject {
+         }
+     }
+ 
+-    void setVec2(std::string key, glm::vec2 vector) {
++    void setVec2(const std::string& key, glm::vec2 vector) {
+         vec2s_[key] = vector;
+     }
+ 
+-    glm::vec3 getVec3(std::string key) {
++    glm::vec3 getVec3(const std::string& key) {
+         auto it = vec3s_.find(key);
+         if (it != vec3s_.end()) {
+             return it->second;
+@@ -124,11 +142,11 @@ class Material: public HybridObject {
+         }
+     }
+ 
+-    void setVec3(std::string key, glm::vec3 vector) {
++    void setVec3(const std::string& key, glm::vec3 vector) {
+         vec3s_[key] = vector;
+     }
+ 
+-    glm::vec4 getVec4(std::string key) {
++    glm::vec4 getVec4(const std::string& key) {
+         auto it = vec4s_.find(key);
+         if (it != vec4s_.end()) {
+             return it->second;
+@@ -138,11 +156,11 @@ class Material: public HybridObject {
+         }
+     }
+ 
+-    void setVec4(std::string key, glm::vec4 vector) {
++    void setVec4(const std::string& key, glm::vec4 vector) {
+         vec4s_[key] = vector;
+     }
+ 
+-    glm::mat4 getMat4(std::string key) {
++    glm::mat4 getMat4(const std::string& key) {
+         auto it = mat4s_.find(key);
+         if (it != mat4s_.end()) {
+             return it->second;
+@@ -152,7 +170,7 @@ class Material: public HybridObject {
+         }
+     }
+ 
+-    void setMat4(std::string key, glm::mat4 matrix) {
++    void setMat4(const std::string& key, glm::mat4 matrix) {
+         mat4s_[key] = matrix;
+     }
+ 
+@@ -164,6 +182,19 @@ class Material: public HybridObject {
+         shader_feature_set_ = feature_set;
+     }
+ 
++    bool isMainTextureReady() {
++        return (main_texture != NULL) && main_texture->isReady();
++    }
++
++    bool isTextureReady(const std::string& name) {
++        auto it = textures_.find(name);
++        if (it != textures_.end()) {
++            return ((Texture*) it->second)->isReady();
++        } else {
++            return false;
++        }
++    }
++
+ private:
+     Material(const Material& material);
+     Material(Material&& material);
+@@ -173,6 +204,7 @@ class Material: public HybridObject {
+ private:
+     ShaderType shader_type_;
+     std::map<std::string, Texture*> textures_;
++    Texture* main_texture = NULL;
+     std::map<std::string, float> floats_;
+     std::map<std::string, glm::vec2> vec2s_;
+     std::map<std::string, glm::vec3> vec3s_;"
+Samsung/GearVRf,413,6411b1ea19cb3bd8114756bcc4b78a34980d2271,GVRf/Framework/jni/objects/textures/texture.h,modified,10,0,10,"@@ -81,6 +81,15 @@ class Texture: public HybridObject, GLPendingTask {
+         }
+     }
+ 
++    bool isReady() {
++        return ready;
++    }
++
++    void setReady(bool ready) {
++        LOGD(""ASYNC: set texture ready"");
++        this->ready = ready;
++    }
++
+ protected:
+     Texture(GLTexture* gl_texture) : HybridObject() {
+         gl_texture_ = gl_texture;
+@@ -97,6 +106,7 @@ class Texture: public HybridObject, GLPendingTask {
+ 
+ private:
+     static const GLenum target = GL_TEXTURE_2D;
++    bool ready = false;
+ };
+ 
+ }"
+Samsung/GearVRf,413,6411b1ea19cb3bd8114756bcc4b78a34980d2271,GVRf/Framework/jni/shaders/material/custom_shader.cpp,modified,12,2,14,"@@ -26,6 +26,8 @@
+ #include ""objects/components/render_data.h""
+ #include ""util/gvr_gl.h""
+ 
++#include <sys/time.h>
++
+ namespace gvr {
+ CustomShader::CustomShader(std::string vertex_shader,
+         std::string fragment_shader) :
+@@ -99,8 +101,16 @@ void CustomShader::addUniformMat4Key(std::string variable_name,
+     uniform_mat4_keys_[location] = key;
+ }
+ 
+-void CustomShader::render(const glm::mat4& mvp_matrix, RenderData* render_data, Material* material,
+-        bool right) {
++void CustomShader::render(const glm::mat4& mvp_matrix, RenderData* render_data,
++        Material* material, bool right) {
++    for (auto it = texture_keys_.begin(); it != texture_keys_.end(); ++it) {
++        Texture* texture = material->getTextureNoError(it->second);
++        // If any texture is not ready, do not render the material at all
++        if (texture == NULL || !texture->isReady()) {
++            return;
++        }
++    }
++
+     Mesh* mesh = render_data->mesh();
+ 
+ #if _GVRF_USE_GLES3_"
+Samsung/GearVRf,413,6411b1ea19cb3bd8114756bcc4b78a34980d2271,GVRf/Framework/src/org/gearvrf/GVRRenderData.java,modified,19,10,29,"@@ -171,17 +171,26 @@ public void setMesh(final Future<GVRMesh> mesh) {
+         synchronized (this) {
+             mFutureMesh = mesh;
+         }
+-        Threads.spawn(new Runnable() {
+-
+-            @Override
+-            public void run() {
+-                try {
+-                    setMesh(mesh.get());
+-                } catch (Exception e) {
+-                    e.printStackTrace();
+-                }
++
++        if (mesh.isDone()) {
++            try {
++                setMesh(mesh.get());
++            } catch (Exception e) {
++                e.printStackTrace();
+             }
+-        });
++        } else {
++            Threads.spawn(new Runnable() {
++
++                @Override
++                public void run() {
++                    try {
++                        setMesh(mesh.get());
++                    } catch (Exception e) {
++                        e.printStackTrace();
++                    }
++                }
++            });
++        }
+     }
+ 
+     /**"

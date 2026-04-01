@@ -1,0 +1,670 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+BasisVR/Basis,5,8cab21be44847d69325ef25621e651244b2e4abd,Assets/Scripts/Device Management/BasisDeviceManagement.cs,modified,6,6,12,"@@ -40,34 +40,34 @@ public async void Initialize()
+     [MenuItem(""Basis/ForceSetOpenXR"")]
+     public static void ForceSetOpenXR()
+     {
+-        Instance.SwitchMode(BasisBootedMode.OpenXR);
++        if (Instance != null) Instance.SwitchMode(BasisBootedMode.OpenXR);
+     }
+ 
+     [MenuItem(""Basis/ForceSetOpenVR"")]
+     public static void ForceSetOpenVR()
+     {
+-        Instance.SwitchMode(BasisBootedMode.OpenVR);
++        if (Instance != null) Instance.SwitchMode(BasisBootedMode.OpenVR);
+     }
+ 
+     [MenuItem(""Basis/ForceSetDesktop"")]
+     public static void ForceSetDesktop()
+     {
+-        Instance.SwitchMode(BasisBootedMode.Desktop);
++        if (Instance != null) Instance.SwitchMode(BasisBootedMode.Desktop);
+     }
+ #else
+     public static void ForceSetOpenXR()
+     {
+-        Instance.SwitchMode(BasisBootedMode.OpenXR);
++        if (Instance != null) Instance.SwitchMode(BasisBootedMode.OpenXR);
+     }
+ 
+     public static void ForceSetOpenVR()
+     {
+-        Instance.SwitchMode(BasisBootedMode.OpenVR);
++        if (Instance != null) Instance.SwitchMode(BasisBootedMode.OpenVR);
+     }
+ 
+     public static void ForceSetDesktop()
+     {
+-        Instance.SwitchMode(BasisBootedMode.Desktop);
++        if (Instance != null) Instance.SwitchMode(BasisBootedMode.Desktop);
+     }
+ #endif
+ "
+BasisVR/Basis,5,8cab21be44847d69325ef25621e651244b2e4abd,Assets/Scripts/Device Management/Devices/BasisInput.cs,modified,1,0,1,"@@ -61,6 +61,7 @@ public void ActivateTracking()
+                 // Do nothing if bone is found successfully
+             }
+         }
++        
+         Driver.OnSimulate += PollData;
+         SetRealTrackers(BasisBoneControl.BasisHasTracked.HasTracker, BasisBoneControl.BasisHasRigLayer.HasRigLayer);
+     }"
+BasisVR/Basis,5,8cab21be44847d69325ef25621e651244b2e4abd,Assets/Scripts/Device Management/Devices/OpenVR/BasisOpenVRInput.cs,modified,34,16,50,"@@ -1,22 +1,33 @@
+-﻿using UnityEngine;
++﻿using UnityEditor.VersionControl;
++using UnityEngine;
+ using Valve.VR;
+-
+ [DefaultExecutionOrder(15101)]
+ public class BasisOpenVRInput : BasisInput
+ {
+     public OpenVRDevice Device;
+-    public SteamVR_ActionSet actionSet;
+-    public SteamVR_Action_Pose poseAction;
+ 
++    public SteamVR_Action_Vector2 moveAction;
++    public SteamVR_Action_Boolean jumpAction;
++    public SteamVR_Action_Boolean menuAction;
++    public SteamVR_Action_Vector2 rotateAction;
++    
+     public Vector2 primary2DAxisL;
+     public Vector2 primary2DAxisR;
+-    public static string ActionName = ""default"";
+-    public void Initialize(OpenVRDevice device, string iD)
++    public async void Initialize(OpenVRDevice device, string iD)
+     {
+         Device = device;
+         TrackedRole = device.deviceType;
+-        actionSet = SteamVR_Input.GetActionSet(ActionName);
+-        actionSet.Activate();
++        
++        SteamVR_Input.Initialize();
++        SteamVR_Actions._default.Initialize();
++        moveAction = SteamVR_Actions.default_Move;
++        jumpAction = SteamVR_Actions.default_Jump;
++        menuAction = SteamVR_Actions.default_Menu;
++        rotateAction = SteamVR_Actions.default_Rotate;
++
++        // This is terrible, but it keeps the input from being null first frame
++        await System.Threading.Tasks.Task.Yield();
++        await System.Threading.Tasks.Task.Yield();
+         
+         // Initialize after setting the device and role
+         base.Initialize(iD);
+@@ -37,12 +48,12 @@ public override void PollData()
+         var deviceTransform = new SteamVR_Utils.RigidTransform(deviceGamePose.mDeviceToAbsoluteTracking);
+         LocalRawPosition = deviceTransform.pos;
+         LocalRawRotation = deviceTransform.rot;
+-
++        
+         if (Control.HasTrackerPositionDriver != BasisBoneControl.BasisHasTracked.HasNoTracker && LocalRawPosition != Vector3.zero)
+         {
+             Control.LocalRawPosition = LocalRawPosition;
+         }
+-
++        
+         if (Control.HasTrackerPositionDriver != BasisBoneControl.BasisHasTracked.HasNoTracker && LocalRawRotation != Quaternion.identity)
+         {
+             Control.LocalRawRotation = LocalRawRotation;
+@@ -56,9 +67,9 @@ private void UpdatePlayerControl()
+     {
+         if (TrackedRole == BasisBoneTrackedRole.LeftHand)
+         {
+-            primary2DAxisL = SteamVR_Actions.default_Move.GetAxis(SteamVR_Input_Sources.LeftHand);
+-            primaryButton = SteamVR_Actions.default_Jump.GetStateDown(SteamVR_Input_Sources.Any);
+-            secondaryButton = SteamVR_Actions.default_Menu.GetStateDown(SteamVR_Input_Sources.Any);
++            primary2DAxisL = moveAction.GetAxis(SteamVR_Input_Sources.Any);
++            primaryButton = jumpAction.GetStateDown(SteamVR_Input_Sources.Any);
++            secondaryButton = menuAction.GetStateDown(SteamVR_Input_Sources.Any);
+ 
+             BasisLocalPlayer.Instance.Move.MovementVector = primary2DAxisL;
+             if (primaryButton)
+@@ -67,9 +78,12 @@ private void UpdatePlayerControl()
+             }
+             if (secondaryButton)
+             {
+-                if (BasisHamburgerMenu.Instance == null && !BasisHamburgerMenu.IsLoading)
++                if (BasisHamburgerMenu.Instance == null)
+                 {
+-                    BasisHamburgerMenu.OpenMenu();
++                    if (!BasisHamburgerMenu.IsLoading)
++                    {
++                        BasisHamburgerMenu.OpenMenu();
++                    }
+                 }
+                 else
+                 {
+@@ -79,7 +93,11 @@ private void UpdatePlayerControl()
+         }
+         else if (TrackedRole == BasisBoneTrackedRole.RightHand)
+         {
+-            primary2DAxisR = SteamVR_Actions.default_Rotate.GetAxis(SteamVR_Input_Sources.Any);
++            if (rotateAction.GetActive(SteamVR_Input_Sources.Any))
++            {
++                primary2DAxisR = rotateAction.GetAxis(SteamVR_Input_Sources.Any);
++            }
++
+             BasisLocalPlayer.Instance.Move.Rotation = primary2DAxisR;
+         }
+     }"
+BasisVR/Basis,5,8cab21be44847d69325ef25621e651244b2e4abd,Assets/Scripts/Device Management/Devices/OpenVR/BasisOpenVRManagment.cs,modified,9,6,15,"@@ -9,6 +9,7 @@
+ public static class BasisOpenVRManagement
+ {
+     public static XRManagerSettings XRInstance;
++    public static GameObject SteamVR_Behaviour;
+     public static List<OpenVRDevice> inputDevices = new List<OpenVRDevice>();
+     /// <summary>
+     /// generated at runtime
+@@ -41,13 +42,13 @@ private static void StartXRSDK()
+         SteamVR instance = SteamVR.instance;
+         Debug.Log(""OpenVR Headset HMD Type: "" + instance.hmd_Type);
+ 
+-        GameObject go = new GameObject();
+-        go.name = ""SteamVR_Behaviour"";
+-        SteamVR_Behaviour steamVR_Behaviour = go.AddComponent<SteamVR_Behaviour>();
++        SteamVR_Behaviour = new GameObject();
++        SteamVR_Behaviour.name = ""SteamVR_Behaviour"";
++        SteamVR_Behaviour steamVR_Behaviour = SteamVR_Behaviour.AddComponent<SteamVR_Behaviour>();
+         steamVR_Behaviour.initializeSteamVROnAwake = true;
+         steamVR_Behaviour.doNotDestroy = true;
+         
+-        SteamVR_Render steamVR_Render = go.AddComponent<SteamVR_Render>();
++        SteamVR_Render steamVR_Render = SteamVR_Behaviour.AddComponent<SteamVR_Render>();
+         
+         SteamVR_Events.DeviceConnected.Listen(UpdateDeviceList);
+     }
+@@ -60,9 +61,9 @@ public static void StopXRSDK()
+                 XRGeneralSettings.Instance.Manager.DeinitializeLoader();
+             }
+         }
+-        StopXR();
++        StopOpenVR();
+     }
+-    public static void StopXR()
++    public static void StopOpenVR()
+     {
+         if (XRInstance != null && XRInstance.activeLoader != null)
+         {
+@@ -75,6 +76,8 @@ public static void StopXR()
+                 Object.Destroy(BasisOpenVRInput.gameObject);
+             }
+         }
++        
++        Object.Destroy(SteamVR_Behaviour);
+     }
+ 
+     private static void UpdateDeviceList(int deviceIndex, bool connected)"
+BasisVR/Basis,5,8cab21be44847d69325ef25621e651244b2e4abd,Assets/Scripts/Editor/BasisAutomaticSetupAvatarEditor.cs,modified,9,0,9,"@@ -108,6 +108,10 @@ private static void TrySetAvatarEyePosition(BasisAvatar avatar)
+     {
+         if (BasisHelpers.TryGetVector3Bone(avatar.Animator, HumanBodyBones.LeftEye, out Vector3 LeftEye) && BasisHelpers.TryGetVector3Bone(avatar.Animator, HumanBodyBones.RightEye, out Vector3 RightEye))
+         {
++            if (avatar.AvatarEyePosition != Vector2.zero)
++            {
++                return;
++            }
+             Vector3 EyePosition = Vector3.Lerp(LeftEye, RightEye, 0.5f);
+             if (BasisHelpers.TryGetFloor(avatar.Animator, out Vector3 Bottom))
+             {
+@@ -120,6 +124,11 @@ private static void TrySetAvatarMouthPosition(BasisAvatar avatar, Transform Head
+     {
+         if (BasisHelpers.TryGetVector3Bone(avatar.Animator, HumanBodyBones.LeftFoot, out Vector3 LeftFoot) && BasisHelpers.TryGetVector3Bone(avatar.Animator, HumanBodyBones.RightFoot, out Vector3 RightFoot))
+         {
++            if (avatar.AvatarMouthPosition != Vector2.zero)
++            {
++                return;
++            }
++
+             Vector3 Bottom = Vector3.Lerp(LeftFoot, RightFoot, 0.5f);
+             Vector3 estimatedMouthPosition = Head.position + Head.TransformDirection(BasisHelpers.ScaleVector(mouthOffset));//height
+ "
+BasisVR/Basis,5,8cab21be44847d69325ef25621e651244b2e4abd,Assets/Scripts/Editor/BasisAvatarGizmoEditor.cs,modified,1,2,3,"@@ -3,15 +3,14 @@
+ using UnityEngine.UIElements;
+ public class BasisAvatarGizmoEditor : MonoBehaviour
+ {
+-    public static void UpdateGizmos(BasisAvatarSDKInspector inspector)
++    public static void UpdateGizmos(BasisAvatarSDKInspector inspector, BasisAvatar avatar)
+     {
+         if (inspector == null)
+         {
+             Debug.LogError(""Inspector was null!"");
+             return;
+         }
+ 
+-        BasisAvatar avatar = inspector.Avatar;
+         if (avatar == null || avatar.Animator == null)
+         {
+             Debug.LogError(""Avatar or its Animator was null!"");"
+BasisVR/Basis,5,8cab21be44847d69325ef25621e651244b2e4abd,Assets/StreamingAssets/SteamVR/bindings_knuckles.json,modified,102,219,321,"@@ -1,224 +1,107 @@
+ {
+-   ""action_manifest_version"" : 0,
+-   ""alias_info"" : {},
+-   ""app_key"" : ""application.generated.unity.basis.exe"",
+-   ""bindings"" : {
+-      ""/actions/buggy"" : {
+-         ""chords"" : [],
+-         ""haptics"" : [],
+-         ""poses"" : [],
+-         ""skeleton"" : [],
+-         ""sources"" : []
+-      },
+-      ""/actions/default"" : {
+-         ""chords"" : [],
+-         ""haptics"" : [
+-            {
+-               ""output"" : ""/actions/default/out/haptic"",
+-               ""path"" : ""/user/hand/left/output/haptic""
+-            },
+-            {
+-               ""output"" : ""/actions/default/out/haptic"",
+-               ""path"" : ""/user/hand/right/output/haptic""
++  ""app_key"": ""application.generated.unity.basis.exe"",
++  ""bindings"": {
++    ""/actions/buggy"": {
++      ""chords"": [],
++      ""poses"": [],
++      ""haptics"": [],
++      ""sources"": [],
++      ""skeleton"": []
++    },
++    ""/actions/default"": {
++      ""chords"": [],
++      ""poses"": [
++        {
++          ""output"": ""/actions/default/in/pose"",
++          ""path"": ""/user/hand/left/pose/raw""
++        },
++        {
++          ""output"": ""/actions/default/in/pose"",
++          ""path"": ""/user/hand/right/pose/raw""
++        }
++      ],
++      ""haptics"": [
++        {
++          ""output"": ""/actions/default/out/haptic"",
++          ""path"": ""/user/hand/left/output/haptic""
++        },
++        {
++          ""output"": ""/actions/default/out/haptic"",
++          ""path"": ""/user/hand/right/output/haptic""
++        }
++      ],
++      ""sources"": [
++        {
++          ""path"": ""/user/hand/left/input/thumbstick"",
++          ""mode"": ""joystick"",
++          ""parameters"": {},
++          ""inputs"": {
++            ""position"": {
++              ""output"": ""/actions/default/in/move""
+             }
+-         ],
+-         ""poses"" : [
+-            {
+-               ""output"" : ""/actions/default/in/pose"",
+-               ""path"" : ""/user/hand/left/pose/raw""
+-            },
+-            {
+-               ""output"" : ""/actions/default/in/pose"",
+-               ""path"" : ""/user/hand/right/pose/raw""
++          }
++        },
++        {
++          ""path"": ""/user/hand/right/input/thumbstick"",
++          ""mode"": ""joystick"",
++          ""parameters"": {},
++          ""inputs"": {
++            ""position"": {
++              ""output"": ""/actions/default/in/rotate""
+             }
+-         ],
+-         ""skeleton"" : [
+-            {
+-               ""output"" : ""/actions/default/in/skeletonlefthand"",
+-               ""path"" : ""/user/hand/left/input/skeleton/left""
+-            },
+-            {
+-               ""output"" : ""/actions/default/in/skeletonrighthand"",
+-               ""path"" : ""/user/hand/right/input/skeleton/right""
++          }
++        },
++        {
++          ""path"": ""/user/hand/right/input/a"",
++          ""mode"": ""button"",
++          ""parameters"": {},
++          ""inputs"": {
++            ""click"": {
++              ""output"": ""/actions/default/in/jump""
+             }
+-         ],
+-         ""sources"" : [
+-            {
+-               ""inputs"" : {
+-                  ""click"" : {
+-                     ""output"" : ""/actions/default/in/interactui""
+-                  }
+-               },
+-               ""mode"" : ""button"",
+-               ""path"" : ""/user/hand/left/input/trigger""
+-            },
+-            {
+-               ""inputs"" : {
+-                  ""click"" : {
+-                     ""output"" : ""/actions/default/in/teleport""
+-                  }
+-               },
+-               ""mode"" : ""button"",
+-               ""path"" : ""/user/hand/left/input/trackpad""
+-            },
+-            {
+-               ""inputs"" : {
+-                  ""click"" : {
+-                     ""output"" : ""/actions/default/in/interactui""
+-                  }
+-               },
+-               ""mode"" : ""button"",
+-               ""path"" : ""/user/hand/right/input/trigger""
+-            },
+-            {
+-               ""inputs"" : {
+-                  ""click"" : {
+-                     ""output"" : ""/actions/default/in/teleport""
+-                  }
+-               },
+-               ""mode"" : ""button"",
+-               ""path"" : ""/user/hand/right/input/trackpad""
+-            },
+-            {
+-               ""inputs"" : {
+-                  ""north"" : {
+-                     ""output"" : ""/actions/default/in/teleport""
+-                  }
+-               },
+-               ""mode"" : ""dpad"",
+-               ""parameters"" : {
+-                  ""deadzone_pct"" : ""25"",
+-                  ""overlap_pct"" : ""30"",
+-                  ""sub_mode"" : ""touch""
+-               },
+-               ""path"" : ""/user/hand/left/input/thumbstick""
+-            },
+-            {
+-               ""inputs"" : {
+-                  ""north"" : {
+-                     ""output"" : ""/actions/default/in/teleport""
+-                  }
+-               },
+-               ""mode"" : ""dpad"",
+-               ""parameters"" : {
+-                  ""deadzone_pct"" : ""25"",
+-                  ""overlap_pct"" : ""30"",
+-                  ""sub_mode"" : ""touch""
+-               },
+-               ""path"" : ""/user/hand/right/input/thumbstick""
+-            },
+-            {
+-               ""inputs"" : {
+-                  ""grab"" : {
+-                     ""output"" : ""/actions/default/in/grabgrip""
+-                  }
+-               },
+-               ""mode"" : ""grab"",
+-               ""parameters"" : {
+-                  ""force_hold_threshold"" : ""0.02"",
+-                  ""force_release_threshold"" : ""0.01""
+-               },
+-               ""path"" : ""/user/hand/left/input/grip""
+-            },
+-            {
+-               ""inputs"" : {
+-                  ""grab"" : {
+-                     ""output"" : ""/actions/default/in/grabgrip""
+-                  }
+-               },
+-               ""mode"" : ""grab"",
+-               ""parameters"" : {
+-                  ""force_hold_threshold"" : ""0.02"",
+-                  ""force_release_threshold"" : ""0.01""
+-               },
+-               ""path"" : ""/user/hand/right/input/grip""
+-            },
+-            {
+-               ""inputs"" : {
+-                  ""grab"" : {
+-                     ""output"" : ""/actions/default/in/grabpinch""
+-                  }
+-               },
+-               ""mode"" : ""grab"",
+-               ""parameters"" : {
+-                  ""force_hold_threshold"" : ""0.02"",
+-                  ""force_release_threshold"" : ""0.01""
+-               },
+-               ""path"" : ""/user/hand/left/input/pinch""
+-            },
+-            {
+-               ""inputs"" : {
+-                  ""grab"" : {
+-                     ""output"" : ""/actions/default/in/grabpinch""
+-                  }
+-               },
+-               ""mode"" : ""grab"",
+-               ""parameters"" : {
+-                  ""force_hold_threshold"" : ""0.02"",
+-                  ""force_release_threshold"" : ""0.01""
+-               },
+-               ""path"" : ""/user/hand/right/input/pinch""
+-            },
+-            {
+-               ""inputs"" : {
+-                  ""position"" : {
+-                     ""output"" : ""/actions/default/in/move""
+-                  }
+-               },
+-               ""mode"" : ""joystick"",
+-               ""path"" : ""/user/hand/left/input/thumbstick""
+-            },
+-            {
+-               ""inputs"" : {
+-                  ""position"" : {
+-                     ""output"" : ""/actions/default/in/rotate""
+-                  }
+-               },
+-               ""mode"" : ""joystick"",
+-               ""path"" : ""/user/hand/right/input/thumbstick""
+-            },
+-            {
+-               ""inputs"" : {
+-                  ""click"" : {
+-                     ""output"" : ""/actions/default/in/jump""
+-                  }
+-               },
+-               ""mode"" : ""button"",
+-               ""path"" : ""/user/hand/right/input/a""
+-            },
+-            {
+-               ""inputs"" : {
+-                  ""click"" : {
+-                     ""output"" : ""/actions/default/in/menu""
+-                  }
+-               },
+-               ""mode"" : ""button"",
+-               ""path"" : ""/user/hand/right/input/b""
+-            },
+-            {
+-               ""inputs"" : {
+-                  ""click"" : {
+-                     ""output"" : ""/actions/default/in/menu""
+-                  }
+-               },
+-               ""mode"" : ""button"",
+-               ""path"" : ""/user/hand/left/input/b""
++          }
++        },
++        {
++          ""path"": ""/user/hand/right/input/b"",
++          ""mode"": ""button"",
++          ""parameters"": {},
++          ""inputs"": {
++            ""click"": {
++              ""output"": ""/actions/default/in/menu""
+             }
+-         ]
+-      },
+-      ""/actions/platformer"" : {
+-         ""chords"" : [],
+-         ""haptics"" : [],
+-         ""poses"" : [],
+-         ""skeleton"" : [],
+-         ""sources"" : []
+-      }
+-   },
+-   ""category"" : ""steamvr_input"",
+-   ""controller_type"" : ""knuckles"",
+-   ""description"" : """",
+-   ""interaction_profile"" : """",
+-   ""name"" : ""My [Testing] Basis configuration for Index Controller"",
+-   ""options"" : {},
+-   ""simulated_actions"" : []
+-}
++          }
++        },
++        {
++          ""path"": ""/user/hand/left/input/b"",
++          ""mode"": ""button"",
++          ""parameters"": {},
++          ""inputs"": {
++            ""click"": {
++              ""output"": ""/actions/default/in/menu""
++            }
++          }
++        }
++      ],
++      ""skeleton"": [
++        {
++          ""output"": ""/actions/default/in/skeletonlefthand"",
++          ""path"": ""/user/hand/left/input/skeleton/left""
++        },
++        {
++          ""output"": ""/actions/default/in/skeletonrighthand"",
++          ""path"": ""/user/hand/right/input/skeleton/right""
++        }
++      ]
++    },
++    ""/actions/platformer"": {
++      ""chords"": [],
++      ""poses"": [],
++      ""haptics"": [],
++      ""sources"": [],
++      ""skeleton"": []
++    }
++  },
++  ""controller_type"": ""knuckles"",
++  ""description"": """",
++  ""name"": ""My [Testing] Basis configuration for Index Controller""
++}
+\ No newline at end of file"
+BasisVR/Basis,5,8cab21be44847d69325ef25621e651244b2e4abd,Assets/UI/Editor/AvatarSDK.cs,modified,2,1,3,"@@ -95,7 +95,8 @@ private void OnEyeHeightValueChanged(ChangeEvent<Vector2> evt)
+     }
+     private void OnSceneGUI()
+     {
+-        BasisAvatarGizmoEditor.UpdateGizmos(this);
++        BasisAvatar avatar = (BasisAvatar)target;
++        BasisAvatarGizmoEditor.UpdateGizmos(this, avatar);
+     }
+     public void SetupItems()
+     {"
+BasisVR/Basis,5,8cab21be44847d69325ef25621e651244b2e4abd,Assets/third_party/Avatar/Aurellia/Aurellia.prefab,modified,2,2,4,"@@ -755,8 +755,8 @@ MonoBehaviour:
+   Animator: {fileID: 1441881225265786801}
+   FaceVisemeMesh: {fileID: 6037565266424221554}
+   FaceBlinkMesh: {fileID: 6037565266424221554}
+-  AvatarEyePosition: {x: 1.5124171, y: 0.053060107}
+-  AvatarMouthPosition: {x: 1.4785055, y: 0.26972476}
++  AvatarEyePosition: {x: 1.5042253, y: 0.11482476}
++  AvatarMouthPosition: {x: 1.4462612, y: 0.11879643}
+   FaceVisemeMovement: 0c0000000a000000040000000e0000000200000006000000110000000d000000070000000b0000000000000003000000050000001000000009000000
+   BlinkViseme: ffffffff12000000
+   laughterBlendTarget: -1"
+BasisVR/Basis,5,8cab21be44847d69325ef25621e651244b2e4abd,Assets/third_party/Avatar/Aurellia/Tex/Body.mat,modified,3,3,6,"@@ -2887,10 +2887,10 @@ Material:
+     - _StencilFrontZFailOp: 0
+     - _StencilPass: 0
+     - _StencilPassOp: 0
+-    - _StencilReadMask: 255
+-    - _StencilRef: 0
++    - _StencilReadMask: 182
++    - _StencilRef: 182
+     - _StencilType: 0
+-    - _StencilWriteMask: 255
++    - _StencilWriteMask: 182
+     - _StencilZFail: 0
+     - _StencilZFailOp: 0
+     - _StereoEnabled: 0"
+BasisVR/Basis,5,8cab21be44847d69325ef25621e651244b2e4abd,Assets/third_party/Avatar/Aurellia/Tex/Eye.mat,modified,6,6,12,"@@ -91,11 +91,11 @@ Material:
+         m_Scale: {x: 1, y: 1}
+         m_Offset: {x: 0, y: 0}
+     - _BaseColorMap:
+-        m_Texture: {fileID: 0}
++        m_Texture: {fileID: 2800000, guid: 1c0ba893a0cc8044f95c7ddf11cd886c, type: 3}
+         m_Scale: {x: 1, y: 1}
+         m_Offset: {x: 0, y: 0}
+     - _BaseMap:
+-        m_Texture: {fileID: 0}
++        m_Texture: {fileID: 2800000, guid: 1c0ba893a0cc8044f95c7ddf11cd886c, type: 3}
+         m_Scale: {x: 1, y: 1}
+         m_Offset: {x: 0, y: 0}
+     - _BlueTexture:
+@@ -2883,12 +2883,12 @@ Material:
+     - _StencilFrontFailOp: 0
+     - _StencilFrontPassOp: 0
+     - _StencilFrontZFailOp: 0
+-    - _StencilPass: 0
++    - _StencilPass: 2
+     - _StencilPassOp: 2
+-    - _StencilReadMask: 77
+-    - _StencilRef: 77
++    - _StencilReadMask: 182
++    - _StencilRef: 182
+     - _StencilType: 0
+-    - _StencilWriteMask: 77
++    - _StencilWriteMask: 182
+     - _StencilZFail: 0
+     - _StencilZFailOp: 0
+     - _StereoEnabled: 0"
+BasisVR/Basis,5,8cab21be44847d69325ef25621e651244b2e4abd,Assets/third_party/Avatar/Aurellia/Tex/Hair.mat,modified,5,5,10,"@@ -25,7 +25,7 @@ Material:
+   m_LightmapFlags: 4
+   m_EnableInstancingVariants: 0
+   m_DoubleSidedGI: 0
+-  m_CustomRenderQueue: -1
++  m_CustomRenderQueue: 2450
+   stringTagMap:
+     AllLockedGUIDS: 3d4ce58ea0b6eb744a10387e7824455b
+     OriginalKeywords: BSSBLOOMFOGTYPE_HEIGHT POI_RIM2 POI_STYLIZED_StylizedSpecular
+@@ -2879,7 +2879,7 @@ Material:
+     - _StencilBackFailOp: 0
+     - _StencilBackPassOp: 0
+     - _StencilBackZFailOp: 0
+-    - _StencilComp: 8
++    - _StencilComp: 6
+     - _StencilCompareFunction: 6
+     - _StencilFail: 0
+     - _StencilFailOp: 0
+@@ -2889,10 +2889,10 @@ Material:
+     - _StencilFrontZFailOp: 0
+     - _StencilPass: 0
+     - _StencilPassOp: 0
+-    - _StencilReadMask: 255
+-    - _StencilRef: 77
++    - _StencilReadMask: 182
++    - _StencilRef: 182
+     - _StencilType: 0
+-    - _StencilWriteMask: 255
++    - _StencilWriteMask: 182
+     - _StencilZFail: 0
+     - _StencilZFailOp: 0
+     - _StereoEnabled: 0"
+BasisVR/Basis,5,8cab21be44847d69325ef25621e651244b2e4abd,Assets/third_party/Plugins/SteamVR/Input/SteamVR_ActionSet.cs,modified,1,1,2,"@@ -132,7 +132,7 @@ public ulong handle
+         }
+ 
+         [NonSerialized]
+-        protected bool initialized = false;
++        public bool initialized = false;
+ 
+ 
+         public static CreateType Create<CreateType>(string newSetPath) where CreateType : SteamVR_ActionSet, new()"

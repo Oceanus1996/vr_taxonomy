@@ -1,0 +1,597 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+GodotVR/godot_openxr_vendors,122,5be9896338fb74e06cb8ec1efc2a5f76a94e51e8,common/src/main/cpp/classes/openxr_fb_scene_manager.cpp,modified,5,5,10,"@@ -93,7 +93,7 @@ bool OpenXRFbSceneManager::_get(const StringName &p_name, Variant &r_ret) const
+ 	if (parts.size() == 2 && parts[0] == ""scenes"") {
+ 		const PackedStringArray &semantic_labels = OpenXRFbSceneExtensionWrapper::get_supported_semantic_labels();
+ 		if (semantic_labels.has(parts[1])) {
+-			const Ref<PackedScene> *scene = scenes.getptr(p_name.substr(7));
++			const Ref<PackedScene> *scene = scenes.getptr(parts[1]);
+ 			r_ret = scene ? Variant(*scene) : Variant();
+ 			return true;
+ 		}
+@@ -104,7 +104,7 @@ bool OpenXRFbSceneManager::_get(const StringName &p_name, Variant &r_ret) const
+ void OpenXRFbSceneManager::_get_property_list(List<PropertyInfo> *p_list) const {
+ 	const PackedStringArray &semantic_labels = OpenXRFbSceneExtensionWrapper::get_supported_semantic_labels();
+ 	for (int i = 0; i < semantic_labels.size(); i++) {
+-		p_list->push_back(PropertyInfo(Variant::Type::OBJECT, ""scenes/"" + semantic_labels[i].to_lower(), PROPERTY_HINT_RESOURCE_TYPE, ""PackedScene""));
++		p_list->push_back(PropertyInfo(Variant::Type::OBJECT, ""scenes/"" + semantic_labels[i], PROPERTY_HINT_RESOURCE_TYPE, ""PackedScene""));
+ 	}
+ }
+ 
+@@ -300,12 +300,12 @@ void OpenXRFbSceneManager::_create_scene_anchor(const Ref<OpenXRFbSpatialEntity>
+ }
+ 
+ Ref<PackedScene> OpenXRFbSceneManager::get_scene_for_entity(const Ref<OpenXRFbSpatialEntity> &p_entity) const {
+-	Array semantic_labels = p_entity->get_semantic_labels();
++	PackedStringArray semantic_labels = p_entity->get_semantic_labels();
+ 
+ 	// @todo Allow developers to override which label is selected.
+-	Variant selected_label = semantic_labels.size() > 0 ? semantic_labels[0] : Variant();
++	String selected_label = semantic_labels.size() > 0 ? semantic_labels[0] : String();
+ 
+-	if (selected_label.get_type() == Variant::STRING && scenes.has(selected_label)) {
++	if (!selected_label.is_empty() && scenes.has(selected_label)) {
+ 		return scenes[selected_label];
+ 	}
+ "
+GodotVR/godot_openxr_vendors,122,5be9896338fb74e06cb8ec1efc2a5f76a94e51e8,common/src/main/cpp/classes/openxr_fb_spatial_entity.cpp,modified,71,2,73,"@@ -29,15 +29,18 @@
+ 
+ #include ""classes/openxr_fb_spatial_entity.h""
+ 
++#include <godot_cpp/classes/array_mesh.hpp>
+ #include <godot_cpp/classes/box_mesh.hpp>
+ #include <godot_cpp/classes/box_shape3d.hpp>
+ #include <godot_cpp/classes/collision_shape3d.hpp>
++#include <godot_cpp/classes/concave_polygon_shape3d.hpp>
+ #include <godot_cpp/classes/mesh_instance3d.hpp>
+ #include <godot_cpp/classes/plane_mesh.hpp>
+ 
+ #include ""extensions/openxr_fb_spatial_entity_extension_wrapper.h""
+ #include ""extensions/openxr_fb_spatial_entity_container_extension_wrapper.h""
+ #include ""extensions/openxr_fb_scene_extension_wrapper.h""
++#include ""extensions/openxr_meta_spatial_entity_mesh_extension_wrapper.h""
+ 
+ using namespace godot;
+ 
+@@ -55,6 +58,7 @@ void OpenXRFbSpatialEntity::_bind_methods() {
+ 	ClassDB::bind_method(D_METHOD(""get_bounding_box_2d""), &OpenXRFbSpatialEntity::get_bounding_box_2d);
+ 	ClassDB::bind_method(D_METHOD(""get_bounding_box_3d""), &OpenXRFbSpatialEntity::get_bounding_box_3d);
+ 	ClassDB::bind_method(D_METHOD(""get_boundary_2d""), &OpenXRFbSpatialEntity::get_boundary_2d);
++	ClassDB::bind_method(D_METHOD(""get_triangle_mesh""), &OpenXRFbSpatialEntity::get_triangle_mesh);
+ 
+ 	ClassDB::bind_method(D_METHOD(""track""), &OpenXRFbSpatialEntity::track);
+ 	ClassDB::bind_method(D_METHOD(""untrack""), &OpenXRFbSpatialEntity::untrack);
+@@ -180,10 +184,47 @@ bool OpenXRFbSpatialEntity::is_tracked() const {
+ 	return OpenXRFbSpatialEntityExtensionWrapper::get_singleton()->is_entity_tracked(uuid);
+ }
+ 
++Array OpenXRFbSpatialEntity::get_triangle_mesh() const {
++	OpenXRMetaSpatialEntityMeshExtensionWrapper::TriangleMesh mesh_data;
++	if (!OpenXRMetaSpatialEntityMeshExtensionWrapper::get_singleton()->get_triangle_mesh(space, mesh_data)) {
++		return Array();
++	}
++
++	PackedVector3Array vertices;
++	vertices.resize(mesh_data.vertices.size());
++	for (int i = 0; i < mesh_data.vertices.size(); i++) {
++		XrVector3f vertex = mesh_data.vertices[i];
++		vertices[i] = Vector3(vertex.x, vertex.y, vertex.z);
++	}
++
++	PackedInt32Array indices;
++	indices.resize(mesh_data.indices.size());
++	for (int i = 0; i < mesh_data.indices.size(); i += 3) {
++		// Reverse the winding order.
++		indices[i] = mesh_data.indices[i + 2];
++		indices[i + 1] = mesh_data.indices[i + 1];
++		indices[i + 2] = mesh_data.indices[i];
++	}
++
++	Array mesh_array;
++	mesh_array.resize(Mesh::ARRAY_MAX);
++	mesh_array[Mesh::ARRAY_VERTEX] = vertices;
++	mesh_array[Mesh::ARRAY_INDEX] = indices;
++	return mesh_array;
++}
++
+ MeshInstance3D *OpenXRFbSpatialEntity::create_mesh_instance() const {
+ 	MeshInstance3D *mesh_instance = nullptr;
+ 
+-	if (is_component_enabled(COMPONENT_TYPE_BOUNDED_3D)) {
++	if (is_component_enabled(COMPONENT_TYPE_TRIANGLE_MESH)) {
++		Ref<ArrayMesh> array_mesh;
++		array_mesh.instantiate();
++		array_mesh->add_surface_from_arrays(Mesh::PRIMITIVE_TRIANGLES, get_triangle_mesh());
++
++		mesh_instance = memnew(MeshInstance3D);
++		mesh_instance->set_mesh(array_mesh);
++
++	} else if (is_component_enabled(COMPONENT_TYPE_BOUNDED_3D)) {
+ 		Ref<BoxMesh> box_mesh;
+ 		box_mesh.instantiate();
+ 
+@@ -213,7 +254,35 @@ MeshInstance3D *OpenXRFbSpatialEntity::create_mesh_instance() const {
+ }
+ 
+ Node3D *OpenXRFbSpatialEntity::create_collision_shape() const {
+-	if (is_component_enabled(COMPONENT_TYPE_BOUNDED_3D)) {
++	if (is_component_enabled(COMPONENT_TYPE_TRIANGLE_MESH)) {
++		OpenXRMetaSpatialEntityMeshExtensionWrapper::TriangleMesh mesh_data;
++		if (!OpenXRMetaSpatialEntityMeshExtensionWrapper::get_singleton()->get_triangle_mesh(space, mesh_data)) {
++			return nullptr;
++		}
++
++		PackedVector3Array faces;
++		faces.resize(mesh_data.indices.size());
++		for (int i = 0; i < mesh_data.indices.size(); i += 3) {
++			XrVector3f vertex[3] = {
++				mesh_data.vertices[mesh_data.indices[i]],
++				mesh_data.vertices[mesh_data.indices[i + 1]],
++				mesh_data.vertices[mesh_data.indices[i + 2]],
++			};
++			// Reverse the winding order.
++			faces[i] = Vector3(vertex[2].x, vertex[2].y, vertex[2].z);
++			faces[i + 1] = Vector3(vertex[1].x, vertex[1].y, vertex[1].z);
++			faces[i + 2] = Vector3(vertex[0].x, vertex[0].y, vertex[0].z);
++		}
++
++		Ref<ConcavePolygonShape3D> polygon_shape;
++		polygon_shape.instantiate();
++		polygon_shape->set_faces(faces);
++
++		CollisionShape3D *collision_shape = memnew(CollisionShape3D);
++		collision_shape->set_shape(polygon_shape);
++
++		return collision_shape;
++	} else if (is_component_enabled(COMPONENT_TYPE_BOUNDED_3D)) {
+ 		Ref<BoxShape3D> box_shape;
+ 		box_shape.instantiate();
+ "
+GodotVR/godot_openxr_vendors,122,5be9896338fb74e06cb8ec1efc2a5f76a94e51e8,common/src/main/cpp/extensions/openxr_fb_scene_extension_wrapper.cpp,modified,9,2,11,"@@ -98,7 +98,10 @@ void OpenXRFbSceneExtensionWrapper::_on_instance_destroyed() {
+ }
+ 
+ const PackedStringArray &OpenXRFbSceneExtensionWrapper::get_supported_semantic_labels() {
+-	static PackedStringArray semantic_labels = String(SUPPORTED_SEMANTIC_LABELS).split("","");
++	// We decided to deal with semantic labels in lower-case to make it easier to use them as part of
++	// property names on Godot objects, since Godot automatically converts property names to lower case
++	// when saving.
++	static PackedStringArray semantic_labels = String(SUPPORTED_SEMANTIC_LABELS).to_lower().split("","");
+ 	return semantic_labels;
+ }
+ 
+@@ -132,7 +135,11 @@ PackedStringArray OpenXRFbSceneExtensionWrapper::get_semantic_labels(const XrSpa
+ 	xrGetSpaceSemanticLabelsFB(SESSION, p_space, &labels);
+ 
+ 	label_data[label_data.size() - 1] = '\0';
+-	return String(label_data).split("","");
++
++	// We decided to deal with semantic labels in lower-case to make it easier to use them as part of
++	// property names on Godot objects, since Godot automatically converts property names to lower case
++	// when saving.
++	return String(label_data).to_lower().split("","");
+ }
+ 
+ bool OpenXRFbSceneExtensionWrapper::get_room_layout(const XrSpace p_space, RoomLayout &r_room_layout) {"
+GodotVR/godot_openxr_vendors,122,5be9896338fb74e06cb8ec1efc2a5f76a94e51e8,common/src/main/cpp/extensions/openxr_meta_spatial_entity_mesh_extension_wrapper.cpp,added,144,0,144,"@@ -0,0 +1,144 @@
++/**************************************************************************/
++/*  openxr_fb_spatial_entity_extension_wrapper.cpp                        */
++/**************************************************************************/
++/*                       This file is part of:                            */
++/*                              GODOT XR                                  */
++/*                      https://godotengine.org                           */
++/**************************************************************************/
++/* Copyright (c) 2022-present Godot XR contributors (see CONTRIBUTORS.md) */
++/*                                                                        */
++/* Permission is hereby granted, free of charge, to any person obtaining  */
++/* a copy of this software and associated documentation files (the        */
++/* ""Software""), to deal in the Software without restriction, including    */
++/* without limitation the rights to use, copy, modify, merge, publish,    */
++/* distribute, sublicense, and/or sell copies of the Software, and to     */
++/* permit persons to whom the Software is furnished to do so, subject to  */
++/* the following conditions:                                              */
++/*                                                                        */
++/* The above copyright notice and this permission notice shall be         */
++/* included in all copies or substantial portions of the Software.        */
++/*                                                                        */
++/* THE SOFTWARE IS PROVIDED ""AS IS"", WITHOUT WARRANTY OF ANY KIND,        */
++/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
++/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
++/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
++/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
++/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
++/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
++/**************************************************************************/
++
++#include ""extensions/openxr_meta_spatial_entity_mesh_extension_wrapper.h""
++
++#include <godot_cpp/classes/open_xrapi_extension.hpp>
++#include <godot_cpp/variant/utility_functions.hpp>
++
++#include ""extensions/openxr_fb_spatial_entity_extension_wrapper.h""
++
++using namespace godot;
++
++OpenXRMetaSpatialEntityMeshExtensionWrapper *OpenXRMetaSpatialEntityMeshExtensionWrapper::singleton = nullptr;
++
++OpenXRMetaSpatialEntityMeshExtensionWrapper *OpenXRMetaSpatialEntityMeshExtensionWrapper::get_singleton() {
++	if (singleton == nullptr) {
++		singleton = memnew(OpenXRMetaSpatialEntityMeshExtensionWrapper());
++	}
++	return singleton;
++}
++
++OpenXRMetaSpatialEntityMeshExtensionWrapper::OpenXRMetaSpatialEntityMeshExtensionWrapper() :
++		OpenXRExtensionWrapperExtension() {
++	ERR_FAIL_COND_MSG(singleton != nullptr, ""An OpenXRMetaSpatialEntityMeshExtensionWrapper singleton already exists."");
++
++	request_extensions[XR_META_SPATIAL_ENTITY_MESH_EXTENSION_NAME] = &meta_spatial_entity_mesh_ext;
++	singleton = this;
++}
++
++OpenXRMetaSpatialEntityMeshExtensionWrapper::~OpenXRMetaSpatialEntityMeshExtensionWrapper() {
++	cleanup();
++}
++
++void OpenXRMetaSpatialEntityMeshExtensionWrapper::_bind_methods() {
++	ClassDB::bind_method(D_METHOD(""is_spatial_entity_mesh_supported""), &OpenXRMetaSpatialEntityMeshExtensionWrapper::is_spatial_entity_mesh_supported);
++}
++
++void OpenXRMetaSpatialEntityMeshExtensionWrapper::cleanup() {
++	meta_spatial_entity_mesh_ext = false;
++}
++
++Dictionary OpenXRMetaSpatialEntityMeshExtensionWrapper::_get_requested_extensions() {
++	Dictionary result;
++	for (auto ext : request_extensions) {
++		uint64_t value = reinterpret_cast<uint64_t>(ext.value);
++		result[ext.key] = (Variant)value;
++	}
++	return result;
++}
++
++void OpenXRMetaSpatialEntityMeshExtensionWrapper::_on_instance_created(uint64_t instance) {
++	if (meta_spatial_entity_mesh_ext) {
++		bool result = initialize_meta_spatial_entity_mesh_extension((XrInstance)instance);
++		if (!result) {
++			UtilityFunctions::print(""Failed to initialize fb_spatial_entity extension"");
++			meta_spatial_entity_mesh_ext = false;
++		}
++	}
++}
++
++void OpenXRMetaSpatialEntityMeshExtensionWrapper::_on_instance_destroyed() {
++	cleanup();
++}
++
++bool OpenXRMetaSpatialEntityMeshExtensionWrapper::initialize_meta_spatial_entity_mesh_extension(const XrInstance &p_instance) {
++	GDEXTENSION_INIT_XR_FUNC_V(xrGetSpaceTriangleMeshMETA);
++
++	return true;
++}
++
++bool OpenXRMetaSpatialEntityMeshExtensionWrapper::get_triangle_mesh(const XrSpace &p_space, TriangleMesh &r_triangle_mesh) {
++	if (!meta_spatial_entity_mesh_ext) {
++		return false;
++	}
++	if (!OpenXRFbSpatialEntityExtensionWrapper::get_singleton()->is_component_enabled(p_space, XR_SPACE_COMPONENT_TYPE_TRIANGLE_MESH_META)) {
++		return false;
++	}
++
++	XrSpaceTriangleMeshGetInfoMETA info = {
++		XR_TYPE_SPACE_TRIANGLE_MESH_GET_INFO_META, // type
++		nullptr, // next
++	};
++
++	XrSpaceTriangleMeshMETA mesh_data = {
++		XR_TYPE_SPACE_TRIANGLE_MESH_META, // type
++		nullptr, // next
++		0, // vertexCapacityInput
++		0, // vertexCoutOutput
++		nullptr, // vertices
++		0, // indexCapacityInput
++		0, // indexCountOutput
++		nullptr, // indices
++	};
++
++	XrResult result;
++
++	result = xrGetSpaceTriangleMeshMETA(p_space, &info, &mesh_data);
++	if (XR_FAILED(result)) {
++		UtilityFunctions::print(""Failed to retrieve vertex and index count from xrGetSpaceTriangleMeshMETA, error code: "", result);
++		return false;
++	}
++
++	mesh_data.vertexCapacityInput = mesh_data.vertexCountOutput;
++	r_triangle_mesh.vertices.resize(mesh_data.vertexCapacityInput);
++	mesh_data.vertices = r_triangle_mesh.vertices.ptrw();
++
++	mesh_data.indexCapacityInput = mesh_data.indexCountOutput;
++	r_triangle_mesh.indices.resize(mesh_data.indexCapacityInput);
++	mesh_data.indices = r_triangle_mesh.indices.ptrw();
++
++	result = xrGetSpaceTriangleMeshMETA(p_space, &info, &mesh_data);
++	if (XR_FAILED(result)) {
++		UtilityFunctions::print(""Failed to retrieve triangle mesh data from xrGetSpaceTriangleMeshMETA, error code: "", result);
++		return false;
++	}
++
++	return true;
++}"
+GodotVR/godot_openxr_vendors,122,5be9896338fb74e06cb8ec1efc2a5f76a94e51e8,common/src/main/cpp/include/classes/openxr_fb_spatial_entity.h,modified,1,0,1,"@@ -86,6 +86,7 @@ class OpenXRFbSpatialEntity : public RefCounted {
+ 	Rect2 get_bounding_box_2d() const;
+ 	AABB get_bounding_box_3d() const;
+ 	PackedVector2Array get_boundary_2d() const;
++	Array get_triangle_mesh() const;
+ 
+ 	void track();
+ 	void untrack();"
+GodotVR/godot_openxr_vendors,122,5be9896338fb74e06cb8ec1efc2a5f76a94e51e8,common/src/main/cpp/include/extensions/openxr_meta_spatial_entity_mesh_extension_wrapper.h,added,84,0,84,"@@ -0,0 +1,84 @@
++/**************************************************************************/
++/*  openxr_meta_spatial_entity_mesh_extension_wrapper.h                   */
++/**************************************************************************/
++/*                       This file is part of:                            */
++/*                              GODOT XR                                  */
++/*                      https://godotengine.org                           */
++/**************************************************************************/
++/* Copyright (c) 2022-present Godot XR contributors (see CONTRIBUTORS.md) */
++/*                                                                        */
++/* Permission is hereby granted, free of charge, to any person obtaining  */
++/* a copy of this software and associated documentation files (the        */
++/* ""Software""), to deal in the Software without restriction, including    */
++/* without limitation the rights to use, copy, modify, merge, publish,    */
++/* distribute, sublicense, and/or sell copies of the Software, and to     */
++/* permit persons to whom the Software is furnished to do so, subject to  */
++/* the following conditions:                                              */
++/*                                                                        */
++/* The above copyright notice and this permission notice shall be         */
++/* included in all copies or substantial portions of the Software.        */
++/*                                                                        */
++/* THE SOFTWARE IS PROVIDED ""AS IS"", WITHOUT WARRANTY OF ANY KIND,        */
++/* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF     */
++/* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. */
++/* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY   */
++/* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,   */
++/* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE      */
++/* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.                 */
++/**************************************************************************/
++
++#pragma once
++
++#include <openxr/openxr.h>
++#include <godot_cpp/classes/open_xr_extension_wrapper_extension.hpp>
++#include <godot_cpp/templates/hash_map.hpp>
++
++#include ""util.h""
++
++using namespace godot;
++
++// Wrapper for the XR_META_spatial_entity_mesh extension.
++class OpenXRMetaSpatialEntityMeshExtensionWrapper : public OpenXRExtensionWrapperExtension {
++	GDCLASS(OpenXRMetaSpatialEntityMeshExtensionWrapper, OpenXRExtensionWrapperExtension);
++
++public:
++	Dictionary _get_requested_extensions() override;
++
++	void _on_instance_created(uint64_t instance) override;
++	void _on_instance_destroyed() override;
++
++	bool is_spatial_entity_mesh_supported() {
++		return meta_spatial_entity_mesh_ext;
++	}
++
++	struct TriangleMesh {
++		Vector<XrVector3f> vertices;
++		Vector<uint32_t> indices;
++	};
++
++	bool get_triangle_mesh(const XrSpace &p_space, TriangleMesh &r_triangle_mesh);
++
++	static OpenXRMetaSpatialEntityMeshExtensionWrapper *get_singleton();
++
++	OpenXRMetaSpatialEntityMeshExtensionWrapper();
++	~OpenXRMetaSpatialEntityMeshExtensionWrapper();
++
++protected:
++	static void _bind_methods();
++
++private:
++	EXT_PROTO_XRRESULT_FUNC3(xrGetSpaceTriangleMeshMETA,
++			(XrSpace), space,
++			(const XrSpaceTriangleMeshGetInfoMETA *), getInfo,
++			(XrSpaceTriangleMeshMETA *), triangleMeshOutput)
++
++	bool initialize_meta_spatial_entity_mesh_extension(const XrInstance &instance);
++
++	HashMap<String, bool *> request_extensions;
++
++	void cleanup();
++
++	static OpenXRMetaSpatialEntityMeshExtensionWrapper *singleton;
++
++	bool meta_spatial_entity_mesh_ext = false;
++};"
+GodotVR/godot_openxr_vendors,122,5be9896338fb74e06cb8ec1efc2a5f76a94e51e8,common/src/main/cpp/register_types.cpp,modified,5,0,5,"@@ -57,6 +57,7 @@
+ #include ""extensions/openxr_fb_spatial_entity_query_extension_wrapper.h""
+ #include ""extensions/openxr_fb_spatial_entity_storage_extension_wrapper.h""
+ #include ""extensions/openxr_htc_facial_tracking_extension_wrapper.h""
++#include ""extensions/openxr_meta_spatial_entity_mesh_extension_wrapper.h""
+ 
+ #include ""classes/openxr_fb_hand_tracking_mesh.h""
+ #include ""classes/openxr_fb_passthrough_geometry.h""
+@@ -91,6 +92,9 @@ void initialize_plugin_module(ModuleInitializationLevel p_level) {
+ 			ClassDB::register_class<OpenXRFbSpatialEntityContainerExtensionWrapper>();
+ 			OpenXRFbSpatialEntityContainerExtensionWrapper::get_singleton()->register_extension_wrapper();
+ 
++			ClassDB::register_class<OpenXRMetaSpatialEntityMeshExtensionWrapper>();
++			OpenXRMetaSpatialEntityMeshExtensionWrapper::get_singleton()->register_extension_wrapper();
++
+ 			ClassDB::register_class<OpenXRFbSceneExtensionWrapper>();
+ 			OpenXRFbSceneExtensionWrapper::get_singleton()->register_extension_wrapper();
+ 
+@@ -111,6 +115,7 @@ void initialize_plugin_module(ModuleInitializationLevel p_level) {
+ 
+ 			ClassDB::register_class<OpenXRHtcFacialTrackingExtensionWrapper>();
+ 			OpenXRHtcFacialTrackingExtensionWrapper::get_singleton()->register_extension_wrapper();
++
+ 		} break;
+ 
+ 		case MODULE_INITIALIZATION_LEVEL_SERVERS:"
+GodotVR/godot_openxr_vendors,122,5be9896338fb74e06cb8ec1efc2a5f76a94e51e8,demo/assets/cross-grid-material.tres,modified,1,1,2,"@@ -1,4 +1,4 @@
+-[gd_resource type=""StandardMaterial3D"" load_steps=2 format=3 uid=""uid://c2552u4qmlssh""]
++[gd_resource type=""StandardMaterial3D"" load_steps=2 format=4 uid=""uid://c2552u4qmlssh""]
+ 
+ [ext_resource type=""Texture2D"" uid=""uid://br1vofjd2kxhv"" path=""res://assets/cross-grid.png"" id=""1_1d3mh""]
+ "
+GodotVR/godot_openxr_vendors,122,5be9896338fb74e06cb8ec1efc2a5f76a94e51e8,demo/assets/wireframe-material.gdshader,added,36,0,36,"@@ -0,0 +1,36 @@
++shader_type spatial;
++
++// Shader code copied from:
++//   https://godotshaders.com/shader/wireframe-shader-godot-4-0/
++// License: CC0
++
++uniform vec4 albedo : source_color = vec4(1.0);
++uniform vec4 wire_color : source_color = vec4(0.0, 0.0, 0.0, 1.0);
++uniform float wire_width : hint_range(0.0, 40.0) = 5.0;
++uniform float wire_smoothness : hint_range(0.0, 0.1) = 0.01;
++
++varying vec3 barys;
++
++void vertex() {
++	int index = VERTEX_ID % 3;
++	switch (index) {
++		case 0:
++			barys = vec3(1.0, 0.0, 0.0);
++			break;
++		case 1:
++			barys = vec3(0.0, 1.0, 0.0);
++			break;
++		case 2:
++			barys = vec3(0.0, 0.0, 1.0);
++			break;
++	}
++}
++
++void fragment() {
++	vec3 deltas = fwidth(barys);
++	vec3 barys_s = smoothstep(deltas * wire_width - wire_smoothness, deltas * wire_width + wire_smoothness, barys);
++	float wires = min(barys_s.x, min(barys_s.y, barys_s.z));
++	vec4 color = mix(wire_color.rgba, albedo.rgba, wires);
++	ALBEDO = color.rgb;
++	ALPHA = color.a;
++}"
+GodotVR/godot_openxr_vendors,122,5be9896338fb74e06cb8ec1efc2a5f76a94e51e8,demo/assets/wireframe-material.tres,added,11,0,11,"@@ -0,0 +1,11 @@
++[gd_resource type=""ShaderMaterial"" load_steps=2 format=4 uid=""uid://cl3ucly7cjhvy""]
++
++[ext_resource type=""Shader"" path=""res://assets/wireframe-material.gdshader"" id=""1_f1auu""]
++
++[resource]
++render_priority = 0
++shader = ExtResource(""1_f1auu"")
++shader_parameter/albedo = Color(1, 1, 1, 0)
++shader_parameter/wire_color = Color(1, 1, 1, 0.392157)
++shader_parameter/wire_width = 1.0
++shader_parameter/wire_smoothness = 0.033"
+GodotVR/godot_openxr_vendors,122,5be9896338fb74e06cb8ec1efc2a5f76a94e51e8,demo/main.tscn,modified,3,1,4,"@@ -1,11 +1,12 @@
+-[gd_scene load_steps=21 format=3 uid=""uid://cqsodpswgup8w""]
++[gd_scene load_steps=22 format=4 uid=""uid://cqsodpswgup8w""]
+ 
+ [ext_resource type=""Script"" path=""res://main.gd"" id=""1_fsva1""]
+ [ext_resource type=""PackedScene"" uid=""uid://c0uv4eu2yjm3b"" path=""res://viewport_2d_in_3d.tscn"" id=""2_7whgo""]
+ [ext_resource type=""PackedScene"" uid=""uid://d4b4rllli6tqp"" path=""res://tablet_content.tscn"" id=""3_45w5g""]
+ [ext_resource type=""PackedScene"" uid=""uid://bcjp8kcgde4cs"" path=""res://scene_anchor.tscn"" id=""4_3u3ah""]
+ [ext_resource type=""PackedScene"" uid=""uid://ikxieb2fyavg"" path=""res://assets/face/Face.gltf"" id=""4_wrwst""]
+ [ext_resource type=""PackedScene"" uid=""uid://bwfyi8pgigune"" path=""res://xr_fb_hand_tracking_aim_demo.tscn"" id=""5_6bxyh""]
++[ext_resource type=""PackedScene"" uid=""uid://bwo5nq0clfe3c"" path=""res://scene_global_mesh.tscn"" id=""5_7ikgf""]
+ 
+ [sub_resource type=""Gradient"" id=""Gradient_yvg3n""]
+ offsets = PackedFloat32Array(0, 0.484615, 1)
+@@ -153,6 +154,7 @@ hand = 1
+ default_scene = ExtResource(""4_3u3ah"")
+ auto_create = false
+ visible = false
++scenes/global_mesh = ExtResource(""5_7ikgf"")
+ 
+ [node name=""Floor"" type=""MeshInstance3D"" parent="".""]
+ mesh = SubResource(""PlaneMesh_mjcgt"")"
+GodotVR/godot_openxr_vendors,122,5be9896338fb74e06cb8ec1efc2a5f76a94e51e8,demo/scene_anchor.gd,modified,5,5,10,"@@ -10,7 +10,7 @@ var mesh_instance: MeshInstance3D
+ func setup_scene(entity: OpenXRFbSpatialEntity) -> void:
+ 	var semantic_labels: PackedStringArray = entity.get_semantic_labels()
+ 
+-	label.text = "", "".join(semantic_labels)
++	label.text = "", "".join(Array(semantic_labels).map(func (x): return x.capitalize()))
+ 
+ 	var collision_shape = entity.create_collision_shape()
+ 	if collision_shape:
+@@ -35,13 +35,13 @@ func setup_scene(entity: OpenXRFbSpatialEntity) -> void:
+ 
+ func _get_color_for_label(semantic_label) -> Color:
+ 	match semantic_label:
+-		""CEILING"",""FLOOR"":
++		""ceiling"",""floor"":
+ 			return Color(0.0, 0.0, 0.0, 1.0)
+-		""WALL_FACE"",""INVISIBLE_WALL_FACE"":
++		""wall_face"",""invisible_wall_face"":
+ 			return Color(0.0, 0.0, 1.0, 1.0)
+-		""WINDOW_FRAME"",""DOOR_FRAME"":
++		""window_frame"",""door_frame"":
+ 			return Color(1.0, 0.0, 0.0, 1.0)
+-		""COUCH"",""TABLE"",""BED"",""LAMP"",""PLANT"",""SCREEN"",""STORAGE"":
++		""couch"",""table"",""bed"",""lamp"",""plant"",""screen"",""storage"":
+ 			return Color(0.0, 1.0, 0.0, 1.0)
+ 
+ 	return Color(1.0, 1.0, 1.0, 1.0)"
+GodotVR/godot_openxr_vendors,122,5be9896338fb74e06cb8ec1efc2a5f76a94e51e8,demo/scene_anchor.tscn,modified,1,1,2,"@@ -1,4 +1,4 @@
+-[gd_scene load_steps=2 format=3 uid=""uid://bcjp8kcgde4cs""]
++[gd_scene load_steps=2 format=4 uid=""uid://bcjp8kcgde4cs""]
+ 
+ [ext_resource type=""Script"" path=""res://scene_anchor.gd"" id=""1_l6xwj""]
+ "
+GodotVR/godot_openxr_vendors,122,5be9896338fb74e06cb8ec1efc2a5f76a94e51e8,demo/scene_global_mesh.gd,added,40,0,40,"@@ -0,0 +1,40 @@
++extends Node3D
++
++const WIREFRAME_MATERIAL: Material = preload(""res://assets/wireframe-material.tres"")
++
++@onready var static_body: StaticBody3D = $StaticBody3D
++
++var mesh_instance: MeshInstance3D
++
++func setup_scene(entity: OpenXRFbSpatialEntity) -> void:
++	var collision_shape = entity.create_collision_shape()
++	if collision_shape:
++		static_body.add_child(collision_shape)
++
++
++	#mesh_instance = entity.create_mesh_instance()
++	#if mesh_instance:
++	#	mesh_instance.set_surface_override_material(0, WIREFRAME_MATERIAL)
++	#	add_child(mesh_instance)
++
++	# Calling entity.create_mesh_instance() works, however, our wireframe shader only
++	# works right if vertices aren't shared among multiple triangles, so we have to
++	# process the mesh data to ensure that.
++	var mesh_array: Array = entity.get_triangle_mesh()
++	if not mesh_array.is_empty():
++		mesh_instance = MeshInstance3D.new()
++
++		var vertices := PackedVector3Array()
++		vertices.resize(mesh_array[Mesh.ARRAY_INDEX].size())
++		for i in range(mesh_array[Mesh.ARRAY_INDEX].size()):
++			vertices[i] = mesh_array[Mesh.ARRAY_VERTEX][mesh_array[Mesh.ARRAY_INDEX][i]]
++
++		mesh_array[Mesh.ARRAY_VERTEX] = vertices
++		mesh_array[Mesh.ARRAY_INDEX] = null
++
++		var mesh := ArrayMesh.new()
++		mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, mesh_array)
++		mesh_instance.mesh = mesh
++
++		mesh_instance.set_surface_override_material(0, WIREFRAME_MATERIAL)
++		add_child(mesh_instance)"
+GodotVR/godot_openxr_vendors,122,5be9896338fb74e06cb8ec1efc2a5f76a94e51e8,demo/scene_global_mesh.tscn,added,8,0,8,"@@ -0,0 +1,8 @@
++[gd_scene load_steps=2 format=4 uid=""uid://bwo5nq0clfe3c""]
++
++[ext_resource type=""Script"" path=""res://scene_global_mesh.gd"" id=""1_bmuti""]
++
++[node name=""SceneGlobalMesh"" type=""Node3D""]
++script = ExtResource(""1_bmuti"")
++
++[node name=""StaticBody3D"" type=""StaticBody3D"" parent="".""]"

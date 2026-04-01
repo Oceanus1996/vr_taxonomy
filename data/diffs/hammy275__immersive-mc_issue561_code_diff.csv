@@ -1,0 +1,93 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+hammy275/immersive-mc,561,fd4cb6088908a3b4f155f547df4b30db8d1c1a0e,common/build.gradle,modified,2,0,2,"@@ -21,6 +21,8 @@ dependencies {
+ 
+     modCompileOnly ""curse.maven:vivecraft-667903:6208707""
+     modCompileOnly ""curse.maven:inventoryprofilesnext-495267:6093916""
++
++    compileOnly(annotationProcessor(""io.github.llamalad7:mixinextras-common:${rootProject.mixin_extras_version}""))
+ }
+ 
+ publishing {"
+hammy275/immersive-mc,561,fd4cb6088908a3b4f155f547df4b30db8d1c1a0e,common/src/main/java/com/hammy275/immersivemc/mixin/ContainerOpenersCounterMixin.java,modified,13,6,19,"@@ -1,25 +1,32 @@
+ package com.hammy275.immersivemc.mixin;
+ 
+ import com.hammy275.immersivemc.server.ChestToOpenSet;
++import com.llamalad7.mixinextras.injector.wrapmethod.WrapMethod;
++import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.world.entity.player.Player;
+ import net.minecraft.world.level.Level;
+ import net.minecraft.world.level.block.entity.ContainerOpenersCounter;
+ import org.spongepowered.asm.mixin.Mixin;
+-import org.spongepowered.asm.mixin.injection.At;
+-import org.spongepowered.asm.mixin.injection.Inject;
+-import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+ 
+ import java.util.List;
+ import java.util.Set;
+ 
+ @Mixin(ContainerOpenersCounter.class)
+ public class ContainerOpenersCounterMixin {
+-    @Inject(method = ""getPlayersWithContainerOpen"", at = @At(""RETURN""))
+-    private void immersiveMC$addImmersiveOpenersCount(Level level, BlockPos pos, CallbackInfoReturnable<List<Player>> cir) {
++
++    // Uses WrapMethod instead of ModifyReturnValue because mods (such as ImmersivePortals) tend to @Inject here
++    @WrapMethod(method = ""getPlayersWithContainerOpen"")
++    private List<Player> immersiveMC$addImmersiveOpenersCount(Level level, BlockPos pos, Operation<List<Player>> original) {
++        List<Player> result = original.call(level, pos);
+         Set<Player> immersivePlayers = ChestToOpenSet.getOpenSet(level, pos, false);
+         if (immersivePlayers != null) {
+-            cir.getReturnValue().addAll(immersivePlayers);
++            for (Player immersivePlayer : immersivePlayers) {
++                if (!result.contains(immersivePlayer)) {
++                    result.add(immersivePlayer);
++                }
++            }
+         }
++        return result;
+     }
+ }"
+hammy275/immersive-mc,561,fd4cb6088908a3b4f155f547df4b30db8d1c1a0e,fabric/build.gradle,modified,2,0,2,"@@ -46,6 +46,8 @@ dependencies {
+ 
+     common(project(path: "":common"", configuration: ""namedElements"")) { transitive false }
+     shadowCommon(project(path: "":common"", configuration: ""transformProductionFabric"")) { transitive false }
++
++    include(implementation(annotationProcessor(""io.github.llamalad7:mixinextras-fabric:${rootProject.mixin_extras_version}"")))
+ }
+ 
+ processResources {"
+hammy275/immersive-mc,561,fd4cb6088908a3b4f155f547df4b30db8d1c1a0e,forge/build.gradle,modified,3,0,3,"@@ -38,6 +38,9 @@ dependencies {
+ 
+     common(project(path: "":common"", configuration: ""namedElements"")) { transitive false }
+     shadowCommon(project(path: "":common"", configuration: ""transformProductionForge"")) { transitive = false }
++
++    compileOnly(annotationProcessor(""io.github.llamalad7:mixinextras-common:${rootProject.mixin_extras_version}""))
++    implementation(include(""io.github.llamalad7:mixinextras-forge:${rootProject.mixin_extras_version}""))
+ }
+ 
+ processResources {"
+hammy275/immersive-mc,561,fd4cb6088908a3b4f155f547df4b30db8d1c1a0e,gradle.properties,modified,3,1,4,"@@ -5,7 +5,7 @@ enabled_platforms=fabric,forge,neoforge
+ parchment_version=1.21.4:2025.02.16
+ 
+ archives_base_name=immersivemc
+-mod_version=1.5.3
++mod_version=1.5.4
+ maven_group=com.hammy275
+ 
+ fabric_loader_version=0.16.9
+@@ -14,3 +14,5 @@ fabric_api_version=0.114.0+1.21.4
+ forge_version=1.21.4-54.0.14
+ 
+ neoforge_version=21.4.87-beta
++
++mixin_extras_version=0.4.1"
+hammy275/immersive-mc,561,fd4cb6088908a3b4f155f547df4b30db8d1c1a0e,neoforge/build.gradle,modified,3,0,3,"@@ -39,6 +39,9 @@ dependencies {
+ 
+     common(project(path: "":common"", configuration: ""namedElements"")) { transitive false }
+     shadowCommon(project(path: "":common"", configuration: ""transformProductionNeoForge"")) { transitive = false }
++
++    compileOnly(annotationProcessor(""io.github.llamalad7:mixinextras-common:${rootProject.mixin_extras_version}""))
++    implementation(include(""io.github.llamalad7:mixinextras-neoforge:${rootProject.mixin_extras_version}""))
+ }
+ 
+ processResources {"

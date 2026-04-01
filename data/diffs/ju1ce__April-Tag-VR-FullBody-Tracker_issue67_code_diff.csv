@@ -1,0 +1,168 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch,gpt_bug_detection
+ju1ce/April-Tag-VR-FullBody-Tracker,67,8720cab49f5241446d9383134fd9507b70c431c0,AprilTagTrackers/Config.h,modified,7,6,13,"@@ -37,25 +37,26 @@ class ManualCalib
+         return {
+             posOffset * (1 / POS_OFFSET_MULTI),
+             angleOffset * DEG_2_RAD,
+-            scale};
++            scale/100};
+     }
+     void SetFromReal(const Real& real)
+     {
+         posOffset = real.posOffset * POS_OFFSET_MULTI;
+         angleOffset = real.angleOffset * RAD_2_DEG;
+-        scale = real.scale;
++        scale = real.scale*100;
+     }
+ 
+     REFLECTABLE_BEGIN;
+     /// stored multiplied by POS_OFFSET_MULTI
+     FIELD(cv::Vec3d, posOffset);
+     FS_COMMENT(""(pitch, yaw, roll) in degrees."");
+     FIELD(cv::Vec3d, angleOffset);
+-    FIELD(FS::Valid<double>, scale){
+-        1.0, [](auto& value)
++    FIELD(FS::Valid<double>, scale) {
++        100.0, [](auto& value)
+         {
+-            value = std::clamp(value, 0.8, 1.2);
+-        }};
++            value = std::clamp(value,80.0, 120.0);
++        }
++    };
+     REFLECTABLE_END;
+ };
+ ","{""has_bug"": true, ""bugs"": [{""line_start"": 40, ""line_end"": 40, ""description"": ""Potential division by zero if scale is set to zero."", ""buggy_code"": ""scale/100""}, {""line_start"": 46, ""line_end"": 46, ""description"": ""Potential division by zero if real.scale is set to zero."", ""buggy_code"": ""scale = real.scale*100""}, {""line_start"": 85, ""line_end"": 85, ""description"": ""Setting value to 0.1 when it is less than or equal to 0 may lead to unintended behavior."", ""buggy_code"": ""if (value <= 0.) value = 0.1;""}, {""line_start"": 110, ""line_end"": 110, ""description"": ""Setting value to 0.5 when it is less than 0.5 may lead to unintended behavior."", ""buggy_code"": ""if (value < 0.5) value = 0.5;""}, {""line_start"": 135, ""line_end"": 135, ""description"": ""Setting value to 45 when it is less than or equal to 0 may lead to unintended behavior."", ""buggy_code"": ""if (value <= 0) value = 45;""}]}"
+ju1ce/April-Tag-VR-FullBody-Tracker,67,8720cab49f5241446d9383134fd9507b70c431c0,AprilTagTrackers/GUI/FormBuilder.cpp,modified,0,32,32,"@@ -103,36 +103,4 @@ void StretchSpacer::Create(RefPtr<wxWindow>, RefPtr<wxSizer> sizer, wxSizerFlags
+ {
+     sizer->AddStretchSpacer(proportion);
+ }
+-
+-void InputNumber::Create(RefPtr<wxWindow> parent, RefPtr<wxSizer> sizer, wxSizerFlags flags)
+-{
+-    wxSize buttonSize{25, 25};
+-    auto subSizer = NewSizer<wxBoxSizer>(sizer, flags, wxHORIZONTAL);
+-    CreateWidget(parent, ToWXString(backingValue));
+-
+-    subSizer->Add(NewButton(parent, ""<<"", buttonSize, CreateAdjustBackingFunc(-10)));
+-    subSizer->Add(NewButton(parent, ""<"", buttonSize, CreateAdjustBackingFunc(-1)));
+-    subSizer->Add(GetWidget());
+-    subSizer->Add(NewButton(parent, "">"", buttonSize, CreateAdjustBackingFunc(1)));
+-    subSizer->Add(NewButton(parent, "">>"", buttonSize, CreateAdjustBackingFunc(10)));
+-
+-    Bind(wxEVT_MOUSEWHEEL,
+-        [&val = backingValue, ctrl = GetWidget()](wxMouseEvent& evt)
+-        {
+-            val += evt.GetWheelRotation() > 0 ? 1 : -1;
+-            ctrl->ChangeValue(ToWXString(val));
+-        });
+-
+-    Bind(wxEVT_TEXT,
+-        [&val = backingValue, ctrl = GetWidget()](wxCommandEvent&)
+-        {
+-            FromWXString(ctrl->GetValue(), val);
+-        });
+-}
+-
+-void InputNumber::Update()
+-{
+-    GetWidget()->ChangeValue(ToWXString(backingValue));
+-}
+-
+ } // namespace Form","{""has_bug"": true, ""bugs"": [{""line_start"": 54, ""line_end"": 54, ""description"": ""Potential null reference issue when calling DynamicCast on GetSizer(). If GetSizer() returns null, this will lead to a crash."", ""buggy_code"": ""auto staticSizer = GetSizer().DynamicCast<wxStaticBoxSizer>();""}, {""line_start"": 58, ""line_end"": 58, ""description"": ""The assertion checks if parent is a wxStaticBox, but if parent is null, it could lead to a null reference exception."", ""buggy_code"": ""ATASSERT(\""wxStaticBoxSizer requires the parent to be its static box.\"", parent.DynamicCast<wxStaticBox>().NotNull());""}, {""line_start"": 76, ""line_end"": 76, ""description"": ""Memory leak potential: new FormBuilder is allocated but never deleted. This could lead to resource leaks if not managed properly."", ""buggy_code"": ""auto* elemPtr = new FormBuilder(parent, GetSizer());""}, {""line_start"": 80, ""line_end"": 80, ""description"": ""Returning a raw pointer (elemPtr) as a RefPtr without managing its ownership can lead to undefined behavior."", ""buggy_code"": ""return elemPtr;""}]}"
+ju1ce/April-Tag-VR-FullBody-Tracker,67,8720cab49f5241446d9383134fd9507b70c431c0,AprilTagTrackers/GUI/FormBuilder.h,modified,3,2,5,"@@ -156,19 +156,20 @@ class InputText : public Widget<wxTextCtrl>
+ };
+ 
+ /// Advanced number input with multiple step buttons and scroll wheel input.
++template <typename T>
+ class InputNumber : public Widget<wxTextCtrl>
+ {
+ private:
+     auto CreateAdjustBackingFunc(int amount);
+ 
+ public:
+-    InputNumber(double& _backingValue) : backingValue(_backingValue) {}
++    InputNumber(T& _backingValue) : backingValue(_backingValue) {}
+ 
+     void Create(RefPtr<wxWindow> parent, RefPtr<wxSizer> sizer, wxSizerFlags flags = {}) override;
+     void Update() override;
+ 
+ private:
+-    double& backingValue;
++    T& backingValue;
+     std::vector<RefPtr<wxWindow>> buttons;
+ };
+ ","{""has_bug"": true, ""bugs"": [{""line_start"": 228, ""line_end"": 228, ""description"": ""Incomplete template declaration, likely a typo or missing code."", ""buggy_code"": ""templa""}]}"
+ju1ce/April-Tag-VR-FullBody-Tracker,67,8720cab49f5241446d9383134fd9507b70c431c0,AprilTagTrackers/GUI/FormBuilder.tpp,modified,37,2,39,"@@ -77,11 +77,46 @@ inline void InputText<T>::Submit()
+     GetWidget()->ChangeValue(ToWXString(backingValue));
+ }
+ 
+-inline auto InputNumber::CreateAdjustBackingFunc(int amount)
++template <typename T>
++void InputNumber<T>::Create(RefPtr<wxWindow> parent, RefPtr<wxSizer> sizer, wxSizerFlags flags)
++{
++    wxSize buttonSize{25, 25};
++    auto subSizer = NewSizer<wxBoxSizer>(sizer, flags, wxHORIZONTAL);
++    CreateWidget(parent, ToWXString(backingValue));
++
++    subSizer->Add(NewButton(parent, ""<<"", buttonSize, CreateAdjustBackingFunc(-10)));
++    subSizer->Add(NewButton(parent, ""<"", buttonSize, CreateAdjustBackingFunc(-1)));
++    subSizer->Add(GetWidget());
++    subSizer->Add(NewButton(parent, "">"", buttonSize, CreateAdjustBackingFunc(1)));
++    subSizer->Add(NewButton(parent, "">>"", buttonSize, CreateAdjustBackingFunc(10)));
++
++    Bind(wxEVT_MOUSEWHEEL,
++        [&val = backingValue, ctrl = GetWidget()](wxMouseEvent& evt)
++        {
++            val = static_cast<double>(val)+(evt.GetWheelRotation() > 0 ? 1 : -1);
++            ctrl->ChangeValue(ToWXString(val));
++        });
++
++    Bind(wxEVT_TEXT,
++        [&val = backingValue, ctrl = GetWidget()](wxCommandEvent&)
++        {
++            FromWXString(ctrl->GetValue(), val);
++        });
++}
++
++template <typename T>
++void InputNumber<T>::Update()
++{
++    GetWidget()->ChangeValue(ToWXString(backingValue));
++}
++
++
++template <typename T>
++inline auto InputNumber<T>::CreateAdjustBackingFunc(int amount)
+ {
+     return [&val = backingValue, ctrl = GetWidget(), amount](wxCommandEvent&)
+     {
+-        val += amount;
++        val = static_cast<double>(val)+amount;
+         ctrl->ChangeValue(ToWXString(val));
+     };
+ }","{""has_bug"": true, ""bugs"": [{""line_start"": 18, ""line_end"": 18, ""description"": ""The static_assert message is misleading; it should indicate that ElemT must be derived from IElement."", ""buggy_code"": ""static_assert(std::is_base_of_v<IElement, ElemT>, \""ElemT is derived from IElement.\"");""}, {""line_start"": 26, ""line_end"": 26, ""description"": ""Memory leak potential; elemPtr is allocated with new but never deleted, leading to resource leaks."", ""buggy_code"": ""return elemPtr;""}, {""line_start"": 196, ""line_end"": 196, ""description"": ""Potential out-of-bounds access; if GetSelection() returns -1 (no selection), this will lead to undefined behavior."", ""buggy_code"": ""backingValue = mappings[mappedIndex];""}]}"
+ju1ce/April-Tag-VR-FullBody-Tracker,67,8720cab49f5241446d9383134fd9507b70c431c0,AprilTagTrackers/GUI/MainFrame.cpp,modified,1,0,1,"@@ -268,6 +268,7 @@ void GUI::MainFrame::CreateCameraPage(RefPtr<wxNotebook> pages)
+         .Add(Labeled{lc.calib.PITCH, InputNumber{manualCalib.angleOffset[0]}})
+         .Add(Labeled{lc.calib.YAW, InputNumber{manualCalib.angleOffset[1]}})
+         .Add(Labeled{lc.calib.ROLL, InputNumber{manualCalib.angleOffset[2]}})
++        .Add(Labeled{lc.calib.SCALE, InputNumber{manualCalib.scale}})
+         .Add(CheckBoxButton{ lc.CAMERA_MULTICAM_CALIB, [this](auto& evt)
+             {
+                 tracker->multicamAutocalib = evt.IsChecked();","{""has_bug"": true, ""bugs"": [{""line_start"": 182, ""line_end"": 182, ""description"": ""Potential null reference issue if cameraSettings is null."", ""buggy_code"": ""if (config.cameraSettings && config.cameraApiPreference != 700)""}, {""line_start"": 184, ""line_end"": 184, ""description"": ""Logic error: smoothingFactor should not be less than or equal to camLatency."", ""buggy_code"": ""if (config.smoothingFactor <= config.camLatency)""}, {""line_start"": 188, ""line_end"": 188, ""description"": ""Logic error: condition may not cover all cases for trackerNum."", ""buggy_code"": ""if (config.ignoreTracker0 && config.trackerNum == 2)""}, {""line_start"": 191, ""line_end"": 191, ""description"": ""Potential null reference issue if tracker is null."", ""buggy_code"": ""tracker->UpdateConfig();""}, {""line_start"": 213, ""line_end"": 213, ""description"": ""Potential out-of-bounds access if PreviewId::Camera is not a valid index."", ""buggy_code"": ""previews[static_cast<int>(PreviewId::Camera)].Show();""}, {""line_start"": 234, ""line_end"": 234, ""description"": ""Incomplete code snippet, missing closing brackets or statements."", ""buggy_code"": "".Add(Button{lc.CAMERA""}]}"
+ju1ce/April-Tag-VR-FullBody-Tracker,67,8720cab49f5241446d9383134fd9507b70c431c0,AprilTagTrackers/Localization.h,modified,1,0,1,"@@ -96,6 +96,7 @@ class Localization : public FS::Serializable<Localization>
+         T(PITCH) = ""Pitch (°):"";
+         T(YAW) = ""Yaw (°):"";
+         T(ROLL) = ""Roll (°):"";
++        T(SCALE) = ""Scale (%):"";
+         REFLECTABLE_END;
+     };
+ ","{""has_bug"": true, ""bugs"": [{""line_start"": 173, ""line_end"": 173, ""description"": ""The comment suggests that setting the number of trackers to 2 will not work in VRChat, which may indicate a logic error in the application if it allows this configuration."", ""buggy_code"": ""T(PARAMS_TRACKER_TOOLTIP_NUM_TRACKERS) = \""Set to 3 for full body. 2 will not work in vrchat!\""""}, {""line_start"": 148, ""line_end"": 148, ""description"": ""The comment suggests that the input for camera ID should be a number between 0-10 for USB cameras, but it does not enforce this constraint, which could lead to undefined behavior if an invalid ID is provided."", ""buggy_code"": ""T(PARAMS_CAMERA_TOOLTIP_ID) = \""Will be a number 0-10 for USB cameras and\\nhttp://<ip here>:8080/video for IP webcam)\""""}, {""line_start"": 165, ""line_end"": 165, ""description"": ""The comment mentions that the autoexposure can be set to values like 0.75 and 0.25, which may not be valid inputs for the camera settings, leading to potential type mismatches or undefined behavior."", ""buggy_code"": ""T(PARAMS_CAMERA_TOOLTIP_AUTOEXP) = \""Experimental. Will try to set camera autoexposure. Usualy 1 for enable and 0 for disable, but can be something dumb as 0.75 and 0.25,\""""}, {""line_start"": 167, ""line_end"": 167, ""description"": ""The comment suggests that exposure can be set in a range that may not be validated, leading to potential invalid values being set, which could cause runtime errors."", ""buggy_code"": ""T(PARAMS_CAMERA_TOOLTIP_EXP) = \""Experimental. Will try to set camera expousre. Can be on a scale of 0-255, or in exponentials of 2 ( -8 for 4ms exposure)\""""}]}"
+ju1ce/April-Tag-VR-FullBody-Tracker,67,8720cab49f5241446d9383134fd9507b70c431c0,AprilTagTrackers/Tracker.cpp,modified,1,1,2,"@@ -1378,7 +1378,7 @@ void Tracker::MainLoop()
+ 
+                         calibControllerAngleOffset[0] = angle[0] - calib.angleOffset[0];
+                         calibControllerAngleOffset[1] = angle[1] - calib.angleOffset[1];
+-                        calibControllerAngleOffset[2] = distance;
++                        calibControllerAngleOffset[2] = distance/calib.scale;
+                     }
+                     else // else, deactivate it
+                     {","{""has_bug"": true, ""bugs"": [{""line_start"": 39, ""line_end"": 39, ""description"": ""Potential off-by-one error in gridLines vector initialization. The size should be gridSizeX + gridSizeY + 1 instead of gridSizeX + gridSizeY + 2."", ""buggy_code"": ""std::vector<std::vector<cv::Point3f>> gridLines(gridSizeX + gridSizeY + 2);""}, {""line_start"": 94, ""line_end"": 94, ""description"": ""The assertion may lead to an out-of-bounds access if stdDeviationsIntrinsics has fewer than 4 elements, as it accesses indices 0 to 3 without checking the size."", ""buggy_code"": ""ATASSERT(\""\"", sampleDistCoeffs.total() + 4 <= stdDeviationsIntrinsics.total());""}, {""line_start"": 130, ""line_end"": 130, ""description"": ""The condition checks colorsFromErrors.total() > i, which may lead to an out-of-bounds access if colorsFromErrors has fewer elements than allCharucoCorners."", ""buggy_code"": ""if (colorsFromErrors.total() > i)""}]}"

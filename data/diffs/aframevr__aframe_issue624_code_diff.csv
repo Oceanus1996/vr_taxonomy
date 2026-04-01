@@ -1,0 +1,391 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe,624,d1c895e9e4d25b9f174d59098c440aceb0795dca,src/aframe-core.js,modified,1,0,1,"@@ -21,6 +21,7 @@ var ANode = require('./core/a-node');
+ var AEntity = require('./core/a-entity');  // Depends on ANode and core components.
+ 
+ // Webvr polyfill configuration.
++window.hasNonPolyfillWebVRSupport = !!navigator.getVRDevices;
+ window.WebVRConfig = {
+   TOUCH_PANNER_DISABLED: true,
+   MOUSE_KEYBOARD_CONTROLS_DISABLED: true"
+aframevr/aframe,624,d1c895e9e4d25b9f174d59098c440aceb0795dca,src/core/a-scene.js,modified,111,36,147,"@@ -1,4 +1,4 @@
+-/* global MessageChannel, performance, Promise */
++/* global MessageChannel, Promise */
+ var re = require('../a-register-element');
+ var RStats = require('../../lib/vendor/rStats');
+ var THREE = require('../../lib/three');
+@@ -7,11 +7,18 @@ var utils = require('../utils/');
+ var AEntity = require('./a-entity');
+ var Wakelock = require('../../lib/vendor/wakelock/wakelock');
+ 
+-var controls = new THREE.VRControls();
++var dummyDolly = new THREE.Object3D();
++var controls = new THREE.VRControls(dummyDolly);
+ var isNode = re.isNode;
+-var DEFAULT_LIGHT_ATTR = 'data-aframe-default-light';
+ var DEFAULT_CAMERA_ATTR = 'data-aframe-default-camera';
++var DEFAULT_LIGHT_ATTR = 'data-aframe-default-light';
++var HIDDEN_CLASS = 'a-hidden';
+ var registerElement = re.registerElement;
++var ENTER_VR_CLASS = 'a-enter-vr';
++var ENTER_VR_NO_HEADSET = 'data-a-enter-vr-no-headset';
++var ENTER_VR_NO_WEBVR = 'data-a-enter-vr-no-webvr';
++var ENTER_VR_BTN_CLASS = 'a-enter-vr-button';
++var ENTER_VR_MODAL_CLASS = 'a-enter-vr-modal';
+ 
+ /**
+  * Scene element, holds all entities.
+@@ -22,6 +29,7 @@ var registerElement = re.registerElement;
+  * @member {object} cameraEl - Set the entity with a camera component.
+  * @member {object} canvas
+  * @member {bool} defaultLightsEnabled - false if user has not added lights.
++ * @member {Element} enterVREl
+  * @member {bool} insideIframe
+  * @member {bool} insideLoader
+  * @member {bool} isScene - Differentiates this as a scene entity as opposed
+@@ -35,7 +43,6 @@ var registerElement = re.registerElement;
+  * @member {bool} renderLoopStarted
+  * @member {object} stats
+  * @member {object} stereoRenderer
+- * @member {object} vrButton
+  * @member {object} wakelock
+  */
+ var AScene = module.exports = registerElement('a-scene', {
+@@ -44,12 +51,12 @@ var AScene = module.exports = registerElement('a-scene', {
+       value: function () {
+         this.behaviors = [];
+         this.defaultLightsEnabled = true;
++        this.enterVREl = null;
+         this.insideIframe = window.top !== window.self;
+         this.insideLoader = false;
+         this.isScene = true;
+         this.materials = {};
+         this.object3D = AScene.scene || new THREE.Scene();
+-        this.vrButton = null;
+ 
+         AScene.scene = this.object3D;
+       }
+@@ -221,8 +228,9 @@ var AScene = module.exports = registerElement('a-scene', {
+           return;
+         }
+         this.resizeCanvas();
+-        // Kick off the render loop.
+-        this.render(performance.now());
++
++        // Kick off render loop.
++        this.render();
+         this.renderLoopStarted = true;
+         this.load();
+       }
+@@ -257,28 +265,14 @@ var AScene = module.exports = registerElement('a-scene', {
+     hideUI: {
+       value: function () {
+         if (this.statsEl) {
+-          this.statsEl.classList.add('hidden');
++          this.statsEl.classList.add(HIDDEN_CLASS);
+         }
+-        if (this.vrButton) {
+-          this.vrButton.classList.add('hidden');
++        if (this.enterVREl) {
++          this.enterVREl.classList.add(HIDDEN_CLASS);
+         }
+       }
+     },
+ 
+-    /**
+-     * Injects a button into the page that, when clicked, will enter into stereo-rendering
+-     * mode for VR. Does not create a button if one already exists.
+-     */
+-    injectEnterVRButton: {
+-      value: function () {
+-        if (this.vrButton) { return; }
+-        var vrButton = this.vrButton = document.createElement('button');
+-        vrButton.className = 'a-enter-vr-button';
+-        vrButton.addEventListener('click', this.enterVR.bind(this));
+-        document.body.appendChild(vrButton);
+-      }
+-    },
+-
+     load: {
+       value: function () {
+         // To prevent emmitting the loaded event more than once
+@@ -332,10 +326,10 @@ var AScene = module.exports = registerElement('a-scene', {
+       }
+     },
+ 
+-    removeEnterVRButton: {
++    removeEnterVR: {
+       value: function () {
+-        if (this.vrButton) {
+-          this.vrButton.parentNode.removeChild(this.vrButton);
++        if (this.enterVREl) {
++          this.enterVREl.parentNode.removeChild(this.enterVRElement);
+         }
+       }
+     },
+@@ -458,14 +452,21 @@ var AScene = module.exports = registerElement('a-scene', {
+         this.appendChild(ambientLight);
+ 
+         var directionalLight = document.createElement('a-entity');
+-        directionalLight.setAttribute('light',
+-                                      {color: '#fff', intensity: 0.2});
+-        directionalLight.setAttribute('position', {x: -1, y: 2, z: 1});
++        directionalLight.setAttribute('light', { color: '#fff', intensity: 0.2 });
++        directionalLight.setAttribute('position', { x: -1, y: 2, z: 1 });
+         directionalLight.setAttribute(DEFAULT_LIGHT_ATTR, '');
+         this.appendChild(directionalLight);
+       }
+     },
+ 
++    setupEnterVR: {
++      value: function () {
++        if (this.enterVREl) { return; }
++        this.enterVREl = createEnterVR(this.enterVR.bind(this));
++        document.body.appendChild(this.enterVREl);
++      }
++    },
++
+     /**
+      * Set up keyboard shortcuts to:
+      *   - Enter VR when `f` is pressed.
+@@ -504,7 +505,7 @@ var AScene = module.exports = registerElement('a-scene', {
+           });
+         }
+         if (!self.insideLoader) {
+-          self.injectEnterVRButton();
++          self.setupEnterVR();
+         }
+       }
+     },
+@@ -539,10 +540,10 @@ var AScene = module.exports = registerElement('a-scene', {
+         var statsEnabled = this.getAttribute('stats') === 'true';
+         var statsEl = this.statsEl = document.querySelector('.rs-base');
+         if (!statsEnabled) {
+-          if (statsEl) { statsEl.classList.add('hidden'); }
++          if (statsEl) { statsEl.classList.add(HIDDEN_CLASS); }
+           return;
+         }
+-        if (statsEl) { statsEl.classList.remove('hidden'); }
++        if (statsEl) { statsEl.classList.remove(HIDDEN_CLASS); }
+         if (this.stats) { return; }
+         this.stats = new RStats({
+           CSSPath: '../../style/',
+@@ -561,10 +562,10 @@ var AScene = module.exports = registerElement('a-scene', {
+       value: function () {
+         var statsEnabled = this.getAttribute('stats') === 'true';
+         if (statsEnabled) {
+-          this.statsEl.classList.remove('hidden');
++          this.statsEl.classList.remove(HIDDEN_CLASS);
+         }
+-        if (this.vrButton) {
+-          this.vrButton.classList.remove('hidden');
++        if (this.enterVREl) {
++          this.enterVREl.classList.remove(HIDDEN_CLASS);
+         }
+       }
+     },
+@@ -639,6 +640,80 @@ var AScene = module.exports = registerElement('a-scene', {
+   })
+ });
+ 
++/**
++ * Creates Enter VR flow (button and compatibility modal).
++ *
++ * Creates a button that when clicked will enter into stereo-rendering mode for VR.
++ *
++ * For compatibility:
++ *   - Mobile always has compatibility via polyfill.
++ *   - If desktop browser does not have WebVR excluding polyfill, disable button, show modal.
++ *   - If desktop browser has WebVR excluding polyfill but not headset connected,
++ *     don't disable button, but show modal.
++ *   - If desktop browser has WebVR excluding polyfill and has headset connected, then
++ *     then no modal.
++ *
++ * Structure: <div><modal/><button></div>
++ *
++ * @returns {Element} Wrapper <div>.
++ */
++function createEnterVR (enterVRHandler) {
++  var compatModal;
++  var compatModalLink;
++  var compatModalText;
++  // window.hasNativeVRSupport is set in src/aframe-core.js.
++  var hasWebVR = this.isMobile || window.hasNonPolyfillWebVRSupport;
++  var orientation;
++  var vrButton;
++  var wrapper;
++
++  // Create elements.
++  wrapper = document.createElement('div');
++  wrapper.classList.add(ENTER_VR_CLASS);
++  compatModal = document.createElement('div');
++  compatModal.className = ENTER_VR_MODAL_CLASS;
++  compatModalText = document.createElement('p');
++  compatModalLink = document.createElement('a');
++  compatModalLink.setAttribute('href', 'http://mozvr.com#viewing-vr');
++  compatModalLink.setAttribute('target', '_blank');
++  compatModalLink.innerHTML = 'Learn more at mozvr.com';
++  vrButton = document.createElement('button');
++  vrButton.className = ENTER_VR_BTN_CLASS;
++
++  // Insert elements.
++  if (compatModal) {
++    compatModal.appendChild(compatModalText);
++    compatModal.appendChild(compatModalLink);
++    wrapper.appendChild(compatModal);
++  }
++  wrapper.appendChild(vrButton);
++
++  if (!checkHeadsetConnected()) {
++    compatModalText.innerHTML = 'A virtual reality headset was not detected.';
++    wrapper.setAttribute(ENTER_VR_NO_HEADSET, '');
++  }
++
++  // Handle enter VR flows.
++  if (!hasWebVR) {
++    compatModalText.innerHTML = 'Sorry, your browser does not support virtual reality.';
++    wrapper.setAttribute(ENTER_VR_NO_WEBVR, '');
++  } else {
++    vrButton.addEventListener('click', enterVRHandler);
++  }
++  return wrapper;
++
++  /**
++   * Check for headset connection by looking at orientation {0 0 0}.
++   */
++  function checkHeadsetConnected () {
++    controls.update();
++    orientation = dummyDolly.quaternion;
++    if (orientation._x !== 0 || orientation._y !== 0 || orientation._z !== 0) {
++      return true;
++    }
++  }
++}
++
+ /**
+  * Injects the necessary metatags in the document for mobile support to:
+  * 1. Prevent the user to zoom in the document"
+aframevr/aframe,624,d1c895e9e4d25b9f174d59098c440aceb0795dca,style/aframe-core.css,modified,76,6,82,"@@ -14,7 +14,7 @@ body {
+   width: 100%;
+ }
+ 
+-.hidden {
++.a-hidden {
+   display: none;
+ }
+ 
+@@ -32,18 +32,29 @@ a-scene img {
+   display: none;
+ }
+ 
++.a-enter-vr {
++  align-items: flex-end;
++  -webkit-align-items: flex-end;
++  bottom: 5px;
++  display: flex;
++  display: -webkit-flex;
++  font-family: 'Roboto Condensed', tahoma, sans-serif;
++  font-size: 14px;
++  font-weight: 300;
++  height: 72px;
++  position: fixed;
++  right: 5px;
++}
++
+ .a-enter-vr-button {
+-  background: rgba(0,0,0,0.35) url(data:image/svg+xml,%3C%3Fxml%20version%3D%221.0%22%20encoding%3D%22utf-8%22%3F%3E%0D%0A%3C%21--%20Generator%3A%20Adobe%20Illustrator%2018.0.0%2C%20SVG%20Export%20Plug-In%20.%20SVG%20Version%3A%206.00%20Build%200%29%20%20--%3E%0D%0A%3C%21DOCTYPE%20svg%20PUBLIC%20%22-%2F%2FW3C%2F%2FDTD%20SVG%201.1%2F%2FEN%22%20%22http%3A%2F%2Fwww.w3.org%2FGraphics%2FSVG%2F1.1%2FDTD%2Fsvg11.dtd%22%3E%0D%0A%3Csvg%20version%3D%221.1%22%20id%3D%22Layer_1%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20xmlns%3Axlink%3D%22http%3A%2F%2Fwww.w3.org%2F1999%2Fxlink%22%20x%3D%220px%22%20y%3D%220px%22%0D%0A%09%20viewBox%3D%225596.6%20-116.5%20599.8%20599.8%22%20enable-background%3D%22new%205596.6%20-116.5%20599.8%20599.8%22%20xml%3Aspace%3D%22preserve%22%3E%0D%0A%3Crect%20x%3D%225596.6%22%20y%3D%22-116.5%22%20fill%3D%22none%22%20width%3D%22599.8%22%20height%3D%22599.8%22%2F%3E%0D%0A%3Cpath%20id%3D%22goggles%22%20fill%3D%22%23FFFFFF%22%20d%3D%22M6152.1%2C145.5h-37.4v-33.4c-1.1-27.4-21.3-48.2-48.7-48.2h-166.5h-166%0D%0A%09c-27.4%2C0-47.7%2C20.8-47.7%2C48.2v33.4h-37.7v69h37.7v36.7c0%2C27.4%2C20.3%2C52%2C47.7%2C52h126c3.8%2C0%2C7.1-3.3%2C9.3-6l20.3-34%0D%0A%09c5.5-6.6%2C15.9-7.1%2C21.9-0.5l20.3%2C34.5c2.2%2C3.3%2C5.5%2C6%2C9.3%2C6h126c27.4%2C0%2C48.2-24.6%2C48.2-52v-36.7h37.4V145.5L6152.1%2C145.5z%0D%0A%09%20M5806.3%2C261.6c-44.4%2C0-80-35.6-80-80s35.6-80%2C80-80s80%2C35.6%2C80%2C80S5850.1%2C261.6%2C5806.3%2C261.6z%20M5993.1%2C261.6c-44.4%2C0-80-35.6-80-80%0D%0A%09s35.6-80%2C80-80s80%2C35.6%2C80%2C80S6036.9%2C261.6%2C5993.1%2C261.6z%22%2F%3E%0D%0A%3C%2Fsvg%3E%0D%0A) 50% 0 no-repeat;
++  background: rgba(0, 0, 0, 0.35) url(data:image/svg+xml,%3C%3Fxml%20version%3D%221.0%22%20encoding%3D%22utf-8%22%3F%3E%0D%0A%3C%21--%20Generator%3A%20Adobe%20Illustrator%2018.0.0%2C%20SVG%20Export%20Plug-In%20.%20SVG%20Version%3A%206.00%20Build%200%29%20%20--%3E%0D%0A%3C%21DOCTYPE%20svg%20PUBLIC%20%22-%2F%2FW3C%2F%2FDTD%20SVG%201.1%2F%2FEN%22%20%22http%3A%2F%2Fwww.w3.org%2FGraphics%2FSVG%2F1.1%2FDTD%2Fsvg11.dtd%22%3E%0D%0A%3Csvg%20version%3D%221.1%22%20id%3D%22Layer_1%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20xmlns%3Axlink%3D%22http%3A%2F%2Fwww.w3.org%2F1999%2Fxlink%22%20x%3D%220px%22%20y%3D%220px%22%0D%0A%09%20viewBox%3D%225596.6%20-116.5%20599.8%20599.8%22%20enable-background%3D%22new%205596.6%20-116.5%20599.8%20599.8%22%20xml%3Aspace%3D%22preserve%22%3E%0D%0A%3Crect%20x%3D%225596.6%22%20y%3D%22-116.5%22%20fill%3D%22none%22%20width%3D%22599.8%22%20height%3D%22599.8%22%2F%3E%0D%0A%3Cpath%20id%3D%22goggles%22%20fill%3D%22%23FFFFFF%22%20d%3D%22M6152.1%2C145.5h-37.4v-33.4c-1.1-27.4-21.3-48.2-48.7-48.2h-166.5h-166%0D%0A%09c-27.4%2C0-47.7%2C20.8-47.7%2C48.2v33.4h-37.7v69h37.7v36.7c0%2C27.4%2C20.3%2C52%2C47.7%2C52h126c3.8%2C0%2C7.1-3.3%2C9.3-6l20.3-34%0D%0A%09c5.5-6.6%2C15.9-7.1%2C21.9-0.5l20.3%2C34.5c2.2%2C3.3%2C5.5%2C6%2C9.3%2C6h126c27.4%2C0%2C48.2-24.6%2C48.2-52v-36.7h37.4V145.5L6152.1%2C145.5z%0D%0A%09%20M5806.3%2C261.6c-44.4%2C0-80-35.6-80-80s35.6-80%2C80-80s80%2C35.6%2C80%2C80S5850.1%2C261.6%2C5806.3%2C261.6z%20M5993.1%2C261.6c-44.4%2C0-80-35.6-80-80%0D%0A%09s35.6-80%2C80-80s80%2C35.6%2C80%2C80S6036.9%2C261.6%2C5993.1%2C261.6z%22%2F%3E%0D%0A%3C%2Fsvg%3E%0D%0A) 50% 0 no-repeat;
+   background-size: auto 100%;
+   border: 0;
++  bottom: 0;
+   color: #FFF;
+   cursor: pointer;
+   height: 50px;
+-  position: fixed;
+-  right: 20px;
+-  bottom: 20px;
+   transition: background .1s ease;
+-  -moz-transition: background .1s ease;
+   -webkit-transition: background .1s ease;
+   width: 60px;
+   z-index: 999999;
+@@ -53,3 +64,62 @@ a-scene img {
+ .a-enter-vr-button:hover {
+   background-color: #EF2D5E;
+ }
++
++[data-a-enter-vr-no-webvr] .a-enter-vr-button {
++  border-color: #333;
++  opacity: 0.65;
++}
++
++[data-a-enter-vr-no-webvr] .a-enter-vr-button:active,
++[data-a-enter-vr-no-webvr] .a-enter-vr-button:hover {
++  background-color: rgba(0, 0, 0, .35);
++  cursor: not-allowed;
++}
++
++.a-enter-vr-modal {
++  background-color: #EF2D5E;
++  border-radius: 0;
++  color: #FFF;
++  height: 32px;
++  opacity: 0;
++  margin-right: 10px;
++  padding: 9px;
++  position: relative;
++  transition: opacity .1s ease;
++  -webkit-transition: opacity .1s ease;
++}
++
++.a-enter-vr-modal:after {
++  border-bottom: 10px solid transparent;
++  border-left: 10px solid #EF2D5E;
++  border-top: 10px solid transparent;
++  display: inline-block;
++  content: '';
++  position: absolute;
++  right: -5px;
++  top: 5px;
++  width: 0;
++  height: 0;
++}
++
++.a-enter-vr-modal p {
++  margin: 0;
++}
++
++.a-enter-vr-modal a {
++  color: #FFF;
++  display: inline-block;
++  padding: 2px 30px 2px 0;
++}
++
++[data-a-enter-vr-no-webvr]:hover .a-enter-vr-modal,
++[data-a-enter-vr-no-headset]:hover .a-enter-vr-modal {
++  opacity: 1;
++}
++
++@media (min-width: 480px) {
++  .a-enter-vr {
++    bottom: 20px;
++    right: 20px;
++  }
++}"
+aframevr/aframe,624,d1c895e9e4d25b9f174d59098c440aceb0795dca,style/rStats.css,modified,3,3,6,"@@ -1,6 +1,6 @@
+ .rs-base {
+   background-color: #EF2D5E;
+-  border-radius: 5px;
++  border-radius: 0;
+   font-family: 'Roboto Condensed', tahoma, sans-serif;
+   font-size: 10px;
+   line-height: 1.2em;
+@@ -70,7 +70,7 @@
+ 
+ @media (min-width: 480px) {
+   .rs-base {
+-    left: 10px;
+-    top: 10px;
++    left: 20px;
++    top: 20px;
+   }
+ }"

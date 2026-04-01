@@ -1,0 +1,881 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+OpenKneeboard/OpenKneeboard,213,bb8dab3,src/app/app-common/Settings.cpp,modified,38,9,47,"@@ -102,25 +102,54 @@ static void MaybeSaveJSON(
+   const std::filesystem::path& path) {
+   const auto fullPath
+     = path.is_absolute() ? path : Settings::GetDirectory() / path;
+-  if (parentValue == value) {
+-    if (std::filesystem::exists(fullPath)) {
+-      std::filesystem::remove(fullPath);
+-    }
+-    return;
++
++  nlohmann::json j;
++  // If a profile already modified a setting, keep that setting even if it
++  // matches the parent now
++  if (std::filesystem::exists(fullPath)) {
++    std::ifstream f(fullPath);
++    f >> j;
+   }
+ 
+   const auto parentPath = fullPath.parent_path();
+   if (!std::filesystem::exists(parentPath)) {
+     std::filesystem::create_directories(parentPath);
+   }
+ 
+-  nlohmann::json j;
+   to_json_with_default(j, parentValue, value);
+-  if (j.is_null()) {
++  if (j.is_object() && j.size() > 0) {
++    std::ofstream f(fullPath);
++    f << std::setw(2) << j << std::endl;
++    return;
++  }
++
++  if (std::filesystem::exists(fullPath)) {
++    std::filesystem::remove(fullPath);
++  }
++}
++
++/** Used for GamesList and TabsList, where we don't want to merge configs -
++ * either inherit, or overwrite */
++template <>
++static void MaybeSaveJSON<nlohmann::json>(
++  const nlohmann::json& parentValue,
++  const nlohmann::json& value,
++  const std::filesystem::path& path) {
++  const auto fullPath
++    = path.is_absolute() ? path : Settings::GetDirectory() / path;
++
++  if (value == parentValue && std::filesystem::exists(fullPath)) {
++    std::filesystem::remove(fullPath);
+     return;
+   }
+-  std::ofstream f(fullPath.c_str());
+-  f << std::setw(2) << j << std::endl;
++
++  const auto parentPath = fullPath.parent_path();
++  if (!std::filesystem::exists(parentPath)) {
++    std::filesystem::create_directories(parentPath);
++  }
++
++  std::ofstream f(fullPath);
++  f << std::setw(2) << value << std::endl;
+ }
+ 
+ void Settings::Save(std::string_view profile) const {"
+OpenKneeboard/OpenKneeboard,213,bb8dab3,src/lib/include/OpenKneeboard/json.h,modified,6,4,10,"@@ -189,11 +189,13 @@ void from_json_postprocess(const nlohmann::json& j, T& v) {
+   }
+ 
+ #define DETAIL_OPENKNEEBOARD_TO_SPARSE_JSON(v1) \
+-  if (nlohmann_json_default_object.v1 != nlohmann_json_v.v1) { \
+-    constexpr auto ok_json_field_key \
+-      = detail::SparseJson::ConstStrSkipFirst(detail::SparseJson::Wrap(#v1)); \
++  constexpr auto ok_json_field_key_##v1 \
++    = detail::SparseJson::ConstStrSkipFirst(detail::SparseJson::Wrap(#v1)); \
++  const bool persist_##v1 = nlohmann_json_j.contains(ok_json_field_key_##v1) \
++    || (nlohmann_json_default_object.v1 != nlohmann_json_v.v1); \
++  if (persist_##v1) { \
+     SparseJsonDetail<decltype(nlohmann_json_v.v1)>::Encode( \
+-      nlohmann_json_j[ok_json_field_key], \
++      nlohmann_json_j[ok_json_field_key_##v1], \
+       nlohmann_json_default_object.v1, \
+       nlohmann_json_v.v1); \
+   }"
+OpenKneeboard/OpenKneeboard,213,cd30ad9,src/app/app-common/DoodleRenderer.cpp,modified,1,1,2,"@@ -108,7 +108,7 @@ void DoodleRenderer::FlushCursorEvents() {
+ 
+       const auto pressure = std::clamp(event.mPressure - 0.40f, 0.0f, 0.60f);
+ 
+-      auto ds = mKneeboard->GetDoodleSettings();
++      auto ds = mKneeboard->GetDoodlesSettings();
+       const auto tool = erasing ? ds.mEraser : ds.mPen;
+       auto radius = tool.mMinimumRadius + (tool.mSensitivity * pressure);
+ "
+OpenKneeboard/OpenKneeboard,213,cd30ad9,src/app/app-common/InterprocessRenderer.cpp,modified,3,3,6,"@@ -125,8 +125,8 @@ void InterprocessRenderer::Commit(uint8_t layerCount) {
+     .mGlobalInputLayerID = mKneeboard->GetActiveViewForGlobalInput()
+                              ->GetRuntimeID()
+                              .GetTemporaryValue(),
+-    .mVR = mKneeboard->GetVRConfig(),
+-    .mFlat = mKneeboard->GetFlatConfig(),
++    .mVR = mKneeboard->GetVRSettings(),
++    .mFlat = mKneeboard->GetNonVRSettings(),
+     .mTarget = GetConsumerPatternForGame(mCurrentGame),
+   };
+ 
+@@ -273,7 +273,7 @@ void InterprocessRenderer::Render(Layer& layer) {
+   layer.mConfig.mImageWidth = usedSize.width;
+   layer.mConfig.mImageHeight = usedSize.height;
+ 
+-  const auto vrc = mKneeboard->GetVRConfig();
++  const auto vrc = mKneeboard->GetVRSettings();
+   const auto xFitScale = vrc.mMaxWidth / usedSize.width;
+   const auto yFitScale = vrc.mMaxHeight / usedSize.height;
+   const auto scale = std::min<float>(xFitScale, yFitScale);"
+OpenKneeboard/OpenKneeboard,213,cd30ad9,src/app/app-common/KneeboardState.cpp,modified,35,22,57,"@@ -263,21 +263,13 @@ std::vector<std::shared_ptr<UserInputDevice>> KneeboardState::GetInputDevices()
+   return devices;
+ }
+ 
+-FlatConfig KneeboardState::GetFlatConfig() const {
+-  return mSettings.mNonVR;
+-}
+-
+-void KneeboardState::SetFlatConfig(const FlatConfig& value) {
++void KneeboardState::SetNonVRSettings(const FlatConfig& value) {
+   mSettings.mNonVR = value;
+   this->SaveSettings();
+   this->evNeedsRepaintEvent.Emit();
+ }
+ 
+-VRConfig KneeboardState::GetVRConfig() const {
+-  return mSettings.mVR;
+-}
+-
+-void KneeboardState::SetVRConfig(const VRConfig& value) {
++void KneeboardState::SetVRSettings(const VRConfig& value) {
+   if (value.mEnableSteamVR != mSettings.mVR.mEnableSteamVR) {
+     if (!value.mEnableSteamVR) {
+       mOpenVRThread.request_stop();
+@@ -303,10 +295,6 @@ void KneeboardState::SetVRConfig(const VRConfig& value) {
+   this->evNeedsRepaintEvent.Emit();
+ }
+ 
+-AppSettings KneeboardState::GetAppSettings() const {
+-  return mSettings.mApp;
+-}
+-
+ void KneeboardState::SetAppSettings(const AppSettings& value) {
+   mSettings.mApp = value;
+   this->SaveSettings();
+@@ -350,12 +338,12 @@ void KneeboardState::SetProfileSettings(const ProfileSettings& profiles) {
+   const auto newSettings = Settings::Load(newID);
+   this->SetAppSettings(newSettings.mApp);
+   // DirectInput
+-  this->SetDoodleSettings(newSettings.mDoodles);
++  this->SetDoodlesSettings(newSettings.mDoodles);
+   mGamesList->LoadSettings(newSettings.mGames);
+-  this->SetFlatConfig(newSettings.mNonVR);
++  this->SetNonVRSettings(newSettings.mNonVR);
+   mTabletInput->LoadSettings(newSettings.mTabletInput);
+   mTabsList->LoadSettings(newSettings.mTabs);
+-  this->SetVRConfig(newSettings.mVR);
++  this->SetVRSettings(newSettings.mVR);
+   mSettings = newSettings;
+ 
+   this->evSettingsChangedEvent.Emit();
+@@ -381,11 +369,7 @@ void KneeboardState::SaveSettings() {
+   evSettingsChangedEvent.Emit();
+ }
+ 
+-DoodleSettings KneeboardState::GetDoodleSettings() {
+-  return mSettings.mDoodles;
+-}
+-
+-void KneeboardState::SetDoodleSettings(const DoodleSettings& value) {
++void KneeboardState::SetDoodlesSettings(const DoodleSettings& value) {
+   mSettings.mDoodles = value;
+   this->SaveSettings();
+ }
+@@ -397,4 +381,33 @@ void KneeboardState::StartOpenVRThread() {
+   });
+ }
+ 
++void KneeboardState::SetDirectInputSettings(
++  const DirectInputSettings& settings) {
++  mDirectInput->LoadSettings(settings);
++}
++
++void KneeboardState::SetTabletInputSettings(const TabletSettings& settings) {
++  mTabletInput->LoadSettings(settings);
++}
++
++void KneeboardState::SetGamesSettings(const nlohmann::json& j) {
++  mGamesList->LoadSettings(j);
++}
++
++void KneeboardState::SetTabsSettings(const nlohmann::json& j) {
++  mTabsList->LoadSettings(j);
++}
++
++#define IT(cpptype, name) \
++  cpptype KneeboardState::Get##name##Settings() const { \
++    return mSettings.m##name; \
++  } \
++  void KneeboardState::Reset##name##Settings() { \
++    auto newSettings = mSettings; \
++    newSettings.Reset##name##Section(mProfiles.mActiveProfile); \
++    /*this->Set##name##Settings(newSettings.m##name);*/ \
++  }
++OPENKNEEBOARD_SETTINGS_SECTIONS
++#undef IT
++
+ }// namespace OpenKneeboard"
+OpenKneeboard/OpenKneeboard,213,cd30ad9,src/app/app-common/Settings.cpp,modified,16,0,16,"@@ -203,4 +203,20 @@ OPENKNEEBOARD_DEFINE_SPARSE_JSON(
+   mTabletInput,
+   mVR)
+ 
++#define IT(cpptype, name) \
++  void Settings::Reset##name##Section(std::string_view profileID) { \
++    if (profileID == ""default"") { \
++      m##name = {}; \
++    } else { \
++      m##name = Settings::Load(""default"").m##name; \
++    } \
++    const auto path \
++      = Settings::GetDirectory() / ""profiles"" / profileID / #name "".json""; \
++    if (std::filesystem::exists(path)) { \
++      std::filesystem::remove(path); \
++    } \
++  }
++OPENKNEEBOARD_SETTINGS_SECTIONS
++#undef IT
++
+ }// namespace OpenKneeboard"
+OpenKneeboard/OpenKneeboard,213,cd30ad9,src/app/app-common/UserInput/DirectInputAdapter.cpp,modified,1,0,1,"@@ -69,6 +69,7 @@ DirectInputAdapter::DirectInputAdapter(
+ void DirectInputAdapter::LoadSettings(const DirectInputSettings& settings) {
+   mSettings = settings;
+   this->Reload();
++  this->evSettingsChangedEvent.Emit();
+ }
+ 
+ void DirectInputAdapter::Reload() {"
+OpenKneeboard/OpenKneeboard,213,cd30ad9,src/app/app-common/UserInput/TabletInputAdapter.cpp,modified,1,0,1,"@@ -95,6 +95,7 @@ void TabletInputAdapter::LoadSettings(const TabletSettings& settings) {
+   } else {
+     mDevice->SetButtonBindings({});
+   }
++  this->evSettingsChangedEvent.Emit();
+ }
+ 
+ TabletInputAdapter::~TabletInputAdapter() {"
+OpenKneeboard/OpenKneeboard,213,cd30ad9,src/app/app-common/include/OpenKneeboard/KneeboardState.h,modified,6,8,14,"@@ -88,14 +88,12 @@ class KneeboardState final : private EventReceiver {
+ 
+   TabsList* GetTabsList() const;
+ 
+-  FlatConfig GetFlatConfig() const;
+-  void SetFlatConfig(const FlatConfig&);
+-  VRConfig GetVRConfig() const;
+-  void SetVRConfig(const VRConfig&);
+-  AppSettings GetAppSettings() const;
+-  void SetAppSettings(const AppSettings&);
+-  DoodleSettings GetDoodleSettings();
+-  void SetDoodleSettings(const DoodleSettings&);
++#define IT(cpptype, name) \
++  cpptype Get##name##Settings() const; \
++  void Set##name##Settings(const cpptype&); \
++  void Reset##name##Settings();
++  OPENKNEEBOARD_SETTINGS_SECTIONS
++#undef IT
+ 
+   void SaveSettings();
+ "
+OpenKneeboard/OpenKneeboard,213,cd30ad9,src/app/app-common/include/OpenKneeboard/Settings.h,modified,3,0,3,"@@ -47,6 +47,9 @@ struct Settings final {
+ 
+   static Settings Load(std::string_view profileID);
+   void Save(std::string_view profileID) const;
++#define IT(cpptype, name) void Reset##name##Section(std::string_view profileID);
++  OPENKNEEBOARD_SETTINGS_SECTIONS
++#undef IT
+ 
+   static std::filesystem::path GetDirectory();
+ "
+OpenKneeboard/OpenKneeboard,213,cd30ad9,src/app/app-winui3/AdvancedSettingsPage.xaml.cpp,modified,27,27,54,"@@ -75,13 +75,13 @@ void AdvancedSettingsPage::MultipleProfiles(bool value) noexcept {
+ }
+ 
+ bool AdvancedSettingsPage::GazeInputFocus() const noexcept {
+-  return gKneeboard->GetVRConfig().mEnableGazeInputFocus;
++  return gKneeboard->GetVRSettings().mEnableGazeInputFocus;
+ }
+ 
+ void AdvancedSettingsPage::GazeInputFocus(bool enabled) noexcept {
+-  auto vrc = gKneeboard->GetVRConfig();
++  auto vrc = gKneeboard->GetVRSettings();
+   vrc.mEnableGazeInputFocus = enabled;
+-  gKneeboard->SetVRConfig(vrc);
++  gKneeboard->SetVRSettings(vrc);
+ }
+ 
+ bool AdvancedSettingsPage::LoopPages() const noexcept {
+@@ -105,49 +105,49 @@ void AdvancedSettingsPage::LoopTabs(bool value) noexcept {
+ }
+ 
+ uint32_t AdvancedSettingsPage::MinimumPenRadius() {
+-  return gKneeboard->GetDoodleSettings().mPen.mMinimumRadius;
++  return gKneeboard->GetDoodlesSettings().mPen.mMinimumRadius;
+ }
+ 
+ void AdvancedSettingsPage::MinimumPenRadius(uint32_t value) {
+-  auto ds = gKneeboard->GetDoodleSettings();
++  auto ds = gKneeboard->GetDoodlesSettings();
+   ds.mPen.mMinimumRadius = value;
+-  gKneeboard->SetDoodleSettings(ds);
++  gKneeboard->SetDoodlesSettings(ds);
+ }
+ 
+ uint32_t AdvancedSettingsPage::PenSensitivity() {
+-  return gKneeboard->GetDoodleSettings().mPen.mSensitivity;
++  return gKneeboard->GetDoodlesSettings().mPen.mSensitivity;
+ }
+ 
+ void AdvancedSettingsPage::PenSensitivity(uint32_t value) {
+-  auto ds = gKneeboard->GetDoodleSettings();
++  auto ds = gKneeboard->GetDoodlesSettings();
+   ds.mPen.mSensitivity = value;
+-  gKneeboard->SetDoodleSettings(ds);
++  gKneeboard->SetDoodlesSettings(ds);
+ }
+ 
+ uint32_t AdvancedSettingsPage::MinimumEraseRadius() {
+-  return gKneeboard->GetDoodleSettings().mEraser.mMinimumRadius;
++  return gKneeboard->GetDoodlesSettings().mEraser.mMinimumRadius;
+ }
+ 
+ void AdvancedSettingsPage::MinimumEraseRadius(uint32_t value) {
+-  auto ds = gKneeboard->GetDoodleSettings();
++  auto ds = gKneeboard->GetDoodlesSettings();
+   ds.mEraser.mMinimumRadius = value;
+-  gKneeboard->SetDoodleSettings(ds);
++  gKneeboard->SetDoodlesSettings(ds);
+ }
+ 
+ uint32_t AdvancedSettingsPage::EraseSensitivity() {
+-  return gKneeboard->GetDoodleSettings().mEraser.mSensitivity;
++  return gKneeboard->GetDoodlesSettings().mEraser.mSensitivity;
+ }
+ 
+ void AdvancedSettingsPage::EraseSensitivity(uint32_t value) {
+-  auto ds = gKneeboard->GetDoodleSettings();
++  auto ds = gKneeboard->GetDoodlesSettings();
+   ds.mEraser.mSensitivity = value;
+-  gKneeboard->SetDoodleSettings(ds);
++  gKneeboard->SetDoodlesSettings(ds);
+ }
+ 
+ void AdvancedSettingsPage::RestoreDoodleDefaults(
+   const IInspectable&,
+   const IInspectable&) noexcept {
+-  gKneeboard->SetDoodleSettings({});
++  gKneeboard->ResetDoodlesSettings();
+ 
+   for (auto prop: {
+          L""MinimumPenRadius"",
+@@ -162,9 +162,9 @@ void AdvancedSettingsPage::RestoreDoodleDefaults(
+ void AdvancedSettingsPage::RestoreQuirkDefaults(
+   const IInspectable&,
+   const IInspectable&) noexcept {
+-  auto vr = gKneeboard->GetVRConfig();
++  auto vr = gKneeboard->GetVRSettings();
+   vr.mQuirks = {};
+-  gKneeboard->SetVRConfig(vr);
++  gKneeboard->SetVRSettings(vr);
+   for (auto prop: {
+          L""Quirk_OculusSDK_DiscardDepthInformation"",
+          L""Quirk_Varjo_OpenXR_InvertYPosition"",
+@@ -176,37 +176,37 @@ void AdvancedSettingsPage::RestoreQuirkDefaults(
+ 
+ bool AdvancedSettingsPage::Quirk_OculusSDK_DiscardDepthInformation()
+   const noexcept {
+-  return gKneeboard->GetVRConfig().mQuirks.mOculusSDK_DiscardDepthInformation;
++  return gKneeboard->GetVRSettings().mQuirks.mOculusSDK_DiscardDepthInformation;
+ }
+ 
+ void AdvancedSettingsPage::Quirk_OculusSDK_DiscardDepthInformation(
+   bool value) noexcept {
+-  auto vrc = gKneeboard->GetVRConfig();
++  auto vrc = gKneeboard->GetVRSettings();
+   vrc.mQuirks.mOculusSDK_DiscardDepthInformation = value;
+-  gKneeboard->SetVRConfig(vrc);
++  gKneeboard->SetVRSettings(vrc);
+ }
+ 
+ bool AdvancedSettingsPage::Quirk_Varjo_OpenXR_InvertYPosition() const noexcept {
+-  return gKneeboard->GetVRConfig().mQuirks.mVarjo_OpenXR_InvertYPosition;
++  return gKneeboard->GetVRSettings().mQuirks.mVarjo_OpenXR_InvertYPosition;
+ }
+ 
+ void AdvancedSettingsPage::Quirk_Varjo_OpenXR_InvertYPosition(
+   bool value) noexcept {
+-  auto vrc = gKneeboard->GetVRConfig();
++  auto vrc = gKneeboard->GetVRSettings();
+   vrc.mQuirks.mVarjo_OpenXR_InvertYPosition = value;
+-  gKneeboard->SetVRConfig(vrc);
++  gKneeboard->SetVRSettings(vrc);
+ }
+ 
+ bool AdvancedSettingsPage::Quirk_Varjo_OpenXR_D3D12_DoubleBuffer()
+   const noexcept {
+-  return gKneeboard->GetVRConfig().mQuirks.mVarjo_OpenXR_D3D12_DoubleBuffer;
++  return gKneeboard->GetVRSettings().mQuirks.mVarjo_OpenXR_D3D12_DoubleBuffer;
+ }
+ 
+ void AdvancedSettingsPage::Quirk_Varjo_OpenXR_D3D12_DoubleBuffer(
+   bool value) noexcept {
+-  auto vrc = gKneeboard->GetVRConfig();
++  auto vrc = gKneeboard->GetVRSettings();
+   vrc.mQuirks.mVarjo_OpenXR_D3D12_DoubleBuffer;
+-  gKneeboard->SetVRConfig(vrc);
++  gKneeboard->SetVRSettings(vrc);
+ }
+ 
+ }// namespace winrt::OpenKneeboardApp::implementation"
+OpenKneeboard/OpenKneeboard,213,cd30ad9,src/app/app-winui3/App.xaml.cpp,modified,1,1,2,"@@ -158,7 +158,7 @@ void App::OnLaunched(LaunchActivatedEventArgs const&) noexcept {
+       if (gKneeboard) {
+         gKneeboard->GetGamesList()->StartInjector();
+         co_await SetOpenXRModeWithHelperProcess(
+-          gKneeboard->GetVRConfig().mOpenXRMode);
++          gKneeboard->GetVRSettings().mOpenXRMode);
+       }
+       co_await CheckAllDCSHooks(xamlRoot);
+     });"
+OpenKneeboard/OpenKneeboard,213,cd30ad9,src/app/app-winui3/InputSettingsPage.xaml,modified,15,5,20,"@@ -66,11 +66,21 @@
+   </Page.Resources>
+   <ScrollViewer VerticalScrollMode=""Auto"" Padding=""24"">
+     <StackPanel Orientation=""Vertical"">
+-      <TextBlock
+-        Style=""{StaticResource TitleTextBlockStyle}""
+-        Text=""Input Settings""
+-        Margin=""0,0,0,8""
+-      />
++      <Grid
++        ColumnDefinitions=""*, Auto""
++        Margin=""0,0,0,8"">
++        <TextBlock
++          Grid.Column=""0""
++          Style=""{StaticResource TitleTextBlockStyle}""
++          Text=""Input Settings""
++          Margin=""0,0,0,8""
++        />
++        <Button
++          Grid.Column=""1""
++          Content=""Restore defaults""
++          Click=""RestoreDefaults""
++        />
++      </Grid>
+       <ItemsRepeater ItemsSource=""{x:Bind Devices, Mode=OneWay}"">
+         <ItemsRepeater.Layout>
+           <StackLayout Orientation=""Vertical"" Spacing=""24"" />"
+OpenKneeboard/OpenKneeboard,213,cd30ad9,src/app/app-winui3/InputSettingsPage.xaml.cpp,modified,24,0,24,"@@ -26,6 +26,7 @@
+ #include <OpenKneeboard/KneeboardState.h>
+ #include <OpenKneeboard/TabletInputDevice.h>
+ #include <OpenKneeboard/UserInputDevice.h>
++#include <OpenKneeboard/utf8.h>
+ 
+ #include ""Globals.h""
+ 
+@@ -50,6 +51,29 @@ InputSettingsPage::~InputSettingsPage() {
+   this->RemoveAllEventListeners();
+ }
+ 
++fire_and_forget InputSettingsPage::RestoreDefaults(
++  const IInspectable&,
++  const RoutedEventArgs&) noexcept {
++  ContentDialog dialog;
++  dialog.XamlRoot(this->XamlRoot());
++  dialog.Title(box_value(to_hstring(_(""Restore defaults?""))));
++  dialog.Content(
++    box_value(to_hstring(_(""Do you want to restore the default input settings, ""
++                           ""removing your preferences?""))));
++  dialog.PrimaryButtonText(to_hstring(_(""Restore Defaults"")));
++  dialog.CloseButtonText(to_hstring(_(""Cancel"")));
++  dialog.DefaultButton(ContentDialogButton::Close);
++
++  if (co_await dialog.ShowAsync() != ContentDialogResult::Primary) {
++    co_return;
++  }
++
++  gKneeboard->ResetDirectInputSettings();
++  gKneeboard->ResetTabletInputSettings();
++
++  mPropertyChangedEvent(*this, PropertyChangedEventArgs(L""Devices""));
++}
++
+ winrt::event_token InputSettingsPage::PropertyChanged(
+   winrt::Microsoft::UI::Xaml::Data::PropertyChangedEventHandler const&
+     handler) {"
+OpenKneeboard/OpenKneeboard,213,cd30ad9,src/app/app-winui3/InputSettingsPage.xaml.h,modified,4,0,4,"@@ -38,6 +38,10 @@ struct InputSettingsPage : InputSettingsPageT<InputSettingsPage>,
+   InputSettingsPage();
+   ~InputSettingsPage();
+ 
++  winrt::fire_and_forget RestoreDefaults(
++    const IInspectable&,
++    const RoutedEventArgs&) noexcept;
++
+   IVector<IInspectable> Devices() noexcept;
+   void OnOrientationChanged(
+     const IInspectable&,"
+OpenKneeboard/OpenKneeboard,213,cd30ad9,src/app/app-winui3/NonVRSettingsPage.xaml.cpp,modified,18,16,34,"@@ -55,7 +55,7 @@ fire_and_forget NonVRSettingsPage::RestoreDefaults(
+     co_return;
+   }
+ 
+-  gKneeboard->SetFlatConfig({});
++  gKneeboard->ResetNonVRSettings();
+ 
+   if (!mPropertyChangedEvent) {
+     co_return;
+@@ -73,57 +73,59 @@ fire_and_forget NonVRSettingsPage::RestoreDefaults(
+ }
+ 
+ uint8_t NonVRSettingsPage::KneeboardHeightPercent() {
+-  return gKneeboard->GetFlatConfig().mHeightPercent;
++  return gKneeboard->GetNonVRSettings().mHeightPercent;
+ }
+ 
+ void NonVRSettingsPage::KneeboardHeightPercent(uint8_t value) {
+-  auto config = gKneeboard->GetFlatConfig();
++  auto config = gKneeboard->GetNonVRSettings();
+   config.mHeightPercent = value;
+-  gKneeboard->SetFlatConfig(config);
++  gKneeboard->SetNonVRSettings(config);
+ }
+ 
+ uint32_t NonVRSettingsPage::KneeboardPaddingPixels() {
+-  return gKneeboard->GetFlatConfig().mPaddingPixels;
++  return gKneeboard->GetNonVRSettings().mPaddingPixels;
+ }
+ 
+ void NonVRSettingsPage::KneeboardPaddingPixels(uint32_t value) {
+-  auto config = gKneeboard->GetFlatConfig();
++  auto config = gKneeboard->GetNonVRSettings();
+   config.mPaddingPixels = value;
+-  gKneeboard->SetFlatConfig(config);
++  gKneeboard->SetNonVRSettings(config);
+ }
+ 
+ float NonVRSettingsPage::KneeboardOpacity() {
+-  return gKneeboard->GetFlatConfig().mOpacity * 100;
++  return gKneeboard->GetNonVRSettings().mOpacity * 100;
+ }
+ 
+ void NonVRSettingsPage::KneeboardOpacity(float value) {
+   if (std::isnan(value)) {
+     return;
+   }
+-  auto config = gKneeboard->GetFlatConfig();
++  auto config = gKneeboard->GetNonVRSettings();
+   config.mOpacity = value / 100;
+-  gKneeboard->SetFlatConfig(config);
++  gKneeboard->SetNonVRSettings(config);
+ }
+ 
+ uint8_t NonVRSettingsPage::KneeboardHorizontalPlacement() {
+-  return static_cast<uint8_t>(gKneeboard->GetFlatConfig().mHorizontalAlignment);
++  return static_cast<uint8_t>(
++    gKneeboard->GetNonVRSettings().mHorizontalAlignment);
+ }
+ 
+ void NonVRSettingsPage::KneeboardHorizontalPlacement(uint8_t value) {
+-  auto config = gKneeboard->GetFlatConfig();
++  auto config = gKneeboard->GetNonVRSettings();
+   config.mHorizontalAlignment
+     = static_cast<FlatConfig::HorizontalAlignment>(value);
+-  gKneeboard->SetFlatConfig(config);
++  gKneeboard->SetNonVRSettings(config);
+ }
+ 
+ uint8_t NonVRSettingsPage::KneeboardVerticalPlacement() {
+-  return static_cast<uint8_t>(gKneeboard->GetFlatConfig().mVerticalAlignment);
++  return static_cast<uint8_t>(
++    gKneeboard->GetNonVRSettings().mVerticalAlignment);
+ }
+ 
+ void NonVRSettingsPage::KneeboardVerticalPlacement(uint8_t value) {
+-  auto config = gKneeboard->GetFlatConfig();
++  auto config = gKneeboard->GetNonVRSettings();
+   config.mVerticalAlignment = static_cast<FlatConfig::VerticalAlignment>(value);
+-  gKneeboard->SetFlatConfig(config);
++  gKneeboard->SetNonVRSettings(config);
+ }
+ 
+ winrt::event_token NonVRSettingsPage::PropertyChanged("
+OpenKneeboard/OpenKneeboard,213,cd30ad9,src/app/app-winui3/VRSettingsPage.xaml.cpp,modified,55,54,109,"@@ -59,7 +59,7 @@ fire_and_forget VRSettingsPage::RestoreDefaults(
+     co_return;
+   }
+ 
+-  gKneeboard->SetVRConfig({});
++  gKneeboard->ResetVRSettings();
+ 
+   if (!mPropertyChangedEvent) {
+     co_return;
+@@ -89,11 +89,11 @@ fire_and_forget VRSettingsPage::RestoreDefaults(
+ }
+ 
+ void VRSettingsPage::RecenterNow(const IInspectable&, const RoutedEventArgs&) {
+-gKneeboard->PostUserAction(UserAction::RECENTER_VR);
++  gKneeboard->PostUserAction(UserAction::RECENTER_VR);
+ }
+ 
+ void VRSettingsPage::GoToBindings(const IInspectable&, const RoutedEventArgs&) {
+-Frame().Navigate(xaml_typename<InputSettingsPage>());
++  Frame().Navigate(xaml_typename<InputSettingsPage>());
+ }
+ 
+ winrt::event_token VRSettingsPage::PropertyChanged(
+@@ -107,57 +107,57 @@ void VRSettingsPage::PropertyChanged(winrt::event_token const& token) noexcept {
+ }
+ 
+ float VRSettingsPage::KneeboardX() {
+-  return gKneeboard->GetVRConfig().mPrimaryLayer.mX;
++  return gKneeboard->GetVRSettings().mPrimaryLayer.mX;
+ }
+ 
+ void VRSettingsPage::KneeboardX(float value) {
+   if (std::isnan(value)) {
+     return;
+   }
+-  auto config = gKneeboard->GetVRConfig();
++  auto config = gKneeboard->GetVRSettings();
+   config.mPrimaryLayer.mX = value;
+-  gKneeboard->SetVRConfig(config);
++  gKneeboard->SetVRSettings(config);
+ }
+ 
+ float VRSettingsPage::KneeboardEyeY() {
+-  return -gKneeboard->GetVRConfig().mPrimaryLayer.mEyeY;
++  return -gKneeboard->GetVRSettings().mPrimaryLayer.mEyeY;
+ }
+ 
+ void VRSettingsPage::KneeboardEyeY(float value) {
+   if (std::isnan(value)) {
+     return;
+   }
+-  auto config = gKneeboard->GetVRConfig();
++  auto config = gKneeboard->GetVRSettings();
+   config.mPrimaryLayer.mEyeY = -value;
+-  gKneeboard->SetVRConfig(config);
++  gKneeboard->SetVRSettings(config);
+ }
+ 
+ float VRSettingsPage::KneeboardFloorY() {
+-  return gKneeboard->GetVRConfig().mPrimaryLayer.mFloorY;
++  return gKneeboard->GetVRSettings().mPrimaryLayer.mFloorY;
+ }
+ 
+ void VRSettingsPage::KneeboardFloorY(float value) {
+   if (std::isnan(value)) {
+     return;
+   }
+-  auto config = gKneeboard->GetVRConfig();
++  auto config = gKneeboard->GetVRSettings();
+   config.mPrimaryLayer.mFloorY = value;
+-  gKneeboard->SetVRConfig(config);
++  gKneeboard->SetVRSettings(config);
+ }
+ 
+ float VRSettingsPage::KneeboardZ() {
+   // 3D standard right-hand-coordinate system is that -z is forwards;
+   // most users expect the opposite.
+-  return -gKneeboard->GetVRConfig().mPrimaryLayer.mZ;
++  return -gKneeboard->GetVRSettings().mPrimaryLayer.mZ;
+ }
+ 
+ void VRSettingsPage::KneeboardZ(float value) {
+   if (std::isnan(value)) {
+     return;
+   }
+-  auto config = gKneeboard->GetVRConfig();
++  auto config = gKneeboard->GetVRSettings();
+   config.mPrimaryLayer.mZ = -value;
+-  gKneeboard->SetVRConfig(config);
++  gKneeboard->SetVRSettings(config);
+ }
+ 
+ static inline float RadiansToDegrees(float radians) {
+@@ -169,7 +169,8 @@ static inline float DegreesToRadians(float degrees) {
+ }
+ 
+ float VRSettingsPage::KneeboardRX() {
+-  auto raw = RadiansToDegrees(gKneeboard->GetVRConfig().mPrimaryLayer.mRX) + 90;
++  auto raw
++    = RadiansToDegrees(gKneeboard->GetVRSettings().mPrimaryLayer.mRX) + 90;
+   if (raw < 0) {
+     raw += 360.0f;
+   }
+@@ -184,153 +185,153 @@ void VRSettingsPage::KneeboardRX(float degrees) {
+   if (degrees < 0) {
+     degrees += 360;
+   }
+-  auto config = gKneeboard->GetVRConfig();
++  auto config = gKneeboard->GetVRSettings();
+   config.mPrimaryLayer.mRX
+     = DegreesToRadians(degrees <= 180 ? degrees : -(360 - degrees));
+-  gKneeboard->SetVRConfig(config);
++  gKneeboard->SetVRSettings(config);
+ }
+ 
+ float VRSettingsPage::KneeboardRY() {
+-  return -RadiansToDegrees(gKneeboard->GetVRConfig().mPrimaryLayer.mRY);
++  return -RadiansToDegrees(gKneeboard->GetVRSettings().mPrimaryLayer.mRY);
+ }
+ 
+ void VRSettingsPage::KneeboardRY(float value) {
+   if (std::isnan(value)) {
+     return;
+   }
+-  auto config = gKneeboard->GetVRConfig();
++  auto config = gKneeboard->GetVRSettings();
+   config.mPrimaryLayer.mRY = -DegreesToRadians(value);
+-  gKneeboard->SetVRConfig(config);
++  gKneeboard->SetVRSettings(config);
+ }
+ 
+ float VRSettingsPage::KneeboardRZ() {
+-  return -RadiansToDegrees(gKneeboard->GetVRConfig().mPrimaryLayer.mRZ);
++  return -RadiansToDegrees(gKneeboard->GetVRSettings().mPrimaryLayer.mRZ);
+ }
+ 
+ void VRSettingsPage::KneeboardRZ(float value) {
+   if (std::isnan(value)) {
+     return;
+   }
+-  auto config = gKneeboard->GetVRConfig();
++  auto config = gKneeboard->GetVRSettings();
+   config.mPrimaryLayer.mRZ = -DegreesToRadians(value);
+-  gKneeboard->SetVRConfig(config);
++  gKneeboard->SetVRSettings(config);
+ }
+ 
+ float VRSettingsPage::KneeboardMaxHeight() {
+-  return gKneeboard->GetVRConfig().mMaxHeight;
++  return gKneeboard->GetVRSettings().mMaxHeight;
+ }
+ 
+ void VRSettingsPage::KneeboardMaxHeight(float value) {
+   if (std::isnan(value)) {
+     return;
+   }
+-  auto config = gKneeboard->GetVRConfig();
++  auto config = gKneeboard->GetVRSettings();
+   config.mMaxHeight = value;
+-  gKneeboard->SetVRConfig(config);
++  gKneeboard->SetVRSettings(config);
+ }
+ 
+ float VRSettingsPage::KneeboardMaxWidth() {
+-  return gKneeboard->GetVRConfig().mMaxWidth;
++  return gKneeboard->GetVRSettings().mMaxWidth;
+ }
+ 
+ void VRSettingsPage::KneeboardMaxWidth(float value) {
+   if (std::isnan(value)) {
+     return;
+   }
+-  auto config = gKneeboard->GetVRConfig();
++  auto config = gKneeboard->GetVRSettings();
+   config.mMaxWidth = value;
+-  gKneeboard->SetVRConfig(config);
++  gKneeboard->SetVRSettings(config);
+ }
+ 
+ float VRSettingsPage::KneeboardZoomScale() {
+-  return gKneeboard->GetVRConfig().mZoomScale;
++  return gKneeboard->GetVRSettings().mZoomScale;
+ }
+ 
+ void VRSettingsPage::KneeboardZoomScale(float value) {
+   if (std::isnan(value)) {
+     return;
+   }
+-  auto config = gKneeboard->GetVRConfig();
++  auto config = gKneeboard->GetVRSettings();
+   config.mZoomScale = value;
+-  gKneeboard->SetVRConfig(config);
++  gKneeboard->SetVRSettings(config);
+ }
+ 
+ float VRSettingsPage::KneeboardGazeTargetHorizontalScale() {
+-  return gKneeboard->GetVRConfig().mGazeTargetScale.mHorizontal;
++  return gKneeboard->GetVRSettings().mGazeTargetScale.mHorizontal;
+ }
+ 
+ void VRSettingsPage::KneeboardGazeTargetHorizontalScale(float value) {
+   if (std::isnan(value)) {
+     return;
+   }
+-  auto config = gKneeboard->GetVRConfig();
++  auto config = gKneeboard->GetVRSettings();
+   config.mGazeTargetScale.mHorizontal = value;
+-  gKneeboard->SetVRConfig(config);
++  gKneeboard->SetVRSettings(config);
+ }
+ 
+ float VRSettingsPage::KneeboardGazeTargetVerticalScale() {
+-  return gKneeboard->GetVRConfig().mGazeTargetScale.mVertical;
++  return gKneeboard->GetVRSettings().mGazeTargetScale.mVertical;
+ }
+ 
+ void VRSettingsPage::KneeboardGazeTargetVerticalScale(float value) {
+   if (std::isnan(value)) {
+     return;
+   }
+-  auto config = gKneeboard->GetVRConfig();
++  auto config = gKneeboard->GetVRSettings();
+   config.mGazeTargetScale.mVertical = value;
+-  gKneeboard->SetVRConfig(config);
++  gKneeboard->SetVRSettings(config);
+ }
+ 
+ uint8_t VRSettingsPage::NormalOpacity() {
+   return static_cast<uint8_t>(
+-    std::lround(gKneeboard->GetVRConfig().mOpacity.mNormal * 100));
++    std::lround(gKneeboard->GetVRSettings().mOpacity.mNormal * 100));
+ }
+ 
+ void VRSettingsPage::NormalOpacity(uint8_t value) {
+-  auto config = gKneeboard->GetVRConfig();
++  auto config = gKneeboard->GetVRSettings();
+   config.mOpacity.mNormal = value / 100.0f;
+-  gKneeboard->SetVRConfig(config);
++  gKneeboard->SetVRSettings(config);
+ }
+ 
+ uint8_t VRSettingsPage::GazeOpacity() {
+   return static_cast<uint8_t>(
+-    std::lround(gKneeboard->GetVRConfig().mOpacity.mGaze * 100));
++    std::lround(gKneeboard->GetVRSettings().mOpacity.mGaze * 100));
+ }
+ 
+ void VRSettingsPage::GazeOpacity(uint8_t value) {
+-  auto config = gKneeboard->GetVRConfig();
++  auto config = gKneeboard->GetVRSettings();
+   config.mOpacity.mGaze = value / 100.0f;
+-  gKneeboard->SetVRConfig(config);
++  gKneeboard->SetVRSettings(config);
+ }
+ 
+ bool VRSettingsPage::SteamVREnabled() {
+-  return gKneeboard->GetVRConfig().mEnableSteamVR;
++  return gKneeboard->GetVRSettings().mEnableSteamVR;
+ }
+ 
+ void VRSettingsPage::SteamVREnabled(bool enabled) {
+-  auto config = gKneeboard->GetVRConfig();
++  auto config = gKneeboard->GetVRSettings();
+   config.mEnableSteamVR = enabled;
+-  gKneeboard->SetVRConfig(config);
++  gKneeboard->SetVRSettings(config);
+ }
+ 
+ bool VRSettingsPage::GazeZoomEnabled() {
+-  return gKneeboard->GetVRConfig().mEnableGazeZoom;
++  return gKneeboard->GetVRSettings().mEnableGazeZoom;
+ }
+ 
+ void VRSettingsPage::GazeZoomEnabled(bool enabled) {
+-  auto config = gKneeboard->GetVRConfig();
++  auto config = gKneeboard->GetVRSettings();
+   config.mEnableGazeZoom = enabled;
+-  gKneeboard->SetVRConfig(config);
++  gKneeboard->SetVRSettings(config);
+ }
+ 
+ uint8_t VRSettingsPage::OpenXRMode() {
+-  return static_cast<uint8_t>(gKneeboard->GetVRConfig().mOpenXRMode);
++  return static_cast<uint8_t>(gKneeboard->GetVRSettings().mOpenXRMode);
+ }
+ 
+ void VRSettingsPage::OpenXRMode(uint8_t value) {
+-  auto config = gKneeboard->GetVRConfig();
++  auto config = gKneeboard->GetVRSettings();
+   config.mOpenXRMode = static_cast<OpenKneeboard::OpenXRMode>(value);
+-  gKneeboard->SetVRConfig(config);
++  gKneeboard->SetVRSettings(config);
+ }
+ 
+ }// namespace winrt::OpenKneeboardApp::implementation"

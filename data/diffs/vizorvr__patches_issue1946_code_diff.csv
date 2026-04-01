@@ -1,0 +1,457 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vizorvr/patches,1946,cced0cc,browser/scripts/ui/pageStore.js,modified,10,8,18,"@@ -161,6 +161,7 @@ VizorUI.pageStore = function() {
+ 	}
+ 
+ 	page.addProfile = function(profile) {
++		profile = _.cloneDeep(profile)
+ 		if (profile.id)
+ 			page.profiles._add_(profile.id, profile)
+ 		else
+@@ -171,19 +172,20 @@ VizorUI.pageStore = function() {
+ 		if (!graph)
+ 			return console.info('addGraph but no graph')
+ 
++		graph = _.cloneDeep(graph)
++
+ 		var key = graph._id || graph.path
+ 		if (!key)
+ 			return console.error('no key for graph', graph)
+ 
+ 		if (graph._creator) {
+-			var profile
+-			if (graph.profile && graph.profile.id && !page.profiles[id])
+-				profile = graph.profile
+-			else
+-				profile = {}
+-
+-			profile['_id'] = graph._creator
+-			page.profiles._add_(graph._creator, profile)
++			if (!page.profiles[graph._creator])
++				page.profiles._add_(graph._creator, {'_id': graph._creator})
++			var profile = graph.profile
++			if (profile) {
++				profile['_id'] = graph._creator
++				page.profiles[profile._id] = profile
++			}
+ 		}
+ 
+ 		delete graph.profile"
+vizorvr/patches,1946,cced0cc,browser/test/unit/pageStore.js,modified,58,0,58,"@@ -1,6 +1,7 @@
+ var assert = require('assert');
+ var when = require('when')
+ 
++global._ = require('lodash')
+ global.VizorUI = require('../../scripts/ui/pageStore')
+ global.EventEmitter = require('events').EventEmitter
+ global.CustomEvent = function(name, opts) {
+@@ -16,8 +17,27 @@ global.uniq = new Date().getTime()
+ 
+ // note: refer to store limitations
+ 
++
+ describe('pageStore', function() {
+ 
++	var creatorId = '1234abcd'
++	var profile = {
++		// must work without id
++		name: 'somename'
++	}
++	var graphWithProfile = {
++		_creator: creatorId,
++		_id : 'someid',
++		path: '/some/path',
++		profile: profile
++	}
++	var graphWithoutProfile = {
++		_creator: creatorId,
++		_id: 'someotherid',
++		path: '/some/otherpath'
++		// no profile
++	}
++
+ 	beforeEach(function() {
+ 		document.removeAllListeners()
+ 	})
+@@ -120,5 +140,43 @@ describe('pageStore', function() {
+ 		done();
+ 	})
+ 
++	it('adds a graph', function(done) {
++		Vizor.pageObjects = {}
++		VizorUI.pageStore()     // makes Vizor.pageObjects into a new store
++		var page = Vizor.pageObjects
++		var graph = graphWithoutProfile
++		page.addGraph(graph)
++
++		assert.equal((graph._id in page.graphs), true, 'could not find graphs[id]')
++		assert.equal(page.graphs[graph._id].path, graph.path, 'not the same data?')
++		done()
++	})
++
++
++	it('adds a profile from graph', function(done) {
++		Vizor.pageObjects = {}
++		VizorUI.pageStore()
++		var page = Vizor.pageObjects
++		var graph = graphWithProfile
++		page.addGraph(graph)
++
++		assert.equal((graph._creator in page.profiles), true, 'could not find profiles[graph._creator]')
++		assert.equal(page.profiles[creatorId].name, profile.name, 'not the same data?')
++		done()
++	})
++
++
++	it('would keep a known creator profile if graph supplied no profile', function(done) {
++		Vizor.pageObjects = {}
++		VizorUI.pageStore()
++		var page = Vizor.pageObjects
++
++		page.addGraph(graphWithProfile)
++
++		page.addGraph(graphWithoutProfile)
++		assert.equal(page.profiles[creatorId].name, profile.name, 'profile should not have changed')
++
++		done()
++	})
+ 
+ })"
+vizorvr/patches,1946,cced0cc,views/partials/assets/graphCardJS.handlebars,modified,10,7,17,"@@ -1,24 +1,27 @@
+ {{!--
+     // adds this graph card's data to Vizor.pageObjects.graphs{}
+     // also places graph._creator data in Vizor.pageObjects.profiles{}
+-    // note, see also userpages.js
++    // NB it is highly likely that Vizor.pageObjects is not a store yet
++    // NB also see userpages.js
+ --}}
+ <script>
+     (function() {
+         var j = {{{json this deleteKeys=""withActions,allowAllActions,withLinks,withActionEdit,withActionView,withActionChoose""}}}
+-
++        var page = window.Vizor.pageObjects
+         {{#if _id}}
+-            window.Vizor.pageObjects.graphs['{{_id}}'] = j
++            page.graphs['{{_id}}'] = j
+         {{else}}
+-            window.Vizor.pageObjects.graphs['{{{path}}}'] = j
++            page.graphs['{{{path}}}'] = j
+         {{/if}}
+ 
+         {{#if _creator}}
+-            window.Vizor.pageObjects.profiles['{{_creator}}'] = {}
++            if (!page.profiles['{{_creator}}'])
++                page.profiles['{{_creator}}'] = {}
++
+             {{#if profile}}
+-                window.Vizor.pageObjects.profiles['{{_creator}}'] = {{{json profile}}}
++                page.profiles['{{_creator}}'] = {{{json profile}}}
+             {{/if}}
+-            window.Vizor.pageObjects.profiles['{{_creator}}']['_id'] = j._creator
++            page.profiles['{{_creator}}']['_id'] = j._creator
+         {{/if}}
+ 
+     })();"
+vizorvr/patches,1946,a1d2702,browser/scripts/ui/pageStore.js,modified,10,8,18,"@@ -161,6 +161,7 @@ VizorUI.pageStore = function() {
+ 	}
+ 
+ 	page.addProfile = function(profile) {
++		profile = _.cloneDeep(profile)
+ 		if (profile.id)
+ 			page.profiles._add_(profile.id, profile)
+ 		else
+@@ -171,19 +172,20 @@ VizorUI.pageStore = function() {
+ 		if (!graph)
+ 			return console.info('addGraph but no graph')
+ 
++		graph = _.cloneDeep(graph)
++
+ 		var key = graph._id || graph.path
+ 		if (!key)
+ 			return console.error('no key for graph', graph)
+ 
+ 		if (graph._creator) {
+-			var profile
+-			if (graph.profile && graph.profile.id && !page.profiles[id])
+-				profile = graph.profile
+-			else
+-				profile = {}
+-
+-			profile['_id'] = graph._creator
+-			page.profiles._add_(graph._creator, profile)
++			if (!page.profiles[graph._creator])
++				page.profiles._add_(graph._creator, {'_id': graph._creator})
++			var profile = graph.profile
++			if (profile) {
++				profile['_id'] = graph._creator
++				page.profiles[profile._id] = profile
++			}
+ 		}
+ 
+ 		delete graph.profile"
+vizorvr/patches,1946,a1d2702,browser/test/unit/pageStore.js,modified,58,0,58,"@@ -1,6 +1,7 @@
+ var assert = require('assert');
+ var when = require('when')
+ 
++global._ = require('lodash')
+ global.VizorUI = require('../../scripts/ui/pageStore')
+ global.EventEmitter = require('events').EventEmitter
+ global.CustomEvent = function(name, opts) {
+@@ -16,8 +17,27 @@ global.uniq = new Date().getTime()
+ 
+ // note: refer to store limitations
+ 
++
+ describe('pageStore', function() {
+ 
++	var creatorId = '1234abcd'
++	var profile = {
++		// must work without id
++		name: 'somename'
++	}
++	var graphWithProfile = {
++		_creator: creatorId,
++		_id : 'someid',
++		path: '/some/path',
++		profile: profile
++	}
++	var graphWithoutProfile = {
++		_creator: creatorId,
++		_id: 'someotherid',
++		path: '/some/otherpath'
++		// no profile
++	}
++
+ 	beforeEach(function() {
+ 		document.removeAllListeners()
+ 	})
+@@ -120,5 +140,43 @@ describe('pageStore', function() {
+ 		done();
+ 	})
+ 
++	it('adds a graph', function(done) {
++		Vizor.pageObjects = {}
++		VizorUI.pageStore()     // makes Vizor.pageObjects into a new store
++		var page = Vizor.pageObjects
++		var graph = graphWithoutProfile
++		page.addGraph(graph)
++
++		assert.equal((graph._id in page.graphs), true, 'could not find graphs[id]')
++		assert.equal(page.graphs[graph._id].path, graph.path, 'not the same data?')
++		done()
++	})
++
++
++	it('adds a profile from graph', function(done) {
++		Vizor.pageObjects = {}
++		VizorUI.pageStore()
++		var page = Vizor.pageObjects
++		var graph = graphWithProfile
++		page.addGraph(graph)
++
++		assert.equal((graph._creator in page.profiles), true, 'could not find profiles[graph._creator]')
++		assert.equal(page.profiles[creatorId].name, profile.name, 'not the same data?')
++		done()
++	})
++
++
++	it('would keep a known creator profile if graph supplied no profile', function(done) {
++		Vizor.pageObjects = {}
++		VizorUI.pageStore()
++		var page = Vizor.pageObjects
++
++		page.addGraph(graphWithProfile)
++
++		page.addGraph(graphWithoutProfile)
++		assert.equal(page.profiles[creatorId].name, profile.name, 'profile should not have changed')
++
++		done()
++	})
+ 
+ })"
+vizorvr/patches,1946,a1d2702,views/partials/assets/graphCardJS.handlebars,modified,10,7,17,"@@ -1,24 +1,27 @@
+ {{!--
+     // adds this graph card's data to Vizor.pageObjects.graphs{}
+     // also places graph._creator data in Vizor.pageObjects.profiles{}
+-    // note, see also userpages.js
++    // NB it is highly likely that Vizor.pageObjects is not a store yet
++    // NB also see userpages.js
+ --}}
+ <script>
+     (function() {
+         var j = {{{json this deleteKeys=""withActions,allowAllActions,withLinks,withActionEdit,withActionView,withActionChoose""}}}
+-
++        var page = window.Vizor.pageObjects
+         {{#if _id}}
+-            window.Vizor.pageObjects.graphs['{{_id}}'] = j
++            page.graphs['{{_id}}'] = j
+         {{else}}
+-            window.Vizor.pageObjects.graphs['{{{path}}}'] = j
++            page.graphs['{{{path}}}'] = j
+         {{/if}}
+ 
+         {{#if _creator}}
+-            window.Vizor.pageObjects.profiles['{{_creator}}'] = {}
++            if (!page.profiles['{{_creator}}'])
++                page.profiles['{{_creator}}'] = {}
++
+             {{#if profile}}
+-                window.Vizor.pageObjects.profiles['{{_creator}}'] = {{{json profile}}}
++                page.profiles['{{_creator}}'] = {{{json profile}}}
+             {{/if}}
+-            window.Vizor.pageObjects.profiles['{{_creator}}']['_id'] = j._creator
++            page.profiles['{{_creator}}']['_id'] = j._creator
+         {{/if}}
+ 
+     })();"
+vizorvr/patches,1946,a1cb0e2,browser/scripts/ui/pageStore.js,modified,10,8,18,"@@ -161,6 +161,7 @@ VizorUI.pageStore = function() {
+ 	}
+ 
+ 	page.addProfile = function(profile) {
++		profile = _.cloneDeep(profile)
+ 		if (profile.id)
+ 			page.profiles._add_(profile.id, profile)
+ 		else
+@@ -171,19 +172,20 @@ VizorUI.pageStore = function() {
+ 		if (!graph)
+ 			return console.info('addGraph but no graph')
+ 
++		graph = _.cloneDeep(graph)
++
+ 		var key = graph._id || graph.path
+ 		if (!key)
+ 			return console.error('no key for graph', graph)
+ 
+ 		if (graph._creator) {
+-			var profile
+-			if (graph.profile && graph.profile.id && !page.profiles[id])
+-				profile = graph.profile
+-			else
+-				profile = {}
+-
+-			profile['_id'] = graph._creator
+-			page.profiles._add_(graph._creator, profile)
++			if (!page.profiles[graph._creator])
++				page.profiles._add_(graph._creator, {'_id': graph._creator})
++			var profile = graph.profile
++			if (profile) {
++				profile['_id'] = graph._creator
++				page.profiles[profile._id] = profile
++			}
+ 		}
+ 
+ 		delete graph.profile"
+vizorvr/patches,1946,a1cb0e2,browser/test/unit/pageStore.js,modified,58,0,58,"@@ -1,6 +1,7 @@
+ var assert = require('assert');
+ var when = require('when')
+ 
++global._ = require('lodash')
+ global.VizorUI = require('../../scripts/ui/pageStore')
+ global.EventEmitter = require('events').EventEmitter
+ global.CustomEvent = function(name, opts) {
+@@ -16,8 +17,27 @@ global.uniq = new Date().getTime()
+ 
+ // note: refer to store limitations
+ 
++
+ describe('pageStore', function() {
+ 
++	var creatorId = '1234abcd'
++	var profile = {
++		// must work without id
++		name: 'somename'
++	}
++	var graphWithProfile = {
++		_creator: creatorId,
++		_id : 'someid',
++		path: '/some/path',
++		profile: profile
++	}
++	var graphWithoutProfile = {
++		_creator: creatorId,
++		_id: 'someotherid',
++		path: '/some/otherpath'
++		// no profile
++	}
++
+ 	beforeEach(function() {
+ 		document.removeAllListeners()
+ 	})
+@@ -120,5 +140,43 @@ describe('pageStore', function() {
+ 		done();
+ 	})
+ 
++	it('adds a graph', function(done) {
++		Vizor.pageObjects = {}
++		VizorUI.pageStore()     // makes Vizor.pageObjects into a new store
++		var page = Vizor.pageObjects
++		var graph = graphWithoutProfile
++		page.addGraph(graph)
++
++		assert.equal((graph._id in page.graphs), true, 'could not find graphs[id]')
++		assert.equal(page.graphs[graph._id].path, graph.path, 'not the same data?')
++		done()
++	})
++
++
++	it('adds a profile from graph', function(done) {
++		Vizor.pageObjects = {}
++		VizorUI.pageStore()
++		var page = Vizor.pageObjects
++		var graph = graphWithProfile
++		page.addGraph(graph)
++
++		assert.equal((graph._creator in page.profiles), true, 'could not find profiles[graph._creator]')
++		assert.equal(page.profiles[creatorId].name, profile.name, 'not the same data?')
++		done()
++	})
++
++
++	it('would keep a known creator profile if graph supplied no profile', function(done) {
++		Vizor.pageObjects = {}
++		VizorUI.pageStore()
++		var page = Vizor.pageObjects
++
++		page.addGraph(graphWithProfile)
++
++		page.addGraph(graphWithoutProfile)
++		assert.equal(page.profiles[creatorId].name, profile.name, 'profile should not have changed')
++
++		done()
++	})
+ 
+ })"
+vizorvr/patches,1946,a1cb0e2,views/partials/assets/graphCardJS.handlebars,modified,10,7,17,"@@ -1,24 +1,27 @@
+ {{!--
+     // adds this graph card's data to Vizor.pageObjects.graphs{}
+     // also places graph._creator data in Vizor.pageObjects.profiles{}
+-    // note, see also userpages.js
++    // NB it is highly likely that Vizor.pageObjects is not a store yet
++    // NB also see userpages.js
+ --}}
+ <script>
+     (function() {
+         var j = {{{json this deleteKeys=""withActions,allowAllActions,withLinks,withActionEdit,withActionView,withActionChoose""}}}
+-
++        var page = window.Vizor.pageObjects
+         {{#if _id}}
+-            window.Vizor.pageObjects.graphs['{{_id}}'] = j
++            page.graphs['{{_id}}'] = j
+         {{else}}
+-            window.Vizor.pageObjects.graphs['{{{path}}}'] = j
++            page.graphs['{{{path}}}'] = j
+         {{/if}}
+ 
+         {{#if _creator}}
+-            window.Vizor.pageObjects.profiles['{{_creator}}'] = {}
++            if (!page.profiles['{{_creator}}'])
++                page.profiles['{{_creator}}'] = {}
++
+             {{#if profile}}
+-                window.Vizor.pageObjects.profiles['{{_creator}}'] = {{{json profile}}}
++                page.profiles['{{_creator}}'] = {{{json profile}}}
+             {{/if}}
+-            window.Vizor.pageObjects.profiles['{{_creator}}']['_id'] = j._creator
++            page.profiles['{{_creator}}']['_id'] = j._creator
+         {{/if}}
+ 
+     })();"

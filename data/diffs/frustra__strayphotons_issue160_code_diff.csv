@@ -1,0 +1,867 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+frustra/strayphotons,160,b992993b6b3664d817ce622c0e051aa5d528c674,shaders/vulkan/basic_ortho_stencil.vert,added,16,0,16,"@@ -0,0 +1,16 @@
++#version 450
++
++layout(location = 0) in vec2 inPos;
++
++layout(push_constant) uniform PushConstants {
++    mat4 projMat;
++} constants;
++
++out gl_PerVertex
++{
++	vec4 gl_Position;
++};
++
++void main() {
++	gl_Position = constants.projMat * vec4(inPos, 0.0, 1.0);
++}"
+frustra/strayphotons,160,b992993b6b3664d817ce622c0e051aa5d528c674,shaders/vulkan/noop.frag,added,4,0,4,"@@ -0,0 +1,4 @@
++#version 450
++
++void main() {
++}"
+frustra/strayphotons,160,b992993b6b3664d817ce622c0e051aa5d528c674,shaders/vulkan/visualize_buffer_2d.frag,renamed,0,0,0,
+frustra/strayphotons,160,b992993b6b3664d817ce622c0e051aa5d528c674,shaders/vulkan/visualize_buffer_2d_array.frag,added,21,0,21,"@@ -0,0 +1,21 @@
++#version 450
++
++layout(binding = 0) uniform sampler2DArray tex;
++layout(location = 0) in vec2 inTexCoord;
++layout(location = 0) out vec4 outFragColor;
++
++// 2 bits per channel
++// 0bAABBGGRR
++// RR=0, GG=1, BB=2, AA=3 => rgba = rgba
++layout(constant_id = 0) const uint SWIZZLE = 0xE4;
++
++layout(push_constant) uniform PushConstants {
++	float layer;
++};
++
++void main() {
++	vec4 value = texture(tex, vec3(inTexCoord, layer));
++	for (uint i = 0; i < 4; i++) {
++		outFragColor[i] = value[(SWIZZLE & (3 << (2 * i))) >> (2 * i)];
++	}
++}"
+frustra/strayphotons,160,b992993b6b3664d817ce622c0e051aa5d528c674,src/graphics/graphics/vulkan/Renderer.cc,modified,116,10,126,"@@ -11,6 +11,7 @@
+ #include ""graphics/vulkan/core/Model.hh""
+ #include ""graphics/vulkan/core/RenderGraph.hh""
+ #include ""graphics/vulkan/core/Screenshot.hh""
++#include ""graphics/vulkan/core/Util.hh""
+ #include ""graphics/vulkan/core/Vertex.hh""
+ 
+ #ifdef SP_XR_SUPPORT
+@@ -25,6 +26,8 @@ namespace sp::vulkan {
+         defaultWindowViewTarget,
+         ""Primary window's render target"");
+ 
++    static CVar<uint32> CVarWindowViewTargetLayer(""r.WindowViewTargetLayer"", 0, ""Array layer to view"");
++
+     static CVar<string> CVarXRViewTarget(""r.XRViewTarget"", defaultXRViewTarget, ""HMD's render target"");
+ 
+     static CVar<float> CVarBloomScale(""r.BloomScale"", 0.15f, ""Bloom scale"");
+@@ -162,7 +165,7 @@ namespace sp::vulkan {
+                     builder.OutputColorAttachment(2, ""GBuffer2"", desc, {LoadOp::Clear, StoreOp::Store});
+ 
+                     desc.format = vk::Format::eD24UnormS8Uint;
+-                    builder.OutputDepthAttachment(""GBufferDepth"", desc, {LoadOp::Clear, StoreOp::DontCare});
++                    builder.OutputDepthAttachment(""GBufferDepthStencil"", desc, {LoadOp::Clear, StoreOp::Store});
+ 
+                     builder.CreateUniformBuffer(""ViewState"", sizeof(GPUViewState) * 2);
+                 })
+@@ -205,7 +208,67 @@ namespace sp::vulkan {
+ 
+             graph.BeginScope(""XRView"");
+ 
+-            graph.Pass(""XRForwardPass"")
++            if (!hiddenAreaMesh[0]) {
++                auto leftEye = xrSystem->GetHiddenAreaMesh(ecs::XrEye::LEFT);
++                hiddenAreaMesh[0] = device.CreateBuffer(leftEye.vertices,
++                    leftEye.triangleCount * sizeof(glm::vec2) * 3,
++                    vk::BufferUsageFlagBits::eVertexBuffer,
++                    VMA_MEMORY_USAGE_CPU_TO_GPU);
++                hiddenAreaTriangleCount[0] = leftEye.triangleCount;
++
++                auto rightEye = xrSystem->GetHiddenAreaMesh(ecs::XrEye::RIGHT);
++                hiddenAreaMesh[1] = device.CreateBuffer(rightEye.vertices,
++                    rightEye.triangleCount * sizeof(glm::vec2) * 3,
++                    vk::BufferUsageFlagBits::eVertexBuffer,
++                    VMA_MEMORY_USAGE_CPU_TO_GPU);
++                hiddenAreaTriangleCount[1] = rightEye.triangleCount;
++            }
++
++            auto executeHiddenAreaStencil = [this](uint32 eyeIndex) {
++                return [this, eyeIndex](RenderGraphResources &resources, CommandContext &cmd) {
++                    cmd.SetShaders(""basic_ortho_stencil.vert"", ""noop.frag"");
++
++                    glm::mat4 proj = MakeOrthographicProjection(0, 1, 1, 0);
++                    cmd.PushConstants(proj);
++
++                    cmd.SetCullMode(vk::CullModeFlagBits::eNone);
++                    cmd.SetDepthTest(false, false);
++                    cmd.SetStencilTest(true);
++                    cmd.SetStencilWriteMask(vk::StencilFaceFlagBits::eFrontAndBack, 1);
++                    cmd.SetStencilReference(vk::StencilFaceFlagBits::eFrontAndBack, 1);
++                    cmd.SetStencilCompareOp(vk::CompareOp::eAlways);
++                    cmd.SetStencilPassOp(vk::StencilOp::eReplace);
++                    cmd.SetStencilFailOp(vk::StencilOp::eReplace);
++                    cmd.SetStencilDepthFailOp(vk::StencilOp::eReplace);
++
++                    cmd.SetVertexLayout(PositionVertex2D::Layout());
++                    cmd.Raw().bindVertexBuffers(0, {*this->hiddenAreaMesh[eyeIndex]}, {0});
++                    cmd.Draw(this->hiddenAreaTriangleCount[eyeIndex] * 3);
++                };
++            };
++
++            graph.Pass(""HiddenAreaStencil"")
++                .Build([&](RenderGraphPassBuilder &builder) {
++                    RenderTargetDesc desc;
++                    desc.extent = vk::Extent3D(firstView.extents.x, firstView.extents.y, 1);
++                    desc.arrayLayers = xrViews.size();
++                    desc.primaryViewType = vk::ImageViewType::e2DArray;
++                    desc.format = vk::Format::eD24UnormS8Uint;
++                    AttachmentInfo attachment = {LoadOp::Clear, StoreOp::Store};
++                    attachment.arrayIndex = 0;
++                    builder.OutputDepthAttachment(""GBufferDepthStencil"", desc, attachment);
++                })
++                .Execute(executeHiddenAreaStencil(0));
++
++            graph.Pass(""HiddenAreaStencil2"")
++                .Build([&](RenderGraphPassBuilder &builder) {
++                    AttachmentInfo attachment = {LoadOp::Clear, StoreOp::Store};
++                    attachment.arrayIndex = 1;
++                    builder.SetDepthAttachment(""GBufferDepthStencil"", attachment);
++                })
++                .Execute(executeHiddenAreaStencil(1));
++
++            graph.Pass(""ForwardPass"")
+                 .Build([&](RenderGraphPassBuilder &builder) {
+                     RenderTargetDesc desc;
+                     desc.extent = vk::Extent3D(firstView.extents.x, firstView.extents.y, 1);
+@@ -219,14 +282,18 @@ namespace sp::vulkan {
+                     builder.OutputColorAttachment(1, ""GBuffer1"", desc, {LoadOp::Clear, StoreOp::Store});
+                     builder.OutputColorAttachment(2, ""GBuffer2"", desc, {LoadOp::Clear, StoreOp::Store});
+ 
+-                    desc.format = vk::Format::eD24UnormS8Uint;
+-                    builder.OutputDepthAttachment(""GBufferDepth"", desc, {LoadOp::Clear, StoreOp::DontCare});
++                    builder.SetDepthAttachment(""GBufferDepthStencil"", {LoadOp::Load, StoreOp::DontCare});
+ 
+                     builder.CreateUniformBuffer(""ViewState"", sizeof(GPUViewState) * 2);
+                 })
+                 .Execute([this, xrViews, visible, lock](RenderGraphResources &resources, CommandContext &cmd) {
+                     cmd.SetShaders(""scene.vert"", ""generate_gbuffer.frag"");
+ 
++                    cmd.SetStencilTest(true);
++                    cmd.SetStencilCompareOp(vk::CompareOp::eNotEqual);
++                    cmd.SetStencilCompareMask(vk::StencilFaceFlagBits::eFrontAndBack, 1);
++                    cmd.SetStencilReference(vk::StencilFaceFlagBits::eFrontAndBack, 1);
++
+                     auto viewStateBuf = resources.GetBuffer(""ViewState"");
+                     cmd.SetUniformBuffer(0, 10, viewStateBuf);
+ 
+@@ -303,10 +370,11 @@ namespace sp::vulkan {
+                     }
+ 
+                     auto format = res.renderTargetDesc.format;
+-                    if (FormatComponentCount(format) == 4 && FormatByteSize(format) == 4) {
++                    auto layer = CVarWindowViewTargetLayer.Get();
++                    if (FormatComponentCount(format) == 4 && FormatByteSize(format) == 4 && layer == 0) {
+                         sourceID = res.id;
+                     } else {
+-                        sourceID = VisualizeBuffer(graph, res.id);
++                        sourceID = VisualizeBuffer(graph, res.id, layer);
+                     }
+                     builder.ShaderRead(sourceID);
+ 
+@@ -444,7 +512,10 @@ namespace sp::vulkan {
+         pendingScreenshots.clear();
+     }
+ 
+-    RenderGraphResourceID Renderer::VisualizeBuffer(RenderGraph &graph, RenderGraphResourceID sourceID) {
++    RenderGraphResourceID Renderer::VisualizeBuffer(RenderGraph &graph,
++        RenderGraphResourceID sourceID,
++        uint32 arrayLayer) {
++
+         RenderGraphResourceID targetID = ~0u, outputID;
+         graph.Pass(""VisualizeBuffer"")
+             .Build([&](RenderGraphPassBuilder &builder) {
+@@ -455,10 +526,37 @@ namespace sp::vulkan {
+                 desc.usage = {}; // TODO: usage will be leaked between targets unless it's reset like this
+                 outputID = builder.OutputColorAttachment(0, """", desc, {LoadOp::DontCare, StoreOp::Store}).id;
+             })
+-            .Execute([targetID](RenderGraphResources &resources, CommandContext &cmd) {
+-                auto source = resources.GetRenderTarget(targetID)->ImageView();
++            .Execute([this, targetID, arrayLayer](RenderGraphResources &resources, CommandContext &cmd) {
++                auto target = resources.GetRenderTarget(targetID);
++                ImageViewPtr source;
++                if (target->Desc().arrayLayers > 1 && arrayLayer != ~0u && arrayLayer < target->Desc().arrayLayers) {
++                    source = target->LayerImageView(arrayLayer);
++                } else {
++                    source = target->ImageView();
++                }
++
++                auto debugView = this->debugViews.Load(source.get());
++                if (debugView) {
++                    source = debugView;
++                } else if (source->Format() == vk::Format::eD24UnormS8Uint) {
++                    auto viewInfo = source->CreateInfo();
++                    viewInfo.aspectMask = vk::ImageAspectFlagBits::eStencil;
++                    viewInfo.defaultSampler = cmd.Device().GetSampler(SamplerType::BilinearClamp);
++                    debugView = cmd.Device().CreateImageView(viewInfo);
++                    this->debugViews.Register(source.get(), debugView);
++                    source = debugView;
++                }
+ 
+-                cmd.SetShaders(""screen_cover.vert"", ""visualize_buffer.frag"");
++                if (source->ViewType() == vk::ImageViewType::e2DArray) {
++                    cmd.SetShaders(""screen_cover.vert"", ""visualize_buffer_2d_array.frag"");
++
++                    struct {
++                        float layer = 0;
++                    } push;
++                    cmd.PushConstants(push);
++                } else {
++                    cmd.SetShaders(""screen_cover.vert"", ""visualize_buffer_2d.frag"");
++                }
+ 
+                 auto format = source->Format();
+                 uint32 comp = FormatComponentCount(format);
+@@ -539,9 +637,17 @@ namespace sp::vulkan {
+                 for (int i = 0; i < this->lights.gelCount; i++) {
+                     builder.ShaderRead(this->lights.gelNames[i]);
+                 }
++
++                builder.SetDepthAttachment(""GBufferDepthStencil"", {LoadOp::Load, StoreOp::DontCare});
+             })
+             .Execute([this](RenderGraphResources &resources, CommandContext &cmd) {
+                 cmd.SetShaders(""screen_cover.vert"", ""lighting.frag"");
++                cmd.SetStencilTest(true);
++                cmd.SetDepthTest(false, false);
++                cmd.SetStencilCompareOp(vk::CompareOp::eNotEqual);
++                cmd.SetStencilCompareMask(vk::StencilFaceFlagBits::eFrontAndBack, 1);
++                cmd.SetStencilReference(vk::StencilFaceFlagBits::eFrontAndBack, 1);
++
+                 cmd.SetTexture(0, 0, resources.GetRenderTarget(""GBuffer0"")->ImageView());
+                 cmd.SetTexture(0, 1, resources.GetRenderTarget(""GBuffer1"")->ImageView());
+                 cmd.SetTexture(0, 2, resources.GetRenderTarget(""GBuffer2"")->ImageView());"
+frustra/strayphotons,160,b992993b6b3664d817ce622c0e051aa5d528c674,src/graphics/graphics/vulkan/Renderer.hh,modified,7,1,8,"@@ -105,7 +105,9 @@ namespace sp::vulkan {
+         void BuildFrameGraph(RenderGraph &graph);
+ 
+         void AddScreenshotPasses(RenderGraph &graph);
+-        RenderGraphResourceID VisualizeBuffer(RenderGraph &graph, RenderGraphResourceID sourceID);
++        RenderGraphResourceID VisualizeBuffer(RenderGraph &graph,
++            RenderGraphResourceID sourceID,
++            uint32 arrayLayer = ~0u);
+ 
+         void AddLightState(RenderGraph &graph, ecs::Lock<ecs::Read<ecs::Light, ecs::Transform>> lock);
+         void AddShadowMaps(RenderGraph &graph, DrawLock lock);
+@@ -146,9 +148,13 @@ namespace sp::vulkan {
+ 
+         ImageViewPtr blankPixelImage;
+ 
++        PreservingMap<ImageView *, ImageView> debugViews;
++
+ #ifdef SP_XR_SUPPORT
+         xr::XrSystem *xrSystem = nullptr;
+         std::vector<glm::mat4> xrRenderPoses;
++        std::array<BufferPtr, 2> hiddenAreaMesh;
++        std::array<uint32, 2> hiddenAreaTriangleCount;
+ #endif
+     };
+ } // namespace sp::vulkan"
+frustra/strayphotons,160,b992993b6b3664d817ce622c0e051aa5d528c674,src/graphics/graphics/vulkan/core/CMakeLists.txt,modified,1,0,1,"@@ -12,6 +12,7 @@ target_sources(${PROJECT_GRAPHICS_VULKAN_CORE_LIB} PRIVATE
+     RenderTarget.cc
+     Screenshot.cc
+     UniqueID.cc
++    Util.cc
+ )
+ 
+ target_link_libraries(${PROJECT_GRAPHICS_VULKAN_CORE_LIB} PUBLIC VulkanMemoryAllocator SPIRV-Reflect)"
+frustra/strayphotons,160,b992993b6b3664d817ce622c0e051aa5d528c674,src/graphics/graphics/vulkan/core/CommandContext.cc,modified,23,0,23,"@@ -308,6 +308,29 @@ namespace sp::vulkan {
+             cmd->setScissor(0, 1, &sc);
+         }
+ 
++        if (pipelineInput.state.stencilTest && ResetDirty(DirtyBits::Stencil)) {
++            const auto &front = stencilState[0];
++            const auto &back = stencilState[1];
++            if (front.writeMask == back.writeMask) {
++                cmd->setStencilWriteMask(vk::StencilFaceFlagBits::eFrontAndBack, front.writeMask);
++            } else {
++                cmd->setStencilWriteMask(vk::StencilFaceFlagBits::eFront, front.writeMask);
++                cmd->setStencilWriteMask(vk::StencilFaceFlagBits::eBack, back.writeMask);
++            }
++            if (front.compareMask == back.compareMask) {
++                cmd->setStencilCompareMask(vk::StencilFaceFlagBits::eFrontAndBack, front.compareMask);
++            } else {
++                cmd->setStencilCompareMask(vk::StencilFaceFlagBits::eFront, front.compareMask);
++                cmd->setStencilCompareMask(vk::StencilFaceFlagBits::eBack, back.compareMask);
++            }
++            if (front.reference == back.reference) {
++                cmd->setStencilReference(vk::StencilFaceFlagBits::eFrontAndBack, front.reference);
++            } else {
++                cmd->setStencilReference(vk::StencilFaceFlagBits::eFront, front.reference);
++                cmd->setStencilReference(vk::StencilFaceFlagBits::eBack, back.reference);
++            }
++        }
++
+         FlushPushConstants();
+         FlushDescriptorSets(vk::PipelineBindPoint::eGraphics);
+     }"
+frustra/strayphotons,160,b992993b6b3664d817ce622c0e051aa5d528c674,src/graphics/graphics/vulkan/core/CommandContext.hh,modified,78,0,78,"@@ -15,6 +15,7 @@ namespace sp::vulkan::CommandContextFlags {
+         Scissor = 1 << 1,
+         PushConstants = 1 << 2,
+         Pipeline = 1 << 3,
++        Stencil = 1 << 4,
+     };
+ 
+     using DirtyFlags = vk::Flags<DirtyBits>;
+@@ -179,6 +180,79 @@ namespace sp::vulkan {
+             }
+         }
+ 
++        void SetStencilWriteMask(vk::StencilFaceFlags faces, uint32 mask) {
++            if (faces & vk::StencilFaceFlagBits::eFront) {
++                if (mask != stencilState[0].writeMask) {
++                    stencilState[0].writeMask = mask;
++                    SetDirty(DirtyBits::Stencil);
++                }
++            }
++            if (faces & vk::StencilFaceFlagBits::eBack) {
++                if (mask != stencilState[1].writeMask) {
++                    stencilState[1].writeMask = mask;
++                    SetDirty(DirtyBits::Stencil);
++                }
++            }
++        }
++
++        void SetStencilCompareMask(vk::StencilFaceFlags faces, uint32 mask) {
++            if (faces & vk::StencilFaceFlagBits::eFront) {
++                if (mask != stencilState[0].compareMask) {
++                    stencilState[0].compareMask = mask;
++                    SetDirty(DirtyBits::Stencil);
++                }
++            }
++            if (faces & vk::StencilFaceFlagBits::eBack) {
++                if (mask != stencilState[1].compareMask) {
++                    stencilState[1].compareMask = mask;
++                    SetDirty(DirtyBits::Stencil);
++                }
++            }
++        }
++
++        void SetStencilReference(vk::StencilFaceFlags faces, uint32 value) {
++            if (faces & vk::StencilFaceFlagBits::eFront) {
++                if (value != stencilState[0].reference) {
++                    stencilState[0].reference = value;
++                    SetDirty(DirtyBits::Stencil);
++                }
++            }
++            if (faces & vk::StencilFaceFlagBits::eBack) {
++                if (value != stencilState[1].reference) {
++                    stencilState[1].reference = value;
++                    SetDirty(DirtyBits::Stencil);
++                }
++            }
++        }
++
++        void SetStencilCompareOp(vk::CompareOp op) {
++            if (op != pipelineInput.state.stencilCompareOp) {
++                pipelineInput.state.stencilCompareOp = op;
++                SetDirty(DirtyBits::Pipeline);
++            }
++        }
++
++        void SetStencilFailOp(vk::StencilOp op) {
++            if (op != pipelineInput.state.stencilFailOp) {
++                pipelineInput.state.stencilFailOp = op;
++                SetDirty(DirtyBits::Pipeline);
++            }
++        }
++
++        void SetStencilDepthFailOp(vk::StencilOp op) {
++            if (op != pipelineInput.state.stencilDepthFailOp) {
++                pipelineInput.state.stencilDepthFailOp = op;
++                SetDirty(DirtyBits::Pipeline);
++            }
++        }
++
++        void SetStencilPassOp(vk::StencilOp op) {
++            if (op != pipelineInput.state.stencilPassOp) {
++                pipelineInput.state.stencilPassOp = op;
++                SetDirty(DirtyBits::Pipeline);
++            }
++        }
++
+         void SetCullMode(vk::CullModeFlags mode) {
+             if (mode != pipelineInput.state.cullMode) {
+                 pipelineInput.state.cullMode = mode;
+@@ -309,6 +383,10 @@ namespace sp::vulkan {
+         float minDepth = 0.0f, maxDepth = 1.0f;
+         vk::Rect2D scissor;
+ 
++        struct StencilDynamicState {
++            uint32 writeMask = 0, compareMask = 0, reference = 0;
++        } stencilState[2] = {}; // front and back
++
+         PipelineCompileInput pipelineInput;
+         shared_ptr<Pipeline> currentPipeline;
+ "
+frustra/strayphotons,160,b992993b6b3664d817ce622c0e051aa5d528c674,src/graphics/graphics/vulkan/core/DeviceContext.cc,modified,3,3,6,"@@ -972,9 +972,9 @@ namespace sp::vulkan {
+                 vk::ImageLayout::eTransferDstOptimal,
+                 vk::ImageLayout::eTransferSrcOptimal,
+                 vk::PipelineStageFlagBits::eTransfer,
+-                {},
+-                vk::PipelineStageFlagBits::eTransfer,
+                 vk::AccessFlagBits::eTransferWrite,
++                vk::PipelineStageFlagBits::eTransfer,
++                vk::AccessFlagBits::eTransferRead,
+                 transferMips);
+         }
+ 
+@@ -1007,7 +1007,7 @@ namespace sp::vulkan {
+         createInfo.format = info.format;
+         createInfo.viewType = info.viewType;
+         createInfo.components = info.mapping;
+-        createInfo.subresourceRange.aspectMask = FormatToAspectFlags(info.format);
++        createInfo.subresourceRange.aspectMask = info.aspectMask ? info.aspectMask : FormatToAspectFlags(info.format);
+         createInfo.subresourceRange.baseMipLevel = info.baseMipLevel;
+         createInfo.subresourceRange.levelCount = info.mipLevelCount;
+         createInfo.subresourceRange.baseArrayLayer = info.baseArrayLayer;"
+frustra/strayphotons,160,b992993b6b3664d817ce622c0e051aa5d528c674,src/graphics/graphics/vulkan/core/DeviceContext.hh,modified,1,1,2,"@@ -21,7 +21,7 @@ namespace sp {
+ }
+ 
+ namespace sp::vulkan {
+-    const int MAX_FRAMES_IN_FLIGHT = 2;
++    const int MAX_FRAMES_IN_FLIGHT = 1;
+ 
+     class Pipeline;
+     class PipelineManager;"
+frustra/strayphotons,160,b992993b6b3664d817ce622c0e051aa5d528c674,src/graphics/graphics/vulkan/core/Image.hh,modified,5,0,5,"@@ -132,6 +132,7 @@ namespace sp::vulkan {
+         uint32_t mipLevelCount = VK_REMAINING_MIP_LEVELS; // all mips after the base level are included
+         uint32_t baseArrayLayer = 0;
+         uint32_t arrayLayerCount = VK_REMAINING_ARRAY_LAYERS; // all layers after the base layer are included
++        vk::ImageAspectFlags aspectMask; // defaults to all aspects of format
+         vk::Sampler defaultSampler = VK_NULL_HANDLE;
+         vk::ImageUsageFlags usage = {}; // defaults to image's usage
+     };
+@@ -195,6 +196,10 @@ namespace sp::vulkan {
+             return info.viewType;
+         }
+ 
++        ImageViewCreateInfo CreateInfo() const {
++            return info;
++        }
++
+         virtual int GetWidth() const override {
+             return extent.width;
+         }"
+frustra/strayphotons,160,b992993b6b3664d817ce622c0e051aa5d528c674,src/graphics/graphics/vulkan/core/Pipeline.cc,modified,12,0,12,"@@ -310,10 +310,14 @@ namespace sp::vulkan {
+         vk::DynamicState states[] = {
+             vk::DynamicState::eViewport,
+             vk::DynamicState::eScissor,
++            vk::DynamicState::eStencilWriteMask,
++            vk::DynamicState::eStencilCompareMask,
++            vk::DynamicState::eStencilReference,
+         };
+ 
+         vk::PipelineDynamicStateCreateInfo dynamicState;
+         dynamicState.dynamicStateCount = 2;
++        if (state.stencilTest) dynamicState.dynamicStateCount = 5;
+         dynamicState.pDynamicStates = states;
+ 
+         vk::PipelineRasterizationStateCreateInfo rasterizer;
+@@ -358,6 +362,14 @@ namespace sp::vulkan {
+         depthStencil.minDepthBounds = 0.0f;
+         depthStencil.maxDepthBounds = 1.0f;
+         depthStencil.stencilTestEnable = state.stencilTest;
++        depthStencil.front.compareOp = state.stencilCompareOp;
++        depthStencil.front.failOp = state.stencilFailOp;
++        depthStencil.front.depthFailOp = state.stencilDepthFailOp;
++        depthStencil.front.passOp = state.stencilPassOp;
++        depthStencil.back.compareOp = state.stencilCompareOp;
++        depthStencil.back.failOp = state.stencilFailOp;
++        depthStencil.back.depthFailOp = state.stencilDepthFailOp;
++        depthStencil.back.passOp = state.stencilPassOp;
+ 
+         vk::PipelineVertexInputStateCreateInfo VertexLayout;
+         VertexLayout.vertexBindingDescriptionCount = state.vertexLayout.bindingCount;"
+frustra/strayphotons,160,b992993b6b3664d817ce622c0e051aa5d528c674,src/graphics/graphics/vulkan/core/Pipeline.hh,modified,4,0,4,"@@ -30,6 +30,10 @@ namespace sp::vulkan {
+         unsigned depthTest : 1;
+         unsigned blendEnable : 1;
+         unsigned stencilTest : 1;
++        vk::CompareOp stencilCompareOp = vk::CompareOp::eAlways;
++        vk::StencilOp stencilFailOp = vk::StencilOp::eKeep;
++        vk::StencilOp stencilDepthFailOp = vk::StencilOp::eKeep;
++        vk::StencilOp stencilPassOp = vk::StencilOp::eKeep;
+         std::array<SpecializationData, (size_t)ShaderStage::Count> specializations = {};
+     };
+ "
+frustra/strayphotons,160,b992993b6b3664d817ce622c0e051aa5d528c674,src/graphics/graphics/vulkan/core/RenderGraph.cc,modified,13,6,19,"@@ -172,7 +172,7 @@ namespace sp::vulkan {
+         Assert(res.renderTargetDesc.arrayLayers == view->ArrayLayers(), ""image array mismatch"");
+ 
+         resources.ResizeBeforeExecute();
+-        resources.renderTargets[res.id] = make_shared<RenderTarget>(res.renderTargetDesc, view, ~0u);
++        resources.renderTargets[res.id] = make_shared<RenderTarget>(device, res.renderTargetDesc, view, ~0u);
+     }
+ 
+     void RenderGraph::Execute() {
+@@ -216,7 +216,13 @@ namespace sp::vulkan {
+                 if (attachment.resourceID == ~0u) continue;
+                 isRenderPass = true;
+ 
+-                auto imageView = resources.GetRenderTarget(attachment.resourceID)->ImageView();
++                ImageViewPtr imageView;
++                auto renderTarget = resources.GetRenderTarget(attachment.resourceID);
++                if (attachment.arrayIndex != ~0u && renderTarget->Desc().arrayLayers > 1) {
++                    imageView = renderTarget->LayerImageView(attachment.arrayIndex);
++                } else {
++                    imageView = renderTarget->ImageView();
++                }
+ 
+                 if (i != MAX_COLOR_ATTACHMENTS) {
+                     renderPassInfo.state.colorAttachmentCount = i + 1;
+@@ -297,8 +303,9 @@ namespace sp::vulkan {
+             cmd->ImageBarrier(image,
+                 image->LastLayout(),
+                 dep.access.layout,
+-                vk::PipelineStageFlagBits::eColorAttachmentOutput, // TODO: infer these
+-                vk::AccessFlagBits::eColorAttachmentWrite,
++                // TODO: infer these:
++                vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests,
++                vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite,
+                 dep.access.stages,
+                 dep.access.access);
+         }
+@@ -324,10 +331,10 @@ namespace sp::vulkan {
+                         vk::PipelineStageFlagBits::eColorAttachmentOutput,
+                         vk::AccessFlagBits::eColorAttachmentWrite);
+                 } else if (res.renderTargetDesc.usage & vk::ImageUsageFlagBits::eDepthStencilAttachment) {
+-                    if (image->LastLayout() == vk::ImageLayout::eDepthAttachmentOptimal) continue;
++                    if (image->LastLayout() == vk::ImageLayout::eDepthStencilAttachmentOptimal) continue;
+                     cmd->ImageBarrier(image,
+                         vk::ImageLayout::eUndefined,
+-                        vk::ImageLayout::eDepthAttachmentOptimal,
++                        vk::ImageLayout::eDepthStencilAttachmentOptimal,
+                         vk::PipelineStageFlagBits::eBottomOfPipe,
+                         {},
+                         vk::PipelineStageFlagBits::eEarlyFragmentTests,"
+frustra/strayphotons,160,b992993b6b3664d817ce622c0e051aa5d528c674,src/graphics/graphics/vulkan/core/RenderGraph.hh,modified,55,10,65,"@@ -52,6 +52,7 @@ namespace sp::vulkan {
+         StoreOp storeOp = StoreOp::DontCare;
+         vk::ClearColorValue clearColor = {};
+         vk::ClearDepthStencilValue clearDepthStencil = {1.0f, 0};
++        uint32 arrayIndex = ~0u; // if the attachment is an array image, this can be set to render to a specific index
+ 
+         void SetClearColor(glm::vec4 clear) {
+             std::array<float, 4> clearValues = {clear.r, clear.g, clear.b, clear.a};
+@@ -141,8 +142,8 @@ namespace sp::vulkan {
+             dependencies.push_back({access, res.id});
+         }
+ 
+-        void AddOutput(const RenderGraphResource &res) {
+-            outputs.push_back(res.id);
++        void AddOutput(RenderGraphResourceID id) {
++            outputs.push_back(id);
+         }
+ 
+         bool HasExecute() const {
+@@ -190,11 +191,22 @@ namespace sp::vulkan {
+         const RenderGraphResource &ShaderRead(RenderGraphResourceID id) {
+             auto &resource = resources.GetResourceRef(id);
+             resource.renderTargetDesc.usage |= vk::ImageUsageFlagBits::eSampled;
+-            RenderGraphResourceAccess access = {
+-                vk::PipelineStageFlagBits::eFragmentShader,
++
++            auto aspect = FormatToAspectFlags(resource.renderTargetDesc.format);
++            bool depth = !!(aspect & vk::ImageAspectFlagBits::eDepth);
++            bool stencil = !!(aspect & vk::ImageAspectFlagBits::eStencil);
++
++            auto layout = vk::ImageLayout::eShaderReadOnlyOptimal;
++            if (depth && stencil)
++                layout = vk::ImageLayout::eDepthStencilReadOnlyOptimal;
++            else if (depth)
++                layout = vk::ImageLayout::eDepthReadOnlyOptimal;
++            else if (stencil)
++                layout = vk::ImageLayout::eStencilReadOnlyOptimal;
++
++            RenderGraphResourceAccess access = {vk::PipelineStageFlagBits::eFragmentShader,
+                 vk::AccessFlagBits::eShaderRead,
+-                vk::ImageLayout::eShaderReadOnlyOptimal,
+-            };
++                layout};
+             pass.AddDependency(access, resource);
+             return resource;
+         }
+@@ -224,10 +236,19 @@ namespace sp::vulkan {
+         RenderGraphResource OutputRenderTarget(string_view name, const RenderTargetDesc &desc) {
+             RenderGraphResource resource(desc);
+             resources.Register(name, resource);
+-            pass.AddOutput(resource);
++            pass.AddOutput(resource.id);
+             return resource;
+         }
+ 
++        void SetColorAttachment(uint32 index, string_view name, const AttachmentInfo &info) {
++            SetColorAttachment(index, resources.GetID(name), info);
++        }
++        void SetColorAttachment(uint32 index, RenderGraphResourceID id, const AttachmentInfo &info) {
++            auto &res = resources.GetResourceRef(id);
++            Assert(res.type == RenderGraphResource::Type::RenderTarget, ""resource must be a render target"");
++            res.renderTargetDesc.usage |= vk::ImageUsageFlagBits::eColorAttachment;
++            SetAttachment(index, id, info);
++        }
+         RenderGraphResource OutputColorAttachment(uint32 index,
+             string_view name,
+             RenderTargetDesc desc,
+@@ -236,6 +257,21 @@ namespace sp::vulkan {
+             return OutputAttachment(index, name, desc, info);
+         }
+ 
++        void SetDepthAttachment(string_view name, const AttachmentInfo &info) {
++            SetDepthAttachment(resources.GetID(name), info);
++        }
++        void SetDepthAttachment(RenderGraphResourceID id, const AttachmentInfo &info) {
++            auto &res = resources.GetResourceRef(id);
++            Assert(res.type == RenderGraphResource::Type::RenderTarget, ""resource must be a render target"");
++            res.renderTargetDesc.usage |= vk::ImageUsageFlagBits::eDepthStencilAttachment;
++            RenderGraphResourceAccess access = {
++                vk::PipelineStageFlagBits::eEarlyFragmentTests,
++                vk::AccessFlagBits::eDepthStencilAttachmentRead | vk::AccessFlagBits::eDepthStencilAttachmentWrite,
++                vk::ImageLayout::eDepthStencilAttachmentOptimal,
++            };
++            pass.AddDependency(access, res);
++            SetAttachment(MAX_COLOR_ATTACHMENTS, id, info);
++        }
+         RenderGraphResource OutputDepthAttachment(string_view name, RenderTargetDesc desc, const AttachmentInfo &info) {
+             desc.usage |= vk::ImageUsageFlagBits::eDepthStencilAttachment;
+             return OutputAttachment(MAX_COLOR_ATTACHMENTS, name, desc, info);
+@@ -250,7 +286,7 @@ namespace sp::vulkan {
+         RenderGraphResource CreateUniformBuffer(string_view name, size_t size) {
+             RenderGraphResource resource(BUFFER_TYPE_UNIFORM, size);
+             resources.Register(name, resource);
+-            pass.AddOutput(resource);
++            pass.AddOutput(resource.id);
+             return resource;
+         }
+ 
+@@ -282,10 +318,19 @@ namespace sp::vulkan {
+             const RenderTargetDesc &desc,
+             const AttachmentInfo &info) {
+             auto resource = OutputRenderTarget(name, desc);
++            SetAttachmentWithoutOutput(index, resource.id, info);
++            return resource;
++        }
++
++        void SetAttachment(uint32 index, RenderGraphResourceID id, const AttachmentInfo &info) {
++            pass.AddOutput(id);
++            SetAttachmentWithoutOutput(index, id, info);
++        }
++
++        void SetAttachmentWithoutOutput(uint32 index, RenderGraphResourceID id, const AttachmentInfo &info) {
+             auto &attachment = pass.attachments[index];
+             attachment = info;
+-            attachment.resourceID = resource.id;
+-            return resource;
++            attachment.resourceID = id;
+         }
+ 
+         RenderGraphResources &resources;"
+frustra/strayphotons,160,b992993b6b3664d817ce622c0e051aa5d528c674,src/graphics/graphics/vulkan/core/RenderPass.cc,modified,6,1,7,"@@ -62,7 +62,12 @@ namespace sp::vulkan {
+                 depthStencilAttachment.stencilStoreOp = vk::AttachmentStoreOp::eDontCare;
+             }
+ 
+-            depthStencilAttachment.initialLayout = vk::ImageLayout::eUndefined;
++            if (depthStencilAttachment.loadOp == vk::AttachmentLoadOp::eLoad) {
++                // TODO: support other layouts
++                depthStencilAttachment.initialLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
++            } else {
++                depthStencilAttachment.initialLayout = vk::ImageLayout::eUndefined;
++            }
+             depthStencilAttachment.finalLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
+ 
+             depthAttachmentRef.attachment = attachmentCount;"
+frustra/strayphotons,160,b992993b6b3664d817ce622c0e051aa5d528c674,src/graphics/graphics/vulkan/core/RenderPass.hh,modified,1,1,2,"@@ -55,7 +55,7 @@ namespace sp::vulkan {
+         vk::AttachmentLoadOp LoadOp(uint32 index) const {
+             uint32 attachmentBit = 1 << index;
+             if (clearAttachments & attachmentBit) return vk::AttachmentLoadOp::eClear;
+-            if (loadAttachments & attachmentBit) return vk::AttachmentLoadOp::eClear;
++            if (loadAttachments & attachmentBit) return vk::AttachmentLoadOp::eLoad;
+             return vk::AttachmentLoadOp::eDontCare;
+         }
+ "
+frustra/strayphotons,160,b992993b6b3664d817ce622c0e051aa5d528c674,src/graphics/graphics/vulkan/core/RenderTarget.cc,modified,15,1,16,"@@ -10,6 +10,20 @@ namespace sp::vulkan {
+         }
+     }
+ 
++    const ImageViewPtr &RenderTarget::LayerImageView(uint32 layer) {
++        Assert(layer < desc.arrayLayers, ""render target image layer too high"");
++        if (layerImageViews.empty()) layerImageViews.resize(desc.arrayLayers);
++
++        auto &view = layerImageViews[layer];
++        if (view) return view;
++
++        ImageViewCreateInfo info = imageView->CreateInfo();
++        info.baseArrayLayer = layer;
++        info.arrayLayerCount = 1;
++        view = device->CreateImageView(info);
++        return view;
++    }
++
+     RenderTargetPtr RenderTargetManager::Get(const RenderTargetDesc &desc) {
+         for (auto &elemRef : pool) {
+             if (elemRef.use_count() <= 1 && elemRef->desc == desc) {
+@@ -32,7 +46,7 @@ namespace sp::vulkan {
+         viewInfo.defaultSampler = device.GetSampler(SamplerType::BilinearClamp);
+ 
+         auto imageView = device.CreateImageAndView(imageInfo, viewInfo);
+-        auto ptr = make_shared<RenderTarget>(desc, imageView, pool.size());
++        auto ptr = make_shared<RenderTarget>(device, desc, imageView, pool.size());
+ 
+         pool.push_back(ptr);
+         return ptr;"
+frustra/strayphotons,160,b992993b6b3664d817ce622c0e051aa5d528c674,src/graphics/graphics/vulkan/core/RenderTarget.hh,modified,10,2,12,"@@ -15,14 +15,20 @@ namespace sp::vulkan {
+ 
+     class RenderTarget {
+     public:
+-        RenderTarget(const RenderTargetDesc &desc, const ImageViewPtr &imageView, size_t poolIndex)
+-            : desc(desc), imageView(imageView), poolIndex(poolIndex) {}
++        RenderTarget(DeviceContext &device,
++            const RenderTargetDesc &desc,
++            const ImageViewPtr &imageView,
++            size_t poolIndex)
++            : device(&device), desc(desc), imageView(imageView), poolIndex(poolIndex) {}
++
+         ~RenderTarget();
+ 
+         const ImageViewPtr &ImageView() const {
+             return imageView;
+         }
+ 
++        const ImageViewPtr &LayerImageView(uint32 layer);
++
+         const RenderTargetDesc &Desc() const {
+             return desc;
+         }
+@@ -32,9 +38,11 @@ namespace sp::vulkan {
+         friend class RenderTargetManager;
+ 
+     private:
++        DeviceContext *device;
+         RenderTargetDesc desc;
+         ImageViewPtr imageView;
+         size_t poolIndex;
++        vector<ImageViewPtr> layerImageViews;
+     };
+ 
+     class RenderTargetManager {"
+frustra/strayphotons,160,b992993b6b3664d817ce622c0e051aa5d528c674,src/graphics/graphics/vulkan/core/Util.cc,added,23,0,23,"@@ -0,0 +1,23 @@
++#include ""graphics/vulkan/core/Util.hh""
++
++namespace sp::vulkan {
++    glm::mat4 MakeOrthographicProjection(float left, float right, float bottom, float top, float near, float far) {
++        glm::mat4 proj;
++        proj[0][0] = 2.0f / (right - left);
++        proj[1][1] = 2.0f / (bottom - top);
++        proj[2][2] = 1.0f / (near - far);
++        proj[3][0] = -(right + left) / (right - left);
++        proj[3][1] = -(bottom + top) / (bottom - top);
++        proj[3][2] = near / (near - far);
++        proj[3][3] = 1.0f;
++        return proj;
++    }
++    glm::mat4 MakeOrthographicProjection(const vk::Rect2D &viewport, float near, float far) {
++        // Uses OpenGL style, Y up
++        float left = viewport.offset.x;
++        float right = left + viewport.extent.width;
++        float bottom = viewport.offset.y;
++        float top = bottom + viewport.extent.height;
++        return MakeOrthographicProjection(left, right, bottom, top, near, far);
++    }
++} // namespace sp::vulkan"
+frustra/strayphotons,160,b992993b6b3664d817ce622c0e051aa5d528c674,src/graphics/graphics/vulkan/core/Util.hh,modified,7,17,24,"@@ -3,21 +3,11 @@
+ #include ""graphics/vulkan/core/Common.hh""
+ 
+ namespace sp::vulkan {
+-    glm::mat4 MakeOrthographicProjection(const vk::Rect2D &viewport, float near = 0.0f, float far = 1.0f) {
+-        // Uses OpenGL style, Y up
+-        float left = viewport.offset.x;
+-        float right = left + viewport.extent.width;
+-        float bottom = viewport.offset.y;
+-        float top = bottom + viewport.extent.height;
+-
+-        glm::mat4 proj;
+-        proj[0][0] = 2.0f / (right - left);
+-        proj[1][1] = 2.0f / (bottom - top);
+-        proj[2][2] = 1.0f / (near - far);
+-        proj[3][0] = -(right + left) / (right - left);
+-        proj[3][1] = -(bottom + top) / (bottom - top);
+-        proj[3][2] = near / (near - far);
+-        proj[3][3] = 1.0f;
+-        return proj;
+-    }
++    glm::mat4 MakeOrthographicProjection(float left,
++        float right,
++        float bottom,
++        float top,
++        float near = 0.0f,
++        float far = 1.0f);
++    glm::mat4 MakeOrthographicProjection(const vk::Rect2D &viewport, float near = 0.0f, float far = 1.0f);
+ } // namespace sp::vulkan"
+frustra/strayphotons,160,b992993b6b3664d817ce622c0e051aa5d528c674,src/graphics/graphics/vulkan/core/Vertex.hh,modified,13,0,13,"@@ -97,4 +97,17 @@ namespace sp::vulkan {
+         }
+     };
+ 
++    struct PositionVertex2D {
++        glm::vec2 position;
++
++        static VertexLayout Layout() {
++            static VertexLayout info;
++            if (!info.bindingCount) {
++                info.PushBinding(0, sizeof(PositionVertex2D));
++                info.PushAttribute(0, 0, vk::Format::eR32G32Sfloat, offsetof(PositionVertex2D, position));
++            }
++            return info;
++        }
++    };
++
+ } // namespace sp::vulkan"
+frustra/strayphotons,160,b992993b6b3664d817ce622c0e051aa5d528c674,src/xr/xr/XrSystem.hh,modified,7,0,7,"@@ -37,6 +37,11 @@ namespace sp {
+             bool connected;
+         };
+ 
++        struct HiddenAreaMesh {
++            const glm::vec2 *vertices;
++            uint32_t triangleCount;
++        };
++
+         class XrSystem {
+         public:
+             virtual void Init(GraphicsContext *context) = 0;
+@@ -47,6 +52,8 @@ namespace sp {
+ 
+             virtual void SubmitView(ecs::XrEye eye, glm::mat4 &viewPose, GpuTexture *tex) = 0;
+             virtual void WaitFrame() = 0;
++
++            virtual HiddenAreaMesh GetHiddenAreaMesh(ecs::XrEye eye) = 0;
+         };
+ 
+     } // namespace xr"
+frustra/strayphotons,160,b992993b6b3664d817ce622c0e051aa5d528c674,src/xr/xr/openvr/OpenVrSystem.cc,modified,5,0,5,"@@ -239,4 +239,9 @@ namespace sp::xr {
+         if (inputBindings) inputBindings->Frame();
+     }
+ 
++    HiddenAreaMesh OpenVrSystem::GetHiddenAreaMesh(ecs::XrEye eye) {
++        static_assert(sizeof(*vr::HiddenAreaMesh_t::pVertexData) == sizeof(*HiddenAreaMesh::vertices));
++        auto mesh = vrSystem->GetHiddenAreaMesh(MapXrEyeToOpenVr(eye));
++        return {(const glm::vec2 *)mesh.pVertexData, mesh.unTriangleCount};
++    }
+ } // namespace sp::xr"
+frustra/strayphotons,160,b992993b6b3664d817ce622c0e051aa5d528c674,src/xr/xr/openvr/OpenVrSystem.hh,modified,2,0,2,"@@ -35,6 +35,8 @@ namespace sp {
+ 
+             ecs::NamedEntity GetEntityForDeviceIndex(size_t index);
+ 
++            HiddenAreaMesh GetHiddenAreaMesh(ecs::XrEye eye);
++
+         private:
+             void Frame() override;
+ "

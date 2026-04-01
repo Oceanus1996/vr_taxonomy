@@ -1,0 +1,152 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+Raicuparta/two-forks-vr,175,358fa992df384cd3f29106654e197ed83d4b1117,TwoForksVr/src/Limbs/VrHand.cs,modified,15,11,26,"@@ -11,7 +11,6 @@ public class VrHand : MonoBehaviour
+     {
+         private FakeParenting handRootFakeParenting;
+         private bool isDominant;
+-        private vgPlayerNavigationController navigationController;
+         private Transform rootBone;
+ 
+         public static VrHand Create(Transform parent, bool isNonDominant = false)
+@@ -27,7 +26,7 @@ public static VrHand Create(Transform parent, bool isNonDominant = false)
+             return instance;
+         }
+ 
+-        public void SetUp(Transform playerRootBone, Material armsMaterial, vgPlayerController playerController)
++        public void SetUp(Transform playerRootBone, Material armsMaterial)
+         {
+             // Need to deactive and reactivate the object to make SteamVR_Behaviour_Pose work properly.
+             gameObject.SetActive(false);
+@@ -38,22 +37,13 @@ public void SetUp(Transform playerRootBone, Material armsMaterial, vgPlayerContr
+                 material.CopyPropertiesFromMaterial(armsMaterial);
+             }
+ 
+-            if (playerController) navigationController = playerController.navController;
+-
+             rootBone = playerRootBone;
+ 
+             SetUpHandedness();
+ 
+             gameObject.SetActive(true);
+         }
+ 
+-        private void Update()
+-        {
+-            if (!navigationController || !handRootFakeParenting) return;
+-
+-            handRootFakeParenting.enabled = navigationController.enabled;
+-        }
+-
+         private void OnEnable()
+         {
+             VrSettings.Config.SettingChanged += HandleLeftHandedModeSettingChanged;
+@@ -137,5 +127,19 @@ private void EnableAnimatedHand(string handName)
+             if (!clonedArmBone) Logs.LogError(""found no cloned arm bone"");
+             FollowAllChildrenRecursive(clonedArmBone, armBone, handName);
+         }
++
++        public void StopTrackingOriginalHands()
++        {
++            if (!handRootFakeParenting) return;
++
++            handRootFakeParenting.enabled = false;
++        }
++
++        public void StartTrackingOriginalHands()
++        {
++            if (!handRootFakeParenting) return;
++
++            handRootFakeParenting.enabled = true;
++        }
+     }
+ }
+\ No newline at end of file"
+Raicuparta/two-forks-vr,175,358fa992df384cd3f29106654e197ed83d4b1117,TwoForksVr/src/Limbs/VrLimbManager.cs,modified,14,2,16,"@@ -37,8 +37,8 @@ public void SetUp(vgPlayerController playerController, Camera camera)
+             navigationController = playerController ? playerController.navController : null;
+             var skeletonRoot = GetSkeletonRoot(playerTransform);
+             var armsMaterial = GetArmsMaterial(playerTransform);
+-            DominantHand.SetUp(skeletonRoot, armsMaterial, playerController);
+-            NonDominantHand.SetUp(skeletonRoot, armsMaterial, playerController);
++            DominantHand.SetUp(skeletonRoot, armsMaterial);
++            NonDominantHand.SetUp(skeletonRoot, armsMaterial);
+             Laser.SetUp(camera);
+             UpdateHandedness();
+         }
+@@ -107,5 +107,17 @@ private Transform GetSkeletonRoot(Transform playerTransform)
+ 
+             return henryTransform.Find(""henryroot"");
+         }
++
++        public void StopTrackingOriginalHands()
++        {
++            NonDominantHand.StopTrackingOriginalHands();
++            DominantHand.StopTrackingOriginalHands();
++        }
++
++        public void StartTrackingOriginalHands()
++        {
++            NonDominantHand.StartTrackingOriginalHands();
++            DominantHand.StartTrackingOriginalHands();
++        }
+     }
+ }
+\ No newline at end of file"
+Raicuparta/two-forks-vr,175,358fa992df384cd3f29106654e197ed83d4b1117,TwoForksVr/src/PlayerBody/BodyRendererManager.cs,modified,7,1,8,"@@ -1,6 +1,7 @@
+ ﻿using System;
+ using TwoForksVr.Assets;
+ using TwoForksVr.Helpers;
++using TwoForksVr.Limbs;
+ using TwoForksVr.Locomotion;
+ using TwoForksVr.Settings;
+ using TwoForksVr.Stage;
+@@ -18,15 +19,18 @@ public class BodyRendererManager : MonoBehaviour
+         private Shader cutoutShader;
+         private bool isCountingTimeToShowArms;
+         private bool isShowingFullBody;
++        private VrLimbManager limbManager;
+         private vgPlayerNavigationController navigationController;
+         private SkinnedMeshRenderer playerRenderer;
+         private TeleportController teleportController;
+         private float timeToShowArms;
+ 
+-        public static BodyRendererManager Create(VrStage stage, TeleportController teleportController)
++        public static BodyRendererManager Create(VrStage stage, TeleportController teleportController,
++            VrLimbManager limbManager)
+         {
+             var instance = stage.gameObject.AddComponent<BodyRendererManager>();
+             instance.teleportController = teleportController;
++            instance.limbManager = limbManager;
+             return instance;
+         }
+ 
+@@ -78,6 +82,7 @@ private void UpdateArmsVisibility()
+ 
+             timeToShowArms = 0;
+             SetArmsTexture();
++            limbManager.StopTrackingOriginalHands();
+         }
+ 
+         private void UpdateIsShowingArms()
+@@ -92,6 +97,7 @@ private void UpdateIsShowingArms()
+                 timeToShowArms = 0;
+                 isCountingTimeToShowArms = false;
+                 SetArmsTexture();
++                limbManager.StartTrackingOriginalHands();
+             }
+         }
+ "
+Raicuparta/two-forks-vr,175,358fa992df384cd3f29106654e197ed83d4b1117,TwoForksVr/src/Stage/VrStage.cs,modified,2,2,4,"@@ -61,13 +61,13 @@ public static void Create(Transform parent)
+             instance.follow = FakeParenting.Create(stageParent.transform);
+             instance.interactiveUiTarget = InteractiveUiTarget.Create(instance);
+             instance.staticUiTarget = StaticUiTarget.Create(instance);
+-            // instance.fadeOverlay = FadeOverlay.Create(instance);
+             instance.teleportController = TeleportController.Create(instance, instance.limbManager);
+             instance.turningController =
+                 TurningController.Create(instance, instance.teleportController, instance.limbManager);
+             instance.veryLateUpdateManager = VeryLateUpdateManager.Create(instance);
+             instance.roomScaleBodyTransform = RoomScaleBodyTransform.Create(instance, instance.teleportController);
+-            instance.bodyRendererManager = BodyRendererManager.Create(instance, instance.teleportController);
++            instance.bodyRendererManager =
++                BodyRendererManager.Create(instance, instance.teleportController, instance.limbManager);
+             instance.vrSettingsMenu = VrSettingsMenu.Create(instance);
+             instance.bindingsManager = BindingsManager.Create(instance);
+ "

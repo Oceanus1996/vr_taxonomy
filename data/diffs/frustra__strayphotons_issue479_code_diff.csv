@@ -1,0 +1,490 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+frustra/strayphotons,479,a5204a8ab738f5e8132274403de06a4d32cc24ed,assets/scenes/templates/blocks/charge_cell.json,modified,36,2,38,"@@ -19,7 +19,7 @@
+ 			],
+ 			""dynamic"": true
+ 		},
+-		""signal_output"": {
++		""signal_output"": { 
+ 			""charge_level"": 0,
+ 			""cell_output_r"": 0,
+ 			""cell_output_g"": 0,
+@@ -40,7 +40,7 @@
+ 				""onTick"": ""charge_cell"",
+ 				""parameters"": {
+ 					""max_charge_level"": 1000,
+-					""output_power"": ""5"",
++					""output_power_r"": ""5"",
+ 					""charge_signal_r"": ""input-sensor.Icosphere/light_value_r"",
+ 					""charge_signal_g"": ""input-sensor.Icosphere/light_value_g"",
+ 					""charge_signal_b"": ""input-sensor.Icosphere/light_value_b""
+@@ -192,6 +192,40 @@
+ 			""laser_sensor"": {
+ 				""threshold"": [0.5, 0.5, 0.5]
+ 			}
++		},
++		{
++			""name"": ""charge_display"",
++			""transform"": {
++				""parent"": ""scoperoot"",
++				""scale"": [0.13, 0.05, 1],
++				""translate"": [0, 0.08, 0]
++			},
++			""gui"": {
++				""windowName"": ""signal_display""
++			},
++			""screen"": {
++				""luminance"": [3, 3, 3]
++			},
++			""signal_bindings"": {
++				""text_color_g"": ""0.5093 * (!scoperoot/discharging && scoperoot/charge_level != 0)"",
++				""text_color_r"": ""scoperoot/discharging || scoperoot/charge_level == 0"",
++				""max_value"": ""scoperoot/max_charge_level"",
++				""value"": ""scoperoot/charge_level""
++			},
++			""script"": [
++				{
++					""parameters"": {
++						""source"": ""world_gui""
++					},
++					""prefab"": ""template""
++				},
++				{
++					""onTick"": ""rotate_to_entity"",
++					""parameters"": {
++						""target"": ""player:head""
++					}
++				}
++			]
+ 		}
+ 	]
+ }"
+frustra/strayphotons,479,a5204a8ab738f5e8132274403de06a4d32cc24ed,assets/scripts/tests/blackhole2.txt,modified,1,0,1,"@@ -7,6 +7,7 @@ rotate player:flatview -35 1 0 0
+ translate player:player 0.5 0 -0.6
+ stepphysics
+ syncscene 2
++steplogic
+ stepphysics
+ stepgraphics
+ screenshot blackhole2_table_1.png"
+frustra/strayphotons,479,a5204a8ab738f5e8132274403de06a4d32cc24ed,src/core/ecs/SignalExpression.cc,modified,38,16,54,"@@ -21,7 +21,7 @@ namespace ecs {
+ 
+     struct PrecedenceTable {
+         constexpr PrecedenceTable() {
+-            // Unary - operator
++            // Right associative unary operators (-X and !X)
+             values[u8'_'] = 1;
+ 
+             // Math operators
+@@ -144,7 +144,7 @@ namespace ecs {
+                 expr.nodes[index].startToken = startToken;
+                 expr.nodes[index].startToken = tokenIndex;
+                 expr.nodeDebug[index] = ""( "" + expr.nodeDebug[index] + "" )"";
+-            } else if (token == ""-"" && index < 0) {
++            } else if (index < 0 && (token == ""-"" || token == ""!"")) {
+                 size_t startToken = tokenIndex;
+ 
+                 tokenIndex++;
+@@ -156,20 +156,38 @@ namespace ecs {
+                 }
+ 
+                 auto *constantNode = std::get_if<SignalExpression::ConstantNode>(&expr.nodes[inputIndex]);
+-                if (constantNode) {
+-                    constantNode->value *= -1;
+-                    index = inputIndex;
+-                    expr.nodes[index].startToken = startToken;
+-                    expr.nodeDebug[index] = ""-"" + expr.nodeDebug[index];
+-                } else {
+-                    index = expr.nodes.size();
+-                    expr.nodes.emplace_back(SignalExpression::OneInputOperation{inputIndex,
+-                                                [](double input) {
+-                                                    return -input;
+-                                                }},
+-                        startToken,
+-                        tokenIndex);
+-                    expr.nodeDebug.emplace_back(""-"" + expr.nodeDebug[inputIndex]);
++                if (token == ""-"") {
++                    if (constantNode) {
++                        constantNode->value *= -1;
++                        index = inputIndex;
++                        expr.nodes[index].startToken = startToken;
++                        expr.nodeDebug[index] = ""-"" + expr.nodeDebug[index];
++                    } else {
++                        index = expr.nodes.size();
++                        expr.nodes.emplace_back(SignalExpression::OneInputOperation{inputIndex,
++                                                    [](double input) {
++                                                        return -input;
++                                                    }},
++                            startToken,
++                            tokenIndex);
++                        expr.nodeDebug.emplace_back(""-"" + expr.nodeDebug[inputIndex]);
++                    }
++                } else if (token == ""!"") {
++                    if (constantNode) {
++                        constantNode->value = constantNode->value >= 0.5 ? 0.0 : 1.0;
++                        index = inputIndex;
++                        expr.nodes[index].startToken = startToken;
++                        expr.nodeDebug[index] = ""!"" + expr.nodeDebug[index];
++                    } else {
++                        index = expr.nodes.size();
++                        expr.nodes.emplace_back(SignalExpression::OneInputOperation{inputIndex,
++                                                    [](double input) {
++                                                        return input >= 0.5 ? 0.0 : 1.0;
++                                                    }},
++                            startToken,
++                            tokenIndex);
++                        expr.nodeDebug.emplace_back(""!"" + expr.nodeDebug[inputIndex]);
++                    }
+                 }
+             } else if (token == ""sin"" || token == ""cos"" || token == ""tan"") {
+                 if (index >= 0) {
+@@ -500,6 +518,10 @@ namespace ecs {
+         size_t tokenStart = 0;
+         for (size_t tokenEnd = 0; tokenEnd < exprView.size(); tokenEnd++) {
+             const char &ch = exprView[tokenEnd];
++            if (tokenEnd == tokenStart + 1 && exprView[tokenStart] == '!' && ch != '=') {
++                tokens.emplace_back(exprView.substr(tokenStart, 1));
++                tokenStart++;
++            }
+             if (std::isspace(ch)) {
+                 if (tokenEnd > tokenStart) tokens.emplace_back(exprView.substr(tokenStart, tokenEnd - tokenStart));
+                 tokenStart = tokenEnd + 1;"
+frustra/strayphotons,479,a5204a8ab738f5e8132274403de06a4d32cc24ed,src/graphics/graphics/gui/definitions/SignalDisplayGui.cc,modified,22,10,32,"@@ -12,13 +12,15 @@ namespace sp {
+ 
+     void SignalDisplayGui::PreDefine() {
+         ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+-        ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
++        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0);
++        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+         PushFont(Font::Monospace, 32);
+     }
+ 
+     void SignalDisplayGui::PostDefine() {
+         ImGui::PopFont();
+-        ImGui::PopStyleColor(2);
++        ImGui::PopStyleVar(2);
++        ImGui::PopStyleColor();
+     }
+ 
+     void SignalDisplayGui::DefineContents() {
+@@ -27,22 +29,32 @@ namespace sp {
+ 
+         auto ent = signalEntity.Get(lock);
+         std::string text = ""error"";
++        ImVec4 textColor(1, 0, 0, 1);
+         if (ent.Exists(lock)) {
++            auto maxValue = ecs::SignalBindings::GetSignal(lock, ent, ""max_value"");
+             auto value = ecs::SignalBindings::GetSignal(lock, ent, ""value"");
+-            ImVec4 textColor(0, 0, 0, 1);
+             textColor.x = ecs::SignalBindings::GetSignal(lock, ent, ""text_color_r"");
+             textColor.y = ecs::SignalBindings::GetSignal(lock, ent, ""text_color_g"");
+             textColor.z = ecs::SignalBindings::GetSignal(lock, ent, ""text_color_b"");
+             std::stringstream ss;
+-            ss << std::fixed << std::setprecision(2) << value << ""mW"";
++            if (maxValue != 0.0) {
++                ss << std::fixed << std::setprecision(2) << (value / maxValue * 100.0) << ""%"";
++            } else {
++                ss << std::fixed << std::setprecision(2) << value << ""mW"";
++            }
+             text = ss.str();
+-            ImGui::PushStyleColor(ImGuiCol_Text, textColor);
+-        } else {
+-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 0, 0, 1));
+         }
+-        auto textWidth = ImGui::CalcTextSize(text.c_str()).x;
+-        ImGui::SetCursorPosX((ImGui::GetWindowSize().x - textWidth) * 0.5f);
++
++        ImGui::PushStyleColor(ImGuiCol_Text, textColor);
++        ImGui::PushStyleColor(ImGuiCol_Border, textColor);
++        ImGui::BeginChild(name.c_str(), ImVec2(-FLT_MIN, -FLT_MIN), true);
++
++        auto textSize = ImGui::CalcTextSize(text.c_str());
++        ImGui::SetCursorPosX((ImGui::GetWindowSize().x - textSize.x) * 0.5f);
++        ImGui::SetCursorPosY((ImGui::GetWindowSize().y - textSize.y) * 0.5f);
+         ImGui::Text(""%s"", text.c_str());
+-        ImGui::PopStyleColor();
++
++        ImGui::EndChild();
++        ImGui::PopStyleColor(2);
+     }
+ } // namespace sp"
+frustra/strayphotons,479,a5204a8ab738f5e8132274403de06a4d32cc24ed,src/graphics/graphics/vulkan/render_graph/Resources.cc,modified,1,1,2,"@@ -139,7 +139,7 @@ namespace sp::vulkan::render_graph {
+         ResourceID result = InvalidResource;
+         uint32 getFrameIndex = (frameIndex + RESOURCE_FRAME_COUNT - framesAgo) % RESOURCE_FRAME_COUNT;
+ 
+-        if (name.find('.') != string_view::npos) {
++        if (name.find(':') == string_view::npos && name.find('.') != string_view::npos) {
+             // Any resource name with a dot is assumed to be fully qualified.
+             auto lastDot = name.rfind('.');
+             auto scopeName = name.substr(0, lastDot);"
+frustra/strayphotons,479,a5204a8ab738f5e8132274403de06a4d32cc24ed,src/graphics/graphics/vulkan/render_passes/Emissive.cc,modified,4,1,5,"@@ -74,7 +74,10 @@ namespace sp::vulkan::renderer {
+                         continue;
+                     }
+ 
+-                    if (builder.GetID(textureName, false) == InvalidResource) continue;
++                    if (builder.GetID(textureName, false) == InvalidResource) {
++                        Warnf(""Screen missing resource: '%s'"", textureName);
++                        continue;
++                    }
+ 
+                     auto id = builder.Read(textureName, Access::FragmentShaderSampleImage);
+ "
+frustra/strayphotons,479,a5204a8ab738f5e8132274403de06a4d32cc24ed,src/graphics/graphics/vulkan/render_passes/Lighting.cc,modified,1,1,2,"@@ -502,7 +502,7 @@ namespace sp::vulkan::renderer {
+                     }
+ 
+                     // Check if any optics are visible from the end of the current light path.
+-                    for (uint32_t opticIndex = 0; opticIndex < optics.size(); opticIndex++) {
++                    for (uint32_t opticIndex = 0; opticIndex < optics.size() && opticIndex < MAX_OPTICS; opticIndex++) {
+                         if (readbackLights.size() >= MAX_LIGHTS) break;
+                         if (vLight.opticIndex && opticIndex == *vLight.opticIndex) continue;
+                         if (visibility[lightIndex][opticIndex] == 1) {"
+frustra/strayphotons,479,a5204a8ab738f5e8132274403de06a4d32cc24ed,src/physx/physx/PhysxManager.cc,modified,16,7,23,"@@ -303,11 +303,16 @@ namespace sp {
+                             if (transform != userData->pose) {
+                                 PxTransform pxTransform(GlmVec3ToPxVec3(transform.GetPosition()),
+                                     GlmQuatToPxQuat(transform.GetRotation()));
+-                                auto dynamic = actor->is<PxRigidDynamic>();
+-                                if (dynamic && ph.kinematic) {
+-                                    dynamic->setKinematicTarget(pxTransform);
++                                if (pxTransform.isSane()) {
++                                    auto dynamic = actor->is<PxRigidDynamic>();
++                                    if (dynamic && ph.kinematic) {
++                                        dynamic->setKinematicTarget(pxTransform);
++                                    } else {
++                                        actor->setGlobalPose(pxTransform);
++                                    }
+                                 } else {
+-                                    actor->setGlobalPose(pxTransform);
++                                    Errorf(""Physics Transform Snapshot is not valid for entity: %s"",
++                                        ecs::ToString(lock, ent));
+                                 }
+                             }
+                         }
+@@ -717,10 +722,14 @@ namespace sp {
+         if (glm::any(glm::notEqual(transform.matrix, userData->pose.matrix, 1e-5f))) {
+             // Logf(""Updating actor position: %s"", ecs::ToString(lock, e));
+             PxTransform pxTransform(GlmVec3ToPxVec3(transform.GetPosition()), GlmQuatToPxQuat(transform.GetRotation()));
+-            if (dynamic && ph.kinematic) {
+-                dynamic->setKinematicTarget(pxTransform);
++            if (pxTransform.isSane()) {
++                if (dynamic && ph.kinematic) {
++                    dynamic->setKinematicTarget(pxTransform);
++                } else {
++                    actor->setGlobalPose(pxTransform);
++                }
+             } else {
+-                actor->setGlobalPose(pxTransform);
++                Errorf(""Actor transform pose is not valid for entity: %s"", ecs::ToString(lock, e));
+             }
+ 
+             userData->velocity = (transform.GetPosition() - userData->pose.GetPosition()) *"
+frustra/strayphotons,479,a5204a8ab738f5e8132274403de06a4d32cc24ed,src/scripts/scripts/EditorScripts.cc,modified,7,7,14,"@@ -59,13 +59,13 @@ namespace sp::scripts {
+ 
+                         *sharedEntity = newEntity;
+                     });
+-                GetSceneManager().QueueAction(SceneAction::ApplyStagingScene,
+-                    scene.data->name,
+-                    [ent, target = event.source, sharedEntity](auto lock) {
+-                        ecs::EventBindings::SendEvent(lock,
+-                            target,
+-                            ecs::Event{INTERACT_EVENT_INTERACT_GRAB, ent, sharedEntity->Get(lock)});
+-                    });
++                GetSceneManager().QueueAction(SceneAction::ApplyStagingScene, scene.data->name);
++                GetSceneManager().QueueAction([ent, target = event.source, sharedEntity] {
++                    auto lock = ecs::StartTransaction<ecs::SendEventsLock>();
++                    ecs::EventBindings::SendEvent(lock,
++                        target,
++                        ecs::Event{INTERACT_EVENT_INTERACT_GRAB, ent, sharedEntity->Get(lock)});
++                });
+             }
+         }
+     };"
+frustra/strayphotons,479,a5204a8ab738f5e8132274403de06a4d32cc24ed,src/scripts/scripts/InteractionScripts.cc,modified,0,1,1,"@@ -107,7 +107,6 @@ namespace sp::scripts {
+                         joint.remoteOffset.SetPosition(
+                             invParentRotate * (transform.GetPosition() - parentTransform.GetPosition()));
+                         joint.remoteOffset.SetRotation(invParentRotate * transform.GetRotation());
+-                        Logf(""Adding joint: %s / %s"", joint.type, joint.target.Name().String());
+                         joints.Add(joint);
+                     } else {
+                         Errorf(""Unsupported grab event type: %s"", event.toString());"
+frustra/strayphotons,479,a5204a8ab738f5e8132274403de06a4d32cc24ed,src/scripts/scripts/MiscScripts.cc,modified,38,41,79,"@@ -124,6 +124,8 @@ namespace sp::scripts {
+             auto relativeTF = targetTF.GetRelativeTransform(lock, parent);
+ 
+             auto targetForward = transform.pose.GetPosition() - relativeTF.GetPosition();
++            if (targetForward == glm::vec3(0)) return;
++            targetForward = glm::normalize(targetForward);
+ 
+             auto currentUp = glm::vec3(0, 1, 0);
+             auto upEnt = upEntityRef.Get(lock);
+@@ -147,69 +149,64 @@ namespace sp::scripts {
+ 
+     struct ChargeCell {
+         // Charge level is light units * ticks
+-        glm::dvec3 chargeLevel;
+-        double maxChargePower = 1.0;
+-        SignalExpression outputPower;
++        double chargeLevel = 0.0;
++        double maxChargeLevel = 1.0;
++        SignalExpression outputPowerRed;
++        SignalExpression outputPowerGreen;
++        SignalExpression outputPowerBlue;
+         SignalExpression chargeSignalRed;
+         SignalExpression chargeSignalGreen;
+         SignalExpression chargeSignalBlue;
+-
+         bool discharging = false;
+ 
+         void OnTick(ScriptState &state, Lock<WriteAll> lock, Entity ent, chrono_clock::duration interval) {
+             if (!ent.Has<SignalOutput>(lock)) return;
+ 
++            glm::dvec3 chargeColor = {std::max(0.0, chargeSignalRed.Evaluate(lock)),
++                std::max(0.0, chargeSignalGreen.Evaluate(lock)),
++                std::max(0.0, chargeSignalBlue.Evaluate(lock))};
++            double chargePower = chargeColor.r + chargeColor.g + chargeColor.b;
++            chargeLevel += chargePower;
++
++            if (chargePower <= 0.0 || chargeLevel > maxChargeLevel) {
++                discharging = true;
++            }
++
+             glm::dvec3 outputColor;
+-            if (maxChargePower > 0) {
+-                glm::dvec3 chargeColor = {std::max(0.0, chargeSignalRed.Evaluate(lock)),
+-                    std::max(0.0, chargeSignalGreen.Evaluate(lock)),
+-                    std::max(0.0, chargeSignalBlue.Evaluate(lock))};
+-                chargeLevel += chargeColor;
+-
+-                double chargePower = chargeLevel.r + chargeLevel.g + chargeLevel.b;
+-
+-                if (discharging || chargeColor == glm::dvec3(0)) {
+-                    auto targetPower = std::max(0.0, outputPower.Evaluate(lock));
+-                    if (targetPower < chargePower) {
+-                        outputColor = chargeLevel * targetPower / chargePower;
+-                        chargeLevel -= outputColor;
+-                        chargePower -= targetPower;
++            if (discharging) {
++                outputColor = {std::max(0.0, outputPowerRed.Evaluate(lock)),
++                    std::max(0.0, outputPowerGreen.Evaluate(lock)),
++                    std::max(0.0, outputPowerBlue.Evaluate(lock))};
++                double outputPower = outputColor.r + outputColor.g + outputColor.b;
++                if (outputPower > 0 && discharging) {
++                    if (outputPower > chargeLevel) {
++                        outputColor *= chargeLevel / outputPower;
++                        chargeLevel = 0;
++                        discharging = false;
+                     } else {
+-                        outputColor = chargeLevel;
+-                        chargeLevel = {};
+-                        chargePower = 0;
+-                        if (discharging) {
+-                            discharging = false;
+-                            Logf(""Recharging: %f, %s"",
+-                                chargeLevel.r + chargeLevel.g + chargeLevel.b,
+-                                glm::to_string(chargeLevel));
+-                        }
+-                    }
+-                }
+-
+-                if (chargePower > maxChargePower) {
+-                    chargeLevel *= (maxChargePower / chargePower);
+-                    chargePower = maxChargePower;
+-                    if (!discharging) {
+-                        discharging = true;
+-                        Logf(""Discharging: %f, %s"",
+-                            chargeLevel.r + chargeLevel.g + chargeLevel.b,
+-                            glm::to_string(chargeLevel));
++                        chargeLevel -= outputPower;
+                     }
+                 }
+             }
+ 
++            chargeLevel = std::clamp(chargeLevel, 0.0, maxChargeLevel);
++
+             auto &signalOutput = ent.Get<SignalOutput>(lock);
+-            signalOutput.SetSignal(""charge_level"", chargeLevel.r + chargeLevel.g + chargeLevel.b);
++            signalOutput.SetSignal(""discharging"", discharging);
++            signalOutput.SetSignal(""charge_level"", chargeLevel);
++            signalOutput.SetSignal(""max_charge_level"", maxChargeLevel);
+             signalOutput.SetSignal(""cell_output_r"", outputColor.r);
+             signalOutput.SetSignal(""cell_output_g"", outputColor.g);
+             signalOutput.SetSignal(""cell_output_b"", outputColor.b);
+         }
+     };
+     StructMetadata MetadataChargeCell(typeid(ChargeCell),
++        StructField::New(""discharging"", &ChargeCell::discharging),
+         StructField::New(""charge_level"", &ChargeCell::chargeLevel),
+-        StructField::New(""max_charge_level"", &ChargeCell::maxChargePower),
+-        StructField::New(""output_power"", &ChargeCell::outputPower),
++        StructField::New(""max_charge_level"", &ChargeCell::maxChargeLevel),
++        StructField::New(""output_power_r"", &ChargeCell::outputPowerRed),
++        StructField::New(""output_power_g"", &ChargeCell::outputPowerGreen),
++        StructField::New(""output_power_b"", &ChargeCell::outputPowerBlue),
+         StructField::New(""charge_signal_r"", &ChargeCell::chargeSignalRed),
+         StructField::New(""charge_signal_g"", &ChargeCell::chargeSignalGreen),
+         StructField::New(""charge_signal_b"", &ChargeCell::chargeSignalBlue));"
+frustra/strayphotons,479,a5204a8ab738f5e8132274403de06a4d32cc24ed,tests/unit/signal-binding.cc,modified,18,4,22,"@@ -16,6 +16,7 @@ namespace SignalBindingTests {
+     const std::string TEST_SIGNAL_ACTION4 = ""test-action4"";
+     const std::string TEST_SIGNAL_ACTION5 = ""test-action5"";
+     const std::string TEST_SIGNAL_ACTION6 = ""test-action6"";
++    const std::string TEST_SIGNAL_ACTION7 = ""test-action7"";
+ 
+     void TrySetSignals() {
+         Tecs::Entity player, hand, unknown;
+@@ -49,6 +50,9 @@ namespace SignalBindingTests {
+             playerBindings.SetBinding(TEST_SIGNAL_ACTION4, ""3 +4 *2 /(1 - -5)+1 /0"");
+             playerBindings.SetBinding(TEST_SIGNAL_ACTION5, ""cos(max(2,3)/3 *3.14159265359) * -1 ? 42 : 0.1"");
+             playerBindings.SetBinding(TEST_SIGNAL_ACTION6, ""(0.2 + 0.3 && 2 == 1 * 2) + 0.6 == 2 - 0.4"");
++            playerBindings.SetBinding(TEST_SIGNAL_ACTION7,
++                ""! 10 + 1 || !player/device2_key != !0"",
++                ecs::Name(""player"", """"));
+ 
+             // Test a bunch of invalid expressions to make sure they don't crash the parser
+             playerBindings.SetBinding(""test"", ""cos("");
+@@ -102,28 +106,36 @@ namespace SignalBindingTests {
+ 
+             auto &expr4 = playerBindings.GetBinding(TEST_SIGNAL_ACTION4);
+             AssertEqual(expr4.expr, ""3 +4 *2 /(1 - -5)+1 /0"");
+-            AssertEqual(expr4.nodes.size(), 13u, ""Expected 3 expression nodes"");
++            AssertEqual(expr4.nodes.size(), 13u, ""Expected 13 expression nodes"");
+             AssertEqual(expr4.rootIndex, 12, ""Expected expression root node to be 12"");
+             AssertEqual(expr4.nodeDebug[expr4.rootIndex],
+                 ""3 + 4 * 2 / ( 1 - -5 ) + 1 / 0"",
+                 ""Unexpected expression node"");
+ 
+             auto &expr5 = playerBindings.GetBinding(TEST_SIGNAL_ACTION5);
+             AssertEqual(expr5.expr, ""cos(max(2,3)/3 *3.14159265359) * -1 ? 42 : 0.1"");
+-            AssertEqual(expr5.nodes.size(), 13u, ""Expected 3 expression nodes"");
++            AssertEqual(expr5.nodes.size(), 13u, ""Expected 13 expression nodes"");
+             AssertEqual(expr5.rootIndex, 12, ""Expected expression root node to be 12"");
+             AssertEqual(expr5.nodeDebug[expr5.rootIndex],
+                 ""cos( max( 2 , 3 ) / 3 * 3.14159265359 ) * -1 ? 42 : 0.1"",
+                 ""Unexpected expression node"");
+ 
+             auto &expr6 = playerBindings.GetBinding(TEST_SIGNAL_ACTION6);
+             AssertEqual(expr6.expr, ""(0.2 + 0.3 && 2 == 1 * 2) + 0.6 == 2 - 0.4"");
+-            AssertEqual(expr6.nodes.size(), 15u, ""Expected 3 expression nodes"");
+-            AssertEqual(expr6.rootIndex, 14, ""Expected expression root node to be 13"");
++            AssertEqual(expr6.nodes.size(), 15u, ""Expected 15 expression nodes"");
++            AssertEqual(expr6.rootIndex, 14, ""Expected expression root node to be 14"");
+             AssertEqual(expr6.nodeDebug[expr6.rootIndex],
+                 ""( 0.2 + 0.3 && 2 == 1 * 2 ) + 0.6 == 2 - 0.4"",
+                 ""Unexpected expression node"");
+ 
++            auto &expr7 = playerBindings.GetBinding(TEST_SIGNAL_ACTION7);
++            AssertEqual(expr7.expr, ""! 10 + 1 || !player/device2_key != !0"");
++            AssertEqual(expr7.nodes.size(), 8u, ""Expected 8 expression nodes"");
++            AssertEqual(expr7.rootIndex, 7, ""Expected expression root node to be 7"");
++            AssertEqual(expr7.nodeDebug[expr7.rootIndex],
++                ""!10 + 1 || !player:player/device2_key != !0"",
++                ""Unexpected expression node"");
++
+             auto &handBindings = hand.Get<ecs::SignalBindings>(lock);
+             auto &expr3 = handBindings.GetBinding(TEST_SIGNAL_ACTION3);
+             AssertEqual(expr3.expr, ""foo:unknown/device1_button"", ""Expected expression to be set"");
+@@ -174,6 +186,8 @@ namespace SignalBindingTests {
+             AssertEqual(val, 42.0, ""Expected signal to match trig expression"");
+             val = ecs::SignalBindings::GetSignal(lock, player, TEST_SIGNAL_ACTION6);
+             AssertEqual(val, 1.0, ""Expected signal to match comparison expression"");
++            val = ecs::SignalBindings::GetSignal(lock, player, TEST_SIGNAL_ACTION7);
++            AssertEqual(val, 1.0, ""Expected signal to match comparison expression"");
+             val = ecs::SignalBindings::GetSignal(lock, player, ""foo"");
+             AssertEqual(val, 0.0, ""Expected unbound signal to have 0 value"");
+ "

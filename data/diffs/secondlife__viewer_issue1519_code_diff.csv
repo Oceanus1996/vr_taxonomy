@@ -1,0 +1,198 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+secondlife/viewer,1519,e2ff68d,indra/newview/lltoolgrab.cpp,modified,1,1,2,"@@ -147,7 +147,7 @@ bool LLToolGrabBase::handleMouseDown(S32 x, S32 y, MASK mask)
+     if (!gAgent.leftButtonGrabbed() || ((mask & DEFAULT_GRAB_MASK) != 0 && !gAgentCamera.cameraMouselook()))
+     {
+         // can grab transparent objects (how touch event propagates, scripters rely on this)
+-        gViewerWindow->pickAsync(x, y, mask, pickCallback, /*bool pick_transparent*/ true);
++        gViewerWindow->pickAsync(x, y, mask, pickCallback, true, false, true);
+     }
+     mClickedInMouselook = gAgentCamera.cameraMouselook();
+ "
+secondlife/viewer,1519,34743c4,indra/newview/lltoolselect.cpp,modified,4,5,9,"@@ -55,25 +55,24 @@ LLToolSelect::LLToolSelect( LLToolComposite* composite )
+ :   LLTool( std::string(""Select""), composite ),
+     mIgnoreGroup( false )
+ {
+- }
++}
+ 
+ // True if you selected an object.
+ bool LLToolSelect::handleMouseDown(S32 x, S32 y, MASK mask)
+ {
+     // do immediate pick query
+     bool pick_rigged = false; //gSavedSettings.getBOOL(""AnimatedObjectsAllowLeftClick"");
+-    bool pick_transparent = gSavedSettings.getBOOL(""SelectInvisibleObjects"");
+-    bool pick_reflection_probe = gSavedSettings.getBOOL(""SelectReflectionProbes"");
++    static LLCachedControl<bool> select_invisible_objects(gSavedSettings, ""SelectInvisibleObjects"");
++    static LLCachedControl<bool> select_reflection_probes(gSavedSettings, ""SelectReflectionProbes"");
+ 
+-    mPick = gViewerWindow->pickImmediate(x, y, pick_transparent, pick_rigged, false, true, pick_reflection_probe);
++    mPick = gViewerWindow->pickImmediate(x, y, select_invisible_objects, pick_rigged, false, true, select_reflection_probes);
+ 
+     // Pass mousedown to agent
+     LLTool::handleMouseDown(x, y, mask);
+ 
+     return mPick.getObject().notNull();
+ }
+ 
+-
+ // static
+ LLObjectSelectionHandle LLToolSelect::handleObjectSelection(const LLPickInfo& pick, bool ignore_group, bool temp_select, bool select_root)
+ {"
+secondlife/viewer,1519,34743c4,indra/newview/llviewerwindow.cpp,modified,8,8,16,"@@ -4255,15 +4255,15 @@ void LLViewerWindow::pickAsync( S32 x,
+                                 bool pick_unselectable,
+                                 bool pick_reflection_probes)
+ {
++    static LLCachedControl<bool> select_invisible_objects(gSavedSettings, ""SelectInvisibleObjects"");
+     // ""Show Debug Alpha"" means no object actually transparent
+     bool in_build_mode = LLFloaterReg::instanceVisible(""build"");
+-    if (LLDrawPoolAlpha::sShowDebugAlpha
+-        || (in_build_mode && gSavedSettings.getBOOL(""SelectInvisibleObjects"")))
++    if (LLDrawPoolAlpha::sShowDebugAlpha || (in_build_mode && select_invisible_objects))
+     {
+         pick_transparent = true;
+     }
+ 
+-    LLPickInfo pick_info(LLCoordGL(x, y_from_bot), mask, pick_transparent, pick_rigged, false, pick_reflection_probes, pick_unselectable, true, callback);
++    LLPickInfo pick_info(LLCoordGL(x, y_from_bot), mask, pick_transparent, pick_rigged, false, pick_reflection_probes, true, pick_unselectable, callback);
+     schedulePick(pick_info);
+ }
+ 
+@@ -4287,7 +4287,6 @@ void LLViewerWindow::schedulePick(LLPickInfo& pick_info)
+     mWindow->delayInputProcessing();
+ }
+ 
+-
+ void LLViewerWindow::performPick()
+ {
+     if (!mPicks.empty())
+@@ -4321,16 +4320,17 @@ void LLViewerWindow::returnEmptyPicks()
+ // Performs the GL object/land pick.
+ LLPickInfo LLViewerWindow::pickImmediate(S32 x, S32 y_from_bot, bool pick_transparent, bool pick_rigged, bool pick_particle, bool pick_unselectable, bool pick_reflection_probe)
+ {
++    static LLCachedControl<bool> select_invisible_objects(gSavedSettings, ""SelectInvisibleObjects"");
+     bool in_build_mode = LLFloaterReg::instanceVisible(""build"");
+-    if ((in_build_mode && gSavedSettings.getBOOL(""SelectInvisibleObjects"")) || LLDrawPoolAlpha::sShowDebugAlpha)
++    if ((in_build_mode && select_invisible_objects) || LLDrawPoolAlpha::sShowDebugAlpha)
+     {
+         // build mode allows interaction with all transparent objects
+         // ""Show Debug Alpha"" means no object actually transparent
+         pick_transparent = true;
+     }
+ 
+     // shortcut queueing in mPicks and just update mLastPick in place
+-    MASK    key_mask = gKeyboard->currentMask(true);
++    MASK key_mask = gKeyboard->currentMask(true);
+     mLastPick = LLPickInfo(LLCoordGL(x, y_from_bot), key_mask, pick_transparent, pick_rigged, pick_particle, pick_reflection_probe, true, false, NULL);
+     mLastPick.fetchResults();
+ 
+@@ -6050,14 +6050,14 @@ LLPickInfo::LLPickInfo(const LLCoordGL& mouse_pos,
+     bool pick_rigged,
+     bool pick_particle,
+     bool pick_reflection_probe,
+-    bool pick_uv_coords,
++    bool pick_surface_info,
+     bool pick_unselectable,
+     void (*pick_callback)(const LLPickInfo& pick_info))
+     : mMousePt(mouse_pos),
+     mKeyMask(keyboard_mask),
+     mPickCallback(pick_callback),
+     mPickType(PICK_INVALID),
+-    mWantSurfaceInfo(pick_uv_coords),
++    mWantSurfaceInfo(pick_surface_info),
+     mObjectFace(-1),
+     mUVCoords(-1.f, -1.f),
+     mSTCoords(-1.f, -1.f),"
+secondlife/viewer,1519,4f5d58d,indra/newview/lltoolselect.cpp,modified,4,5,9,"@@ -55,25 +55,24 @@ LLToolSelect::LLToolSelect( LLToolComposite* composite )
+ :   LLTool( std::string(""Select""), composite ),
+     mIgnoreGroup( false )
+ {
+- }
++}
+ 
+ // True if you selected an object.
+ bool LLToolSelect::handleMouseDown(S32 x, S32 y, MASK mask)
+ {
+     // do immediate pick query
+     bool pick_rigged = false; //gSavedSettings.getBOOL(""AnimatedObjectsAllowLeftClick"");
+-    bool pick_transparent = gSavedSettings.getBOOL(""SelectInvisibleObjects"");
+-    bool pick_reflection_probe = gSavedSettings.getBOOL(""SelectReflectionProbes"");
++    static LLCachedControl<bool> select_invisible_objects(gSavedSettings, ""SelectInvisibleObjects"");
++    static LLCachedControl<bool> select_reflection_probes(gSavedSettings, ""SelectReflectionProbes"");
+ 
+-    mPick = gViewerWindow->pickImmediate(x, y, pick_transparent, pick_rigged, false, true, pick_reflection_probe);
++    mPick = gViewerWindow->pickImmediate(x, y, select_invisible_objects, pick_rigged, false, true, select_reflection_probes);
+ 
+     // Pass mousedown to agent
+     LLTool::handleMouseDown(x, y, mask);
+ 
+     return mPick.getObject().notNull();
+ }
+ 
+-
+ // static
+ LLObjectSelectionHandle LLToolSelect::handleObjectSelection(const LLPickInfo& pick, bool ignore_group, bool temp_select, bool select_root)
+ {"
+secondlife/viewer,1519,4f5d58d,indra/newview/llviewerwindow.cpp,modified,8,8,16,"@@ -4255,15 +4255,15 @@ void LLViewerWindow::pickAsync( S32 x,
+                                 bool pick_unselectable,
+                                 bool pick_reflection_probes)
+ {
++    static LLCachedControl<bool> select_invisible_objects(gSavedSettings, ""SelectInvisibleObjects"");
+     // ""Show Debug Alpha"" means no object actually transparent
+     bool in_build_mode = LLFloaterReg::instanceVisible(""build"");
+-    if (LLDrawPoolAlpha::sShowDebugAlpha
+-        || (in_build_mode && gSavedSettings.getBOOL(""SelectInvisibleObjects"")))
++    if (LLDrawPoolAlpha::sShowDebugAlpha || (in_build_mode && select_invisible_objects))
+     {
+         pick_transparent = true;
+     }
+ 
+-    LLPickInfo pick_info(LLCoordGL(x, y_from_bot), mask, pick_transparent, pick_rigged, false, pick_reflection_probes, pick_unselectable, true, callback);
++    LLPickInfo pick_info(LLCoordGL(x, y_from_bot), mask, pick_transparent, pick_rigged, false, pick_reflection_probes, true, pick_unselectable, callback);
+     schedulePick(pick_info);
+ }
+ 
+@@ -4287,7 +4287,6 @@ void LLViewerWindow::schedulePick(LLPickInfo& pick_info)
+     mWindow->delayInputProcessing();
+ }
+ 
+-
+ void LLViewerWindow::performPick()
+ {
+     if (!mPicks.empty())
+@@ -4321,16 +4320,17 @@ void LLViewerWindow::returnEmptyPicks()
+ // Performs the GL object/land pick.
+ LLPickInfo LLViewerWindow::pickImmediate(S32 x, S32 y_from_bot, bool pick_transparent, bool pick_rigged, bool pick_particle, bool pick_unselectable, bool pick_reflection_probe)
+ {
++    static LLCachedControl<bool> select_invisible_objects(gSavedSettings, ""SelectInvisibleObjects"");
+     bool in_build_mode = LLFloaterReg::instanceVisible(""build"");
+-    if ((in_build_mode && gSavedSettings.getBOOL(""SelectInvisibleObjects"")) || LLDrawPoolAlpha::sShowDebugAlpha)
++    if ((in_build_mode && select_invisible_objects) || LLDrawPoolAlpha::sShowDebugAlpha)
+     {
+         // build mode allows interaction with all transparent objects
+         // ""Show Debug Alpha"" means no object actually transparent
+         pick_transparent = true;
+     }
+ 
+     // shortcut queueing in mPicks and just update mLastPick in place
+-    MASK    key_mask = gKeyboard->currentMask(true);
++    MASK key_mask = gKeyboard->currentMask(true);
+     mLastPick = LLPickInfo(LLCoordGL(x, y_from_bot), key_mask, pick_transparent, pick_rigged, pick_particle, pick_reflection_probe, true, false, NULL);
+     mLastPick.fetchResults();
+ 
+@@ -6050,14 +6050,14 @@ LLPickInfo::LLPickInfo(const LLCoordGL& mouse_pos,
+     bool pick_rigged,
+     bool pick_particle,
+     bool pick_reflection_probe,
+-    bool pick_uv_coords,
++    bool pick_surface_info,
+     bool pick_unselectable,
+     void (*pick_callback)(const LLPickInfo& pick_info))
+     : mMousePt(mouse_pos),
+     mKeyMask(keyboard_mask),
+     mPickCallback(pick_callback),
+     mPickType(PICK_INVALID),
+-    mWantSurfaceInfo(pick_uv_coords),
++    mWantSurfaceInfo(pick_surface_info),
+     mObjectFace(-1),
+     mUVCoords(-1.f, -1.f),
+     mSTCoords(-1.f, -1.f),"

@@ -1,0 +1,53 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch,gpt_bug_detection
+Raicuparta/nomai-vr,192,8da38f91c61c7d3578d691c7bd1b3dc0fb65e83a,NomaiVR/NomaiVR.cs,modified,0,2,2,"@@ -70,8 +70,6 @@ void OnSceneLoaded (OWScene originalScene, OWScene scene) {
+                     nonPersistentObject.AddComponent<SolarSystemMap>();
+                 }
+             }
+-
+-            nonPersistentObject.AddComponent<Menus>().isInGame = isSolarSystem || isEye;
+         }
+ 
+         public override void Configure (IModConfig config) {","{""has_bug"": true, ""bugs"": [{""line_start"": 17, ""line_end"": 17, ""description"": ""Potential null reference issue. 'ModHelper' might not be initialized before being assigned to 'Helper'."", ""buggy_code"": ""Helper = ModHelper;""}, {""line_start"": 41, ""line_end"": 41, ""description"": ""Resource leak. 'gameModules' is created but never destroyed, which could lead to memory issues."", ""buggy_code"": ""var gameModules = new GameObject();""}, {""line_start"": 56, ""line_end"": 56, ""description"": ""Resource leak. 'nonPersistentObject' is created but never destroyed, which could lead to memory issues."", ""buggy_code"": ""var nonPersistentObject = new GameObject();""}, {""line_start"": 78, ""line_end"": 78, ""description"": ""Incorrect condition. The comment suggests preventing mouse focus stealing, but the implementation may not achieve that effectively."", ""buggy_code"": ""// Prevent application from stealing mouse focus;""}]}"
+Raicuparta/nomai-vr,192,8da38f91c61c7d3578d691c7bd1b3dc0fb65e83a,NomaiVR/UI/Menus.cs,modified,21,4,25,"@@ -6,8 +6,6 @@
+ 
+ namespace NomaiVR {
+     public class Menus: MonoBehaviour {
+-        public bool isInGame;
+-
+         void Awake () {
+             NomaiVR.Helper.Events.Subscribe<CanvasMarkerManager>(Events.AfterStart);
+             NomaiVR.Helper.Events.OnEvent += OnEvent;
+@@ -19,12 +17,31 @@ void Start () {
+             // Make UI elements draw on top of everything.
+             Canvas.GetDefaultCanvasMaterial().SetInt(""unity_GUIZTestMode"", (int) CompareFunction.Always);
+ 
+-            ScreenCanvasesToWorld();
++            var scene = LoadManager.GetCurrentScene();
+ 
+-            if (LoadManager.GetCurrentScene() == OWScene.SolarSystem) {
++            if (scene == OWScene.SolarSystem) {
+                 // Make sleep timer canvas visible while eyes closed.
+                 Locator.GetUIStyleManager().transform.Find(""SleepTimerCanvas"").gameObject.layer = LayerMask.NameToLayer(""VisibleToPlayer"");
++            } else if (scene == OWScene.TitleScreen) {
++                var animatedTitle = GameObject.Find(""TitleCanvasHack"").GetComponent<Canvas>();
++                animatedTitle.renderMode = RenderMode.ScreenSpaceOverlay;
++
++                var animatedTitleChild = animatedTitle.transform.GetChild(0).GetComponent<RectTransform>();
++                animatedTitleChild.anchorMax = Vector2.one * 0.5f;
++                animatedTitleChild.anchorMin = Vector2.one * 0.5f;
++
++                var mainMenu = GameObject.Find(""TitleLayoutGroup"").GetComponent<RectTransform>();
++                mainMenu.position = Vector3.zero;
++
++                // Cant't get the footer to look good, so I'm hiding it.
++                GameObject.Find(""FooterBlock"").SetActive(false);
++
++                // Make the camera start looking forward instead of some random direction.
++                var cameraSocket = GameObject.Find(""CameraSocket"").transform;
++                cameraSocket.rotation = Quaternion.identity;
+             }
++
++            ScreenCanvasesToWorld();
+         }
+ 
+         private void OnEvent (MonoBehaviour behaviour, Events ev) {","{""has_bug"": true, ""bugs"": [{""line_start"": 26, ""line_end"": 26, ""description"": ""Potential null reference if 'TitleCanvasHack' is not found."", ""buggy_code"": ""var animatedTitle = GameObject.Find(\""TitleCanvasHack\"").GetComponent<Canvas>();""}, {""line_start"": 33, ""line_end"": 33, ""description"": ""Potential null reference if 'TitleLayoutGroup' is not found."", ""buggy_code"": ""var mainMenu = GameObject.Find(\""TitleLayoutGroup\"").GetComponent<RectTransform>();""}, {""line_start"": 37, ""line_end"": 37, ""description"": ""Potential null reference if 'FooterBlock' is not found."", ""buggy_code"": ""GameObject.Find(\""FooterBlock\"").SetActive(false);""}, {""line_start"": 50, ""line_end"": 50, ""description"": ""Potential null reference if 'CanvasMarkerManager' is not found."", ""buggy_code"": ""var canvas = GameObject.Find(\""CanvasMarkerManager\"").GetComponent<Canvas>();""}, {""line_start"": 56, ""line_end"": 56, ""description"": ""Potential null reference if no canvases are found, leading to a null reference in the foreach loop."", ""buggy_code"": ""var canvases = FindObjectsOfType<Canvas>();""}, {""line_start"": 75, ""line_end"": 75, ""description"": ""Potential null reference if 'mask.graphic' is null."", ""buggy_code"": ""mask.graphic.enabled = false;""}]}"

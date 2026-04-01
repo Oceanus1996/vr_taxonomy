@@ -1,0 +1,93 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe,600,40ae0d9d11f0cf9ebc32f8857fef8d65283bbb31,examples/_images/textures/trefoil.png,added,0,0,0,
+aframevr/aframe,600,40ae0d9d11f0cf9ebc32f8857fef8d65283bbb31,examples/opacity/index.html,modified,17,5,22,"@@ -8,16 +8,28 @@
+     <script src=""../../build/aframe-core.js""></script>
+   </head>
+   <body>
++    <a-assets>
++      <img id=""transparent-image"" src=""../_images/textures/trefoil.png"">
++    </a-assets>
++
+     <a-scene stats=""true"">
+       <a-entity position=""0 1.8 4"">
+           <a-entity camera look-controls wasd-controls></a-entity>
+       </a-entity>
+-      <a-entity position=""-3.5 1 0"" rotation=""0 45 0"" geometry=""primitive: box"" material=""color: red; opacity: 0.25"">
+-        <a-entity class=""cube"" position=""0 0 0"" rotation=""0 45 0"" scale=""0.5 0.5 0.5"" geometry=""primitive: box"" material=""color: red""></a-entity>
++
++      <a-entity position=""-3.5 1 0"" rotation=""0 45 0"" geometry=""primitive: box""
++                material=""color: red; opacity: 0.25"">
++        <a-entity class=""cube"" position=""0 0 0"" rotation=""0 45 0"" scale=""0.5 0.5 0.5""
++                  geometry=""primitive: box"" material=""color: red""></a-entity>
+       </a-entity>
+-      <a-entity position=""0 1 0"" rotation=""0 45 0"" geometry=""primitive: box"" material=""color: green""></a-entity>
+-      <a-entity class=""cube"" position=""3.5 1 0"" rotation=""0 45 0"" geometry=""primitive: box"" material=""color: blue; src: url(https://upload.wikimedia.org/wikipedia/commons/thumb/5/5c/Trefoil_knot_left.svg/2000px-Trefoil_knot_left.svg.png); opacity: 0.5"">
+-        <a-entity class=""cube"" position=""0 0 0"" rotation=""0 45 0"" scale=""0.5 0.5 0.5"" geometry=""primitive: box"" material=""color: blue""></a-entity>
++
++      <a-entity position=""0 1 0"" rotation=""0 45 0"" geometry=""primitive: box""
++                material=""color: green""></a-entity>
++
++      <a-entity class=""cube"" position=""3.5 1 0"" rotation=""0 45 0"" geometry=""primitive: box""
++                material=""color: blue; src: #transparent-image; opacity: 0.5"">
++        <a-entity class=""cube"" position=""0 0 0"" rotation=""0 45 0"" scale=""0.5 0.5 0.5""
++                  geometry=""primitive: box"" material=""color: blue""></a-entity>
+       </a-entity>
+     </a-scene>
+   </body>"
+aframevr/aframe,600,40ae0d9d11f0cf9ebc32f8857fef8d65283bbb31,src/components/material.js,modified,4,1,5,"@@ -306,7 +306,7 @@ function getMaterialData (data) {
+     color: data.color,
+     side: data.side,
+     opacity: data.opacity,
+-    transparent: data.opacity < 1.0
++    transparent: data.transparent !== false || data.opacity < 1.0
+   };
+   if (getMaterialType(data) === MATERIAL_TYPE_STANDARD) {
+     // Attach standard material parameters.
+@@ -327,6 +327,9 @@ function processMaterialData (data) {
+   if ('color' in data) {
+     data.color = new THREE.Color(data.color);
+   }
++  if ('opacity' in data && data.opacity < 1) {
++    data.transparent = true;
++  }
+   if ('side' in data) {
+     data.side = getSide(data.side);
+   }"
+aframevr/aframe,600,40ae0d9d11f0cf9ebc32f8857fef8d65283bbb31,src/components/sound.js,modified,0,1,1,"@@ -2,7 +2,6 @@ var debug = require('../utils/debug');
+ var diff = require('../utils').diff;
+ var registerComponent = require('../core/register-component').registerComponent;
+ var THREE = require('../../lib/three');
+-var utils = require('../utils');
+ 
+ var warn = debug('components:sound:warn');
+ "
+aframevr/aframe,600,40ae0d9d11f0cf9ebc32f8857fef8d65283bbb31,tests/components/material.test.js,modified,25,0,25,"@@ -98,4 +98,29 @@ suite('material', function () {
+       assert.equal(el.object3D.material.side, THREE.DoubleSide);
+     });
+   });
++
++  suite('transparent', function () {
++    test('can set transparent', function () {
++      var el = this.el;
++      assert.notOk(el.object3D.material.transparent);
++      el.setAttribute('material', 'opacity: 1; transparent: true');
++      assert.equal(el.object3D.material.opacity, 1);
++      assert.ok(el.object3D.material.transparent);
++    });
++
++    test('can be set to false', function () {
++      var el = this.el;
++      el.setAttribute('material', 'opacity: 1; transparent: false');
++      assert.equal(el.object3D.material.opacity, 1);
++      assert.notOk(el.object3D.material.transparent);
++    });
++
++    test('is inferred if opacity is less than 1', function () {
++      var el = this.el;
++      assert.notOk(el.object3D.material.transparent);
++      el.setAttribute('material', 'opacity: 0.75');
++      assert.equal(el.object3D.material.opacity, 0.75);
++      assert.ok(el.object3D.material.transparent);
++    });
++  });
+ });"

@@ -1,0 +1,87 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+simonedevit/reactylon,6,eb91058d15a4435628038e8e8dad90913cabe55f,packages/library/src/core/Scene.tsx,modified,24,11,35,"@@ -6,6 +6,7 @@ import { SceneContext, EngineContextType } from './hooks';
+ import { RootContainer } from '@types';
+ import Reactylon from '../reconciler';
+ import { type ContextBridge, useContextBridge } from 'its-fine';
++import { type CameraProps } from '@props';
+ 
+ type SceneProps = React.PropsWithChildren<{
+     /**
+@@ -58,15 +59,15 @@ export const Scene: React.FC<SceneProps> = ({ children, sceneOptions, onSceneRea
+                     scene.enablePhysics(
+                         physicsOptions?.gravity || new Vector3(0, -9.8, 0),
+                         physicsOptions?.plugin ||
+-                            new HavokPlugin(
+-                                true,
+-                                await HavokPhysics({
+-                                    // TODO: serve .wasm file from your own server
+-                                    locateFile: file => {
+-                                        return `https://preview.babylonjs.com/havok/${file}`;
+-                                    },
+-                                }),
+-                            ),
++                        new HavokPlugin(
++                            true,
++                            await HavokPhysics({
++                                // TODO: serve .wasm file from your own server
++                                locateFile: file => {
++                                    return `https://preview.babylonjs.com/havok/${file}`;
++                                },
++                            }),
++                        ),
+                     );
+                 }
+                 let xrExperience = null;
+@@ -104,8 +105,20 @@ export const Scene: React.FC<SceneProps> = ({ children, sceneOptions, onSceneRea
+                             }
+                         };
+                     } else {
+-                        //TODO: implement logic for multiple canvases but single scene (for each camera -> engine.registerView(canvas, camera))
+-                        //need linking camera and canvas (what about creating a new prop called ""canvas"" for camera elements?)
++                        scene.onNewCameraAddedObservable.add((camera) => {
++                            const augmentedCamera = camera as Camera & CameraProps;
++                            const canvas = augmentedCamera.canvas!;
++                            engine.registerView(canvas, camera);
++
++                            canvas.onclick = () => {
++                                if (scene.activeCamera !== camera) {
++                                    scene.activeCamera?.detachControl();
++                                    engine.inputElement = canvas;
++                                    scene.activeCamera = camera;
++                                    camera.attachControl();
++                                }
++                            }
++                        })
+                     }
+                 }
+ "
+simonedevit/reactylon,6,86b0198e5f0d102f4af947611f29d792d84d1cda,packages/library/src/web/CustomLoadingScreen.tsx,modified,6,3,9,"@@ -13,6 +13,7 @@ class CustomLoadingScreen implements ILoadingScreen {
+      * @param renderingCanvas defines the canvas used to render the scene
+      */
+     constructor(renderingCanvas: HTMLCanvasElement, Loader: React.FC) {
++        this._resizeLoadingUI = this._resizeLoadingUI.bind(this);
+         this._renderingCanvas = renderingCanvas;
+         /* if (this._loadingDiv) {
+             // Do not add a loading screen if there is already one
+@@ -34,8 +35,10 @@ class CustomLoadingScreen implements ILoadingScreen {
+             return;
+         }
+         this._loadingDiv.style.position = canvasPositioning === 'fixed' ? 'fixed' : 'absolute';
+-        this._loadingDiv.style.left = canvasRect.left + 'px';
+-        this._loadingDiv.style.top = canvasRect.top + 'px';
++        const scrollLeft = document.documentElement.scrollLeft;
++        const scrollTop = document.documentElement.scrollTop;
++        this._loadingDiv.style.left = canvasRect.left + scrollLeft + 'px';
++        this._loadingDiv.style.top = canvasRect.top + scrollTop + 'px';
+         this._loadingDiv.style.width = canvasRect.width + 'px';
+         this._loadingDiv.style.height = canvasRect.height + 'px';
+     }
+@@ -52,7 +55,7 @@ class CustomLoadingScreen implements ILoadingScreen {
+     /**
+      * Function called to hide the loading screen
+      */
+-    public hideLoadingUI() {
++    hideLoadingUI() {
+         window.removeEventListener('resize', this._resizeLoadingUI);
+         this._loadingDiv.style.display = 'none';
+     }"

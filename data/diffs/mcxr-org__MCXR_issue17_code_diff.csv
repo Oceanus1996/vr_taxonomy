@@ -1,0 +1,113 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+mcxr-org/MCXR,17,69b6dd0a7d756c6542cdf63b858a745d1e60df6a,mcxr-play/src/main/java/net/sorenon/mcxr/play/input/actionsets/GuiActionSet.java,modified,11,0,11,"@@ -70,5 +70,16 @@ public void getDefaultBindings(HashMap<String, List<Pair<Action, String>>> map)
+                         new Pair<>(scroll, ""/user/hand/right/input/thumbstick"")
+                 )
+         );
++        if (MCXRPlayClient.OPEN_XR.instance.handle.getCapabilities().XR_EXT_hp_mixed_reality_controller) {
++            map.computeIfAbsent(""/interaction_profiles/hp/mixed_reality_controller"", aLong -> new ArrayList<>()).addAll(
++                    List.of(
++                            new Pair<>(pickup, ""/user/hand/right/input/a/click""),
++                            new Pair<>(split, ""/user/hand/right/input/b/click""),
++                            new Pair<>(quickMove, ""/user/hand/left/input/x/click""),
++                            new Pair<>(exit, ""/user/hand/left/input/y/click""),
++                            new Pair<>(scroll, ""/user/hand/right/input/thumbstick"")
++                    )
++            );
++        }
+     }
+ }"
+mcxr-org/MCXR,17,69b6dd0a7d756c6542cdf63b858a745d1e60df6a,mcxr-play/src/main/java/net/sorenon/mcxr/play/input/actionsets/HandsActionSet.java,modified,13,0,13,"@@ -1,8 +1,11 @@
+ package net.sorenon.mcxr.play.input.actionsets;
+ 
++import net.sorenon.mcxr.play.MCXRPlayClient;
+ import net.sorenon.mcxr.play.input.ControllerPoses;
+ import net.sorenon.mcxr.play.input.actions.Action;
+ import net.sorenon.mcxr.play.input.actions.MultiPoseAction;
++import org.lwjgl.openxr.EXTHpMixedRealityController;
++import org.lwjgl.openxr.XR10;
+ import oshi.util.tuples.Pair;
+ 
+ import java.util.ArrayList;
+@@ -63,5 +66,15 @@ public void getDefaultBindings(HashMap<String, List<Pair<Action, String>>> map)
+                         new Pair<>(aim, ""/user/hand/right/input/aim/pose"")
+                 )
+         );
++        if (MCXRPlayClient.OPEN_XR.instance.handle.getCapabilities().XR_EXT_hp_mixed_reality_controller) {
++            map.computeIfAbsent(""/interaction_profiles/hp/mixed_reality_controller"", aLong -> new ArrayList<>()).addAll(
++                    List.of(
++                            new Pair<>(grip, ""/user/hand/left/input/grip/pose""),
++                            new Pair<>(grip, ""/user/hand/right/input/grip/pose""),
++                            new Pair<>(aim, ""/user/hand/left/input/aim/pose""),
++                            new Pair<>(aim, ""/user/hand/right/input/aim/pose"")
++                    )
++            );
++        }
+     }
+ }"
+mcxr-org/MCXR,17,69b6dd0a7d756c6542cdf63b858a745d1e60df6a,mcxr-play/src/main/java/net/sorenon/mcxr/play/input/actionsets/VanillaGameplayActionSet.java,modified,17,0,17,"@@ -103,5 +103,22 @@ public void getDefaultBindings(HashMap<String, List<Pair<Action, String>>> map)
+                         new Pair<>(inventory, ""/user/hand/right/input/trackpad/click"")
+                 )
+         );
++        if (MCXRPlayClient.OPEN_XR.instance.handle.getCapabilities().XR_EXT_hp_mixed_reality_controller) {
++            map.computeIfAbsent(""/interaction_profiles/hp/mixed_reality_controller"", aLong -> new ArrayList<>()).addAll(
++                    List.of(
++                            new Pair<>(use, ""/user/hand/left/input/trigger/value""),
++                            new Pair<>(attack, ""/user/hand/right/input/trigger/value""),
++                            new Pair<>(move, ""/user/hand/left/input/thumbstick""),
++                            new Pair<>(hotbar, ""/user/hand/right/input/thumbstick/y""),
++                            new Pair<>(turn, ""/user/hand/right/input/thumbstick/x""),
++                            new Pair<>(inventory, ""/user/hand/left/input/y/click""),
++                            new Pair<>(jump, ""/user/hand/right/input/a/click""),
++                            new Pair<>(sprint, ""/user/hand/right/input/squeeze/value""),
++                            new Pair<>(sneak, ""/user/hand/left/input/squeeze/value""),
++                            new Pair<>(resetPos, ""/user/hand/right/input/thumbstick/click""),
++                            new Pair<>(teleport, ""/user/hand/right/input/b/click"")
++                    )
++            );
++        }
+     }
+ }"
+mcxr-org/MCXR,17,69b6dd0a7d756c6542cdf63b858a745d1e60df6a,mcxr-play/src/main/java/net/sorenon/mcxr/play/openxr/OpenXR.java,modified,8,3,11,"@@ -11,6 +11,8 @@
+ 
+ import java.nio.ByteBuffer;
+ import java.nio.IntBuffer;
++import java.util.ArrayList;
++import java.util.List;
+ 
+ import static org.lwjgl.system.MemoryStack.*;
+ import static org.lwjgl.system.MemoryUtil.*;
+@@ -92,11 +94,16 @@ public OpenXRInstance createOpenXRInstance() throws XrException {
+             check(XR10.xrEnumerateInstanceExtensionProperties((ByteBuffer) null, numExtensions, properties));
+ 
+             boolean missingOpenGL = true;
++            PointerBuffer extensions = stackCallocPointer(2);
+             while (properties.hasRemaining()) {
+                 XrExtensionProperties prop = properties.get();
+                 String extensionName = prop.extensionNameString();
+                 if (extensionName.equals(KHROpenglEnable.XR_KHR_OPENGL_ENABLE_EXTENSION_NAME)) {
+                     missingOpenGL = false;
++                    extensions.put(memAddress(stackUTF8(KHROpenglEnable.XR_KHR_OPENGL_ENABLE_EXTENSION_NAME)));
++                }
++                if (extensionName.equals(EXTHpMixedRealityController.XR_EXT_HP_MIXED_REALITY_CONTROLLER_EXTENSION_NAME)) {
++                    extensions.put(memAddress(stackUTF8(EXTHpMixedRealityController.XR_EXT_HP_MIXED_REALITY_CONTROLLER_EXTENSION_NAME)));
+                 }
+             }
+ 
+@@ -108,8 +115,6 @@ public OpenXRInstance createOpenXRInstance() throws XrException {
+             applicationInfo.apiVersion(XR10.XR_CURRENT_API_VERSION);
+             applicationInfo.applicationName(stack.UTF8(""[MCXR] Minecraft VR""));
+             applicationInfo.applicationVersion(1);
+-            applicationInfo.engineName(stack.UTF8(""Minecraft Java Edition""));
+-            applicationInfo.engineVersion(117);
+ 
+             XrInstanceCreateInfo createInfo = XrInstanceCreateInfo.malloc(stack);
+             createInfo.set(
+@@ -118,7 +123,7 @@ public OpenXRInstance createOpenXRInstance() throws XrException {
+                     0,
+                     applicationInfo,
+                     null,
+-                    stackPointers(memAddress(stackUTF8(KHROpenglEnable.XR_KHR_OPENGL_ENABLE_EXTENSION_NAME)))
++                    extensions.flip()
+             );
+ 
+             PointerBuffer instancePtr = stack.mallocPointer(1);"

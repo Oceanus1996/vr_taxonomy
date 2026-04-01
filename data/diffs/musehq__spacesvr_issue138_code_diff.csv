@@ -1,0 +1,112 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+musehq/spacesvr,138,fff2e58ac397c73997f063b8748e204e16671dc3,package.json,modified,1,1,2,"@@ -1,6 +1,6 @@
+ {
+   ""name"": ""spacesvr"",
+-  ""version"": ""2.6.2"",
++  ""version"": ""2.6.3"",
+   ""private"": true,
+   ""description"": ""A standardized reality for future of the 3D Web"",
+   ""keywords"": ["
+musehq/spacesvr,138,fff2e58ac397c73997f063b8748e204e16671dc3,src/ideas/ui/TextInput/index.tsx,modified,15,14,29,"@@ -145,24 +145,23 @@ export function TextInput(props: TextProps) {
+     _text.sync();
+   }, []);
+ 
++  const SHOW_PLACEHOLDER = !focused && placeholder && !input.value;
++  const VAL = SHOW_PLACEHOLDER
++    ? placeholder
++    : type === ""password""
++    ? input.value.replace(/./g, ""•"")
++    : input.value;
++  const COL = SHOW_PLACEHOLDER ? ""#828282"" : ""#000"";
++
+   const scrollLeft = useRef(0);
+   const blink = useCaretBlink(0.65);
+   if (textRef.current && input && caret.current && highlight.current) {
+     const _text = textRef.current;
+     const _caret = caret.current;
+     const _highlight = highlight.current;
+ 
+-    if (!focused && placeholder && input.value === """") {
+-      _text.text = placeholder;
+-      _text.color = ""#828282"";
+-    } else {
+-      if (type === ""password"") {
+-        _text.text = input.value.replace(/./g, ""•"");
+-      } else {
+-        _text.text = input.value;
+-      }
+-      _text.color = ""black"";
+-    }
++    _text.text = VAL;
++    _text.color = COL;
+ 
+     syncOnChange(_text, ""focused"", focused);
+     syncOnChange(_text, ""selectionStart"", input.selectionStart);
+@@ -202,7 +201,8 @@ export function TextInput(props: TextProps) {
+         const lastIndex = caretPositions.length - 2;
+         const activeIndex = Math.min(activeSel * 3, input.value.length * 3 - 2);
+         const lastCaretX = caretPositions[lastIndex];
+-        const activeCaretX = caretPositions[activeIndex] || lastCaretX; // fallback for fast typing
++        const activeCaretX =
++          activeSel == 0 ? 0 : caretPositions[activeIndex] || lastCaretX; // fallback for fast typing
+ 
+         // move it to the active character
+         if (activeCaretX !== undefined) {
+@@ -315,16 +315,17 @@ export function TextInput(props: TextProps) {
+           <Text
+             name=""text""
+             ref={textRef}
+-            color=""black""
++            color={COL}
+             anchorX=""left""
+             fontSize={fontSize}
+             font={font}
+             maxWidth={INNER_WIDTH}
++            position-x={-INNER_WIDTH / 2}
+             // @ts-ignore
+             whiteSpace=""nowrap""
+             renderOrder={2}
+           >
+-            {""""}
++            {VAL}
+           </Text>
+         </Suspense>
+         <group name=""blink"" ref={blink.blinkRef}>"
+musehq/spacesvr,138,fff2e58ac397c73997f063b8748e204e16671dc3,src/layers/Environment/ui/PauseMenu/index.tsx,modified,1,1,2,"@@ -48,7 +48,7 @@ export default function PauseMenu(props: PauseMenuProps) {
+   const PAUSE_ITEMS: PauseItem[] = [
+     ...pauseMenuItems,
+     {
+-      text: ""v2.6.2"",
++      text: ""v2.6.3"",
+       link: ""https://www.npmjs.com/package/spacesvr"",
+     },
+     ...menuItems,"
+musehq/spacesvr,138,fff2e58ac397c73997f063b8748e204e16671dc3,src/tools/Camera/index.tsx,modified,6,1,7,"@@ -20,7 +20,11 @@ import { useLimitedFrame } from ""../../logic"";
+ const AUDIO_URL =
+   ""https://d27rt3a60hh1lx.cloudfront.net/tools/camera/shutter-sound.mp3"";
+ 
+-export function Camera() {
++type CameraProps = { onCapture?: () => void };
++
++export function Camera(props: CameraProps) {
++  const { onCapture } = props;
++
+   const { device, paused } = useEnvironment();
+   const { scene } = useThree();
+   const toolbelt = useToolbelt();
+@@ -62,6 +66,7 @@ export function Camera() {
+     const audio = new Audio(AUDIO_URL);
+     audio.play();
+     photo.takePicture();
++    if (onCapture) onCapture();
+   };
+ 
+   useEffect(() => {"
+musehq/spacesvr,138,fff2e58ac397c73997f063b8748e204e16671dc3,src/tools/Camera/utils/photo.ts,modified,1,0,1,"@@ -56,6 +56,7 @@ export const usePhotography = (
+     r.toneMapping = ACESFilmicToneMapping;
+ 
+     document.body.append(r.domElement);
++    cam.current.aspect = aspect.x / aspect.y;
+ 
+     r.render(scene, cam.current);
+ "

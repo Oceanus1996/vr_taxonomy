@@ -1,0 +1,116 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+BasisVR/Basis,39,18e97f5c5cb0338f00bd3580eecaf7146fdad264,Packages/Basis Framework/Device Management/Devices/Desktop/BasisAvatarEyeInput.cs,modified,0,4,4,"@@ -133,10 +133,6 @@ public override void DoPollData()
+                 rotationY = Mathf.Clamp(rotationY, minimumY, maximumY);
+                 LocalRawRotation = Quaternion.Euler(rotationY, rotationX, 0);
+                 Vector3 adjustedHeadPosition = new Vector3(InjectedX, BasisLocalPlayer.Instance.PlayerEyeHeight, InjectedZ);
+-                if (BlockCrouching)
+-                {
+-                    BasisLocalInputActions.Crouching = false;
+-                }
+                 if (BasisLocalInputActions.Crouching)
+                 {
+                     adjustedHeadPosition.y -= Control.TposeLocal.position.y * crouchPercentage;"
+BasisVR/Basis,39,18e97f5c5cb0338f00bd3580eecaf7146fdad264,Packages/Basis Framework/Device Management/Devices/Desktop/BasisLocalInputActions.cs,modified,2,1,3,"@@ -36,6 +36,7 @@ public class BasisLocalInputActions : MonoBehaviour
+         public PlayerInput Input;
+         public static string InputActions = ""InputActions"";
+         public bool HasEvents = false;
++        public bool IgnoreCrouchToggle = false;
+         public static Action LateUpdateEvent;
+         [SerializeField]
+         public BasisInputState InputState = new BasisInputState();
+@@ -265,7 +266,7 @@ public void CrouchToggle(InputAction.CallbackContext context)
+ 
+             if (context.phase == InputActionPhase.Performed)
+             {
+-                Crouching = !Crouching;
++                if (!IgnoreCrouchToggle) Crouching = !Crouching;
+                 if (CharacterEyeInput != null)
+                 {
+                     CharacterEyeInput.HandleMouseRotation(LookDirection);"
+BasisVR/Basis,39,18e97f5c5cb0338f00bd3580eecaf7146fdad264,Packages/Basis Framework/UI/BasisInputModuleHandler.cs,modified,6,7,13,"@@ -126,9 +126,9 @@ public override void Process()
+                         {
+                             BasisLocalPlayer.Instance.Move.BlockMovement = true;
+                         }
+-                        if (BasisAvatarEyeInput.Instance != null)
++                        if (BasisLocalInputActions.Instance != null)
+                         {
+-                            BasisAvatarEyeInput.Instance.BlockCrouching = true;
++                            BasisLocalInputActions.Instance.IgnoreCrouchToggle = true;
+                         }
+                         if (BasisDeviceManagement.Instance.CurrentMode == ""OpenVRLoader"" || BasisDeviceManagement.Instance.CurrentMode == ""OpenXRLoader"" || ForceKeyboard)
+                         {
+@@ -149,10 +149,9 @@ public override void Process()
+                             {
+                                 BasisLocalPlayer.Instance.Move.BlockMovement = true;
+                             }
+-                            if (BasisAvatarEyeInput.Instance != null)
++                            if (BasisLocalInputActions.Instance != null)
+                             {
+-                                BasisAvatarEyeInput.Instance.BlockCrouching = true;
+-
++                                BasisLocalInputActions.Instance.IgnoreCrouchToggle = true;
+                             }
+                             if (BasisDeviceManagement.Instance.CurrentMode == ""OpenVRLoader"" || BasisDeviceManagement.Instance.CurrentMode == ""OpenXRLoader"" || ForceKeyboard)
+                             {
+@@ -175,9 +174,9 @@ public override void Process()
+                     {
+                         BasisLocalPlayer.Instance.Move.BlockMovement = false;
+                     }
+-                    if (BasisAvatarEyeInput.Instance != null)
++                    if (BasisLocalInputActions.Instance != null)
+                     {
+-                        BasisAvatarEyeInput.Instance.BlockCrouching = false;
++                        BasisLocalInputActions.Instance.IgnoreCrouchToggle = false;
+                     }
+                     var data = GetBaseEventData();
+                     ExecuteEvents.Execute(EventSystem.currentSelectedGameObject, data, ExecuteEvents.submitHandler);"
+BasisVR/Basis,39,18e97f5c5cb0338f00bd3580eecaf7146fdad264,Packages/Basis Framework/UI/BasisUIRaycastProcess.cs,modified,12,3,15,"@@ -41,12 +41,14 @@ public void Simulate()
+         {
+             int DevicesCount = Inputs.Count;
+             HasTarget = false;
++            var EffectiveMouseAction = false;
+ 
+             for (int Index = 0; Index < DevicesCount; Index++)
+             {
+                 BasisInput input = Inputs[Index];
+                 if (input.HasUIInputSupport && input.BasisPointRaycaster != null && input.BasisPointRaycaster.WasCorrectLayer)
+                 {
++                    EffectiveMouseAction |= input.BasisPointRaycaster.CurrentEventData.WasLastDown == false && input.InputState.Trigger == 1;
+                     if (input.BasisPointRaycaster.HadRaycastUITarget)
+                     {
+                         List<RaycastHitData> hitData = input.BasisPointRaycaster.SortedGraphics;
+@@ -59,10 +61,19 @@ public void Simulate()
+                     }
+                 }
+             }
+-            if (!HasTarget)
++            if (!HasTarget && EffectiveMouseAction)
+             {
+                 EventSystem.current.SetSelectedGameObject(null, null);
+             }
++
++            for (int Index = 0; Index < DevicesCount; Index++)
++            {
++                BasisInput input = Inputs[Index];
++                if (input.HasUIInputSupport && input.BasisPointRaycaster != null && input.BasisPointRaycaster.WasCorrectLayer)
++                {
++                    SendUpdateEventToSelectedObject(input.BasisPointRaycaster.CurrentEventData); //needed if you want to use the keyboard
++                }
++            }
+         }
+     public void SimulateOnCanvas(RaycastResult raycastResult, RaycastHitData hit, BasisPointerEventData currentEventData, BasisInputState Current, BasisInputState LastCurrent)
+     {
+@@ -95,13 +106,11 @@ public void SimulateOnCanvas(RaycastResult raycastResult, RaycastHitData hit, Ba
+                     currentEventData.WasLastDown = false;
+                 }
+             }
+-            SendUpdateEventToSelectedObject(currentEventData);//needed if you want to use the keyboard
+ 
+             ProcessScrollWheel(currentEventData);
+             ProcessPointerMovement(currentEventData);
+             ProcessPointerButtonDrag(currentEventData);
+         }
+-
+     }
+     public void CheckOrApplySelectedGameobject(RaycastHitData hit, BasisPointerEventData CurrentEventData)
+     {"

@@ -1,0 +1,169 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+danielesteban/blocks,23,0512dba,client/core/session.js,modified,11,12,23,"@@ -11,10 +11,7 @@ class Session {
+       const [form] = dialogs.login.getElementsByTagName('form');
+       const [alternative] = dialogs.login.getElementsByTagName('a');
+       form.addEventListener('submit', this.onLoginSubmit.bind(this));
+-      alternative.addEventListener('click', () => {
+-        dialogs.login.className = 'dialog';
+-        dialogs.register.className = 'dialog open';
+-      });
++      alternative.addEventListener('click', () => this.showDialog('register'));
+       dialogs.login.addEventListener('click', ({ target }) => {
+         if (target === dialogs.login) {
+           dialogs.login.className = 'dialog';
+@@ -25,10 +22,7 @@ class Session {
+       const [form] = dialogs.register.getElementsByTagName('form');
+       const [alternative] = dialogs.register.getElementsByTagName('a');
+       form.addEventListener('submit', this.onRegisterSubmit.bind(this));
+-      alternative.addEventListener('click', () => {
+-        dialogs.register.className = 'dialog';
+-        dialogs.login.className = 'dialog open';
+-      });
++      alternative.addEventListener('click', () => this.showDialog('login'));
+       dialogs.register.addEventListener('click', ({ target }) => {
+         if (target === dialogs.register) {
+           dialogs.register.className = 'dialog';
+@@ -142,7 +136,6 @@ class Session {
+ 
+   renderState() {
+     const {
+-      dialogs,
+       session,
+       state,
+     } = this;
+@@ -157,9 +150,7 @@ class Session {
+       name.innerText = 'Guest';
+       button.innerText = 'Login';
+       button.className = 'primary';
+-      button.onclick = () => {
+-        dialogs.login.className = 'dialog open';
+-      };
++      button.onclick = () => this.showDialog('login');
+     }
+   }
+ 
+@@ -203,6 +194,14 @@ class Session {
+       });
+   }
+ 
++  showDialog(id) {
++    const { dialogs } = this;
++    Object.keys(dialogs).forEach((key) => {
++      dialogs[key].className = 'dialog';
++    });
++    dialogs[id].className = 'dialog open';
++  }
++
+   updateSession(session) {
+     this.session = session;
+     if (session) {"
+danielesteban/blocks,23,0512dba,client/renderables/photo.js,modified,57,28,85,"@@ -51,38 +51,59 @@ class Photo extends Object3D {
+       height: 0.0375,
+       page: 0,
+       styles: {
++        background: 'transparent',
+         font: '700 24px monospace',
+       },
+-      pages: [{
+-        buttons: [
+-          {
+-            label: 'X',
+-            x: 0,
+-            y: 0,
+-            width: 96,
+-            height: 48,
+-            onPointer: () => {
+-              this.visible = false;
++      pages: [
++        {
++          buttons: [
++            {
++              background: '#393',
++              label: 'Login to save',
++              x: 0,
++              y: 0,
++              width: 192,
++              height: 48,
++              onPointer: () => {
++                this.visible = false;
++                renderer.xr.getSession().end();
++                this.player.session.showDialog('login');
++              },
+             },
+-          },
+-          {
+-            background: '#393',
+-            label: 'Save',
+-            x: 96,
+-            y: 0,
+-            width: 96,
+-            height: 48,
+-            onPointer: () => {
+-              if (
+-                this.player.session.server
+-                && this.player.session.session
+-              ) {
+-                this.save();
+-              }
++          ],
++        },
++        {},
++        {
++          buttons: [
++            {
++              label: 'X',
++              x: 0,
++              y: 0,
++              width: 96,
++              height: 48,
++              onPointer: () => {
++                this.visible = false;
++              },
+             },
+-          },
+-        ],
+-      }],
++            {
++              background: '#393',
++              label: 'Save',
++              x: 96,
++              y: 0,
++              width: 96,
++              height: 48,
++              onPointer: () => {
++                if (
++                  this.player.session.server
++                  && this.player.session.session
++                ) {
++                  this.save();
++                }
++              },
++            },
++          ],
++        },
++      ],
+       textureWidth: 192,
+       textureHeight: 48,
+     });
+@@ -113,6 +134,7 @@ class Photo extends Object3D {
+       player,
+       renderer,
+       target,
++      ui,
+     } = this;
+     camera.position.copy(player.head.position);
+     camera.quaternion.copy(player.head.quaternion);
+@@ -135,6 +157,13 @@ class Photo extends Object3D {
+     player.controllers.forEach((controller) => {
+       controller.visible = true;
+     });
++    let page = 2;
++    if (!player.session.session) {
++      page = 0;
++    } else if (!player.session.server) {
++      page = 1;
++    }
++    ui.setPage(page);
+     this.visible = true;
+   }
+ "

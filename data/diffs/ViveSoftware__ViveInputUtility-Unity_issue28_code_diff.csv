@@ -1,0 +1,66 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+ViveSoftware/ViveInputUtility-Unity,28,0e17efd,Assets/HTC.UnityPlugin/VRModule/Modules/SteamVRModule.cs,modified,2,2,4,"@@ -43,7 +43,7 @@ public override void OnActivated()
+             if (system != null)
+             {
+ #if VIU_STEAMVR_1_2_3_OR_NEWER
+-                m_hasInputFocus = !system.IsInputAvailable();
++                m_hasInputFocus = system.IsInputAvailable();
+ #elif VIU_STEAMVR_1_1_1 || VIU_STEAMVR_1_2_0_OR_NEWER
+                 m_hasInputFocus = !system.IsInputFocusCapturedByAnotherProcess();
+ #endif
+@@ -261,4 +261,4 @@ private static string QueryDeviceStringProperty(CVRSystem system, uint deviceInd
+         }
+ #endif
+                     }
+-}
+\ No newline at end of file
++}"
+ViveSoftware/ViveInputUtility-Unity,28,0e17efd,Assets/HTC.UnityPlugin/ViveInputUtility/Scripts/VIUVersion.cs,modified,1,1,2,"@@ -6,6 +6,6 @@ namespace HTC.UnityPlugin.Vive
+ {
+     public static class VIUVersion
+     {
+-        public static readonly Version current = new Version(""1.8.0.2"");
++        public static readonly Version current = new Version(""1.8.0.3"");
+     }
+ }
+\ No newline at end of file"
+ViveSoftware/ViveInputUtility-Unity,28,8ad9f3b,Assets/HTC.UnityPlugin/VRModule/VRModuleManager.cs,modified,7,3,10,"@@ -186,7 +186,9 @@ private void ActivateModule(VRModuleActiveEnum module)
+             {
+ #if VIU_STEAMVR
+                 case VRModuleActiveEnum.SteamVR:
+-#if VIU_STEAMVR_1_2_0_OR_NEWER
++#if VIU_STEAMVR_1_2_3_OR_NEWER && !UNITY_2017_1_OR_NEWER
++                    Camera.onPreCull += OnCameraPreCull;
++#elif VIU_STEAMVR_1_2_0_OR_NEWER
+                     SteamVR_Events.NewPoses.AddListener(OnSteamVRNewPose);
+ #elif VIU_STEAMVR_1_1_1
+                     SteamVR_Utils.Event.Listen(""new_poses"", OnSteamVRNewPoseArgs);
+@@ -226,7 +228,7 @@ private void OnCameraPreCull(Camera cam)
+             var thisFrame = Time.frameCount;
+             if (m_poseUpdatedFrame == thisFrame) { return; }
+ 
+-            if (cam.cameraType != CameraType.Game) { return; }
++            if (cam.cameraType != CameraType.Game && cam.cameraType != CameraType.VR) { return; }
+ 
+             m_poseUpdatedFrame = thisFrame;
+             UpdateActiveModuleDeviceState();
+@@ -303,7 +305,9 @@ private void DeactivateModule()
+             {
+ #if VIU_STEAMVR
+                 case VRModuleActiveEnum.SteamVR:
+-#if VIU_STEAMVR_1_2_0_OR_NEWER
++#if VIU_STEAMVR_1_2_3_OR_NEWER && !UNITY_2017_1_OR_NEWER
++                    Camera.onPreCull -= OnCameraPreCull;
++#elif VIU_STEAMVR_1_2_0_OR_NEWER
+                     SteamVR_Events.NewPoses.RemoveListener(OnSteamVRNewPose);
+ #elif VIU_STEAMVR_1_1_1
+                     SteamVR_Utils.Event.Remove(""new_poses"", OnSteamVRNewPoseArgs);"
+ViveSoftware/ViveInputUtility-Unity,28,8ad9f3b,Assets/HTC.UnityPlugin/ViveInputUtility/Scripts/VIUVersion.cs,modified,1,1,2,"@@ -6,6 +6,6 @@ namespace HTC.UnityPlugin.Vive
+ {
+     public static class VIUVersion
+     {
+-        public static readonly Version current = new Version(""1.8.0.8"");
++        public static readonly Version current = new Version(""1.8.0.9"");
+     }
+ }
+\ No newline at end of file"

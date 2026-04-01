@@ -1,0 +1,234 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+Kariaro/VRigUnity,97,3135243d10a5948fb6bfbb585e8ef8f804df7d78,Assets/Fonts/NotoSansCJK-Regular SDF.asset,renamed,3,3,6,"@@ -6,7 +6,7 @@ Texture2D:
+   m_CorrespondingSourceObject: {fileID: 0}
+   m_PrefabInstance: {fileID: 0}
+   m_PrefabAsset: {fileID: 0}
+-  m_Name: NotoSansJP-Regular Atlas
++  m_Name: NotoSansCJK-Regular Atlas
+   m_ImageContentsHash:
+     serializedVersion: 2
+     Hash: 00000000000000000000000000000000
+@@ -57,7 +57,7 @@ MonoBehaviour:
+   m_Enabled: 1
+   m_EditorHideFlags: 0
+   m_Script: {fileID: 11500000, guid: 71c1514a6bd24e1e882cebbe1904ce04, type: 3}
+-  m_Name: NotoSansJP-Regular SDF
++  m_Name: NotoSansCJK-Regular SDF
+   m_EditorClassIdentifier: 
+   hashCode: 311269161
+   material: {fileID: 8965273586841626037}
+@@ -187,7 +187,7 @@ Material:
+   m_CorrespondingSourceObject: {fileID: 0}
+   m_PrefabInstance: {fileID: 0}
+   m_PrefabAsset: {fileID: 0}
+-  m_Name: NotoSansJP-Regular Atlas Material
++  m_Name: NotoSansCJK-Regular Atlas Material
+   m_Shader: {fileID: 4800000, guid: 68e6db2ebdc24f95958faec2be5558d6, type: 3}
+   m_ValidKeywords: []
+   m_InvalidKeywords: []"
+Kariaro/VRigUnity,97,3135243d10a5948fb6bfbb585e8ef8f804df7d78,Assets/Fonts/NotoSansCJK-Regular SDF.asset.meta,renamed,0,0,0,
+Kariaro/VRigUnity,97,3135243d10a5948fb6bfbb585e8ef8f804df7d78,Assets/Fonts/NotoSansCJK-Regular.ttc,added,0,0,0,
+Kariaro/VRigUnity,97,3135243d10a5948fb6bfbb585e8ef8f804df7d78,Assets/Fonts/NotoSansCJK-Regular.ttc.meta,renamed,0,0,0,
+Kariaro/VRigUnity,97,3135243d10a5948fb6bfbb585e8ef8f804df7d78,Assets/Fonts/NotoSansJP-Regular.otf,removed,0,0,0,
+Kariaro/VRigUnity,97,3135243d10a5948fb6bfbb585e8ef8f804df7d78,Assets/Scripts/UI/Button/MocapRecordingButton.cs,modified,2,1,3,"@@ -24,8 +24,9 @@ protected override void OnClick() {
+ 			if (isRecording) {
+ 				collection = new();
+ 			} else {
++				var extension = new FileDialogUtils.CustomExtensionFilter(Lang.DialogBvhFiles.Get(), ""bvh"");
+ 				BVH.BVHExporter.MocapCollection localCollection = collection;
+-				FileDialogUtils.SaveFilePanel(this, ""Save BVH"", """", ""bvh"", paths => {
++				FileDialogUtils.SaveFilePanel(this, Lang.DialogSaveFile.Get(), """", extension, paths => {
+ 					if (paths.Length > 0) {
+ 						string filePath = paths[0];
+ 						string data = BVH.BVHExporter.GenerateData(SolutionUtils.GetSolution().Model.Animator, localCollection);"
+Kariaro/VRigUnity,97,3135243d10a5948fb6bfbb585e8ef8f804df7d78,Assets/Scripts/UI/Localization/Localization.cs,modified,2,0,2,"@@ -80,9 +80,11 @@ public static readonly Lang
+ 
+ 				DialogImageFiles = new(""dialog.image_files"", ""Image Files""),
+ 				DialogVrmFiles = new(""dialog.vrm_files"", ""VRM Files""),
++				DialogBvhFiles = new(""dialog.bvh_files"", ""BVH Files""),
+ 				DialogAllFiles = new(""dialog.all_files"", ""All Files""),
+ 				DialogOpenImage = new(""dialog.open_image"", ""Open Image""),
+ 				DialogOpenFile = new(""dialog.open_file"", ""Open File""),
++				DialogSaveFile = new(""dialog.save_file"", ""Save File""),
+ 
+ 				IpHidden = new(""text.ip_hidden"", ""Ip Hidden""),
+ 				ModelHidden = new(""text.model_hidden"", ""Model Is Hidden""),"
+Kariaro/VRigUnity,97,3135243d10a5948fb6bfbb585e8ef8f804df7d78,Assets/Scripts/Utils/FileDialogUtils.cs,modified,19,9,28,"@@ -70,27 +70,38 @@ private static IEnumerator ShowLoadDialog(string title, string file, CustomExten
+ 		}
+ 
+ 		public static void SaveFilePanel(MonoBehaviour behaviour, string title, string file, string extension, Action<string[]> callback) {
++			SaveFilePanel(behaviour, title, file, new CustomExtensionFilter(""*."" + extension, extension), callback);
++		}
++
++
++		public static void SaveFilePanel(MonoBehaviour behaviour, string title, string file, CustomExtensionFilter extension, Action<string[]> callback) {
+ 			try {
+ 				callback.Invoke(SFB_SaveFilePanel(title, file, extension));
+ 			} catch (DllNotFoundException) {
+ 				behaviour.StartCoroutine(ShowSaveDialog(title, file, extension, callback));
+ 			}
+ 		}
+ 
+-		private static string[] SFB_SaveFilePanel(string title, string file, string extension) {
++		private static string[] SFB_SaveFilePanel(string title, string file, CustomExtensionFilter extension) {
+ 			string directory = """";
+ 			if (File.Exists(file)) {
+ 				directory = Path.GetDirectoryName(file);
+ 			}
+ 			
+-			string result = SFB.StandaloneFileBrowser.SaveFilePanel(title, directory, """", extension);
++			var extensions = new [] {
++				new SFB.ExtensionFilter(extension.Name, extension.Extensions)
++			};
++			// Known Issue: SaveFilePanel() method from SFB does not read title param.
++			string result = SFB.StandaloneFileBrowser.SaveFilePanel(title, directory, """", extensions);
+ 			if (result == string.Empty) {
+ 				return new string[0];
++			} else if (!result.EndsWith(""."" + extension.Extensions[0])) {
++				result += ""."" + extension.Extensions[0];
+ 			}
+ 			return new string[] { result };
+ 		}
+ 
+-		private static IEnumerator ShowSaveDialog(string title, string file, string extension, Action<string[]> callback) {
++		private static IEnumerator ShowSaveDialog(string title, string file, CustomExtensionFilter extension, Action<string[]> callback) {
+ 			if (!IsWaiting) {
+ 				// Make sure we are doing one file browser at a time
+ 				IsWaiting = true;
+@@ -101,12 +112,11 @@ private static IEnumerator ShowSaveDialog(string title, string file, string exte
+ 						directory = Path.GetDirectoryName(file);
+ 					}
+ 					
+-					if (extension != null) {
+-						SimpleFileBrowser.FileBrowser.Filter[] filters = new SimpleFileBrowser.FileBrowser.Filter[1];
+-						filters[0] = new SimpleFileBrowser.FileBrowser.Filter(extension, extension);
+-						SimpleFileBrowser.FileBrowser.SetFilters(true, filters);
+-						SimpleFileBrowser.FileBrowser.SetDefaultFilter(extension);
+-					}
++					var filters = new [] {
++						new SimpleFileBrowser.FileBrowser.Filter(extension.Name, extension.Extensions)
++					};
++					SimpleFileBrowser.FileBrowser.SetFilters(true, filters);
++					SimpleFileBrowser.FileBrowser.SetDefaultFilter(extension.Extensions[0]);
+ 
+ 					yield return SimpleFileBrowser.FileBrowser.WaitForSaveDialog(
+ 						SimpleFileBrowser.FileBrowser.PickMode.Files, false, null, directory, title, ""Save"""
+Kariaro/VRigUnity,97,3135243d10a5948fb6bfbb585e8ef8f804df7d78,Assets/StreamingAssets/lang/en_US/en_US.lang,modified,2,0,2,"@@ -13,9 +13,11 @@ ui.help_text=Shift to Pan, Ctrl to Rotate
+ ui.settings=Settings
+ dialog.image_files=Image Files
+ dialog.vrm_files=VRM Files
++dialog.bvh_files=BVH Files
+ dialog.all_files=All Files
+ dialog.open_image=Open Image
+ dialog.open_file=Open File
++dialog.save_file=Save File
+ text.ip_hidden=Ip Hidden
+ text.model_hidden=Model Is Hidden
+ tab.model.label=Model"
+Kariaro/VRigUnity,97,3135243d10a5948fb6bfbb585e8ef8f804df7d78,Assets/StreamingAssets/lang/languages.json,modified,2,1,3,"@@ -1,4 +1,5 @@
+ {
+ 	""en_US"": ""English"",
+-	""sv_SE"": ""Swedish""
++	""sv_SE"": ""Swedish"",
++	""zh_CN"": ""简体中文 (Simplified Chinese)""
+ }
+\ No newline at end of file"
+Kariaro/VRigUnity,97,3135243d10a5948fb6bfbb585e8ef8f804df7d78,Assets/StreamingAssets/lang/sv_SE/sv_SE.lang,modified,2,0,2,"@@ -13,9 +13,11 @@ ui.help_text=Shift för att Flytta, Ctrl för att Rotera
+ ui.settings=Inställningar
+ dialog.image_files=Bild Filer
+ dialog.vrm_files=VRM Filer
++dialog.bvh_files=BVH Filer
+ dialog.all_files=Alla Filer
+ dialog.open_image=Välj en Bild
+ dialog.open_file=Välj en Fil
++dialog.save_file=Spara Fil till
+ text.ip_hidden=Ip Gömd
+ text.model_hidden=Modellen är gömd
+ tab.model.label=Model"
+Kariaro/VRigUnity,97,3135243d10a5948fb6bfbb585e8ef8f804df7d78,Assets/StreamingAssets/lang/zh_CN/zh_CN.lang,added,86,0,86,"@@ -0,0 +1,86 @@
++camera.start=开启摄像机
++camera.stop=关闭摄像机
++mocap_recording.start=记录动捕数据
++mocap_recording.stop=停止记录并保存
++visuals.on=结果可视化开启
++visuals.off=结果可视化关闭
++vmc_receiver.start=启动 VMC 接收
++vmc_receiver.stop=停止 VMC 接收
++vmc_sender.start=启动 VMC 发送
++vmc_sender.stop=停止 VMC 发送
++vmc.port=端口
++ui.help_text=Shift 平移, Ctrl 旋转
++ui.settings=设置
++dialog.image_files=图片文件
++dialog.vrm_files=VRM 模型文件
++dialog.bvh_files=BVH 数据文件
++dialog.all_files=所有文件
++dialog.open_image=打开图片
++dialog.open_file=打开文件
++dialog.save_file=保存文件
++text.ip_hidden=IP 已隐藏
++text.model_hidden=模型已隐藏
++tab.model.label=模型
++tab.model.about_me_title=关于我
++tab.model.about_me_body=我是一名小开发者，喜欢在业余时间做点事情。欢迎关注，谢谢！
++tab.model.title=模型设置
++tab.model.select_model=选择模型
++tab.model.reset_model=重置模型
++tab.model.model_position=模型位置
++tab.model.reset_layout=重置布局
++tab.camera.label=摄像机
++tab.camera.divider.camera=摄像机
++tab.camera.divider.effects=效果
++tab.camera.source=来源
++tab.camera.resolution=分辨率
++tab.camera.custom_resolution=自定义分辨率
++tab.camera.is_horizontally_flipped=水平翻转
++tab.camera.virtual_camera=虚拟摄像机
++tab.camera.virtual_camera.install=安装
++tab.camera.virtual_camera.uninstall=卸载
++tab.camera.custom_background=自定义背景
++tab.camera.custom_background.select_image=选择图片
++tab.camera.reload_sources=重新加载来源
++tab.advanced.label=高级
++tab.advanced.divider.language=语言
++tab.advanced.divider.vmc=VMC 设置
++tab.advanced.divider.tracking=追踪设置
++tab.advanced.divider.ui=UI 设置
++tab.advanced.divider.experimental=实验性设置
++tab.advanced.language=语言
++tab.advanced.vmc_sender=VMC 发送器
++tab.advanced.vmc_receiver_port=VMC 接收器端口
++tab.advanced.hand_area=在指定区域追踪手部
++tab.advanced.hand_area.select_area=选择区域
++tab.advanced.hand_area.close=关闭
++tab.advanced.always_show_ui=始终显示 UI
++tab.advanced.antialiasing=抗锯齿
++tab.advanced.show_webcam=显示摄像机内容
++tab.advanced.show_model=显示模型
++tab.advanced.gui_scale=GUI 缩放
++tab.advanced.flag=骄傲旗
++tab.advanced.leg_rotation=(实验) 腿部旋转
++tab.advanced.hand_threshold=(实验) 手部前推阈值
++tab.advanced.interpolation=(实验) 插值
++tab.bones.label=骨骼
++tab.bones.text_title=骨骼设置
++tab.bones.text_body=选择关节对应开关可启用/禁用模型对应关节。\n\n鼠标悬停于其上可查看名称。
++tab.bones.face=脸部
++tab.bones.neck=脖子
++tab.bones.left_arm=左手臂
++tab.bones.left_wrist=左手腕
++tab.bones.left_fingers=左手指
++tab.bones.right_arm=右手臂
++tab.bones.right_wrist=右手腕
++tab.bones.right_fingers=右手指
++tab.bones.chest=胸部
++tab.bones.hips=臀部
++tab.bones.left_leg=左腿
++tab.bones.left_ankle=左脚踝
++tab.bones.right_leg=右腿
++tab.bones.right_ankle=右脚踝
++tab.logger.label=日志
++tab.logger.open_logs=打开日志
++ui.warning.cancel=取消
++ui.warning.continue=继续
++ui.warning.large_model=模型尺寸大于 {0}，加载该模型可能得花些时间"

@@ -1,0 +1,532 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+pmndrs/xr,350,f9f3055733942a7589a7b5dfd0e5d2d2fe65da8b,examples/react-three-xr/app.tsx,modified,8,6,14,"@@ -1,5 +1,5 @@
+ import { Canvas } from '@react-three/fiber'
+-import { useHover, createXRStore, XR, XROrigin, TeleportTarget } from '@react-three/xr'
++import { useHover, createXRStore, XR, XROrigin, TeleportTarget, useXRInputSourceStates } from '@react-three/xr'
+ import { useRef, useState } from 'react'
+ import { Mesh, Vector3 } from 'three'
+ import { Smoke } from './smoke.js'
+@@ -20,13 +20,13 @@ export function App() {
+           <ambientLight />
+           <XROrigin position={position} />
+           <Cube />
+-          <Smoke count={100} maxSize={0.3} minSize={0.1} spawnRate={10} speed={0.1} />
++          {/*<Smoke count={100} maxSize={0.3} minSize={0.1} spawnRate={10} speed={0.1} />
+           <TeleportTarget onTeleport={setPosition}>
+             <mesh scale={[10, 1, 10]} position={[0, -0.5, 0]}>
+               <boxGeometry />
+               <meshBasicMaterial color=""green"" />
+             </mesh>
+-          </TeleportTarget>
++          </TeleportTarget>*/}
+         </XR>
+       </Canvas>
+     </>
+@@ -36,15 +36,17 @@ export function App() {
+ function Cube() {
+   const ref = useRef<Mesh>(null)
+   const hover = useHover(ref)
++  const [toggle, setToggle] = useState(false)
+   return (
+     <mesh
+-      onClick={() => store.setHand({ rayPointer: { cursorModel: { color: 'green' } } }, 'right')}
+-      position={[0, 2, 0]}
++      onClick={() => setToggle((x) => !x)}
++      position={[0, 1, -1]}
++      scale={0.1}
+       pointerEventsType={{ deny: 'grab' }}
+       ref={ref}
+     >
+       <boxGeometry />
+-      <meshBasicMaterial color={hover ? 'red' : 'blue'} />
++      <meshBasicMaterial color={toggle ? 'white' : hover ? 'red' : 'blue'} />
+     </mesh>
+   )
+ }"
+pmndrs/xr,350,f9f3055733942a7589a7b5dfd0e5d2d2fe65da8b,packages/pointer-events/src/intersections/intersector.ts,modified,3,1,4,"@@ -18,7 +18,9 @@ export abstract class Intersector {
+     nativeEvent: unknown,
+   ): Intersection | undefined
+ 
+-  protected abstract prepareIntersection(nativeEvent: unknown): boolean
++  public abstract isReady(): boolean
++
++  protected abstract prepareIntersection(nativeEvent: unknown): void
+ 
+   public abstract executeIntersection(object: Object3D, objectPointerEventsOrder: number): void
+ "
+pmndrs/xr,350,f9f3055733942a7589a7b5dfd0e5d2d2fe65da8b,packages/pointer-events/src/intersections/lines.ts,modified,30,10,40,"@@ -13,6 +13,7 @@ import { computeIntersectionWorldPlane, getDominantIntersectionIndex } from './u
+ import type { PointerCapture } from '../pointer.js'
+ import { Intersector } from './intersector.js'
+ import { Intersection, IntersectionOptions } from '../index.js'
++import { updateAndCheckWorldTransformation } from '../utils.js'
+ 
+ const invertedMatrixHelper = new Matrix4()
+ const intersectsHelper: Array<ThreeIntersection & { details: { distanceOnLine: number; lineIndex: number } }> = []
+@@ -27,22 +28,38 @@ export class LinesIntersector extends Intersector {
+   private intersectionLineIndex: number = 0
+   private intersectionDistanceOnLine: number = 0
+ 
++  private ready?: boolean
++
+   constructor(
+-    private readonly prepareTransformation: (nativeEvent: unknown, fromMatrixWorld: Matrix4) => boolean,
++    private readonly space: { current?: Object3D | null },
+     private readonly options: IntersectionOptions & { linePoints?: Array<Vector3>; minDistance?: number },
+   ) {
+     super()
+   }
+ 
+-  public intersectPointerCapture(
+-    { intersection, object }: PointerCapture,
+-    nativeEvent: unknown,
+-  ): Intersection | undefined {
++  public isReady(): boolean {
++    return this.ready ?? this.prepareTransformation()
++  }
++
++  private prepareTransformation(): boolean {
++    const spaceObject = this.space.current
++    if (spaceObject == null) {
++      return (this.ready = false)
++    }
++    this.ready = updateAndCheckWorldTransformation(spaceObject)
++    if (!this.ready) {
++      return false
++    }
++    this.fromMatrixWorld.copy(spaceObject.matrixWorld)
++    return true
++  }
++
++  public intersectPointerCapture({ intersection, object }: PointerCapture): Intersection | undefined {
+     const details = intersection.details
+     if (details.type != 'lines') {
+       return undefined
+     }
+-    if (!this.prepareTransformation(nativeEvent, this.fromMatrixWorld)) {
++    if (!this.prepareTransformation()) {
+       return undefined
+     }
+     const linePoints = this.options.linePoints ?? defaultLinePoints
+@@ -60,9 +77,9 @@ export class LinesIntersector extends Intersector {
+     }
+   }
+ 
+-  protected prepareIntersection(nativeEvent: unknown): boolean {
+-    if (!this.prepareTransformation(nativeEvent, this.fromMatrixWorld)) {
+-      return false
++  protected prepareIntersection(): void {
++    if (!this.prepareTransformation()) {
++      return
+     }
+     const linePoints = this.options.linePoints ?? defaultLinePoints
+     const length = linePoints.length - 1
+@@ -82,10 +99,13 @@ export class LinesIntersector extends Intersector {
+       raycaster.far = lineLength
+     }
+     this.raycasters.length = length
+-    return true
++    return
+   }
+ 
+   public executeIntersection(object: Object3D, objectPointerEventsOrder: number | undefined): void {
++    if (!this.isReady()) {
++      return
++    }
+     let lineLengthSum = 0
+     const length = this.raycasters.length
+     //TODO: optimize - we only need to intersect with raycasters before or equal to the raycaster that did the current intersection"
+pmndrs/xr,350,f9f3055733942a7589a7b5dfd0e5d2d2fe65da8b,packages/pointer-events/src/intersections/ray.ts,modified,35,16,51,"@@ -11,13 +11,13 @@ import {
+   Vector2,
+ } from 'three'
+ import { Intersection, IntersectionOptions } from './index.js'
+-import { Pointer, type PointerCapture } from '../pointer.js'
++import { type PointerCapture } from '../pointer.js'
+ import { computeIntersectionWorldPlane, getDominantIntersectionIndex } from './utils.js'
+ import { Intersector } from './intersector.js'
++import { updateAndCheckWorldTransformation } from '../utils.js'
+ 
+ const invertedMatrixHelper = new Matrix4()
+ const intersectsHelper: Array<ThreeIntersection> = []
+-const matrixHelper = new Matrix4()
+ const scaleHelper = new Vector3()
+ const NegZAxis = new Vector3(0, 0, -1)
+ const directionHelper = new Vector3()
+@@ -28,21 +28,39 @@ export class RayIntersector extends Intersector {
+   private readonly raycasterQuaternion = new Quaternion()
+   private worldScale: number = 0
+ 
++  private ready?: boolean
++
+   constructor(
+-    private readonly prepareTransformation: (nativeEvent: unknown, matrixWorld: Matrix4) => boolean,
++    private readonly space: { current?: Object3D | null },
+     private readonly options: IntersectionOptions & { minDistance?: number; direction?: Vector3 },
+   ) {
+     super()
+   }
+ 
+-  public intersectPointerCapture(
+-    { intersection, object }: PointerCapture,
+-    nativeEvent: unknown,
+-  ): Intersection | undefined {
++  public isReady(): boolean {
++    return this.ready ?? this.prepareTransformation()
++  }
++
++  private prepareTransformation(): boolean {
++    const spaceObject = this.space.current
++    if (spaceObject == null) {
++      return (this.ready = false)
++    }
++    this.ready = updateAndCheckWorldTransformation(spaceObject)
++    if (!this.ready) {
++      return false
++    }
++    spaceObject.matrixWorld.decompose(this.raycaster.ray.origin, this.raycasterQuaternion, scaleHelper)
++    this.worldScale = scaleHelper.x
++    this.raycaster.ray.direction.copy(this.options?.direction ?? NegZAxis).applyQuaternion(this.raycasterQuaternion)
++    return true
++  }
++
++  public intersectPointerCapture({ intersection, object }: PointerCapture): Intersection | undefined {
+     if (intersection.details.type != 'ray') {
+       return undefined
+     }
+-    if (!this.prepareIntersection(nativeEvent)) {
++    if (!this.prepareTransformation()) {
+       return undefined
+     }
+     computeIntersectionWorldPlane(planeHelper, intersection, object)
+@@ -58,17 +76,14 @@ export class RayIntersector extends Intersector {
+     }
+   }
+ 
+-  protected prepareIntersection(nativeEvent: unknown): boolean {
+-    if (!this.prepareTransformation(nativeEvent, matrixHelper)) {
+-      return false
+-    }
+-    matrixHelper.decompose(this.raycaster.ray.origin, this.raycasterQuaternion, scaleHelper)
+-    this.worldScale = scaleHelper.x
+-    this.raycaster.ray.direction.copy(this.options?.direction ?? NegZAxis).applyQuaternion(this.raycasterQuaternion)
+-    return true
++  protected prepareIntersection(): void {
++    this.prepareTransformation()
+   }
+ 
+   public executeIntersection(object: Object3D, objectPointerEventsOrder: number | undefined): void {
++    if (!this.isReady()) {
++      return
++    }
+     object.raycast(this.raycaster, intersectsHelper)
+     const index = getDominantIntersectionIndex(
+       this.intersection,
+@@ -120,6 +135,10 @@ export class CameraRayIntersector extends Intersector {
+     super()
+   }
+ 
++  public isReady(): boolean {
++    return true
++  }
++
+   public intersectPointerCapture(
+     { intersection, object }: PointerCapture,
+     nativeEvent: unknown,"
+pmndrs/xr,350,f9f3055733942a7589a7b5dfd0e5d2d2fe65da8b,packages/pointer-events/src/intersections/sphere.ts,modified,32,19,51,"@@ -13,6 +13,7 @@ import { computeIntersectionWorldPlane, getDominantIntersectionIndex } from './u
+ import type { PointerCapture } from '../pointer.js'
+ import { Intersector } from './intersector.js'
+ import { Intersection, IntersectionOptions } from '../index.js'
++import { updateAndCheckWorldTransformation } from '../utils.js'
+ 
+ const collisionSphere = new Sphere()
+ const intersectsHelper: Array<ThreeIntersection> = []
+@@ -21,28 +22,39 @@ export class SphereIntersector extends Intersector {
+   private readonly fromPosition = new Vector3()
+   private readonly fromQuaternion = new Quaternion()
+ 
++  private ready?: boolean
++
+   constructor(
+-    /**
+-     * @returns the sphere radius
+-     */
+-    private readonly prepareTransformation: (
+-      nativeEvent: unknown,
+-      fromPosition: Vector3,
+-      fromQuaternion: Quaternion,
+-    ) => number | undefined,
++    private readonly space: { current?: Object3D | null },
++    private readonly getSphereRadius: () => number,
+     private readonly options: IntersectionOptions,
+   ) {
+     super()
+   }
+ 
+-  public intersectPointerCapture(
+-    { intersection, object }: PointerCapture,
+-    nativeEvent: unknown,
+-  ): Intersection | undefined {
++  public isReady(): boolean {
++    return this.ready ?? this.prepareTransformation()
++  }
++
++  private prepareTransformation(): boolean {
++    const spaceObject = this.space.current
++    if (spaceObject == null) {
++      return (this.ready = false)
++    }
++    this.ready = updateAndCheckWorldTransformation(spaceObject)
++    if (!this.ready) {
++      return false
++    }
++    this.fromPosition.setFromMatrixPosition(spaceObject.matrixWorld)
++    this.fromQuaternion.setFromRotationMatrix(spaceObject.matrixWorld)
++    return true
++  }
++
++  public intersectPointerCapture({ intersection, object }: PointerCapture): Intersection | undefined {
+     if (intersection.details.type != 'sphere') {
+       return undefined
+     }
+-    if (this.prepareTransformation(nativeEvent, this.fromPosition, this.fromQuaternion) == null) {
++    if (!this.prepareTransformation()) {
+       return undefined
+     }
+     //compute old inputDevicePosition-point offset
+@@ -71,17 +83,18 @@ export class SphereIntersector extends Intersector {
+     }
+   }
+ 
+-  protected prepareIntersection(nativeEvent: unknown): boolean {
+-    const radius = this.prepareTransformation(nativeEvent, this.fromPosition, this.fromQuaternion)
+-    if (radius == null) {
+-      return false
++  protected prepareIntersection(): void {
++    if (!this.prepareTransformation()) {
++      return
+     }
+     collisionSphere.center.copy(this.fromPosition)
+-    collisionSphere.radius = radius
+-    return true
++    collisionSphere.radius = this.getSphereRadius()
+   }
+ 
+   public executeIntersection(object: Object3D, objectPointerEventsOrder: number | undefined): void {
++    if (!this.isReady()) {
++      return
++    }
+     intersectSphereWithObject(collisionSphere, object, intersectsHelper)
+     const index = getDominantIntersectionIndex(
+       this.intersection,"
+pmndrs/xr,350,f9f3055733942a7589a7b5dfd0e5d2d2fe65da8b,packages/pointer-events/src/pointer.ts,modified,2,2,4,"@@ -198,7 +198,7 @@ export class Pointer {
+ 
+   /**
+    * allows to separately compute and afterwards commit a move
+-   * => do not forget to call commitMove after computeMove
++   * => do not forget to call commit after computeMove
+    * can be used to compute the current intersection and disable or enable the pointer before commiting the move
+    */
+   computeMove(scene: Object3D, nativeEvent: NativeEvent) {
+@@ -245,7 +245,7 @@ export class Pointer {
+     this.prevIntersection = this.intersection
+     this.prevEnabled = this.enabled
+ 
+-    if (!this.wasMoved) {
++    if (!this.wasMoved && this.intersector.isReady()) {
+       this.wasMoved = true
+       const length = this.onFirstMove.length
+       for (let i = 0; i < length; i++) {"
+pmndrs/xr,350,f9f3055733942a7589a7b5dfd0e5d2d2fe65da8b,packages/pointer-events/src/pointer/grab.ts,modified,1,10,11,"@@ -22,16 +22,7 @@ export function createGrabPointer(
+     generateUniquePointerId(),
+     pointerType,
+     pointerState,
+-    new SphereIntersector((_nativeEvent, fromPosition, fromQuaternion) => {
+-      const spaceObject = space.current
+-      if (spaceObject == null) {
+-        return undefined
+-      }
+-      spaceObject.updateWorldMatrix(true, false)
+-      fromPosition.setFromMatrixPosition(spaceObject.matrixWorld)
+-      fromQuaternion.setFromRotationMatrix(spaceObject.matrixWorld)
+-      return options.radius ?? 0.07
+-    }, options),
++    new SphereIntersector(space, () => options.radius ?? 0.07, options),
+     undefined,
+     undefined,
+     undefined,"
+pmndrs/xr,350,f9f3055733942a7589a7b5dfd0e5d2d2fe65da8b,packages/pointer-events/src/pointer/lines.ts,modified,1,8,9,"@@ -27,14 +27,7 @@ export function createLinesPointer(
+     generateUniquePointerId(),
+     pointerType,
+     pointerState,
+-    new LinesIntersector((_nativeEvent, fromMatrixWorld) => {
+-      const spaceObject = space.current
+-      if (spaceObject == null) {
+-        return false
+-      }
+-      fromMatrixWorld.copy(spaceObject.matrixWorld)
+-      return true
+-    }, options),
++    new LinesIntersector(space, options),
+     undefined,
+     undefined,
+     undefined,"
+pmndrs/xr,350,f9f3055733942a7589a7b5dfd0e5d2d2fe65da8b,packages/pointer-events/src/pointer/ray.ts,modified,1,7,8,"@@ -26,13 +26,7 @@ export function createRayPointer(
+     generateUniquePointerId(),
+     pointerType,
+     pointerState,
+-    new RayIntersector((_nativeEvent, matrixWorld) => {
+-      if (space.current == null) {
+-        return false
+-      }
+-      matrixWorld.copy(space.current.matrixWorld)
+-      return true
+-    }, options),
++    new RayIntersector(space, options),
+     undefined,
+     undefined,
+     undefined,"
+pmndrs/xr,350,f9f3055733942a7589a7b5dfd0e5d2d2fe65da8b,packages/pointer-events/src/pointer/touch.ts,modified,1,10,11,"@@ -29,16 +29,7 @@ export function createTouchPointer(
+     generateUniquePointerId(),
+     pointerType,
+     pointerState,
+-    new SphereIntersector((_nativeEvent, fromPosition, fromQuaternion) => {
+-      const spaceObject = space.current
+-      if (spaceObject == null) {
+-        return undefined
+-      }
+-      spaceObject.updateWorldMatrix(true, false)
+-      fromPosition.setFromMatrixPosition(spaceObject.matrixWorld)
+-      fromQuaternion.setFromRotationMatrix(spaceObject.matrixWorld)
+-      return options.hoverRadius ?? 0.1
+-    }, options),
++    new SphereIntersector(space, () => options.hoverRadius ?? 0.1, options),
+     createUpdateTouchPointer(options),
+     undefined,
+     undefined,"
+pmndrs/xr,350,f9f3055733942a7589a7b5dfd0e5d2d2fe65da8b,packages/pointer-events/src/utils.ts,modified,19,0,19,"@@ -7,9 +7,28 @@ declare module 'three' {
+       eventCount: number
+       handlers: Record<string, ((e: any) => void) | undefined>
+     }
++    /**
++     * undefined and true means the transformation is ready
++     * false means transformation is not ready
++     */
++    transformReady?: boolean
+   }
+ }
+ 
++export function updateAndCheckWorldTransformation({ transformReady, parent, matrix, matrixWorld }: Object3D): boolean {
++  if (transformReady === false) {
++    return false
++  }
++  if (parent == null) {
++    return true
++  }
++  if (!updateAndCheckWorldTransformation(parent)) {
++    return false
++  }
++  matrixWorld.multiplyMatrices(parent.matrixWorld, matrix)
++  return true
++}
++
+ export function hasObjectListeners({ _listeners, __r3f }: Object3D): boolean {
+   if (__r3f != null && __r3f?.eventCount > 0) {
+     return true"
+pmndrs/xr,350,f9f3055733942a7589a7b5dfd0e5d2d2fe65da8b,packages/react/xr/src/space.tsx,modified,15,17,32,"@@ -2,8 +2,8 @@ import { createGetXRSpaceMatrix } from '@pmndrs/xr/internals'
+ import { RootState, useFrame } from '@react-three/fiber'
+ import {
+   ReactNode,
+-  RefObject,
+   forwardRef,
++  useCallback,
+   useContext,
+   useEffect,
+   useImperativeHandle,
+@@ -13,7 +13,7 @@ import {
+ } from 'react'
+ import { Group, Object3D } from 'three'
+ import { xrSpaceContext } from './contexts.js'
+-import { useXR, useXRStore } from './xr.js'
++import { useXR } from './xr.js'
+ 
+ /**
+  * component that puts its children at the provided space (or reference space type)
+@@ -25,22 +25,21 @@ export const XRSpace = forwardRef<
+     children?: ReactNode
+   }
+ >(({ space, children }, ref) => {
+-  const internalRef = useRef<Group>(null)
++  const internalRef = useRef<Group | null>(null)
+   // eslint-disable-next-line react-hooks/rules-of-hooks
+   const resolvedSpace = typeof space === 'string' ? useXRSpace(space) : space
+   useImperativeHandle(ref, () => internalRef.current!, [])
+-  useApplyXRSpaceMatrix(internalRef, resolvedSpace, (_state, _delta, frame) => {
+-    if (internalRef.current == null) {
+-      return
++  useApplyXRSpaceMatrix(internalRef, resolvedSpace)
++  const setRef = useCallback((group: Group | null) => {
++    if (group != null) {
++      group.transformReady = false
++      group.visible = false
+     }
+-    internalRef.current.visible = frame != null
+-  })
+-  if (resolvedSpace == null) {
+-    return null
+-  }
++    internalRef.current = group
++  }, [])
+   return (
+-    <group xrSpace={resolvedSpace} visible={false} matrixAutoUpdate={false} ref={internalRef}>
+-      <xrSpaceContext.Provider value={resolvedSpace}>{children}</xrSpaceContext.Provider>
++    <group xrSpace={resolvedSpace} matrixAutoUpdate={false} ref={setRef}>
++      {resolvedSpace && <xrSpaceContext.Provider value={resolvedSpace}>{children}</xrSpaceContext.Provider>}
+     </group>
+   )
+ })
+@@ -100,16 +99,15 @@ export function useGetXRSpaceMatrix(space: XRSpace | undefined) {
+  * @requires that matrixAutoUpdate is disabled for the referenced object
+  */
+ export function useApplyXRSpaceMatrix(
+-  ref: RefObject<Object3D>,
++  ref: { current?: Group | null },
+   space: XRSpace | undefined,
+   onFrame?: (state: RootState, delta: number, frame: XRFrame | undefined) => void,
+ ): void {
+   const getXRSpaceMatrix = useGetXRSpaceMatrix(space)
+   useFrame((state, delta, frame: XRFrame | undefined) => {
+-    if (ref.current == null || getXRSpaceMatrix == null) {
+-      return
++    if (ref.current != null) {
++      ref.current.visible = ref.current.transformReady = getXRSpaceMatrix?.(ref.current.matrix, frame) ?? false
+     }
+-    getXRSpaceMatrix(ref.current.matrix, frame)
+     onFrame?.(state, delta, frame)
+     //makes sure we update the frame before using the space transformation anywhere
+   }, -100)"
+pmndrs/xr,350,f9f3055733942a7589a7b5dfd0e5d2d2fe65da8b,packages/xr/src/space.ts,modified,1,1,2,"@@ -3,7 +3,7 @@ import { Matrix4, Object3D } from 'three'
+ export function createGetXRSpaceMatrix(
+   space: XRSpace,
+   referenceSpace: XRSpace | (() => XRSpace | undefined),
+-): (target: Matrix4, frame: XRFrame | undefined) => void {
++): (target: Matrix4, frame: XRFrame | undefined) => boolean {
+   return (target, frame) => {
+     if (space === referenceSpace) {
+       target.identity()"
+pmndrs/xr,350,f9f3055733942a7589a7b5dfd0e5d2d2fe65da8b,packages/xr/src/vanilla/space.ts,modified,2,2,4,"@@ -10,6 +10,7 @@ export class XRSpace extends Object3D {
+     originReferenceSpace?: XRReferenceSpace,
+   ) {
+     super()
++    this.transformReady = false
+     const getSpaceMatrix = createGetXRSpaceMatrix(xrSpace, () =>
+       getSpaceFromAncestors(this, origin, originReferenceSpace),
+     )
+@@ -19,8 +20,7 @@ export class XRSpace extends Object3D {
+       if (frame == null) {
+         return
+       }
+-      getSpaceMatrix(this.matrix, frame)
+-      this.visible = true
++      this.visible = this.transformReady = getSpaceMatrix(this.matrix, frame)
+     })
+   }
+ }"

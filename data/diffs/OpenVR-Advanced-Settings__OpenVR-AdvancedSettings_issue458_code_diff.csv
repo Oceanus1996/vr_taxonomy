@@ -1,0 +1,1244 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,458,dca1e18e0e73ddb30a88313869977b60ac37a2ee,Readme.md,modified,4,2,6,"@@ -510,9 +510,11 @@ Full build instructions can be found [here](docs/building_for_linux.md).
+ 
+ # Common Issues:
+ 
++
+ - **Issue:** Upon clicking ADV-Settings icon no page shows up.
+-  - **Cause:** related to multiple GPU systems (and specifically nvidia), and ALVR
+-  - **Solution:** go to Nvidia Control Panel -> manage 3D settings -> add Advanced Settings, and force the vr gpu for it.
++  - **Cause:** related to multiple GPU systems Displaying OpenGL on low power GPU first (IGPU's primarily) [some programs such as alvr may also cause this issue] 
++  - **Solution for Nvidia GPU's:** go to Nvidia Control Panel -> manage 3D settings -> Program Settings -> add Advanced Settings, and change `OpenGL Rendering GPU` to the GPU your VR is connected to.
++  - **Solution for Windows (1803+):** go to Settings -> System -> Display -> Select `Classic App` and Browse for `AdvancedSettings.exe` -> Click Options -> Select High Performance
+ 
+ - **Issue:** Snap back when using motion controls with WMR headset
+   - **Cause:** WMR boundary off, or set up for standing only."
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,458,dca1e18e0e73ddb30a88313869977b60ac37a2ee,build_scripts/compile_version_string.txt,modified,1,1,2,"@@ -1 +1 @@
+-5.1.0-dev
+\ No newline at end of file
++5.1.1-release
+\ No newline at end of file"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,458,dca1e18e0e73ddb30a88313869977b60ac37a2ee,src/main.cpp,modified,6,0,6,"@@ -1,5 +1,6 @@
+ #include ""utils/setup.h""
+ #include ""settings/settings.h""
++#include ""openvr/ovr_settings_wrapper.h""
+ 
+ INITIALIZE_EASYLOGGINGPP
+ 
+@@ -109,6 +110,11 @@ int main( int argc, char* argv[] )
+                     qobject_cast<QQuickItem*>( quickObj )->height() ) );
+             m_pWindow->show();
+         }
++        if ( commandLineArgs.resetSettings )
++        {
++            // resets all settings if called
++            ovr_settings_wrapper::resetAllSettings();
++        }
+ 
+         return mainEventLoop.exec();
+     }"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,458,dca1e18e0e73ddb30a88313869977b60ac37a2ee,src/openvr/ovr_overlay_wrapper.cpp,modified,28,58,86,"@@ -9,18 +9,15 @@ OverlayError createOverlay( const std::string overlayKey,
+ {
+     vr::VROverlayError oError = vr::VROverlay()->CreateOverlay(
+         overlayKey.c_str(), overlayName.c_str(), overlayHandle );
+-    if ( oError == vr::VROverlayError_None )
+-    {
+-        return OverlayError::NoError;
+-    }
+-    else
++    if ( oError != vr::VROverlayError_None )
+     {
+         LOG( ERROR ) << ""Could not create overlay: "" << overlayName
+                      << ""because ""
+                      << vr::VROverlay()->GetOverlayErrorNameFromEnum( oError )
+                      << "" "" << customErrorMsg;
+         return OverlayError::UndefinedError;
+     }
++    return OverlayError::NoError;
+ }
+ 
+ OverlayError setOverlayColor( vr::VROverlayHandle_t overlayHandle,
+@@ -31,18 +28,15 @@ OverlayError setOverlayColor( vr::VROverlayHandle_t overlayHandle,
+ {
+     vr::VROverlayError oError
+         = vr::VROverlay()->SetOverlayColor( overlayHandle, red, green, blue );
+-    if ( oError == vr::VROverlayError_None )
+-    {
+-        return OverlayError::NoError;
+-    }
+-    else
++    if ( oError != vr::VROverlayError_None )
+     {
+         LOG( ERROR ) << ""Error setting Overlay Color For ""
+                      << getOverlayKey( overlayHandle ) << "" with error: ""
+                      << vr::VROverlay()->GetOverlayErrorNameFromEnum( oError )
+                      << "" "" << customErrorMsg;
+         return OverlayError::UndefinedError;
+     }
++    return OverlayError::NoError;
+ }
+ 
+ OverlayError setOverlayAlpha( vr::VROverlayHandle_t overlayHandle,
+@@ -51,18 +45,15 @@ OverlayError setOverlayAlpha( vr::VROverlayHandle_t overlayHandle,
+ {
+     vr::VROverlayError oError
+         = vr::VROverlay()->SetOverlayAlpha( overlayHandle, alpha );
+-    if ( oError == vr::VROverlayError_None )
+-    {
+-        return OverlayError::NoError;
+-    }
+-    else
++    if ( oError != vr::VROverlayError_None )
+     {
+         LOG( ERROR ) << ""Error setting Overlay Alpha For ""
+                      << getOverlayKey( overlayHandle ) << "" with error: ""
+                      << vr::VROverlay()->GetOverlayErrorNameFromEnum( oError )
+                      << "" "" << customErrorMsg;
+         return OverlayError::UndefinedError;
+     }
++    return OverlayError::NoError;
+ }
+ 
+ OverlayError setOverlayWidthInMeters( vr::VROverlayHandle_t overlayHandle,
+@@ -71,18 +62,15 @@ OverlayError setOverlayWidthInMeters( vr::VROverlayHandle_t overlayHandle,
+ {
+     vr::VROverlayError oError = vr::VROverlay()->SetOverlayWidthInMeters(
+         overlayHandle, widthInMeters );
+-    if ( oError == vr::VROverlayError_None )
+-    {
+-        return OverlayError::NoError;
+-    }
+-    else
++    if ( oError != vr::VROverlayError_None )
+     {
+         LOG( ERROR ) << ""Error setting overlay width For ""
+                      << getOverlayKey( overlayHandle ) << "" with error: ""
+                      << vr::VROverlay()->GetOverlayErrorNameFromEnum( oError )
+                      << "" "" << customErrorMsg;
+         return OverlayError::UndefinedError;
+     }
++    return OverlayError::NoError;
+ }
+ 
+ OverlayError setOverlayFromFile( vr::VROverlayHandle_t overlayHandle,
+@@ -91,66 +79,54 @@ OverlayError setOverlayFromFile( vr::VROverlayHandle_t overlayHandle,
+ {
+     {
+         const auto overlayPath = paths::binaryDirectoryFindFile( fileName );
+-        if ( overlayPath.has_value() )
++        if ( !overlayPath.has_value() )
+         {
+-            vr::VROverlayError oError = vr::VROverlay()->SetOverlayFromFile(
+-                overlayHandle, overlayPath->c_str() );
+-            if ( oError == vr::VROverlayError_None )
+-            {
+-                return OverlayError::NoError;
+-            }
+-            else
+-            {
+-                LOG( ERROR )
+-                    << ""Error setting Overlay from file For ""
+-                    << getOverlayKey( overlayHandle ) << "" with error: ""
+-                    << vr::VROverlay()->GetOverlayErrorNameFromEnum( oError )
+-                    << "" "" << customErrorMsg;
+-                return OverlayError::UndefinedError;
+-            }
++            LOG( ERROR ) << ""File not Found: "" << fileName << customErrorMsg;
++            return OverlayError::UndefinedError;
+         }
+-        else
++        vr::VROverlayError oError = vr::VROverlay()->SetOverlayFromFile(
++            overlayHandle, overlayPath->c_str() );
++        if ( oError != vr::VROverlayError_None )
+         {
+-            LOG( ERROR ) << ""File not Found: "" << fileName << customErrorMsg;
++            LOG( ERROR ) << ""Error setting Overlay from file For ""
++                         << getOverlayKey( overlayHandle ) << "" with error: ""
++                         << vr::VROverlay()->GetOverlayErrorNameFromEnum(
++                                oError )
++                         << "" "" << customErrorMsg;
+             return OverlayError::UndefinedError;
+         }
++        return OverlayError::NoError;
+     }
+ }
+ 
+ OverlayError showOverlay( vr::VROverlayHandle_t overlayHandle,
+                           std::string customErrorMsg )
+ {
+     vr::VROverlayError oError = vr::VROverlay()->ShowOverlay( overlayHandle );
+-    if ( oError == vr::VROverlayError_None )
+-    {
+-        return OverlayError::NoError;
+-    }
+-    else
++    if ( oError != vr::VROverlayError_None )
+     {
+         LOG( ERROR ) << ""Error showing overlay For ""
+                      << getOverlayKey( overlayHandle ) << "" with error: ""
+                      << vr::VROverlay()->GetOverlayErrorNameFromEnum( oError )
+                      << "" "" << customErrorMsg;
+         return OverlayError::UndefinedError;
+     }
++    return OverlayError::NoError;
+ }
+ 
+ OverlayError hideOverlay( vr::VROverlayHandle_t overlayHandle,
+                           std::string customErrorMsg )
+ {
+     vr::VROverlayError oError = vr::VROverlay()->HideOverlay( overlayHandle );
+-    if ( oError == vr::VROverlayError_None )
+-    {
+-        return OverlayError::NoError;
+-    }
+-    else
++    if ( oError != vr::VROverlayError_None )
+     {
+         LOG( ERROR ) << ""Error hiding overlay For ""
+                      << getOverlayKey( overlayHandle ) << "" with error: ""
+                      << vr::VROverlay()->GetOverlayErrorNameFromEnum( oError )
+                      << "" "" << customErrorMsg;
+         return OverlayError::UndefinedError;
+     }
++    return OverlayError::NoError;
+ }
+ 
+ OverlayError setOverlayTransformAbsolute(
+@@ -161,18 +137,15 @@ OverlayError setOverlayTransformAbsolute(
+ {
+     vr::VROverlayError oError = vr::VROverlay()->SetOverlayTransformAbsolute(
+         overlayHandle, trackingOrigin, trackingOriginToOverlayTransform );
+-    if ( oError == vr::VROverlayError_None )
+-    {
+-        return OverlayError::NoError;
+-    }
+-    else
++    if ( oError != vr::VROverlayError_None )
+     {
+         LOG( ERROR ) << ""Error setting Overlay Position For ""
+                      << getOverlayKey( overlayHandle ) << "" with error: ""
+                      << vr::VROverlay()->GetOverlayErrorNameFromEnum( oError )
+                      << "" "" << customErrorMsg;
+         return OverlayError::UndefinedError;
+     }
++    return OverlayError::NoError;
+ }
+ 
+ std::string getOverlayKey( vr::VROverlayHandle_t overlayHandle )
+@@ -184,16 +157,13 @@ std::string getOverlayKey( vr::VROverlayHandle_t overlayHandle )
+     vr::VROverlay()->GetOverlayKey(
+         overlayHandle, cStringOut, bufferMax, &oErrorOut );
+     std::string output = cStringOut;
+-    if ( oErrorOut == vr::VROverlayError_None )
+-    {
+-        return output;
+-    }
+-    else
++    if ( oErrorOut != vr::VROverlayError_None )
+     {
+         std::string errorName
+             = vr::VROverlay()->GetOverlayErrorNameFromEnum( oErrorOut );
+         return ( ""can't get name:"" + errorName );
+     }
++    return output;
+ }
+ 
+ } // namespace ovr_overlay_wrapper"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,458,dca1e18e0e73ddb30a88313869977b60ac37a2ee,src/openvr/ovr_settings_wrapper.cpp,modified,11,0,11,"@@ -145,4 +145,15 @@ SettingsError removeKeyInSection( std::string section,
+     return handleErrors( settingsKey, error, customErrorMsg );
+ }
+ 
++void resetAllSettings()
++{
++    // these should cover all sections we touch and should be added to if we
++    // touch more or they change
++    removeSection( vr::k_pch_SteamVR_Section, ""While Resetting All"" );
++    removeSection( vr::k_pch_Notifications_Section, ""While Resetting All"" );
++    removeSection( vr::k_pch_CollisionBounds_Section, ""While Resetting All"" );
++    removeSection( vr::k_pch_Camera_Section, ""While Resetting All"" );
++    removeSection( vr::k_pch_audio_Section, ""While Resetting All"" );
++}
++
+ } // namespace ovr_settings_wrapper"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,458,dca1e18e0e73ddb30a88313869977b60ac37a2ee,src/openvr/ovr_settings_wrapper.h,modified,2,0,2,"@@ -63,4 +63,6 @@ SettingsError removeKeyInSection( std::string section,
+ SettingsError handleErrors( std::string settingsKey,
+                             vr::EVRSettingsError,
+                             std::string customErrorMsg );
++
++void resetAllSettings();
+ } // namespace ovr_settings_wrapper"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,458,dca1e18e0e73ddb30a88313869977b60ac37a2ee,src/res/qml/SettingsPage.qml,modified,195,179,374,"@@ -1,239 +1,255 @@
+ import QtQuick 2.7
+ import QtQuick.Controls 2.0
++import QtQuick.Controls 2.5
+ import QtQuick.Layouts 1.3
+ import ovras.advsettings 1.0
+ import ""common""
+ 
+ MyStackViewPage {
+     headerText: ""Application Settings""
+ 
+-    content: ColumnLayout {
+-        spacing: 18
++    content: ScrollView{
++        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
++        ScrollBar.vertical.policy: ScrollBar.AlwaysOn
+ 
+-        MyToggleButton {
+-            id: settingsAutoStartToggle
+-            text: ""Autostart""
+-            onCheckedChanged: {
+-                SettingsTabController.setAutoStartEnabled(checked, false)
+-            }
+-        }
++            ColumnLayout {
++            spacing: 18
+ 
+-        MyToggleButton {
+-            id: allowExternalEditsToggle
+-            text: ""Allow External App Chaperone Edits (Danger)""
+-            onCheckedChanged: {
+-                MoveCenterTabController.setAllowExternalEdits(checked, true)
+-                seatedOldExternalWarning.visible = checked && MoveCenterTabController.oldStyleMotion && MoveCenterTabController.enableSeatedMotion
++            MyToggleButton {
++                id: settingsAutoStartToggle
++                text: ""Autostart""
++                onCheckedChanged: {
++                    SettingsTabController.setAutoStartEnabled(checked, false)
++                }
+             }
+-        }
+ 
+-        MyToggleButton {
+-            id: oldStyleMotionToggle
+-            text: ""Old-Style Motion (per-frame disk writes)""
+-            onCheckedChanged: {
+-                MoveCenterTabController.setOldStyleMotion(checked, true)
+-                seatedOldExternalWarning.visible = MoveCenterTabController.allowExternalEdits && checked && MoveCenterTabController.enableSeatedMotion
++            MyToggleButton {
++                id: allowExternalEditsToggle
++                text: ""Allow External App Chaperone Edits (Danger)""
++                onCheckedChanged: {
++                    MoveCenterTabController.setAllowExternalEdits(checked, true)
++                    seatedOldExternalWarning.visible = checked && MoveCenterTabController.oldStyleMotion && MoveCenterTabController.enableSeatedMotion
++                }
+             }
+-        }
+ 
+-        MyToggleButton {
+-            id: universeCenteredRotationToggle
+-            text: ""Universe-Centered Rotation (Disables HMD Centering)""
+-            onCheckedChanged: {
+-                MoveCenterTabController.setUniverseCenteredRotation(checked, true)
++            MyToggleButton {
++                id: oldStyleMotionToggle
++                text: ""Old-Style Motion (per-frame disk writes)""
++                onCheckedChanged: {
++                    MoveCenterTabController.setOldStyleMotion(checked, true)
++                    seatedOldExternalWarning.visible = MoveCenterTabController.allowExternalEdits && checked && MoveCenterTabController.enableSeatedMotion
++                }
+             }
+-        }
+ 
+-        MyToggleButton {
+-            id: enableSeatedMotionToggle
+-            text: ""Enable Motion Features When in Seated Mode (Experimental)""
+-            onCheckedChanged: {
+-                MoveCenterTabController.setEnableSeatedMotion(checked, true)
+-                seatedOldExternalWarning.visible = MoveCenterTabController.allowExternalEdits && MoveCenterTabController.oldStyleMotion && checked
++            MyToggleButton {
++                id: universeCenteredRotationToggle
++                text: ""Universe-Centered Rotation (Disables HMD Centering)""
++                onCheckedChanged: {
++                    MoveCenterTabController.setUniverseCenteredRotation(checked, true)
++                }
+             }
+-        }
+ 
+-        MyToggleButton {
+-            id: disableCrashRecoveryToggle
+-            text: ""Disable Automatic Crash Recovery of Chaperone Config""
+-            onCheckedChanged: {
+-                OverlayController.setCrashRecoveryDisabled(checked, true)
++            MyToggleButton {
++                id: enableSeatedMotionToggle
++                text: ""Enable Motion Features When in Seated Mode (Experimental)""
++                onCheckedChanged: {
++                    MoveCenterTabController.setEnableSeatedMotion(checked, true)
++                    seatedOldExternalWarning.visible = MoveCenterTabController.allowExternalEdits && MoveCenterTabController.oldStyleMotion && checked
++                }
+             }
+-        }
+ 
+-        MyToggleButton {
+-            id: disableVersionCheckToggle
+-            text: ""Disable Notification of Newer Version Availability""
+-            onCheckedChanged: {
+-                OverlayController.setDisableVersionCheck(checked, true)
++            MyToggleButton {
++                id: disableCrashRecoveryToggle
++                text: ""Disable Automatic Crash Recovery of Chaperone Config""
++                onCheckedChanged: {
++                    OverlayController.setCrashRecoveryDisabled(checked, true)
++                }
+             }
+-        }
+-
+-        RowLayout {
+-            Layout.fillWidth: true
+ 
+             MyToggleButton {
+-                id: vsyncDisabledToggle
+-                text: ""Disable App Vsync""
++                id: disableVersionCheckToggle
++                text: ""Disable Notification of Newer Version Availability""
+                 onCheckedChanged: {
+-                    OverlayController.setVsyncDisabled(checked, true)
+-                    customTickRateText.visible = checked
+-                    customTickRateLabel.visible = checked
+-                    customTickRateMsLabel.visible = checked
++                    OverlayController.setDisableVersionCheck(checked, true)
+                 }
+             }
+-
+-            MyText {
+-                id: customTickRateLabel
+-                text: ""Custom Tick Rate: ""
+-                horizontalAlignment: Text.AlignRight
+-                Layout.leftMargin: 20
+-                Layout.rightMargin: 2
++            MyToggleButton {
++                id: nativeChaperoneToggleButton
++                text: ""Force Use SteamVR Chaperone (experimental + SteamVR restart required)""
++                onCheckedChanged: {
++                    SettingsTabController.setNativeChaperoneToggle(this.checked, true)
++                }
+             }
+ 
+-            MyTextField {
+-                id: customTickRateText
+-                text: ""20""
+-                keyBoardUID: 1001
+-                Layout.preferredWidth: 140
+-                Layout.leftMargin: 10
+-                Layout.rightMargin: 1
+-                horizontalAlignment: Text.AlignHCenter
+-                function onInputEvent(input) {
+-                    var val = parseInt(input, 10)
+-                    if (!isNaN(val)) {
+-                        OverlayController.customTickRateMs = val
+-                        text = OverlayController.customTickRateMs
+-                    } else {
+-                        text = OverlayController.customTickRateMs
++            RowLayout {
++                Layout.fillWidth: true
++
++                MyToggleButton {
++                    id: vsyncDisabledToggle
++                    text: ""Disable App Vsync""
++                    onCheckedChanged: {
++                        OverlayController.setVsyncDisabled(checked, true)
++                        customTickRateText.visible = checked
++                        customTickRateLabel.visible = checked
++                        customTickRateMsLabel.visible = checked
+                     }
+                 }
+-            }
+ 
+-            MyText {
+-                id: customTickRateMsLabel
+-                text: ""ms""
+-                horizontalAlignment: Text.AlignLeft
+-                Layout.leftMargin: 1
+-            }
++                MyText {
++                    id: customTickRateLabel
++                    text: ""Custom Tick Rate: ""
++                    horizontalAlignment: Text.AlignRight
++                    Layout.leftMargin: 20
++                    Layout.rightMargin: 2
++                }
+ 
+-            Item {
+-                Layout.fillWidth: true
+-            }
+-        }
++                MyTextField {
++                    id: customTickRateText
++                    text: ""20""
++                    keyBoardUID: 1001
++                    Layout.preferredWidth: 140
++                    Layout.leftMargin: 10
++                    Layout.rightMargin: 1
++                    horizontalAlignment: Text.AlignHCenter
++                    function onInputEvent(input) {
++                        var val = parseInt(input, 10)
++                        if (!isNaN(val)) {
++                            OverlayController.customTickRateMs = val
++                            text = OverlayController.customTickRateMs
++                        } else {
++                            text = OverlayController.customTickRateMs
++                        }
++                    }
++                }
+ 
+-        RowLayout {
+-            id: debugStateRow
+-            Layout.fillWidth: true
++                MyText {
++                    id: customTickRateMsLabel
++                    text: ""ms""
++                    horizontalAlignment: Text.AlignLeft
++                    Layout.leftMargin: 1
++                }
+ 
+-            MyText {
+-                id: debugStateLabel
+-                text: ""Debug State: ""
+-                horizontalAlignment: Text.AlignRight
+-                Layout.leftMargin: 20
+-                Layout.rightMargin: 2
++                Item {
++                    Layout.fillWidth: true
++                }
+             }
+ 
+-            MyTextField {
+-                id: debugStateText
+-                text: ""0""
+-                keyBoardUID: 1002
+-                Layout.preferredWidth: 140
+-                Layout.leftMargin: 10
+-                Layout.rightMargin: 1
+-                horizontalAlignment: Text.AlignHCenter
+-                function onInputEvent(input) {
+-                    var val = parseInt(input, 10)
+-                    if (!isNaN(val)) {
+-                        OverlayController.debugState = val
+-                        text = OverlayController.debugState
+-                    } else {
+-                        text = OverlayController.debugState
++            RowLayout {
++                id: debugStateRow
++                Layout.fillWidth: true
++
++                MyText {
++                    id: debugStateLabel
++                    text: ""Debug State: ""
++                    horizontalAlignment: Text.AlignRight
++                    Layout.leftMargin: 20
++                    Layout.rightMargin: 2
++                }
++
++                MyTextField {
++                    id: debugStateText
++                    text: ""0""
++                    keyBoardUID: 1002
++                    Layout.preferredWidth: 140
++                    Layout.leftMargin: 10
++                    Layout.rightMargin: 1
++                    horizontalAlignment: Text.AlignHCenter
++                    function onInputEvent(input) {
++                        var val = parseInt(input, 10)
++                        if (!isNaN(val)) {
++                            OverlayController.debugState = val
++                            text = OverlayController.debugState
++                        } else {
++                            text = OverlayController.debugState
++                        }
+                     }
+                 }
++                Item {
++                    Layout.fillWidth: true
++                }
+             }
+-            Item {
+-                Layout.fillWidth: true
++            RowLayout{
++
++                MyText {
++                    id: seatedOldExternalWarning
++                    wrapMode: Text.WordWrap
++                    font.pointSize: 20
++                    color: ""#FFA500""
++                    text: ""WARNING: 'Allow External App Chaperone Edits' + 'Old-Style Motion' + 'Enable Motion Features When in Seated Mode' active together may cause space center misalignment. Load the «Autosaved Profile» in the 'Chaperone' tab to fix.""
++                    horizontalAlignment: Text.AlignHCenter
++                    Layout.leftMargin: 20
++                    Layout.rightMargin: 20
++                    Layout.fillWidth: true
++                }
+             }
+-        }
+-        RowLayout{
+-
+-            MyText {
+-                id: seatedOldExternalWarning
+-                wrapMode: Text.WordWrap
+-                font.pointSize: 20
+-                color: ""#FFA500""
+-                text: ""WARNING: 'Allow External App Chaperone Edits' + 'Old-Style Motion' + 'Enable Motion Features When in Seated Mode' active together may cause space center misalignment. Load the «Autosaved Profile» in the 'Chaperone' tab to fix.""
+-                horizontalAlignment: Text.AlignHCenter
+-                Layout.leftMargin: 20
+-                Layout.rightMargin: 20
+-                Layout.fillWidth: true
++            RowLayout{
++                Item {
++                    Layout.fillWidth: true
++                }
++                MyPushButton {
++                    id: shutdownButton
++                    Layout.preferredWidth: 250
++                    text: ""Shutdown OVRAS""
++                    onClicked: {
++                        OverlayController.exitApp()
++                        }
++                    }
+             }
+-        }
+-        RowLayout{
++
+             Item {
+-                Layout.fillWidth: true
++                Layout.fillHeight: true
+             }
+-            MyPushButton {
+-                id: shutdownButton
+-                Layout.preferredWidth: 250
+-                text: ""Shutdown OVRAS""
+-                onClicked: {
+-                    OverlayController.exitApp()
+-                    }
+-                }
+-        }
+ 
+-        Item {
+-            Layout.fillHeight: true
+-        }
+-
+-        RowLayout {
+-            Layout.fillWidth: true
++            RowLayout {
++                Layout.fillWidth: true
+ 
+ 
+-            Item {
+-                Layout.fillWidth: true
+-            }
++                Item {
++                    Layout.fillWidth: true
++                }
+ 
+-            MyToggleButton {
+-                // set visible to true here in builds when we need a debug toggle checkbox, otherwise false when on master branch.
+-                visible: false
+-                id: debugToggle
+-                text: ""Debug""
+-                onCheckedChanged: {
+-                    OverlayController.setEnableDebug(checked, true)
++                MyToggleButton {
++                    // set visible to true here in builds when we need a debug toggle checkbox, otherwise false when on master branch.
++                    visible: false
++                    id: debugToggle
++                    text: ""Debug""
++                    onCheckedChanged: {
++                        OverlayController.setEnableDebug(checked, true)
++                    }
+                 }
++
+             }
++        } // end column
++            Component.onCompleted: {
++                settingsAutoStartToggle.checked = SettingsTabController.autoStartEnabled
+ 
+-        }
++                allowExternalEditsToggle.checked = MoveCenterTabController.allowExternalEdits
++                oldStyleMotionToggle.checked = MoveCenterTabController.oldStyleMotion
++                universeCenteredRotationToggle.checked = MoveCenterTabController.universeCenteredRotation
++                enableSeatedMotionToggle.checked = MoveCenterTabController.enableSeatedMotion
+ 
+-        Component.onCompleted: {
+-            settingsAutoStartToggle.checked = SettingsTabController.autoStartEnabled
+-
+-            allowExternalEditsToggle.checked = MoveCenterTabController.allowExternalEdits
+-            oldStyleMotionToggle.checked = MoveCenterTabController.oldStyleMotion
+-            universeCenteredRotationToggle.checked = MoveCenterTabController.universeCenteredRotation
+-            enableSeatedMotionToggle.checked = MoveCenterTabController.enableSeatedMotion
+-
+-            disableCrashRecoveryToggle.checked = OverlayController.crashRecoveryDisabled
+-            customTickRateText.text = OverlayController.customTickRateMs
+-            vsyncDisabledToggle.checked = OverlayController.vsyncDisabled
+-            customTickRateText.visible = vsyncDisabledToggle.checked
+-            customTickRateLabel.visible = vsyncDisabledToggle.checked
+-            customTickRateMsLabel.visible = vsyncDisabledToggle.checked
+-            debugStateRow.visible = OverlayController.enableDebug
+-            debugStateText.text = OverlayController.debugState
+-            disableVersionCheckToggle.checked = OverlayController.disableVersionCheck
+-
+-            seatedOldExternalWarning.visible = MoveCenterTabController.allowExternalEdits && MoveCenterTabController.oldStyleMotion && MoveCenterTabController.enableSeatedMotion
+-        }
++                disableCrashRecoveryToggle.checked = OverlayController.crashRecoveryDisabled
++                customTickRateText.text = OverlayController.customTickRateMs
++                vsyncDisabledToggle.checked = OverlayController.vsyncDisabled
++                customTickRateText.visible = vsyncDisabledToggle.checked
++                customTickRateLabel.visible = vsyncDisabledToggle.checked
++                customTickRateMsLabel.visible = vsyncDisabledToggle.checked
++                debugStateRow.visible = OverlayController.enableDebug
++                debugStateText.text = OverlayController.debugState
++                disableVersionCheckToggle.checked = OverlayController.disableVersionCheck
++                nativeChaperoneToggleButton.checked = SettingsTabController.nativeChaperoneToggle
++
++                seatedOldExternalWarning.visible = MoveCenterTabController.allowExternalEdits && MoveCenterTabController.oldStyleMotion && MoveCenterTabController.enableSeatedMotion
++            }
+ 
+         Connections {
+             target: SettingsTabController
+             onAutoStartEnabledChanged: {
+                 settingsAutoStartToggle.checked = SettingsTabController.autoStartEnabled
+             }
++            onNativeChaperoneToggleChanged:{
++                nativeChaperoneToggleButton.checked = SettingsTabController.nativeChaperoneToggle
++            }
+         }
+ 
+         Connections {
+@@ -282,5 +298,5 @@ MyStackViewPage {
+                 disableVersionCheckToggle.checked = OverlayController.disableVersionCheck
+             }
+         }
+-    }
++    } // end scroll
+ }"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,458,dca1e18e0e73ddb30a88313869977b60ac37a2ee,src/res/qml/chaperone_page/ChaperonePage.qml,modified,2,0,2,"@@ -556,6 +556,8 @@ MyStackViewPage {
+             }
+             chaperoneHeightText.text = h
+             chaperoneCenterMarkerToggle.checked = ChaperoneTabController.centerMarkerNew
++            //We Need a Set call on init in order to display the overlay!
++            ChaperoneTabController.setCenterMarkerNew(chaperoneCenterMarkerToggle.checked);
+             chaperonePlaySpaceToggle.checked = ChaperoneTabController.playSpaceMarker
+             chaperoneForceBoundsToggle.checked = ChaperoneTabController.forceBounds
+             chaperoneDisableChaperone.checked = ChaperoneTabController.disableChaperone"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,458,dca1e18e0e73ddb30a88313869977b60ac37a2ee,src/res/qml/chaperone_page/chaperone_additional/chaperonemisc/ChaperoneMiscGroupBox.qml,modified,1,1,2,"@@ -74,7 +74,7 @@ GroupBox {
+             chaperoneFloorToggleBtn.checked = ChaperoneTabController.chaperoneFloorToggle
+         }
+         onCenterMarkerChanged:{
+-            legacyCenterMarkerbtn.checked = ChaperoneTabController.centermarker
++            legacyCenterMarkerbtn.checked = ChaperoneTabController.centerMarker
+         }
+     }
+ }"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,458,dca1e18e0e73ddb30a88313869977b60ac37a2ee,src/res/qml/rotation_page/redirected/AutoTurnGroupBox.qml,modified,1,1,2,"@@ -10,7 +10,7 @@ GroupBox {
+ 
+     label: MyText {
+         leftPadding: 10
+-        text: ""Auto-turn (aka infinite walk)""
++        text: ""Auto-Turn (for discrete redirected walking)""
+         bottomPadding: -10
+     }
+     background: Rectangle {"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,458,dca1e18e0e73ddb30a88313869977b60ac37a2ee,src/res/qml/rotation_page/redirected/RedirectedGroupBox.qml,modified,1,1,2,"@@ -10,7 +10,7 @@ GroupBox {
+ 
+     label: MyText {
+         leftPadding: 10
+-        text: ""Redirected Walking""
++        text: ""Vestibular Motion (for continuous redirected walking)""
+         bottomPadding: -10
+     }
+     background: Rectangle {"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,458,dca1e18e0e73ddb30a88313869977b60ac37a2ee,src/res/qml/rotation_page/space_turn/SpaceTurnGroupBox.qml,modified,1,1,2,"@@ -10,7 +10,7 @@ GroupBox {
+ 
+     label: MyText {
+         leftPadding: 10
+-        text: ""Space Turn""
++        text: ""Space Turn (for manual redirected walking)""
+         bottomPadding: -10
+     }
+     background: Rectangle {"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,458,dca1e18e0e73ddb30a88313869977b60ac37a2ee,src/settings/internal/settings_controller.h,modified,8,0,8,"@@ -426,18 +426,26 @@ class SettingsController
+                             QtInfo{ ""colorBlueNew"" },
+                             1.0 },
+ 
++        // TODO BUG [breaking change] should be in Chaperone Settings Not Video
++        // fix @ breaking change
+         DoubleSettingValue{ DoubleSetting::CHAPERONE_switchToBeginnerDistance,
+                             SettingCategory::Video,
+                             QtInfo{ ""chaperoneSwitchToBeginnerDistance"" },
+                             0.5 },
++        // TODO BUG [breaking change] should be in Chaperone Settings Not Video
++        // fix @ breaking change
+         DoubleSettingValue{ DoubleSetting::CHAPERONE_hapticFeedbackDistance,
+                             SettingCategory::Video,
+                             QtInfo{ ""chaperoneHapticFeedbackDistance"" },
+                             0.5 },
++        // TODO BUG [breaking change] should be in Chaperone Settings Not Video
++        // fix @ breaking change
+         DoubleSettingValue{ DoubleSetting::CHAPERONE_alarmSoundDistance,
+                             SettingCategory::Video,
+                             QtInfo{ ""chaperoneAlarmSoundDistance"" },
+                             0.5 },
++        // TODO BUG [breaking change] should be in Chaperone Settings Not Video
++        // fix @ breaking change
+         DoubleSettingValue{ DoubleSetting::CHAPERONE_showDashboardDistance,
+                             SettingCategory::Video,
+                             QtInfo{ ""chaperoneShowDashboardDistance"" },"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,458,dca1e18e0e73ddb30a88313869977b60ac37a2ee,src/tabcontrollers/ChaperoneTabController.cpp,modified,29,32,61,"@@ -20,17 +20,24 @@ void ChaperoneTabController::initStage1()
+     reloadChaperoneProfiles();
+     m_chaperoneSettingsUpdateCounter
+         = utils::adjustUpdateRate( k_chaperoneSettingsUpdateCounter );
+-    initFloorOverlay();
++    initCenterMarkerOverlay();
+     eventLoopTick( m_trackingUniverse, nullptr );
+ }
+ 
+ void ChaperoneTabController::initStage2( OverlayController* var_parent )
+ {
+     this->parent = var_parent;
+-    // Cludge Fix for now, but its not getting called for some reason w/ QML
+-    setCenterMarkerNew( centerMarkerNew() );
++
+     updateChaperoneSettings(); // force one update of OVR saved settings to make
+                                // sure our m_ variables are correct
++    // Force call Update Overlay Once, so Default state is in correct location
++    if ( m_centerMarkerOverlayIsInit )
++    {
++        vr::HmdMatrix34_t temp = { { { 1.0f, 0.0f, 0.0f, 0.0f },
++                                     { 0.0f, 0.0f, 1.0f, 0.0f },
++                                     { 0.0f, -1.0f, 0.0f, 0.0f } } };
++        updateCenterMarkerOverlay( &( temp ) );
++    }
+ }
+ 
+ void ChaperoneTabController::dashboardLoopTick()
+@@ -237,13 +244,7 @@ void ChaperoneTabController::eventLoopTick(
+     vr::TrackedDevicePose_t* devicePoses )
+ {
+     m_trackingUniverse = universe;
+-    // Update overlay should only run After move center tab controller is
+-    // initialized.
+-    // As such this protects it from running during initstage 1.
+-    if ( centerMarkerNew() && devicePoses != nullptr )
+-    {
+-        updateOverlay();
+-    }
++
+     if ( devicePoses )
+     {
+         m_isHMDActive = false;
+@@ -739,7 +740,7 @@ void ChaperoneTabController::setChaperoneColorR( int value, bool notify )
+             vr::k_pch_CollisionBounds_ColorGammaR_Int32,
+             m_chaperoneColorR,
+             """" );
+-        updateOverlayColor();
++        updateCenterMarkerOverlayColor();
+         if ( notify )
+         {
+             emit chaperoneColorRChanged( value );
+@@ -767,7 +768,7 @@ void ChaperoneTabController::setChaperoneColorG( int value, bool notify )
+             vr::k_pch_CollisionBounds_ColorGammaG_Int32,
+             m_chaperoneColorG,
+             """" );
+-        updateOverlayColor();
++        updateCenterMarkerOverlayColor();
+         if ( notify )
+         {
+             emit chaperoneColorGChanged( value );
+@@ -795,14 +796,14 @@ void ChaperoneTabController::setChaperoneColorB( int value, bool notify )
+             vr::k_pch_CollisionBounds_ColorGammaB_Int32,
+             m_chaperoneColorB,
+             """" );
+-        updateOverlayColor();
++        updateCenterMarkerOverlayColor();
+         if ( notify )
+         {
+             emit chaperoneColorBChanged( value );
+         }
+     }
+ }
+-void ChaperoneTabController::updateOverlayColor()
++void ChaperoneTabController::updateCenterMarkerOverlayColor()
+ {
+     float chapColorR = static_cast<float>( m_chaperoneColorR ) / 255.0f;
+     float chapColorG = static_cast<float>( m_chaperoneColorG ) / 255.0f;
+@@ -840,10 +841,12 @@ void ChaperoneTabController::setCenterMarkerNew( bool value, bool notify )
+     if ( value )
+     {
+         ovr_overlay_wrapper::showOverlay( m_chaperoneFloorOverlayHandle );
++        m_centerMarkerOverlayNeedsUpdate = true;
+     }
+     else
+     {
+         ovr_overlay_wrapper::hideOverlay( m_chaperoneFloorOverlayHandle );
++        m_centerMarkerOverlayNeedsUpdate = false;
+     }
+ 
+     if ( notify )
+@@ -1546,7 +1549,7 @@ void ChaperoneTabController::addRightHapticClick( bool rightHapticClickPressed )
+     }
+ }
+ 
+-void ChaperoneTabController::initFloorOverlay()
++void ChaperoneTabController::initCenterMarkerOverlay()
+ {
+     std::string overlayFloorMarkerKey
+         = std::string( application_strings::applicationKey ) + "".floormarker"";
+@@ -1561,9 +1564,10 @@ void ChaperoneTabController::initFloorOverlay()
+             m_chaperoneFloorOverlayHandle, m_floorMarkerFN, """" );
+         ovr_overlay_wrapper::setOverlayWidthInMeters(
+             m_chaperoneFloorOverlayHandle, 0.5f );
+-        updateOverlayColor();
++        updateCenterMarkerOverlayColor();
+         ovr_overlay_wrapper::setOverlayAlpha(
+             m_chaperoneFloorOverlayHandle, m_visibility, """" );
++        m_centerMarkerOverlayIsInit = true;
+     }
+     else
+     {
+@@ -1572,32 +1576,25 @@ void ChaperoneTabController::initFloorOverlay()
+     }
+ }
+ 
+-void ChaperoneTabController::updateOverlay()
++// This Function Is called And Handled In MoveCenterTabController to reduce
++// un-necessary overhead, as well as consistancy in movement operations
++// It will be updated Every frame that movement is updated
++void ChaperoneTabController::updateCenterMarkerOverlay(
++    vr::HmdMatrix34_t* centerPlaySpaceMatrix )
+ {
+     if ( m_trackingUniverse != vr::TrackingUniverseRawAndUncalibrated )
+     {
+-        float xoff = -( parent->m_moveCenterTabController.offsetX() );
+-        float yoff = -( parent->m_moveCenterTabController.offsetY() );
+-        float zoff = -( parent->m_moveCenterTabController.offsetZ() );
+-        /* Rotation on Y Axis
+-         * {cos t, 0, sin t}
+-         * {0, 1, 0}
+-         * {-sin t, 0 cost t}
+-         */
+-
+-        vr::HmdMatrix34_t updateTransform = { { { 1.0f, 0.0f, 0.0f, xoff },
+-                                                { 0.0f, 0.0f, 1.0f, yoff },
+-                                                { 0.0f, -1.0f, 0.0f, zoff } } };
+         ovr_overlay_wrapper::setOverlayTransformAbsolute(
+             m_chaperoneFloorOverlayHandle,
+             m_trackingUniverse,
+-            &updateTransform,
++            ( centerPlaySpaceMatrix ),
+             """" );
+-        checkOverlayRotation();
++
++        checkCenterMarkerOverlayRotationCount();
+     }
+ }
+ 
+-void ChaperoneTabController::checkOverlayRotation()
++void ChaperoneTabController::checkCenterMarkerOverlayRotationCount()
+ {
+     // can only turn so quickly soooo roughly .5 secondish update should be fine
+     if ( m_rotationUpdateCounter > 45 )"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,458,dca1e18e0e73ddb30a88313869977b60ac37a2ee,src/tabcontrollers/ChaperoneTabController.h,modified,7,5,12,"@@ -376,13 +376,12 @@ class ChaperoneTabController : public QObject
+     std::vector<ChaperoneProfile> chaperoneProfiles;
+ 
+     std::string m_floorMarkerFN = ""/res/img/chaperone/centermark.png"";
+-    void initFloorOverlay();
+-    void updateOverlay();
+-    void updateOverlayColor();
+-    void checkOverlayRotation();
++    void initCenterMarkerOverlay();
++    void updateCenterMarkerOverlayColor();
++    void checkCenterMarkerOverlayRotationCount();
+     int m_rotationUpdateCounter = 0;
+     int m_rotationCurrent = 0;
+-    bool m_overlayNeedsUpdate = false;
++    bool m_centerMarkerOverlayIsInit = false;
+ 
+     vr::ETrackingUniverseOrigin m_trackingUniverse
+         = vr::TrackingUniverseRawAndUncalibrated;
+@@ -398,6 +397,8 @@ class ChaperoneTabController : public QObject
+     void dashboardLoopTick();
+     void handleChaperoneWarnings( float distance );
+ 
++    void updateCenterMarkerOverlay( vr::HmdMatrix34_t* centerPlaySpaceMatrix );
++
+     float boundsVisibility() const;
+     float fadeDistance();
+     float height();
+@@ -412,6 +413,7 @@ class ChaperoneTabController : public QObject
+     int chaperoneColorA() const;
+ 
+     bool centerMarkerNew();
++    bool m_centerMarkerOverlayNeedsUpdate = false;
+ 
+     bool chaperoneFloorToggle();
+ "
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,458,dca1e18e0e73ddb30a88313869977b60ac37a2ee,src/tabcontrollers/MoveCenterTabController.cpp,modified,52,1,53,"@@ -1,7 +1,6 @@
+ #include ""MoveCenterTabController.h""
+ #include <QQuickWindow>
+ #include ""../overlaycontroller.h""
+-#include ""../utils/Matrix.h""
+ #include ""../quaternion/quaternion.h""
+ #include ""../settings/settings.h""
+ 
+@@ -1005,6 +1004,14 @@ void MoveCenterTabController::reset()
+     m_lastControllerPosition[0] = 0.0f;
+     m_lastControllerPosition[1] = 0.0f;
+     m_lastControllerPosition[2] = 0.0f;
++
++    // For Center Marker
++    if ( parent->m_chaperoneTabController.m_centerMarkerOverlayNeedsUpdate )
++    {
++        m_offsetmatrix = utils::k_forwardUpMatrix;
++        parent->m_chaperoneTabController.updateCenterMarkerOverlay(
++            &m_offsetmatrix );
++    }
+     m_lastMoveHand = vr::TrackedControllerRole_Invalid;
+     m_lastRotateHand = vr::TrackedControllerRole_Invalid;
+     applyChaperoneResetData();
+@@ -2567,14 +2574,17 @@ void MoveCenterTabController::updateSpace( bool forceUpdate )
+     // (we reuse offsetUniverseCenterYaw to rotate the chaperone also)
+     double offsetUniverseCenterYaw = static_cast<double>( std::atan2(
+         offsetUniverseCenter.m[0][2], offsetUniverseCenter.m[2][2] ) );
++
+     double offsetUniverseCenterXyz[3]
+         = { static_cast<double>( offsetUniverseCenter.m[0][3] ),
+             static_cast<double>( offsetUniverseCenter.m[1][3] ),
+             static_cast<double>( offsetUniverseCenter.m[2][3] ) };
+     // unrotate to get raw values of xyz
++
+     rotateCoordinates( offsetUniverseCenterXyz,
+                        offsetUniverseCenterYaw
+                            - ( m_rotation * k_centidegreesToRadians ) );
++
+     if ( abs( offsetUniverseCenterXyz[0] ) > k_maxOpenvrWorkingSetOffest
+          || ( abs( offsetUniverseCenterXyz[0] )
+                   > k_maxOvrasUniverseCenteredTurningOffset
+@@ -2715,6 +2725,47 @@ void MoveCenterTabController::updateSpace( bool forceUpdate )
+             }
+         }
+ 
++        // Center Marker for playspace.
++        if ( parent->m_chaperoneTabController.m_centerMarkerOverlayNeedsUpdate )
++        {
++            // Set Unrotated Coordinates
++            float universePlayCenterTempCoords[3] = { 0.0f, 0.0f, 0.0f };
++            universePlayCenterTempCoords[0]
++                -= offsetUniverseCenter.m[0][3]
++                   - m_universeCenterForReset.m[0][3];
++            universePlayCenterTempCoords[1]
++                -= offsetUniverseCenter.m[1][3]
++                   - m_universeCenterForReset.m[1][3];
++            universePlayCenterTempCoords[2]
++                -= offsetUniverseCenter.m[2][3]
++                   - m_universeCenterForReset.m[2][3];
++            // Rotate un-rotated to rotated
++            rotateFloatCoordinates(
++                universePlayCenterTempCoords,
++                static_cast<float>( offsetUniverseCenterYaw ) );
++            // Set Up orientation properly away from raw center
++            utils::matMul33( m_offsetmatrix,
++                             offsetUniverseCenter,
++                             utils::k_forwardUpMatrix );
++            vr::HmdMatrix34_t rotMatrix;
++            utils::initRotationMatrix(
++                rotMatrix,
++                1,
++                static_cast<float>( -( ( m_rotation * k_centidegreesToRadians )
++                                       + offsetUniverseCenterYaw ) ) );
++
++            // Rotates orientation At playspace center
++            vr::HmdMatrix34_t finalmatrix;
++            utils::matMul33( finalmatrix, rotMatrix, m_offsetmatrix );
++
++            finalmatrix.m[0][3] = universePlayCenterTempCoords[0];
++            finalmatrix.m[1][3] = universePlayCenterTempCoords[1];
++            finalmatrix.m[2][3] = universePlayCenterTempCoords[2];
++
++            parent->m_chaperoneTabController.updateCenterMarkerOverlay(
++                &finalmatrix );
++        }
++
+         // update chaperone working set preview (this does not commit)
+         vr::VRChaperoneSetup()->SetWorkingCollisionBoundsInfo(
+             updatedBounds, m_collisionBoundsCountForReset );"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,458,dca1e18e0e73ddb30a88313869977b60ac37a2ee,src/tabcontrollers/MoveCenterTabController.h,modified,4,0,4,"@@ -5,6 +5,7 @@
+ #include <openvr.h>
+ #include <chrono>
+ #include <qmath.h>
++#include ""../utils/Matrix.h""
+ #include ""../utils/FrameRateUtils.h""
+ #include ""../settings/settings_object.h""
+ 
+@@ -205,6 +206,9 @@ class MoveCenterTabController : public QObject
+ 
+     unsigned int m_moveCenterSettingsUpdateCounter = 83;
+ 
++    // Matrix used For Center Marker
++    vr::HmdMatrix34_t m_offsetmatrix = utils::k_forwardUpMatrix;
++
+     double m_velocity[3] = { 0.0, 0.0, 0.0 };
+     std::chrono::steady_clock::time_point m_lastGravityUpdateTimePoint;
+     std::chrono::steady_clock::time_point m_lastDragUpdateTimePoint;"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,458,dca1e18e0e73ddb30a88313869977b60ac37a2ee,src/tabcontrollers/SettingsTabController.cpp,modified,33,0,33,"@@ -16,6 +16,7 @@ void SettingsTabController::initStage1()
+ void SettingsTabController::initStage2( OverlayController* var_parent )
+ {
+     this->parent = var_parent;
++    setNativeChaperoneToggle( nativeChaperoneToggle() );
+ }
+ 
+ void SettingsTabController::dashboardLoopTick()
+@@ -37,6 +38,38 @@ bool SettingsTabController::autoStartEnabled() const
+     return m_autoStartEnabled;
+ }
+ 
++bool SettingsTabController::nativeChaperoneToggle()
++{
++    std::pair<ovr_settings_wrapper::SettingsError, bool> p
++        = ovr_settings_wrapper::getFloat(
++            vr::k_pch_CollisionBounds_Section,
++            vr::k_pch_CollisionBounds_EnableDriverImport,
++            """" );
++    if ( p.first == ovr_settings_wrapper::SettingsError::NoError )
++    {
++        m_nativeChaperoneToggle = !( p.second );
++    }
++    return m_nativeChaperoneToggle;
++}
++
++void SettingsTabController::setNativeChaperoneToggle( bool value, bool notify )
++{
++    if ( m_nativeChaperoneToggle != value )
++    {
++        m_nativeChaperoneToggle = !( value );
++        ovr_settings_wrapper::setBool(
++            vr::k_pch_CollisionBounds_Section,
++            vr::k_pch_CollisionBounds_EnableDriverImport,
++            m_nativeChaperoneToggle,
++            """" );
++        // On Error Do Nothing
++        if ( notify )
++        {
++            emit nativeChaperoneToggleChanged( m_nativeChaperoneToggle );
++        }
++    }
++}
++
+ void SettingsTabController::setAutoStartEnabled( bool value, bool notify )
+ {
+     if ( m_autoStartEnabled != value )"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,458,dca1e18e0e73ddb30a88313869977b60ac37a2ee,src/tabcontrollers/SettingsTabController.h,modified,8,0,8,"@@ -3,6 +3,7 @@
+ 
+ #include <QObject>
+ #include ""../utils/FrameRateUtils.h""
++#include ""../openvr/ovr_settings_wrapper.h""
+ 
+ class QQuickWindow;
+ // application namespace
+@@ -16,13 +17,17 @@ class SettingsTabController : public QObject
+     Q_OBJECT
+     Q_PROPERTY( bool autoStartEnabled READ autoStartEnabled WRITE
+                     setAutoStartEnabled NOTIFY autoStartEnabledChanged )
++    Q_PROPERTY(
++        bool nativeChaperoneToggle READ nativeChaperoneToggle WRITE
++            setNativeChaperoneToggle NOTIFY nativeChaperoneToggleChanged )
+ 
+ private:
+     OverlayController* parent;
+ 
+     unsigned settingsUpdateCounter = 0;
+ 
+     bool m_autoStartEnabled = false;
++    bool m_nativeChaperoneToggle = false;
+ 
+     unsigned int m_settingsTabSettingsUpdateCounter = 157;
+ 
+@@ -33,12 +38,15 @@ class SettingsTabController : public QObject
+     void dashboardLoopTick();
+ 
+     bool autoStartEnabled() const;
++    bool nativeChaperoneToggle();
+ 
+ public slots:
+     void setAutoStartEnabled( bool value, bool notify = true );
++    void setNativeChaperoneToggle( bool value, bool notify = true );
+ 
+ signals:
+     void autoStartEnabledChanged( bool value );
++    void nativeChaperoneToggleChanged( bool value );
+ };
+ 
+ } // namespace advsettings"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,458,dca1e18e0e73ddb30a88313869977b60ac37a2ee,src/tabcontrollers/VideoTabController.h,modified,1,0,1,"@@ -58,6 +58,7 @@ struct VideoProfile : settings::ISettingsObject
+ 
+         o.addValue( overlayMethodState );
+ 
++        // TODO add opacity Toggle?
+         o.addValue( static_cast<double>( opacity ) );
+ 
+         return o;"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,458,dca1e18e0e73ddb30a88313869977b60ac37a2ee,src/utils/Matrix.h,modified,7,0,7,"@@ -5,6 +5,13 @@
+ 
+ namespace utils
+ {
++// TODO possibly expand on this to include other orientations?
++// This is Forward, and Up orientation matrix
++constexpr vr::HmdMatrix34_t k_forwardUpMatrix
++    = { { { 1.0f, 0.0f, 0.0f, 0.0f },
++          { 0.0f, 0.0f, 1.0f, 0.0f },
++          { 0.0f, -1.0f, 0.0f, 0.0f } } };
++
+ inline vr::HmdMatrix34_t& initRotationMatrix( vr::HmdMatrix34_t& matrix,
+                                               unsigned axisId,
+                                               float angle )"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,458,dca1e18e0e73ddb30a88313869977b60ac37a2ee,src/utils/setup.cpp,modified,12,6,18,"@@ -67,6 +67,10 @@ CommandLineOptions returnCommandLineParser( const MyQApplication& application )
+                                             k_forceRemoveManifestDescription );
+     parser.addOption( forceRemoveManifest );
+ 
++    QCommandLineOption resetSettings( k_resetSettings,
++                                      k_resetSettingsDescription );
++    parser.addOption( resetSettings );
++
+     parser.process( application );
+ 
+     const bool desktopModeEnabled = parser.isSet( desktopMode );
+@@ -87,12 +91,14 @@ CommandLineOptions returnCommandLineParser( const MyQApplication& application )
+     const bool forceRemoveManifestEnabled = parser.isSet( forceRemoveManifest );
+     LOG_IF( forceRemoveManifestEnabled, INFO )
+         << ""Forcing removal of applications manifest."";
+-
+-    const CommandLineOptions commandLineArgs{ desktopModeEnabled,
+-                                              forceNoSoundEnabled,
+-                                              forceNoManifestEnabled,
+-                                              forceInstallManifestEnabled,
+-                                              forceRemoveManifestEnabled };
++    const bool resetSettingsEnabled = parser.isSet( resetSettings );
++    LOG_IF( resetSettingsEnabled, INFO ) << ""Reset SteamVR Settings."";
++
++    const CommandLineOptions commandLineArgs{
++        desktopModeEnabled,         forceNoSoundEnabled,
++        forceNoManifestEnabled,     forceInstallManifestEnabled,
++        forceRemoveManifestEnabled, resetSettingsEnabled
++    };
+ 
+     LOG( INFO ) << ""Command line arguments processed."";
+ "
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,458,dca1e18e0e73ddb30a88313869977b60ac37a2ee,src/utils/setup.h,modified,4,0,4,"@@ -26,6 +26,7 @@ struct CommandLineOptions
+     const bool forceNoManifest = false;
+     const bool forceInstallManifest = false;
+     const bool forceRemoveManifest = false;
++    const bool resetSettings = false;
+ };
+ 
+ // Manages the programs control flow and main settings.
+@@ -87,6 +88,9 @@ constexpr auto k_forceInstallManifestDescription
+ constexpr auto k_forceRemoveManifest = ""force-remove-manifest"";
+ constexpr auto k_forceRemoveManifestDescription
+     = ""Forces removing the applications manifest. Application will exit early."";
++constexpr auto k_resetSettings = ""reset-steamvr-settings"";
++constexpr auto k_resetSettingsDescription
++    = ""Resets all SteamVR values that can be modified in OVRAS to defaults."";
+ 
+ CommandLineOptions returnCommandLineParser( const MyQApplication& application );
+ "
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,458,dca1e18e0e73ddb30a88313869977b60ac37a2ee,ver/versioncheck.json,modified,1,1,2,"@@ -1 +1 @@
+-{ ""major"": 5, ""minor"": 1, ""patch"": 0, ""updateMessage"": """", ""optionalMessage"": """" }
+\ No newline at end of file
++{ ""major"": 5, ""minor"": 1, ""patch"": 1, ""updateMessage"": """", ""optionalMessage"": """" }
+\ No newline at end of file"

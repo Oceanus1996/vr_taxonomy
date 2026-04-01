@@ -1,0 +1,132 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+secondlife/viewer,1165,a2a4d70,indra/newview/pipeline.cpp,modified,2,1,3,"@@ -2269,7 +2269,8 @@ static LLTrace::BlockTimerStatHandle FTM_CULL(""Object Culling"");
+ // static
+ bool LLPipeline::isWaterClip()
+ {
+-	return (!sRenderTransparentWater || gCubeSnapshot) && !sRenderingHUDs;
++    // We always pretend that we're not clipping water when rendering mirrors.
++	return (gPipeline.mHeroProbeManager.isMirrorPass()) ? false : (!sRenderTransparentWater || gCubeSnapshot) && !sRenderingHUDs;
+ }
+ 
+ void LLPipeline::updateCull(LLCamera& camera, LLCullResult& result)"
+secondlife/viewer,1165,54816bd,.github/workflows/build.yaml,modified,17,10,27,"@@ -5,7 +5,7 @@ on:
+   pull_request:
+   push:
+     branches: [""main"", ""release/*"", ""project/*""]
+-    tags: [""Second_Life_*""]
++    tags: [""Second_Life*""]
+ 
+ jobs:
+   build:
+@@ -176,16 +176,22 @@ jobs:
+           # seen before, so numerous tests don't know about it.
+           [[ ""$arch"" == ""MINGW6"" ]] && arch=CYGWIN
+           export AUTOBUILD=""$(which autobuild)""
+-          # Build with a tag like ""Second_Life_Project_Shiny#abcdef0"" to get a
+-          # viewer channel ""Second Life Project Shiny"" (ignoring ""#hash"",
+-          # needed to disambiguate tags).
+-          if [[ ""$GITHUB_REF_TYPE"" == ""tag"" && ""${GITHUB_REF_NAME:0:12}"" == ""Second_Life_"" ]]
+-          then viewer_channel=""${GITHUB_REF_NAME%#*}""
+-               export viewer_channel=""${viewer_channel//_/ }""
+-          else export viewer_channel=""Second Life Test""
++
++          # determine the viewer channel from the branch name
++          branch=$AUTOBUILD_VCS_BRANCH
++          IFS='/' read -ra ba <<< $branch
++          prefix=${ba[0]}
++          if [ ""$prefix"" == ""project"" ]; then
++              IFS='_' read -ra prj <<< ""${ba[1]}""
++              # uppercase first letter of each word
++              export viewer_channel=""Second Life Project ${prj[*]^}""
++          elif  [[ ""$prefix"" == ""release"" || ""$prefix"" == ""main"" ]];
++          then
++              export viewer_channel=""Second Life Release""
++          else
++              export viewer_channel=""Second Life Test""
+           fi
+           echo ""viewer_channel=$viewer_channel"" >> ""$GITHUB_OUTPUT""
+-
+           # On windows we need to point the build to the correct python
+           # as neither CMake's FindPython nor our custom Python.cmake module
+           # will resolve the correct interpreter location.
+@@ -354,7 +360,8 @@ jobs:
+   release:
+     needs: [build, sign-and-package-windows, sign-and-package-mac]
+     runs-on: ubuntu-latest
+-    if: github.ref_type == 'tag' && startsWith(github.ref_name, 'Second_Life_')
++      # Build with a tag like ""Second_Life#abcdef0"" to generate a release page (used for builds we are planning to deploy).
++    if: github.ref_type == 'tag' && startsWith(github.ref_name, 'Second_Life')
+     steps:
+       - uses: actions/download-artifact@v4
+         with:"
+secondlife/viewer,1165,54816bd,build.sh,modified,1,0,1,"@@ -178,6 +178,7 @@ pre_build()
+ 
+     ""$autobuild"" configure --quiet -c $variant \
+      ${eval_autobuild_configure_parameters:---} \
++     -DLL_TESTS:BOOL=ON \
+      -DPACKAGE:BOOL=ON \
+      -DHAVOK:BOOL=""$HAVOK"" \
+      -DRELEASE_CRASH_REPORTING:BOOL=""$RELEASE_CRASH_REPORTING"" \"
+secondlife/viewer,1165,54816bd,indra/llimage/tests/llimageworker_test.cpp,modified,1,1,2,"@@ -98,7 +98,7 @@ namespace tut
+ 				done = res;
+ 				*done = false;
+ 			}
+-			virtual void completed(bool success, LLImageRaw* raw, LLImageRaw* aux)
++			virtual void completed(bool success, LLImageRaw* raw, LLImageRaw* aux, U32)
+ 			{
+ 				*done = true;
+ 			}"
+secondlife/viewer,1165,54816bd,indra/llprimitive/llgltfmaterial.h,modified,7,5,12,"@@ -122,9 +122,10 @@ class LLGLTFMaterial : public LLRefCount
+     F32 mRoughnessFactor = 1.f;
+     F32 mAlphaCutoff = 0.5f;
+ 
+-    bool mDoubleSided = false;
+     AlphaMode mAlphaMode = ALPHA_MODE_OPAQUE;
+ 
++    bool mDoubleSided = false;
++
+     // override specific flags for state that can't use off-by-epsilon or UUID hack
+     bool mOverrideDoubleSided = false;
+     bool mOverrideAlphaMode = false;
+@@ -139,6 +140,11 @@ class LLGLTFMaterial : public LLRefCount
+     //       heightmaps cannot currently be described as finite enclosed
+     //       volumes.
+     // See also LLPanelRegionTerrainInfo::validateMaterials
++    // These fields are local to viewer and are a part of local bitmap support
++    typedef std::map<LLUUID, LLUUID> local_tex_map_t;
++    local_tex_map_t                  mTrackingIdToLocalTexture;
++
++public:
+ 
+     // get a UUID based on a hash of this LLGLTFMaterial
+     LLUUID getHash() const;
+@@ -240,10 +246,6 @@ class LLGLTFMaterial : public LLRefCount
+     virtual bool replaceLocalTexture(const LLUUID& tracking_id, const LLUUID &old_id, const LLUUID& new_id);
+     virtual void updateTextureTracking();
+ 
+-    // These fields are local to viewer and are a part of local bitmap support
+-    typedef std::map<LLUUID, LLUUID> local_tex_map_t;
+-    local_tex_map_t mTrackingIdToLocalTexture;
+-
+ protected:
+     static LLVector2 vec2FromJson(const std::map<std::string, tinygltf::Value>& object, const char* key, const LLVector2& default_value);
+     static F32 floatFromJson(const std::map<std::string, tinygltf::Value>& object, const char* key, const F32 default_value);"
+secondlife/viewer,1165,54816bd,indra/llprimitive/tests/llgltfmaterial_test.cpp,modified,1,1,2,"@@ -143,7 +143,7 @@ namespace tut
+ #if LL_WINDOWS
+         // If any fields are added/changed, these tests should be updated (consider also updating ASSET_VERSION in LLGLTFMaterial)
+         // This test result will vary between compilers, so only test a single platform
+-        ensure_equals(""fields supported for GLTF (sizeof check)"", sizeof(LLGLTFMaterial), 216);
++        ensure_equals(""fields supported for GLTF (sizeof check)"", sizeof(LLGLTFMaterial), 224);
+ #endif
+ #endif
+         ensure_equals(""LLGLTFMaterial texture info count"", (U32)LLGLTFMaterial::GLTF_TEXTURE_INFO_COUNT, 4);"
+secondlife/viewer,1165,54816bd,indra/newview/pipeline.cpp,modified,2,1,3,"@@ -2269,7 +2269,8 @@ static LLTrace::BlockTimerStatHandle FTM_CULL(""Object Culling"");
+ // static
+ bool LLPipeline::isWaterClip()
+ {
+-	return (!sRenderTransparentWater || gCubeSnapshot) && !sRenderingHUDs;
++    // We always pretend that we're not clipping water when rendering mirrors.
++	return (gPipeline.mHeroProbeManager.isMirrorPass()) ? false : (!sRenderTransparentWater || gCubeSnapshot) && !sRenderingHUDs;
+ }
+ 
+ void LLPipeline::updateCull(LLCamera& camera, LLCullResult& result)"

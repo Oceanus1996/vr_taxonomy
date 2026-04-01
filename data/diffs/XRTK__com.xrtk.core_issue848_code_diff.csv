@@ -1,0 +1,136 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch,gpt_bug_detection
+XRTK/com.xrtk.core,848,cb0afa2bd85f7916151fc423349cb5075f422197,Submodules/Examples,modified,1,1,2,"@@ -1 +1 @@
+-Subproject commit 441fe7023b96f5d011ca65692475b8638a19be84
++Subproject commit 2cc2b5bab6f2290650d20dddb3ff76c5c254b9c6","{""error"": ""code_file_not_found""}"
+XRTK/com.xrtk.core,848,cb0afa2bd85f7916151fc423349cb5075f422197,Submodules/Lumin,modified,1,1,2,"@@ -1 +1 @@
+-Subproject commit 7c365057c935e7f379cbfe7ebbca2b19b29b7845
++Subproject commit adac944046e31758e8c48b5eef75a4ab94adea30","{""error"": ""code_file_not_found""}"
+XRTK/com.xrtk.core,848,cb0afa2bd85f7916151fc423349cb5075f422197,Submodules/WindowsMixedReality,modified,1,1,2,"@@ -1 +1 @@
+-Subproject commit e124baea6eb3e7f49674539c7cce1b505befa7cf
++Subproject commit ca270d960abc20808e605a8e1023eb1dfa63c016","{""error"": ""code_file_not_found""}"
+XRTK/com.xrtk.core,848,cb0afa2bd85f7916151fc423349cb5075f422197,XRTK-Core/Packages/com.xrtk.core/Editor/Profiles/InputSystem/MixedRealityInputSystemProfileInspector.cs,modified,5,4,9,"@@ -21,6 +21,7 @@ public class MixedRealityInputSystemProfileInspector : MixedRealityServiceProfil
+     {
+         private static readonly GUIContent FocusProviderContent = new GUIContent(""Focus Provider"");
+         private static readonly GUIContent GazeProviderContent = new GUIContent(""Gaze Provider"");
++        private static readonly GUIContent GazeCursorPrefabContent = new GUIContent(""Gaze Cursor Prefab"");
+         private static readonly GUIContent GlobalPointerSettingsContent = new GUIContent(""Global Pointer Settings"");
+         private static readonly GUIContent GlobalHandSettingsContent = new GUIContent(""Global Hand Settings"");
+         private static readonly GUIContent ShowControllerMappingsContent = new GUIContent(""Controller Action Mappings"");
+@@ -83,10 +84,10 @@ protected override void OnEnable()
+             {
+                 var configurationProperty = Configurations.GetArrayElementAtIndex(i);
+                 var configurationProfileProperty = configurationProperty.FindPropertyRelative(""profile"");
+-                if (configurationProfileProperty != null)
+-                {
+-                    var controllerDataProviderProfile = (BaseMixedRealityControllerDataProviderProfile)configurationProfileProperty.objectReferenceValue;
+ 
++                if (configurationProfileProperty != null &&
++                    configurationProfileProperty.objectReferenceValue is BaseHandControllerDataProviderProfile controllerDataProviderProfile)
++                {
+                     if (controllerDataProviderProfile.IsNull() ||
+                         controllerDataProviderProfile.ControllerMappingProfiles == null)
+                     {
+@@ -126,7 +127,7 @@ public override void OnInspectorGUI()
+ 
+             EditorGUILayout.PropertyField(focusProviderType, FocusProviderContent);
+             EditorGUILayout.PropertyField(gazeProviderType, GazeProviderContent);
+-            EditorGUILayout.PropertyField(gazeCursorPrefab);
++            EditorGUILayout.PropertyField(gazeCursorPrefab, GazeCursorPrefabContent);
+ 
+             EditorGUILayout.Space();
+ ","{""has_bug"": true, ""bugs"": [{""line_start"": 83, ""line_end"": 83, ""description"": ""Potential null reference issue when accessing Configurations. If Configurations is null, this will throw an exception."", ""buggy_code"": ""for (int i = 0; i < Configurations?.arraySize; i++)""}, {""line_start"": 89, ""line_end"": 89, ""description"": ""Type mismatch: The condition checks if configurationProfileProperty.objectReferenceValue is of type BaseHandControllerDataProviderProfile, but it does not handle the case where it is not."", ""buggy_code"": ""if (configurationProfileProperty != null && configurationProfileProperty.objectReferenceValue is BaseHandControllerDataProviderProfile controllerDataProviderProfile)""}, {""line_start"": 91, ""line_end"": 91, ""description"": ""Logic error: The check for controllerDataProviderProfile.IsNull() may not be necessary if the previous check confirms it's not null."", ""buggy_code"": ""if (controllerDataProviderProfile.IsNull() || controllerDataProviderProfile.ControllerMappingProfiles == null)""}, {""line_start"": 141, ""line_end"": 141, ""description"": ""Incomplete code: The line is cut off and does not complete the method, which will lead to a compilation error."", ""buggy_code"": ""Ed""}]}"
+XRTK/com.xrtk.core,848,cb0afa2bd85f7916151fc423349cb5075f422197,XRTK-Core/Packages/com.xrtk.core/Editor/Profiles/MixedRealityServiceProviderProfileInspector.cs,modified,46,7,53,"@@ -42,6 +42,15 @@ public class MixedRealityServiceProfileInspector : BaseMixedRealityProfileInspec
+ 
+         private List<Tuple<bool, bool>> configListHeightFlags;
+ 
++        private GUIStyle buttonGuiStyle = null;
++
++        private GUIStyle ButtonGuiStyle => buttonGuiStyle ?? (buttonGuiStyle =
++            new GUIStyle(EditorStyles.toolbarButton)
++            {
++                alignment = TextAnchor.MiddleLeft,
++                fontStyle = FontStyle.Bold
++            });
++
+         protected override void OnEnable()
+         {
+             base.OnEnable();
+@@ -183,17 +192,20 @@ private void DrawConfigurationOptionElement(Rect rect, int index, bool isActive,
+ 
+             var rectX = rect.x + 12;
+             var rectWidth = rect.width - 12;
+-            var nameRect = new Rect(rectX, rect.y + halfFieldHeight, rectWidth, EditorGUIUtility.singleLineHeight);
+-            var typeRect = new Rect(rectX, rect.y + halfFieldHeight * 6, rectWidth, EditorGUIUtility.singleLineHeight);
+-            var profileRect = new Rect(rectX, rect.y + halfFieldHeight * 11, rectWidth, EditorGUIUtility.singleLineHeight);
+-            var runtimeRect = new Rect(rectX, rect.y + halfFieldHeight * (hasProfile ? 16 : 11), rectWidth, EditorGUIUtility.singleLineHeight);
++            var elementX = rectX + 6;
++            var elementWidth = rectWidth - 6;
++            var dropdownRect = new Rect(rectX, rect.y + halfFieldHeight, rectWidth, EditorGUIUtility.singleLineHeight);
++            var labelRect = new Rect(elementX, rect.y + halfFieldHeight, elementWidth, EditorGUIUtility.singleLineHeight);
++            var typeRect = new Rect(elementX, rect.y + halfFieldHeight * 6, elementWidth, EditorGUIUtility.singleLineHeight);
++            var profileRect = new Rect(elementX, rect.y + halfFieldHeight * 11, elementWidth, EditorGUIUtility.singleLineHeight);
++            var runtimeRect = new Rect(elementX, rect.y + halfFieldHeight * (hasProfile ? 16 : 11), elementWidth, EditorGUIUtility.singleLineHeight);
+ 
+             EditorGUI.BeginChangeCheck();
+ 
+             if (configurationProperty.isExpanded)
+             {
+-                EditorGUI.PropertyField(nameRect, nameProperty);
+-                configurationProperty.isExpanded = EditorGUI.Foldout(nameRect, configurationProperty.isExpanded, GUIContent.none, true);
++                EditorGUI.PropertyField(labelRect, nameProperty);
++                configurationProperty.isExpanded = EditorGUI.Foldout(dropdownRect, configurationProperty.isExpanded, GUIContent.none, true);
+ 
+                 if (!configurationProperty.isExpanded)
+                 {
+@@ -202,7 +214,34 @@ private void DrawConfigurationOptionElement(Rect rect, int index, bool isActive,
+             }
+             else
+             {
+-                configurationProperty.isExpanded = EditorGUI.Foldout(nameRect, configurationProperty.isExpanded, nameProperty.stringValue, true);
++                configurationProperty.isExpanded = EditorGUI.Foldout(dropdownRect, configurationProperty.isExpanded, GUIContent.none, false) ||
++                                                   hasProfile && configurationProfileProperty.objectReferenceValue == null;
++
++                if (!configurationProfileProperty.isExpanded)
++                {
++                    if (hasProfile)
++                    {
++                        if (GUI.Button(labelRect, nameProperty.stringValue, ButtonGuiStyle) &&
++                            configurationProfileProperty.objectReferenceValue != null)
++                        {
++                            var profile = configurationProfileProperty.objectReferenceValue as BaseMixedRealityProfile;
++
++                            Debug.Assert(profile != null);
++
++                            if (profile.ParentProfile.IsNull() ||
++                                profile.ParentProfile != ThisProfile)
++                            {
++                                profile.ParentProfile = ThisProfile;
++                            }
++
++                            Selection.activeObject = profile;
++                        }
++                    }
++                    else
++                    {
++                        GUI.Label(labelRect, nameProperty.stringValue, ButtonGuiStyle);
++                    }
++                }
+             }
+ 
+             if (configurationProperty.isExpanded)","{""has_bug"": true, ""bugs"": [{""line_start"": 60, ""line_end"": 60, ""description"": ""Potential null reference issue if 'configurations' is not found."", ""buggy_code"": ""Debug.Assert(configurations != null);""}, {""line_start"": 64, ""line_end"": 64, ""description"": ""Potential null reference issue if 'genericTypeArgs' is null."", ""buggy_code"": ""Debug.Assert(genericTypeArgs != null);""}, {""line_start"": 66, ""line_end"": 66, ""description"": ""Potential null reference issue if 'genericTypeArgs' is empty."", ""buggy_code"": ""Debug.Assert(ServiceConstraint != null);""}, {""line_start"": 100, ""line_end"": 100, ""description"": ""Incorrect condition check; should check if 'configurations' is null before accessing 'arraySize'."", ""buggy_code"": ""if (configurations == null || configurations.arraySize == 0)""}, {""line_start"": 113, ""line_end"": 113, ""description"": ""Off-by-one error; accessing 'configListHeightFlags' without checking if 'index' is within bounds."", ""buggy_code"": ""var (isExpanded, hasProfile) = configListHeightFlags[index];""}]}"
+XRTK/com.xrtk.core,848,cb0afa2bd85f7916151fc423349cb5075f422197,XRTK-Core/Packages/com.xrtk.core/Editor/PropertyDrawers/MixedRealityProfilePropertyDrawer.cs,modified,2,2,4,"@@ -35,7 +35,7 @@ public override void OnGUI(Rect position, SerializedProperty property, GUIConten
+             {
+                 parent = ParentProfileOverride;
+ 
+-                if (parent.IsNull())
++                if (parent.IsNull() && Selection.activeObject.IsNotNull())
+                 {
+                     if (Selection.activeObject.name.Equals(nameof(MixedRealityToolkit)))
+                     {
+@@ -128,4 +128,4 @@ public override void OnGUI(Rect position, SerializedProperty property, GUIConten
+             EditorGUI.EndProperty();
+         }
+     }
+-}
+\ No newline at end of file
++}","{""has_bug"": true, ""bugs"": [{""line_start"": 34, ""line_end"": 34, ""description"": ""Potential null reference exception when accessing 'parent' before it is initialized."", ""buggy_code"": ""if (parent.IsNull())""}, {""line_start"": 38, ""line_end"": 38, ""description"": ""Potential null reference exception when accessing 'Selection.activeObject' without checking if it is null."", ""buggy_code"": ""if (parent.IsNull() && Selection.activeObject.IsNotNull())""}, {""line_start"": 60, ""line_end"": 60, ""description"": ""Potential null reference exception when accessing 'profile' without checking if it is null."", ""buggy_code"": ""if (!profile.IsNull())""}, {""line_start"": 90, ""line_end"": 90, ""description"": ""Redundant null check for 'selectedProfile' since it is already checked in the previous condition."", ""buggy_code"": ""if (!(selectedProfile is null) &&""}, {""line_start"": 113, ""line_end"": 113, ""description"": ""Potential null reference exception when accessing 'selectedProfile.ParentProfile' without checking if 'selectedProfile' is null."", ""buggy_code"": ""if (selectedProfile.ParentProfile.IsNull() ||""}]}"

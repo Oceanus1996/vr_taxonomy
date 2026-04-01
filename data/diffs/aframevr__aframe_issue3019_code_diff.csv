@@ -1,0 +1,85 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe,3019,0dba1828118eed1f69edb9c2bc403b587e3399be,src/core/scene/a-scene.js,modified,2,2,4,"@@ -128,8 +128,8 @@ module.exports.AScene = registerElement('a-scene', {
+         // Exit VR on `vrdisplaydeactivate` (e.g. taking off Rift headset).
+         window.addEventListener('vrdisplaydeactivate', this.exitVRBound);
+ 
+-        // Enter VR on `vrdisplayconnect` (e.g. plugging on Rift headset).
+-        window.addEventListener('vrdisplayconnect', this.enterVRBound);
++        // Exit VR on `vrdisplaydisconnect` (e.g. unplugging Rift headset).
++        window.addEventListener('vrdisplaydisconnect', this.exitVRTrueBound);
+ 
+         // Exit VR on `vrdisplaydisconnect` (e.g. unplugging Rift headset).
+         window.addEventListener('vrdisplaydisconnect', this.exitVRTrueBound);"
+aframevr/aframe,3019,0dba1828118eed1f69edb9c2bc403b587e3399be,tests/core/scene/a-scene.test.js,modified,0,15,15,"@@ -61,21 +61,6 @@ suite('a-scene (without renderer)', function () {
+     });
+   });
+ 
+-  suite('vrdisplayconnect', function () {
+-    test('tells A-Frame about entering VR when the headset is connected', function (done) {
+-      var event;
+-      var sceneEl = this.el;
+-      var enterVRStub = this.sinon.stub(sceneEl, 'enterVR');
+-      sceneEl.effect = {requestPresent: function () { return Promise.resolve(); }};
+-      event = new CustomEvent('vrdisplayconnect');
+-      window.dispatchEvent(event);
+-      process.nextTick(function () {
+-        assert.ok(enterVRStub.called);
+-        done();
+-      });
+-    });
+-  });
+-
+   suite('vrdisplaydisconnect', function () {
+     test('tells A-Frame about entering VR when the headset is disconnected', function (done) {
+       var event;"
+aframevr/aframe,3019,0dba1828118eed1f69edb9c2bc403b587e3399be,vendor/VRControls.js,modified,3,0,3,"@@ -19,6 +19,9 @@ THREE.VRControls = function ( object, onError ) {
+ 
+ 	}
+ 
++	window.addEventListener('vrdisplayconnect', function (evt) { vrDisplay = evt.display; });
++	window.addEventListener('vrdisplaydisconnect', function () { vrDisplay = undefined });
++
+ 	function gotVRDisplays( displays ) {
+ 
+ 		vrDisplays = displays;"
+aframevr/aframe,3019,0dba1828118eed1f69edb9c2bc403b587e3399be,vendor/VREffect.js,modified,16,2,18,"@@ -24,6 +24,16 @@ THREE.VREffect = function( renderer, onError ) {
+ 
+ 	}
+ 
++	window.addEventListener('vrdisplayconnect', function (evt) { vrDisplay = evt.display; });
++	window.addEventListener('vrdisplaydisconnect', function (evt) {
++		scope.exitPresent();
++		// Cancels current request animation frame.
++		scope.cancelAnimationFrame();
++		vrDisplay = undefined;
++		// Resumes the request animation frame.
++		scope.requestAnimationFrame();
++	});
++
+ 	function gotVRDisplays( displays ) {
+ 
+ 		vrDisplays = displays;
+@@ -183,10 +193,12 @@ THREE.VREffect = function( renderer, onError ) {
+ 
+ 	this.requestAnimationFrame = function( f ) {
+ 
+-		if ( vrDisplay !== undefined ) {
++		var f = scope.f = f || scope.f;
+ 
+-			return vrDisplay.requestAnimationFrame( f );
++		if (!f) { return; }
+ 
++		if ( vrDisplay !== undefined ) {
++			return vrDisplay.requestAnimationFrame( f );
+ 		} else {
+ 
+ 			return window.requestAnimationFrame( f );
+@@ -197,6 +209,8 @@ THREE.VREffect = function( renderer, onError ) {
+ 
+ 	this.cancelAnimationFrame = function( h ) {
+ 
++		scope.f = undefined;
++
+ 		if ( vrDisplay !== undefined ) {
+ 
+ 			vrDisplay.cancelAnimationFrame( h );"

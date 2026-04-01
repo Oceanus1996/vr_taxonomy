@@ -1,0 +1,900 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,101,3c5cab72e54a45fd55ea9cc9823fa150bcd3a772,Readme.md,modified,2,1,3,"@@ -147,12 +147,13 @@ These version are not stable and this should be considered for advanced users on
+ ![Chaperone Page](docs/screenshots/ChaperonePage.png)
+ 
+ - **Profile**: Allows to apply/define/delete chaperone profiles that save geometry info, style info or other chaperone settings (What exactly is saved in a chaperone profile can be selected when a profile is created).
+-- **Visibility**: Allows to configure the visibility of the chaperone bounds. Unlike the slider in the chaperone settings, this one is not capped at 30%. When set to 0 chaperone bounds are completely invisible.
++- **Visibility**: Allows to configure the visibility of the chaperone bounds. 50% to 100% opacity.
+ - **Fade Distance**: Allows to configure the distance at which the chaperone bounds are shown. When set to 0 chaperone bounds are completely invisible.
+ - **Height**: Allows to configure the height of the chaperone bounds.
+ - **Center Marker**: Displays a marker that represents the center of the playspace.
+ - **Play Space Maker**: Displays the outlines of the rectangle representing the playspace.
+ - **Force Bounds**: Force chaperone bounds always on.
++- **Disable Chaperone**: Disables Chaperone by setting fade distance to 0.0.
+ - **Proximity Warning Settings**: Opens a page that allows to configure several warning methods for when the user comes too close to the chaperone bounds.
+ - **Flip Orientation**: Flips the orientation of the play space.
+ - **Reload from Disk**: Reloads the chaperone bounds geometry from disk."
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,101,3c5cab72e54a45fd55ea9cc9823fa150bcd3a772,build_scripts/qt/sources.pri,modified,1,0,1,"@@ -39,6 +39,7 @@ HEADERS += src/overlaycontroller.h \
+     src/openvr/ivrinput_action.h \
+     src/openvr/ivrinput_manifest.h \
+     src/openvr/ivrinput_action_set.h \
++	src/openvr/ivrinput_input_source.h \
+     src/openvr/ivrinput.h \
+     src/utils/setup.h
+ "
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,101,3c5cab72e54a45fd55ea9cc9823fa150bcd3a772,docs/screenshots/ChaperonePage.png,modified,0,0,0,
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,101,3c5cab72e54a45fd55ea9cc9823fa150bcd3a772,src/openvr/ivrinput.cpp,modified,61,27,88,"@@ -123,56 +123,57 @@ Wrong action names may not result in direct error messages, but just features
+ mystically not working.
+ */
+ SteamIVRInput::SteamIVRInput()
+-    : m_manifest(), m_mainSet( input_strings::k_setMain ),
+-      m_nextTrack( input_strings::k_actionNextTrack, ActionType::Digital ),
+-      m_previousTrack( input_strings::k_actionPreviousTrack,
++    : m_manifest(), m_mainSet( action_sets::k_setMain ),
++      m_nextTrack( action_keys::k_actionNextTrack, ActionType::Digital ),
++      m_previousTrack( action_keys::k_actionPreviousTrack,
+                        ActionType::Digital ),
+-      m_pausePlayTrack( input_strings::k_actionPausePlayTrack,
++      m_pausePlayTrack( action_keys::k_actionPausePlayTrack,
+                         ActionType::Digital ),
+-      m_stopTrack( input_strings::k_actionStopTrack, ActionType::Digital ),
+-      m_leftHandSpaceTurn( input_strings::k_actionLeftHandSpaceTurn,
++      m_stopTrack( action_keys::k_actionStopTrack, ActionType::Digital ),
++      m_leftHandSpaceTurn( action_keys::k_actionLeftHandSpaceTurn,
+                            ActionType::Digital ),
+-      m_rightHandSpaceTurn( input_strings::k_actionRightHandSpaceTurn,
++      m_rightHandSpaceTurn( action_keys::k_actionRightHandSpaceTurn,
+                             ActionType::Digital ),
+-      m_leftHandSpaceDrag( input_strings::k_actionLeftHandSpaceDrag,
++      m_leftHandSpaceDrag( action_keys::k_actionLeftHandSpaceDrag,
+                            ActionType::Digital ),
+-      m_rightHandSpaceDrag( input_strings::k_actionRightHandSpaceDrag,
++      m_rightHandSpaceDrag( action_keys::k_actionRightHandSpaceDrag,
+                             ActionType::Digital ),
+       m_optionalOverrideLeftHandSpaceTurn(
+-          input_strings::k_actionOptionalOverrideLeftHandSpaceTurn,
++          action_keys::k_actionOptionalOverrideLeftHandSpaceTurn,
+           ActionType::Digital ),
+       m_optionalOverrideRightHandSpaceTurn(
+-          input_strings::k_actionOptionalOverrideRightHandSpaceTurn,
++          action_keys::k_actionOptionalOverrideRightHandSpaceTurn,
+           ActionType::Digital ),
+       m_optionalOverrideLeftHandSpaceDrag(
+-          input_strings::k_actionOptionalOverrideLeftHandSpaceDrag,
++          action_keys::k_actionOptionalOverrideLeftHandSpaceDrag,
+           ActionType::Digital ),
+       m_optionalOverrideRightHandSpaceDrag(
+-          input_strings::k_actionOptionalOverrideRightHandSpaceDrag,
++          action_keys::k_actionOptionalOverrideRightHandSpaceDrag,
+           ActionType::Digital ),
+       m_swapSpaceDragToLeftHandOverride(
+-          input_strings::k_actionSwapSpaceDragToLeftHandOverride,
++          action_keys::k_actionSwapSpaceDragToLeftHandOverride,
+           ActionType::Digital ),
+       m_swapSpaceDragToRightHandOverride(
+-          input_strings::k_actionSwapSpaceDragToRightHandOverride,
++          action_keys::k_actionSwapSpaceDragToRightHandOverride,
+           ActionType::Digital ),
+-      m_gravityToggle( input_strings::k_actionGravityToggle,
++      m_gravityToggle( action_keys::k_actionGravityToggle,
+                        ActionType::Digital ),
+-      m_heightToggle( input_strings::k_actionHeightToggle,
+-                      ActionType::Digital ),
+-      m_resetOffsets( input_strings::k_actionResetOffsets,
+-                      ActionType::Digital ),
+-      m_snapTurnLeft( input_strings::k_actionSnapTurnLeft,
+-                      ActionType::Digital ),
+-      m_snapTurnRight( input_strings::k_actionSnapTurnRight,
++      m_heightToggle( action_keys::k_actionHeightToggle, ActionType::Digital ),
++      m_resetOffsets( action_keys::k_actionResetOffsets, ActionType::Digital ),
++      m_snapTurnLeft( action_keys::k_actionSnapTurnLeft, ActionType::Digital ),
++      m_snapTurnRight( action_keys::k_actionSnapTurnRight,
+                        ActionType::Digital ),
+-      m_xAxisLockToggle( input_strings::k_actionXAxisLockToggle,
++      m_xAxisLockToggle( action_keys::k_actionXAxisLockToggle,
+                          ActionType::Digital ),
+-      m_yAxisLockToggle( input_strings::k_actionYAxisLockToggle,
++      m_yAxisLockToggle( action_keys::k_actionYAxisLockToggle,
+                          ActionType::Digital ),
+-      m_zAxisLockToggle( input_strings::k_actionZAxisLockToggle,
++      m_zAxisLockToggle( action_keys::k_actionZAxisLockToggle,
+                          ActionType::Digital ),
+-      m_pushToTalk( input_strings::k_actionPushToTalk, ActionType::Digital )
++      m_pushToTalk( action_keys::k_actionPushToTalk, ActionType::Digital ),
++      m_leftHaptic( action_keys::k_actionHapticsLeft, ActionType::Haptic ),
++      m_rightHaptic( action_keys::k_actionHapticsRight, ActionType::Haptic ),
++      m_leftHand( input_keys::k_inputSourceLeft ),
++      m_rightHand( input_keys::k_inputSourceRight )
+ {
+     m_activeActionSet.ulActionSet = m_mainSet.handle();
+     m_activeActionSet.ulRestrictedToDevice = vr::k_ulInvalidInputValueHandle;
+@@ -322,6 +323,39 @@ bool SteamIVRInput::pushToTalk()
+     return isDigitalActionActivatedConstant( m_pushToTalk );
+ }
+ 
++/*!
++Returns the action handle of the Left Haptic Action
++*/
++
++vr::VRActionHandle_t SteamIVRInput::leftHapticActionHandle()
++{
++    return m_leftHaptic.handle();
++}
++
++/*!
++Returns the action handle of the Right Haptic Action
++*/
++vr::VRActionHandle_t SteamIVRInput::rightHapticActionHandle()
++{
++    return m_rightHaptic.handle();
++}
++
++/*!
++Returns the input handle of the Right hand
++*/
++vr::VRInputValueHandle_t SteamIVRInput::rightInputHandle()
++{
++    return m_rightHand.handle();
++}
++
++/*!
++Returns the input handle of the Left hand
++*/
++vr::VRInputValueHandle_t SteamIVRInput::leftInputHandle()
++{
++    return m_leftHand.handle();
++}
++
+ /*!
+ Updates the active action set(s).
+ Should be called every frame, or however often you want the input system to"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,101,3c5cab72e54a45fd55ea9cc9823fa150bcd3a772,src/openvr/ivrinput.h,modified,39,3,42,"@@ -4,6 +4,7 @@
+ #include ""ivrinput_action.h""
+ #include ""ivrinput_manifest.h""
+ #include ""ivrinput_action_set.h""
++#include ""ivrinput_input_source.h""
+ 
+ namespace input
+ {
+@@ -62,6 +63,13 @@ class SteamIVRInput
+ 
+     bool pushToTalk();
+ 
++    bool proxIsActive();
++    vr::VRActionHandle_t leftHapticActionHandle();
++    vr::VRActionHandle_t rightHapticActionHandle();
++
++    vr::VRInputValueHandle_t rightInputHandle();
++    vr::VRInputValueHandle_t leftInputHandle();
++
+     // Destructor. There are no terminating calls for the IVRInput API, so it
+     // is left blank.
+     ~SteamIVRInput() {}
+@@ -113,14 +121,22 @@ class SteamIVRInput
+ 
+     // Push To Talk
+     Action m_pushToTalk;
++
++    // haptic bindings
++    Action m_leftHaptic;
++    Action m_rightHaptic;
++
++    // input sources
++    InputSource m_leftHand;
++    InputSource m_rightHand;
+ };
+ 
+ /*!
+ The IVRInput system is _very_ finnicky about strings matching and if they don't
+ match there are usually no errors logged reflecting that. constexpr auto strings
+ should be used to refer to all action manifest strings.
+ */
+-namespace input_strings
++namespace action_keys
+ {
+     constexpr auto k_actionNextTrack = ""/actions/main/in/NextTrack"";
+     constexpr auto k_actionPreviousTrack = ""/actions/main/in/PreviousTrack"";
+@@ -158,8 +174,28 @@ namespace input_strings
+ 
+     constexpr auto k_actionPushToTalk = ""/actions/main/in/PushToTalk"";
+ 
+-    constexpr auto k_setMain = ""/actions/main"";
++    constexpr auto k_actionHapticsLeft = ""/actions/main/out/HapticsLeft"";
++    constexpr auto k_actionHapticsRight = ""/actions/main/out/HapticsRight"";
++
++    constexpr auto k_actionProxSensor = ""/actions/main/in/ProxSensor"";
+ 
+-} // namespace input_strings
++} // namespace action_keys
++
++/*!
++Keys to get input source handles (things like hmd controllers etc.)
++*/
++namespace input_keys
++{
++    constexpr auto k_inputSourceLeft = ""/user/hand/left"";
++    constexpr auto k_inputSourceRight = ""/user/hand/right"";
++} // namespace input_keys
++
++/*!
++Keys for different action sets
++*/
++namespace action_sets
++{
++    constexpr auto k_setMain = ""/actions/main"";
++} // namespace action_sets
+ 
+ } // namespace input"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,101,3c5cab72e54a45fd55ea9cc9823fa150bcd3a772,src/openvr/ivrinput_action.h,modified,1,0,1,"@@ -14,6 +14,7 @@ enum class ActionType
+     Undefined,
+     Digital,
+     Analog,
++    Haptic,
+ };
+ 
+ /*!"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,101,3c5cab72e54a45fd55ea9cc9823fa150bcd3a772,src/openvr/ivrinput_input_source.h,added,45,0,45,"@@ -0,0 +1,45 @@
++#pragma once
++#include <openvr.h>
++#include <easylogging++.h>
++
++namespace input
++{
++/*!
++Represents an input source i.e. right controller
++*/
++class InputSource
++{
++public:
++    InputSource( const char* const inputSourceName ) : m_name( inputSourceName )
++    {
++        auto error
++            = vr::VRInput()->GetInputSourceHandle( inputSourceName, &m_handle );
++
++        if ( error != vr::EVRInputError::VRInputError_None )
++        {
++            LOG( ERROR ) << ""Error getting input handle for '""
++                         << inputSourceName
++                         << ""'. OpenVR Input Error: "" << error;
++        }
++    }
++    /*!
++    An API internal handle that identifies an input handle.
++    */
++    vr::VRInputValueHandle_t handle() const noexcept
++    {
++        return m_handle;
++    }
++    /*!
++    The actions manfiest name of the action. Used for error reporting.
++    */
++    std::string name() const noexcept
++    {
++        return m_name;
++    }
++
++private:
++    vr::VRInputValueHandle_t m_handle = 0;
++    const std::string m_name;
++};
++
++} // namespace input"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,101,3c5cab72e54a45fd55ea9cc9823fa150bcd3a772,src/overlaycontroller.cpp,modified,11,0,11,"@@ -111,6 +111,7 @@ OverlayController::OverlayController( bool desktopMode,
+             nullptr, ""OpenVR Advanced Settings Overlay"", ""Is OpenVR running?"" );
+         throw std::runtime_error( std::string( ""No Overlay interface"" ) );
+     }
++
+     // Init controllers
+     m_steamVRTabController.initStage1();
+     m_chaperoneTabController.initStage1();
+@@ -123,6 +124,16 @@ OverlayController::OverlayController( bool desktopMode,
+         m_settingsTabController.forceRevivePage() );
+     m_utilitiesTabController.initStage1();
+ 
++    // init action handles
++
++    m_chaperoneTabController.setLeftHapticActionHandle(
++        m_actions.leftHapticActionHandle() );
++    m_chaperoneTabController.setRightHapticActionHandle(
++        m_actions.rightHapticActionHandle() );
++    m_chaperoneTabController.setLeftInputHandle( m_actions.leftInputHandle() );
++    m_chaperoneTabController.setRightInputHandle(
++        m_actions.rightInputHandle() );
++
+     // Set qml context
+     qmlEngine.rootContext()->setContextProperty( ""applicationVersion"",
+                                                  getVersionString() );"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,101,3c5cab72e54a45fd55ea9cc9823fa150bcd3a772,src/package_files/action_manifest.json,modified,24,1,25,"@@ -3,6 +3,14 @@
+    {
+       ""controller_type"": ""vive_controller"",
+       ""binding_url"": ""default_action_manifests/vive_defaults.json""
++   },
++   {
++    ""controller_type"" : ""generic"",
++	    ""binding_url"" : ""default_action_manifests/generic_hmd_defaults.json""
++   },
++      {
++    ""controller_type"" : ""vive"",
++	    ""binding_url"" : ""default_action_manifests/vive_hmd_defaults.json""
+    }
+   ], 
+   ""actions"": [
+@@ -26,6 +34,19 @@
+       ""requirement"": ""optional"",
+       ""type"": ""boolean""
+     },
++	{
++      ""name"": ""/actions/main/in/ProxSensor"",
++      ""requirement"": ""optional"",
++      ""type"": ""boolean""
++    },
++	{
++	  ""name"": ""/actions/main/out/HapticsLeft"",
++	  ""type"": ""vibration""
++	},
++	{
++	  ""name"": ""/actions/main/out/HapticsRight"",
++	  ""type"": ""vibration""
++	},
+     {
+       ""name"": ""/actions/main/in/LeftHandSpaceTurn"",
+       ""requirement"": ""optional"",
+@@ -46,7 +67,7 @@
+       ""requirement"": ""optional"",
+       ""type"": ""boolean""
+     },
+-        {
++    {
+       ""name"": ""/actions/main/in/OptionalOverrideLeftHandSpaceTurn"",
+       ""requirement"": ""optional"",
+       ""type"": ""boolean""
+@@ -138,6 +159,8 @@
+         ""/actions/main/in/PreviousTrack"" : ""Play Previous Track"",
+         ""/actions/main/in/PausePlayTrack"" : ""Pause/Play Track"",
+         ""/actions/main/in/StopTrack"" : ""Stop Track"",
++		""/actions/main/out/HapticsLeft"" : ""Haptics Left"",
++		""/actions/main/out/HapticsRight"" : "" Haptics Right"",
+         ""/actions/main/in/LeftHandSpaceTurn"" : ""Left Hand Space Turn"",
+         ""/actions/main/in/RightHandSpaceTurn"" : ""Right Hand Space Turn"",
+         ""/actions/main/in/LeftHandSpaceDrag"" : ""Left Hand Space Drag"","
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,101,3c5cab72e54a45fd55ea9cc9823fa150bcd3a772,src/package_files/default_action_manifests/generic_hmd_defaults.json,added,23,0,23,"@@ -0,0 +1,23 @@
++{
++   ""alias_info"" : {},
++   ""bindings"" : {
++      ""/actions/default"" : {
++         ""sources"" : [
++            {
++               ""inputs"" : {
++                  ""click"" : {
++                     ""output"" : ""/actions/main/in/ProxSensor""
++                  }
++               },
++               ""mode"" : ""button"",
++               ""path"" : ""/user/head/proximity""
++            }
++         ]
++      }
++   },
++   ""controller_type"" : ""generic"",
++   ""description"" : ""Default config for HMD for Prox sensor."",
++   ""name"" : ""Default configuration for HMD's"",
++   ""options"" : {},
++   ""simulated_actions"" : []
++}
+\ No newline at end of file"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,101,3c5cab72e54a45fd55ea9cc9823fa150bcd3a772,src/package_files/default_action_manifests/vive_hmd_defaults.json,added,23,0,23,"@@ -0,0 +1,23 @@
++{
++   ""alias_info"" : {},
++   ""bindings"" : {
++      ""/actions/default"" : {
++         ""sources"" : [
++            {
++               ""inputs"" : {
++                  ""click"" : {
++                     ""output"" : ""/actions/main/in/ProxSensor""
++                  }
++               },
++               ""mode"" : ""button"",
++               ""path"" : ""/user/head/proximity""
++            }
++         ]
++      }
++   },
++   ""controller_type"" : ""vive"",
++   ""description"" : ""Default config for vive HMD for Prox sensor."",
++   ""name"" : ""Default configuration for vive HMD's"",
++   ""options"" : {},
++   ""simulated_actions"" : []
++}
+\ No newline at end of file"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,101,3c5cab72e54a45fd55ea9cc9823fa150bcd3a772,src/res/qml/ChaperonePage.qml,modified,54,15,69,"@@ -241,19 +241,19 @@ MyStackViewPage {
+                 text: ""-""
+                 Layout.preferredWidth: 40
+                 onClicked: {
+-                    chaperoneVisibilitySlider.value -= 0.1
++                    chaperoneVisibilitySlider.value -= 0.05
+                 }
+             }
+ 
+             MySlider {
+                 id: chaperoneVisibilitySlider
+-                from: 0.0
++                from: 0.5
+                 to: 1.0
+                 stepSize: 0.01
+                 value: 0.6
+                 Layout.fillWidth: true
+                 onPositionChanged: {
+-                    var val = this.position * 100
++                    var val = (this.position * 100)/2 + 50
+                     chaperoneVisibilityText.text = Math.round(val) + ""%""
+                 }
+                 onValueChanged: {
+@@ -265,23 +265,23 @@ MyStackViewPage {
+                 text: ""+""
+                 Layout.preferredWidth: 40
+                 onClicked: {
+-                    chaperoneVisibilitySlider.value += 0.1
++                    chaperoneVisibilitySlider.value += 0.05
+                 }
+             }
+ 
+ 
+             MyTextField {
+                 id: chaperoneVisibilityText
+-                text: ""0.00""
++                text: ""50.00""
+                 keyBoardUID: 301
+                 Layout.preferredWidth: 100
+                 Layout.leftMargin: 10
+                 horizontalAlignment: Text.AlignHCenter
+                 function onInputEvent(input) {
+                     var val = parseFloat(input)
+                     if (!isNaN(val)) {
+-                        if (val < 0.0) {
+-                            val = 0.0
++                        if (val < 50.0) {
++                            val = 50.0
+                         } else if (val > 100.0) {
+                             val = 100.0
+                         }
+@@ -302,6 +302,7 @@ MyStackViewPage {
+             }
+ 
+             MyPushButton2 {
++                id: chaperoneFadeDistanceMinus
+                 text: ""-""
+                 Layout.preferredWidth: 40
+                 onClicked: {
+@@ -326,6 +327,7 @@ MyStackViewPage {
+             }
+ 
+             MyPushButton2 {
++                id: chaperoneFadeDistancePlus
+                 text: ""+""
+                 Layout.preferredWidth: 40
+                 onClicked: {
+@@ -450,17 +452,37 @@ MyStackViewPage {
+                     ChaperoneTabController.setForceBounds(this.checked, false)
+                 }
+             }
++            MyToggleButton {
++                id: chaperoneDisableChaperone
++                text: ""Disable Chaperone""
++                onCheckedChanged: {
++                    ChaperoneTabController.setDisableChaperone(this.checked, false)
++                    if(this.checked){
++                        chaperoneFadeDistanceMinus.enabled = false;
++                        chaperoneFadeDistancePlus.enabled = false;
++                        chaperoneFadeDistanceSlider.enabled = false;
++                        chaperoneFadeDistanceText.enabled = false;
++
++                    }else{
++                        chaperoneFadeDistanceMinus.enabled = true;
++                        chaperoneFadeDistancePlus.enabled = true;
++                        chaperoneFadeDistanceSlider.enabled = true;
++                        chaperoneFadeDistanceText.enabled = true;
++                    }
++                }
++            }
+ 
+             Item { Layout.fillWidth: true }
++        }
+ 
+-            MyPushButton {
+-                id: chaperoneWarningsConfigButton
+-                text: ""Proximity Warning Settings""
+-                Layout.preferredWidth: 350
+-                onClicked: {
+-                    MyResources.playFocusChangedSound()
+-                    mainView.push(chaperoneWarningsPage)
+-                }
++
++        MyPushButton {
++            id: chaperoneWarningsConfigButton
++            text: ""Proximity Warning Settings""
++            Layout.preferredWidth: 350
++            onClicked: {
++                MyResources.playFocusChangedSound()
++                mainView.push(chaperoneWarningsPage)
+             }
+         }
+ 
+@@ -501,6 +523,10 @@ MyStackViewPage {
+ 
+         Component.onCompleted: {
+             chaperoneVisibilitySlider.value = ChaperoneTabController.boundsVisibility
++            if(chaperoneVisibilitySlider.value < 0.5){
++                chaperoneVisibilitySlider.value = 0.5
++            }
++
+             var d = ChaperoneTabController.fadeDistance.toFixed(1)
+             if (d <= chaperoneFadeDistanceSlider.to) {
+                 chaperoneFadeDistanceSlider.value = d
+@@ -514,6 +540,19 @@ MyStackViewPage {
+             chaperoneCenterMarkerToggle.checked = ChaperoneTabController.centerMarker
+             chaperonePlaySpaceToggle.checked = ChaperoneTabController.playSpaceMarker
+             chaperoneForceBoundsToggle.checked = ChaperoneTabController.forceBounds
++            chaperoneDisableChaperone.checked = ChaperoneTabController.disableChaperone
++            if(chaperoneDisableChaperone.checked){
++                chaperoneFadeDistanceMinus.enabled = false;
++                chaperoneFadeDistancePlus.enabled = false;
++                chaperoneFadeDistanceSlider.enabled = false;
++                chaperoneFadeDistanceText.enabled = false;
++
++            }else{
++                chaperoneFadeDistanceMinus.enabled = true;
++                chaperoneFadeDistancePlus.enabled = true;
++                chaperoneFadeDistanceSlider.enabled = true;
++                chaperoneFadeDistanceText.enabled = true;
++            }
+             reloadChaperoneProfiles()
+         }
+ "
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,101,3c5cab72e54a45fd55ea9cc9823fa150bcd3a772,src/tabcontrollers/ChaperoneTabController.cpp,modified,119,30,149,"@@ -38,8 +38,11 @@ void ChaperoneTabController::initStage1()
+     m_chaperoneVelocityModifier
+         = settings->value( ""chaperoneVelocityModifier"", 0.3f ).toFloat();
+     m_chaperoneVelocityModifierCurrent = 1.0f;
++    m_disableChaperone = settings->value( ""disableChaperone"", false ).toBool();
++    m_fadeDistanceRemembered
++        = settings->value( ""fadeDistanceRemembered"", 0.5f ).toFloat();
+     settings->endGroup();
+-
++    // initHaptics();
+     reloadChaperoneProfiles();
+     eventLoopTick( nullptr, 0.0f, 0.0f, 0.0f );
+ }
+@@ -365,9 +368,8 @@ void ChaperoneTabController::handleChaperoneWarnings( float distance )
+     {
+         float activationDistance = m_chaperoneSwitchToBeginnerDistance
+                                    * m_chaperoneVelocityModifierCurrent;
+-        if ( distance <= activationDistance
+-             && ( hmdState.ulButtonPressed
+-                  & vr::ButtonMaskFromId( vr::k_EButton_ProximitySensor ) )
++
++        if ( distance <= activationDistance && m_isHMDActive
+              && !m_chaperoneSwitchToBeginnerActive )
+         {
+             vr::EVRSettingsError vrSettingsError;
+@@ -406,10 +408,7 @@ void ChaperoneTabController::handleChaperoneWarnings( float distance )
+                 }
+             }
+         }
+-        else if ( ( distance > activationDistance
+-                    || !( hmdState.ulButtonPressed
+-                          & vr::ButtonMaskFromId(
+-                                vr::k_EButton_ProximitySensor ) ) )
++        else if ( ( distance > activationDistance || !m_isHMDActive )
+                   && m_chaperoneSwitchToBeginnerActive )
+         {
+             vr::EVRSettingsError vrSettingsError;
+@@ -434,13 +433,13 @@ void ChaperoneTabController::handleChaperoneWarnings( float distance )
+     }
+ 
+     // Haptic Feedback
++
+     if ( m_enableChaperoneHapticFeedback )
+     {
+         float activationDistance = m_chaperoneHapticFeedbackDistance
+                                    * m_chaperoneVelocityModifierCurrent;
+-        if ( distance <= activationDistance
+-             && ( hmdState.ulButtonPressed
+-                  & vr::ButtonMaskFromId( vr::k_EButton_ProximitySensor ) ) )
++
++        if ( distance <= activationDistance && m_isHMDActive )
+         {
+             if ( !m_chaperoneHapticFeedbackActive )
+             {
+@@ -451,7 +450,7 @@ void ChaperoneTabController::handleChaperoneWarnings( float distance )
+                 }
+                 m_chaperoneHapticFeedbackActive = true;
+                 m_chaperoneHapticFeedbackThread = std::thread(
+-                    []( ChaperoneTabController* _this ) {
++                    [&]( ChaperoneTabController* _this ) {
+                         auto leftIndex
+                             = vr::VRSystem()
+                                   ->GetTrackedDeviceIndexForControllerRole(
+@@ -462,17 +461,30 @@ void ChaperoneTabController::handleChaperoneWarnings( float distance )
+                                       vr::TrackedControllerRole_RightHand );
+                         while ( _this->m_chaperoneHapticFeedbackActive )
+                         {
++                            // AS it stands both controllers will vibrate
++                            // regardless of which is closer to boundary
++                            // haptic Frequency is 0-320Hz
+                             if ( leftIndex
+                                  != vr::k_unTrackedDeviceIndexInvalid )
+                             {
+-                                vr::VRSystem()->TriggerHapticPulse(
+-                                    leftIndex, 0, 2000 );
++                                vr::VRInput()->TriggerHapticVibrationAction(
++                                    m_leftActionHandle,
++                                    0.0f,
++                                    0.2f,
++                                    120.0f,
++                                    0.5f,
++                                    m_leftInputHandle );
+                             }
+                             if ( rightIndex
+                                  != vr::k_unTrackedDeviceIndexInvalid )
+                             {
+-                                vr::VRSystem()->TriggerHapticPulse(
+-                                    rightIndex, 0, 2000 );
++                                vr::VRInput()->TriggerHapticVibrationAction(
++                                    m_rightActionHandle,
++                                    0.0f,
++                                    0.2f,
++                                    120.0f,
++                                    0.5f,
++                                    m_rightInputHandle );
+                             }
+                             std::this_thread::sleep_for(
+                                 std::chrono::milliseconds( 5 ) );
+@@ -481,10 +493,7 @@ void ChaperoneTabController::handleChaperoneWarnings( float distance )
+                     this );
+             }
+         }
+-        else if ( ( distance > activationDistance
+-                    || !( hmdState.ulButtonPressed
+-                          & vr::ButtonMaskFromId(
+-                                vr::k_EButton_ProximitySensor ) ) )
++        else if ( ( distance > activationDistance || !m_isHMDActive )
+                   && m_chaperoneHapticFeedbackActive )
+         {
+             m_chaperoneHapticFeedbackActive = false;
+@@ -494,11 +503,11 @@ void ChaperoneTabController::handleChaperoneWarnings( float distance )
+     // Alarm Sound
+     if ( m_enableChaperoneAlarmSound )
+     {
++        // LOG(WARNING) << ""In alarm"";
+         float activationDistance = m_chaperoneAlarmSoundDistance
+                                    * m_chaperoneVelocityModifierCurrent;
+-        if ( distance <= activationDistance
+-             && ( hmdState.ulButtonPressed
+-                  & vr::ButtonMaskFromId( vr::k_EButton_ProximitySensor ) ) )
++
++        if ( distance <= activationDistance && m_isHMDActive )
+         {
+             if ( !m_chaperoneAlarmSoundActive )
+             {
+@@ -520,10 +529,7 @@ void ChaperoneTabController::handleChaperoneWarnings( float distance )
+                 parent->setAlarm01SoundVolume( 1.0f );
+             }
+         }
+-        else if ( ( distance > activationDistance
+-                    || !( hmdState.ulButtonPressed
+-                          & vr::ButtonMaskFromId(
+-                                vr::k_EButton_ProximitySensor ) ) )
++        else if ( ( distance > activationDistance || !m_isHMDActive )
+                   && m_chaperoneAlarmSoundActive )
+         {
+             parent->cancelAlarm01Sound();
+@@ -569,8 +575,6 @@ void ChaperoneTabController::eventLoopTick(
+             m_chaperoneVelocityModifierCurrent += mod;
+         }
+     }
+-    // LOG(INFO) << ""m_chaperoneVelocityModifierCurrent: "" <<
+-    // m_chaperoneVelocityModifierCurrent;
+     float newFadeDistance = m_fadeDistance * m_chaperoneVelocityModifierCurrent;
+     if ( m_fadeDistanceModified != newFadeDistance )
+     {
+@@ -584,10 +588,22 @@ void ChaperoneTabController::eventLoopTick(
+ 
+     if ( devicePoses )
+     {
++        m_isHMDActive = false;
+         std::lock_guard<std::recursive_mutex> lock(
+             parent->chaperoneUtils().mutex() );
+         auto minDistance = NAN;
+         auto& poseHmd = devicePoses[vr::k_unTrackedDeviceIndex_Hmd];
++
++        // m_isHMDActive is true when prox sensor OR HMD is moving (~10 seconds
++        // to update from OVR)
++        // THIS IS A WORK-AROUND Until proper binding support/calls are made
++        // availble for prox sensor
++        if ( vr::VRSystem()->GetTrackedDeviceActivityLevel(
++                 vr::k_unTrackedDeviceIndex_Hmd )
++             == vr::k_EDeviceActivityLevel_UserInteraction )
++        {
++            m_isHMDActive = true;
++        }
+         if ( poseHmd.bPoseIsValid && poseHmd.bDeviceIsConnected
+              && poseHmd.eTrackingResult == vr::TrackingResult_Running_OK )
+         {
+@@ -647,6 +663,17 @@ void ChaperoneTabController::eventLoopTick(
+         {
+             handleChaperoneWarnings( minDistance );
+         }
++        else
++        {
++            // attempts to reload chaperone data once per ~5 seconds.
++            m_updateTicksChaperoneReload++;
++            if ( m_updateTicksChaperoneReload >= 500 )
++            {
++                m_updateTicksChaperoneReload = 0;
++                LOG( WARNING ) << ""Attempting to Reloading Chaperone Data"";
++                parent->chaperoneUtils().loadChaperoneData();
++            }
++        }
+     }
+ 
+     if ( settingsUpdateCounter >= k_chaperoneSettingsUpdateCounter )
+@@ -732,11 +759,19 @@ void ChaperoneTabController::setBoundsVisibility( float value, bool notify )
+ {
+     if ( m_visibility != value )
+     {
+-        m_visibility = value;
++        if ( value <= 0.5f )
++        {
++            m_visibility = 0.5f;
++        }
++        else
++        {
++            m_visibility = value;
++        }
+         vr::VRSettings()->SetInt32(
+             vr::k_pch_CollisionBounds_Section,
+             vr::k_pch_CollisionBounds_ColorGammaA_Int32,
+             static_cast<int32_t>( 255 * m_visibility ) );
++
+         vr::VRSettings()->Sync();
+         if ( notify )
+         {
+@@ -902,6 +937,11 @@ bool ChaperoneTabController::isChaperoneAlarmSoundAdjustVolume() const
+     return m_chaperoneAlarmSoundAdjustVolume;
+ }
+ 
++bool ChaperoneTabController::disableChaperone() const
++{
++    return m_disableChaperone;
++}
++
+ float ChaperoneTabController::chaperoneAlarmSoundDistance() const
+ {
+     return m_chaperoneAlarmSoundDistance;
+@@ -1241,6 +1281,34 @@ void ChaperoneTabController::setChaperoneVelocityModifier( float value,
+     }
+ }
+ 
++void ChaperoneTabController::setDisableChaperone( bool value, bool notify )
++{
++    if ( m_disableChaperone != value )
++    {
++        m_disableChaperone = value;
++        if ( m_disableChaperone )
++        {
++            m_fadeDistanceRemembered = m_fadeDistance;
++            setFadeDistance( 0.0f, true );
++        }
++        else
++        {
++            setFadeDistance( m_fadeDistanceRemembered, true );
++        }
++        auto settings = OverlayController::appSettings();
++        settings->beginGroup( ""chaperoneSettings"" );
++        settings->setValue( ""fadeDistanceRemembered"",
++                            m_fadeDistanceRemembered );
++        settings->setValue( ""disableChaperone"", m_disableChaperone );
++        settings->endGroup();
++        settings->sync();
++        if ( notify )
++        {
++            emit disableChaperoneChanged( m_disableChaperone );
++        }
++    }
++}
++
+ void ChaperoneTabController::flipOrientation()
+ {
+     parent->m_moveCenterTabController.reset();
+@@ -1630,6 +1698,27 @@ void ChaperoneTabController::reset()
+     settingsUpdateCounter = 999; // Easiest way to get default values
+ }
+ 
++void ChaperoneTabController::setRightHapticActionHandle(
++    vr::VRActionHandle_t handle )
++{
++    m_rightActionHandle = handle;
++}
++void ChaperoneTabController::setLeftHapticActionHandle(
++    vr::VRActionHandle_t handle )
++{
++    m_leftActionHandle = handle;
++}
++void ChaperoneTabController::setRightInputHandle(
++    vr::VRInputValueHandle_t handle )
++{
++    m_rightInputHandle = handle;
++}
++void ChaperoneTabController::setLeftInputHandle(
++    vr::VRInputValueHandle_t handle )
++{
++    m_leftInputHandle = handle;
++}
++
+ void ChaperoneTabController::shutdown()
+ {
+     if ( m_enableChaperoneSwitchToBeginner"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,101,3c5cab72e54a45fd55ea9cc9823fa150bcd3a772,src/tabcontrollers/ChaperoneTabController.h,modified,22,0,22,"@@ -78,6 +78,8 @@ class ChaperoneTabController : public QObject
+                     setPlaySpaceMarker NOTIFY playSpaceMarkerChanged )
+     Q_PROPERTY( bool forceBounds READ forceBounds WRITE setForceBounds NOTIFY
+                     forceBoundsChanged )
++    Q_PROPERTY( bool disableChaperone READ disableChaperone WRITE
++                    setDisableChaperone NOTIFY disableChaperoneChanged )
+ 
+     Q_PROPERTY( bool chaperoneSwitchToBeginnerEnabled READ
+                     isChaperoneSwitchToBeginnerEnabled WRITE
+@@ -142,6 +144,8 @@ class ChaperoneTabController : public QObject
+     bool m_centerMarker = false;
+     bool m_playSpaceMarker = false;
+     bool m_forceBounds = false;
++    bool m_disableChaperone = false;
++    float m_fadeDistanceRemembered = 0.0f;
+ 
+     bool m_enableChaperoneSwitchToBeginner = false;
+     float m_chaperoneSwitchToBeginnerDistance = 0.5f;
+@@ -169,6 +173,16 @@ class ChaperoneTabController : public QObject
+ 
+     unsigned settingsUpdateCounter = 0;
+ 
++    bool m_isHapticGood = true;
++    bool m_isHMDActive = false;
++
++    int m_updateTicksChaperoneReload = 0;
++
++    vr::VRActionHandle_t m_rightActionHandle;
++    vr::VRActionHandle_t m_leftActionHandle;
++    vr::VRInputValueHandle_t m_leftInputHandle;
++    vr::VRInputValueHandle_t m_rightInputHandle;
++
+     std::vector<ChaperoneProfile> chaperoneProfiles;
+ 
+ public:
+@@ -189,6 +203,12 @@ class ChaperoneTabController : public QObject
+     bool centerMarker() const;
+     bool playSpaceMarker() const;
+     bool forceBounds() const;
++    bool disableChaperone() const;
++
++    void setRightHapticActionHandle( vr::VRActionHandle_t handle );
++    void setLeftHapticActionHandle( vr::VRActionHandle_t handle );
++    void setRightInputHandle( vr::VRInputValueHandle_t handle );
++    void setLeftInputHandle( vr::VRInputValueHandle_t handle );
+ 
+     bool isChaperoneSwitchToBeginnerEnabled() const;
+     float chaperoneSwitchToBeginnerDistance() const;
+@@ -223,6 +243,7 @@ public slots:
+     void setCenterMarker( bool value, bool notify = true );
+     void setPlaySpaceMarker( bool value, bool notify = true );
+     void setForceBounds( bool value, bool notify = true );
++    void setDisableChaperone( bool value, bool notify = true );
+ 
+     void setChaperoneSwitchToBeginnerEnabled( bool value, bool notify = true );
+     void setChaperoneSwitchToBeginnerDistance( float value,
+@@ -270,6 +291,7 @@ public slots:
+     void centerMarkerChanged( bool value );
+     void playSpaceMarkerChanged( bool value );
+     void forceBoundsChanged( bool value );
++    void disableChaperoneChanged( bool value );
+ 
+     void chaperoneSwitchToBeginnerEnabledChanged( bool value );
+     void chaperoneSwitchToBeginnerDistanceChanged( float value );"

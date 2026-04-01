@@ -1,0 +1,111 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+secondlife/viewer,2279,36ea187,indra/newview/llviewercamera.cpp,modified,8,11,19,"@@ -73,12 +73,14 @@ LLViewerCamera::LLViewerCamera() : LLCamera()
+     mAverageSpeed = 0.f;
+     mAverageAngularSpeed = 0.f;
+ 
+-    mCameraAngleChangedSignal = gSavedSettings.getControl(""CameraAngle"")->getCommitSignal()->connect(boost::bind(&LLViewerCamera::updateCameraAngle, this, _2));
+-}
+-
+-LLViewerCamera::~LLViewerCamera()
+-{
+-    mCameraAngleChangedSignal.disconnect();
++    LLPointer<LLControlVariable> cntrl_ptr = gSavedSettings.getControl(""CameraAngle"");
++    if (cntrl_ptr.notNull())
++    {
++        cntrl_ptr->getCommitSignal()->connect([](LLControlVariable* control, const LLSD& value, const LLSD& previous)
++        {
++            LLViewerCamera::getInstance()->setDefaultFOV((F32)value.asReal());
++        });
++    }
+ }
+ 
+ void LLViewerCamera::updateCameraLocation(const LLVector3 &center, const LLVector3 &up_direction, const LLVector3 &point_of_interest)
+@@ -814,8 +816,3 @@ bool LLViewerCamera::isDefaultFOVChanged()
+     return false;
+ }
+ 
+-void LLViewerCamera::updateCameraAngle(const LLSD& value)
+-{
+-    setDefaultFOV((F32)value.asReal());
+-}
+-"
+secondlife/viewer,2279,36ea187,indra/newview/llviewercamera.h,modified,0,4,4,"@@ -43,7 +43,6 @@ class alignas(16) LLViewerCamera : public LLCamera, public LLSimpleton<LLViewerC
+     LL_ALIGN_NEW
+ public:
+     LLViewerCamera();
+-    ~LLViewerCamera();
+ 
+     typedef enum
+     {
+@@ -66,7 +65,6 @@ class alignas(16) LLViewerCamera : public LLCamera, public LLSimpleton<LLViewerC
+                                 const LLVector3 &point_of_interest);
+ 
+     static void updateFrustumPlanes(LLCamera& camera, bool ortho = false, bool zflip = false, bool no_hacks = false);
+-    void updateCameraAngle(const LLSD& value);
+     void setPerspective(bool for_selection, S32 x, S32 y_from_bot, S32 width, S32 height, bool limit_select_distance, F32 z_near = 0, F32 z_far = 0);
+ 
+     const LLMatrix4 &getProjection() const;
+@@ -126,8 +124,6 @@ class alignas(16) LLViewerCamera : public LLCamera, public LLSimpleton<LLViewerC
+     F32                 mZoomFactor;
+     S16                 mZoomSubregion;
+ 
+-    boost::signals2::connection mCameraAngleChangedSignal;
+-
+ public:
+ };
+ "
+secondlife/viewer,2279,6b0cebe,indra/newview/llviewercamera.cpp,modified,8,11,19,"@@ -73,12 +73,14 @@ LLViewerCamera::LLViewerCamera() : LLCamera()
+     mAverageSpeed = 0.f;
+     mAverageAngularSpeed = 0.f;
+ 
+-    mCameraAngleChangedSignal = gSavedSettings.getControl(""CameraAngle"")->getCommitSignal()->connect(boost::bind(&LLViewerCamera::updateCameraAngle, this, _2));
+-}
+-
+-LLViewerCamera::~LLViewerCamera()
+-{
+-    mCameraAngleChangedSignal.disconnect();
++    LLPointer<LLControlVariable> cntrl_ptr = gSavedSettings.getControl(""CameraAngle"");
++    if (cntrl_ptr.notNull())
++    {
++        cntrl_ptr->getCommitSignal()->connect([](LLControlVariable* control, const LLSD& value, const LLSD& previous)
++        {
++            LLViewerCamera::getInstance()->setDefaultFOV((F32)value.asReal());
++        });
++    }
+ }
+ 
+ void LLViewerCamera::updateCameraLocation(const LLVector3 &center, const LLVector3 &up_direction, const LLVector3 &point_of_interest)
+@@ -814,8 +816,3 @@ bool LLViewerCamera::isDefaultFOVChanged()
+     return false;
+ }
+ 
+-void LLViewerCamera::updateCameraAngle(const LLSD& value)
+-{
+-    setDefaultFOV((F32)value.asReal());
+-}
+-"
+secondlife/viewer,2279,6b0cebe,indra/newview/llviewercamera.h,modified,0,4,4,"@@ -43,7 +43,6 @@ class alignas(16) LLViewerCamera : public LLCamera, public LLSimpleton<LLViewerC
+     LL_ALIGN_NEW
+ public:
+     LLViewerCamera();
+-    ~LLViewerCamera();
+ 
+     typedef enum
+     {
+@@ -66,7 +65,6 @@ class alignas(16) LLViewerCamera : public LLCamera, public LLSimpleton<LLViewerC
+                                 const LLVector3 &point_of_interest);
+ 
+     static void updateFrustumPlanes(LLCamera& camera, bool ortho = false, bool zflip = false, bool no_hacks = false);
+-    void updateCameraAngle(const LLSD& value);
+     void setPerspective(bool for_selection, S32 x, S32 y_from_bot, S32 width, S32 height, bool limit_select_distance, F32 z_near = 0, F32 z_far = 0);
+ 
+     const LLMatrix4 &getProjection() const;
+@@ -126,8 +124,6 @@ class alignas(16) LLViewerCamera : public LLCamera, public LLSimpleton<LLViewerC
+     F32                 mZoomFactor;
+     S16                 mZoomSubregion;
+ 
+-    boost::signals2::connection mCameraAngleChangedSignal;
+-
+ public:
+ };
+ "

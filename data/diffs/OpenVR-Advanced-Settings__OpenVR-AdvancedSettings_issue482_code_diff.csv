@@ -1,0 +1,446 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,482,549f65dc3200cedcde5259d0caf5a9955f8a1b64,build_scripts/compile_version_string.txt,modified,1,1,2,"@@ -1 +1 @@
+-5.2.0-dev
+\ No newline at end of file
++5.2.1-release
+\ No newline at end of file"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,482,549f65dc3200cedcde5259d0caf5a9955f8a1b64,src/quaternion/quaternion.h,modified,31,1,32,"@@ -1,7 +1,7 @@
+ #pragma once
+ 
+ #include <openvr.h>
+-//#include <cmath>
++#include <cmath>
+ 
+ namespace quaternion
+ {
+@@ -65,4 +65,34 @@ inline double getYaw( const vr::HmdQuaternion_t& quat )
+     return yawResult;
+ }
+ 
++inline double getPitch( const vr::HmdQuaternion_t& quat )
++{
++    // positive forward
++    // negative behind
++
++    double pitchResult
++        = atan2( 2.0 * ( quat.x * quat.w + quat.y * quat.z ),
++                 1.0 - 2.0 * ( quat.x * quat.x + quat.y * quat.y ) );
++    //    double pitchResult
++    //= atan2( 2.0 * ( quat.x * quat.w + quat.y * quat.z ),
++    //      2.0 * ( quat.w * quat.w + quat.z * quat.z ) - 1.0 );
++    return pitchResult;
++}
++
++inline double getRoll( const vr::HmdQuaternion_t& quat )
++{
++    double rollResult;
++    double sinp = 2 * ( quat.w * quat.z - quat.y * quat.x );
++    if ( std::abs( sinp ) >= 1 )
++
++    {
++        rollResult = std::copysign( 3.14159265358979323846 / 2, sinp );
++    }
++    else
++    {
++        rollResult = std::asin( sinp );
++    }
++    return rollResult;
++}
++
+ } // namespace quaternion"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,482,549f65dc3200cedcde5259d0caf5a9955f8a1b64,src/res/qml/PlayspacePage.qml,modified,0,12,12,"@@ -477,14 +477,6 @@ MyStackViewPage {
+                     }
+                 }
+ 
+-                MyToggleButton {
+-                    id: spaceAdjustChaperoneToggle
+-                    text: ""Adjust Chaperone""
+-                    onCheckedChanged: {
+-                        MoveCenterTabController.adjustChaperone = this.checked
+-                    }
+-                }
+-
+                 Item {
+                     Layout.fillWidth: true
+                 }
+@@ -517,7 +509,6 @@ MyStackViewPage {
+         Item { Layout.fillHeight: true; Layout.fillWidth: true}
+ 
+         Component.onCompleted: {
+-            spaceAdjustChaperoneToggle.checked = MoveCenterTabController.adjustChaperone
+             spaceMoveXText.text = MoveCenterTabController.offsetX.toFixed(2)
+             spaceMoveYText.text = MoveCenterTabController.offsetY.toFixed(2)
+             spaceMoveZText.text = MoveCenterTabController.offsetZ.toFixed(2)
+@@ -574,9 +565,6 @@ MyStackViewPage {
+                 var intTempRotation = MoveCenterTabController.tempRotation
+                 spaceRotationSlider.value = ( intTempRotation / 100 )
+                 spaceRotationText.text = ( intTempRotation / 100 ) + ""°""
+-            }
+-            onAdjustChaperoneChanged: {
+-                spaceAdjustChaperoneToggle.checked = MoveCenterTabController.adjustChaperone
+             }
+ 			onLockXToggleChanged: {
+ 				lockXToggle.checked = MoveCenterTabController.lockXToggle"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,482,549f65dc3200cedcde5259d0caf5a9955f8a1b64,src/res/qml/SettingsPage.qml,modified,14,0,14,"@@ -11,6 +11,9 @@ MyStackViewPage {
+     content: ScrollView{
+         ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+         ScrollBar.vertical.policy: ScrollBar.AlwaysOn
++        Layout.fillWidth: true
++        Layout.fillHeight: true
++        clip: true
+ 
+             ColumnLayout {
+             spacing: 18
+@@ -87,6 +90,13 @@ MyStackViewPage {
+                     SettingsTabController.setOculusSdkToggle(this.checked, true)
+                 }
+             }
++            MyToggleButton {
++                id: spaceAdjustChaperoneToggle
++                text: ""Adjust Chaperone""
++                onCheckedChanged: {
++                    MoveCenterTabController.adjustChaperone = this.checked
++                }
++            }
+ 
+             RowLayout {
+                 Layout.fillWidth: true
+@@ -248,6 +258,7 @@ MyStackViewPage {
+                 oculusSdkToggleButton.checked = SettingsTabController.oculusSdkToggle
+ 
+                 seatedOldExternalWarning.visible = MoveCenterTabController.allowExternalEdits && MoveCenterTabController.oldStyleMotion && MoveCenterTabController.enableSeatedMotion
++                spaceAdjustChaperoneToggle.checked = MoveCenterTabController.adjustChaperone
+             }
+ 
+         Connections {
+@@ -280,6 +291,9 @@ MyStackViewPage {
+                 enableSeatedMotionToggle.checked = MoveCenterTabController.enableSeatedMotion
+                 seatedOldExternalWarning.visible = MoveCenterTabController.allowExternalEdits && MoveCenterTabController.oldStyleMotion && MoveCenterTabController.enableSeatedMotion
+             }
++            onAdjustChaperoneChanged: {
++                spaceAdjustChaperoneToggle.checked = MoveCenterTabController.adjustChaperone
++            }
+         }
+ 
+         Connections {"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,482,549f65dc3200cedcde5259d0caf5a9955f8a1b64,src/res/qml/video_page/supersampling/SuperSamplingGroupBox.qml,modified,10,10,20,"@@ -38,7 +38,7 @@ GroupBox {
+                 onCheckedChanged: {
+                     VideoTabController.setAllowSupersampleOverride(this.checked, false)
+                     VideoTabController.setSuperSampling(videoSupersamplingSlider.value, true)
+-                    videoSupersamplingText.text = VideoTabController.superSampling.toFixed(1)
++                    videoSupersamplingText.text = VideoTabController.superSampling.toFixed(2)
+                     if(!this.checked){
+                         videoSupersamplingText.enabled = false
+                         videoSupersamplingSlider.enabled = false
+@@ -73,8 +73,8 @@ GroupBox {
+                 Layout.fillWidth: true
+                 onValueChanged: {
+                     var val = this.value
+-                    videoSupersamplingText.text = val.toFixed(1)
+-                    VideoTabController.setSuperSampling(this.value.toFixed(1), true)
++                    videoSupersamplingText.text = val.toFixed(2)
++                    VideoTabController.setSuperSampling(this.value, true)
+                 }
+             }
+ 
+@@ -100,14 +100,14 @@ GroupBox {
+                         if (val < 0.1) {
+                             val = 0.1
+                         }
+-                        var v = val.toFixed(1)
++                        var v = val
+                         if (v <= videoSupersamplingSlider.to) {
+                             videoSupersamplingSlider.value = v
+                         } else {
+                             VideoTabController.setSuperSampling(v, false)
+                         }
+                     }
+-                    text = VideoTabController.superSampling.toFixed(1)
++                    text = VideoTabController.superSampling.toFixed(2)
+                 }
+             }
+         }
+@@ -117,7 +117,7 @@ GroupBox {
+     }
+ 
+     Component.onCompleted: {
+-        var s1 = VideoTabController.superSampling.toFixed(1)
++        var s1 = VideoTabController.superSampling
+         if (s1 <= videoSupersamplingSlider.to) {
+             videoSupersamplingSlider.value = s1
+         }
+@@ -134,15 +134,15 @@ GroupBox {
+         target: VideoTabController
+ 
+         onSuperSamplingChanged: {
+-            var s1 = VideoTabController.superSampling.toFixed(1)
++            var s1 = VideoTabController.superSampling
+             videoSupersamplingSlider.value = s1
+-            videoSupersamplingText.text = s1
++            videoSupersamplingText.text = s1.toFixed(2)
+         }
+         onAllowSupersampleOverrideChanged: {
+             videoAllowSupersampleOverrideToggle.checked = VideoTabController.allowSupersampleOverride
+-            var s1 = VideoTabController.superSampling.toFixed(1)
++            var s1 = VideoTabController.superSampling
+             videoSupersamplingSlider.value = s1
+-            videoSupersamplingText.text = s1
++            videoSupersamplingText.text = s1.toFixed(2)
+         }
+ 
+     }"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,482,549f65dc3200cedcde5259d0caf5a9955f8a1b64,src/settings/internal/settings_controller.h,modified,6,0,6,"@@ -275,6 +275,12 @@ class SettingsController
+                           SettingCategory::Playspace,
+                           QtInfo{ ""simpleRecenter"" },
+                           false },
++        // TODO Replace Back to Adjust Chaperone When Breaking Change is done.
++        // Needed New Setting defaulted to off w/ SVR 1.13.x release
++        BoolSettingValue{ BoolSetting::PLAYSPACE_adjustChaperone2,
++                          SettingCategory::Playspace,
++                          QtInfo{ ""adjustChaperone2"" },
++                          false },
+ 
+         BoolSettingValue{ BoolSetting::APPLICATION_disableVersionCheck,
+                           SettingCategory::Application,"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,482,549f65dc3200cedcde5259d0caf5a9955f8a1b64,src/settings/settings.h,modified,1,0,1,"@@ -22,6 +22,7 @@ enum class BoolSetting
+     PLAYSPACE_adjustChaperone,
+     PLAYSPACE_showLogMatricesButton,
+     PLAYSPACE_simpleRecenter,
++    PLAYSPACE_adjustChaperone2,
+ 
+     APPLICATION_disableVersionCheck,
+     APPLICATION_previousShutdownSafe,"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,482,549f65dc3200cedcde5259d0caf5a9955f8a1b64,src/tabcontrollers/MoveCenterTabController.cpp,modified,98,54,152,"@@ -457,12 +457,12 @@ void MoveCenterTabController::setFrictionPercent( int value, bool notify )
+ bool MoveCenterTabController::adjustChaperone() const
+ {
+     return settings::getSetting(
+-        settings::BoolSetting::PLAYSPACE_adjustChaperone );
++        settings::BoolSetting::PLAYSPACE_adjustChaperone2 );
+ }
+ 
+ void MoveCenterTabController::setAdjustChaperone( bool value, bool notify )
+ {
+-    settings::setSetting( settings::BoolSetting::PLAYSPACE_adjustChaperone,
++    settings::setSetting( settings::BoolSetting::PLAYSPACE_adjustChaperone2,
+                           value );
+ 
+     if ( notify )
+@@ -1178,6 +1178,8 @@ double MoveCenterTabController::getHmdYawTotal()
+ void MoveCenterTabController::resetHmdYawTotal()
+ {
+     m_hmdYawTotal = 0.0;
++    m_hmdYawOld = 0.0;
++    m_hmdYawTurnCount = 0;
+ }
+ 
+ void MoveCenterTabController::clampVelocity( double* velocity )
+@@ -2105,6 +2107,8 @@ void MoveCenterTabController::saveUncommittedChaperone()
+     }
+ }
+ 
++// NOTE this function will create bad output if User Rotates 180 Degrees in 1/7*
++// frame-rate. (Worst Case 30 fps = ~770 deg/s)
+ void MoveCenterTabController::updateHmdRotationCounter(
+     vr::TrackedDevicePose_t hmdPose,
+     double angle )
+@@ -2140,16 +2144,54 @@ void MoveCenterTabController::updateHmdRotationCounter(
+         m_lastHmdQuaternion = m_hmdQuaternion;
+         return;
+     }
+-    // Construct a quaternion representing difference between old
+-    // hmd pose and new hmd pose.
+-    vr::HmdQuaternion_t hmdDiffQuaternion = quaternion::multiply(
+-        m_hmdQuaternion, quaternion::conjugate( m_lastHmdQuaternion ) );
+ 
+-    // Calculate yaw from quaternion.
+-    double hmdYawDiff = quaternion::getYaw( hmdDiffQuaternion );
++    double hmdYawCurrent = quaternion::getYaw( m_hmdQuaternion );
++    // double hmdPitchCurrent = quaternion::getPitch( m_hmdQuaternion );
++    // double hmdRollCurrent = quaternion::getRoll( m_hmdQuaternion );
+ 
+-    // Apply yaw difference to m_hmdYawTotal.
+-    m_hmdYawTotal += hmdYawDiff;
++    // checks to see if hmd is in exact same position
++    if ( m_hmdYawOld == hmdYawCurrent )
++    {
++        return;
++    }
++    // Checks if The points defined by Yaw old and current form an arc of no
++    // more than 180 degrees, that MUST intersect With 180 degrees.
++
++    // NOTE: This fails if there is > 180 degrees between the update Rate
++    // Worst Case Scenario this should be ~770 deg/s turning speed. (30 fps)
++
++    if ( std::abs( m_hmdYawOld - hmdYawCurrent ) > M_PI )
++    {
++        // Checks if the HMD is inverted, and skips if it is
++        bool isInverted = ( hmdMatrixAbsolute.m[1][1] < 0 );
++        if ( !isInverted )
++        {
++            if ( m_hmdYawOld >= 0 )
++            {
++                m_hmdYawTurnCount += 1;
++            }
++            else if ( m_hmdYawOld < 0 )
++            {
++                m_hmdYawTurnCount -= 1;
++            }
++        }
++        else
++        {
++            LOG( WARNING ) << ""HMD Was Inverted during a Turn Count, Turn ""
++                              ""counter may be in-accurate"";
++        }
++    }
++
++    // Sets total rotation based on current orientation + Turn Count
++    if ( m_hmdYawTurnCount == 0 )
++    {
++        m_hmdYawTotal = hmdYawCurrent;
++    }
++    else
++    {
++        m_hmdYawTotal = hmdYawCurrent + ( m_hmdYawTurnCount * 2 * M_PI );
++    }
++    m_hmdYawOld = hmdYawCurrent;
+     m_lastHmdQuaternion = m_hmdQuaternion;
+ }
+ 
+@@ -2674,6 +2716,9 @@ void MoveCenterTabController::updateSpace( bool forceUpdate )
+             &offsetSeatedCenter );
+     }
+ 
++    // As of SVR 1.13.1 The Chaperone will follow Universe Center NOT raw Center
++    // as such this should be off by defualt.
++
+     if ( adjustChaperone() )
+     {
+         // make a copy of our bounds and
+@@ -2704,17 +2749,20 @@ void MoveCenterTabController::updateSpace( bool forceUpdate )
+                 // origin
+                 updatedBounds[quad].vCorners[corner].v[0]
+                     -= offsetUniverseCenter.m[0][3]
+-                       - m_universeCenterForReset.m[0][3];
++                       - offsetUniverseCenter.m[0][3];
++                //- m_universeCenterForReset.m[0][3];
+                 // but don't touch y=0 values to keep floor corners rooted down
+                 if ( updatedBounds[quad].vCorners[corner].v[1] != 0 )
+                 {
+                     updatedBounds[quad].vCorners[corner].v[1]
+                         -= offsetUniverseCenter.m[1][3]
+-                           - m_universeCenterForReset.m[1][3];
++                           - offsetUniverseCenter.m[1][3];
++                    //- m_universeCenterForReset.m[1][3];
+                 }
+                 updatedBounds[quad].vCorners[corner].v[2]
+                     -= offsetUniverseCenter.m[2][3]
+-                       - m_universeCenterForReset.m[2][3];
++                       - offsetUniverseCenter.m[2][3];
++                //- m_universeCenterForReset.m[2][3];
+ 
+                 // rotate by universe center's yaw
+                 rotateFloatCoordinates(
+@@ -2723,52 +2771,48 @@ void MoveCenterTabController::updateSpace( bool forceUpdate )
+             }
+         }
+ 
+-        // Center Marker for playspace.
+-        if ( parent->m_chaperoneTabController.m_centerMarkerOverlayNeedsUpdate )
+-        {
+-            // Set Unrotated Coordinates
+-            float universePlayCenterTempCoords[3] = { 0.0f, 0.0f, 0.0f };
+-            universePlayCenterTempCoords[0]
+-                -= offsetUniverseCenter.m[0][3]
+-                   - m_universeCenterForReset.m[0][3];
+-            universePlayCenterTempCoords[1]
+-                -= offsetUniverseCenter.m[1][3]
+-                   - m_universeCenterForReset.m[1][3];
+-            universePlayCenterTempCoords[2]
+-                -= offsetUniverseCenter.m[2][3]
+-                   - m_universeCenterForReset.m[2][3];
+-            // Rotate un-rotated to rotated
+-            rotateFloatCoordinates(
+-                universePlayCenterTempCoords,
+-                static_cast<float>( offsetUniverseCenterYaw ) );
+-            // Set Up orientation properly away from raw center
+-            utils::matMul33( m_offsetmatrix,
+-                             offsetUniverseCenter,
+-                             utils::k_forwardUpMatrix );
+-            vr::HmdMatrix34_t rotMatrix;
+-            utils::initRotationMatrix(
+-                rotMatrix,
+-                1,
+-                static_cast<float>( -( ( m_rotation * k_centidegreesToRadians )
+-                                       + offsetUniverseCenterYaw ) ) );
+-
+-            // Rotates orientation At playspace center
+-            vr::HmdMatrix34_t finalmatrix;
+-            utils::matMul33( finalmatrix, rotMatrix, m_offsetmatrix );
+-
+-            finalmatrix.m[0][3] = universePlayCenterTempCoords[0];
+-            finalmatrix.m[1][3] = universePlayCenterTempCoords[1];
+-            finalmatrix.m[2][3] = universePlayCenterTempCoords[2];
+-
+-            parent->m_chaperoneTabController.updateCenterMarkerOverlay(
+-                &finalmatrix );
+-        }
+-
+         // update chaperone working set preview (this does not commit)
+         vr::VRChaperoneSetup()->SetWorkingCollisionBoundsInfo(
+             updatedBounds, m_collisionBoundsCountForReset );
+         delete[] updatedBounds;
+     }
++
++    // Center Marker for playspace.
++    if ( parent->m_chaperoneTabController.m_centerMarkerOverlayNeedsUpdate )
++    {
++        // Set Unrotated Coordinates
++        float universePlayCenterTempCoords[3] = { 0.0f, 0.0f, 0.0f };
++        universePlayCenterTempCoords[0]
++            -= offsetUniverseCenter.m[0][3] - m_universeCenterForReset.m[0][3];
++        universePlayCenterTempCoords[1]
++            -= offsetUniverseCenter.m[1][3] - m_universeCenterForReset.m[1][3];
++        universePlayCenterTempCoords[2]
++            -= offsetUniverseCenter.m[2][3] - m_universeCenterForReset.m[2][3];
++        // Rotate un-rotated to rotated
++        rotateFloatCoordinates( universePlayCenterTempCoords,
++                                static_cast<float>( offsetUniverseCenterYaw ) );
++        // Set Up orientation properly away from raw center
++        utils::matMul33(
++            m_offsetmatrix, offsetUniverseCenter, utils::k_forwardUpMatrix );
++        vr::HmdMatrix34_t rotMatrix;
++        utils::initRotationMatrix(
++            rotMatrix,
++            1,
++            static_cast<float>( -( ( m_rotation * k_centidegreesToRadians )
++                                   + offsetUniverseCenterYaw ) ) );
++
++        // Rotates orientation At playspace center
++        vr::HmdMatrix34_t finalmatrix;
++        utils::matMul33( finalmatrix, rotMatrix, m_offsetmatrix );
++
++        finalmatrix.m[0][3] = universePlayCenterTempCoords[0];
++        finalmatrix.m[1][3] = universePlayCenterTempCoords[1];
++        finalmatrix.m[2][3] = universePlayCenterTempCoords[2];
++
++        parent->m_chaperoneTabController.updateCenterMarkerOverlay(
++            &finalmatrix );
++    }
++
+     vr::VRChaperoneSetup()->SetWorkingStandingZeroPoseToRawTrackingPose(
+         &offsetUniverseCenter );
+ "
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,482,549f65dc3200cedcde5259d0caf5a9955f8a1b64,src/tabcontrollers/MoveCenterTabController.h,modified,2,0,2,"@@ -170,6 +170,8 @@ class MoveCenterTabController : public QObject
+         = { k_quaternionInvalidValue, 0.0, 0.0, 0.0 };
+     vr::HmdQuaternion_t m_hmdQuaternion;
+     double m_hmdYawTotal = 0.0;
++    double m_hmdYawOld = 0.0;
++    int m_hmdYawTurnCount = 0;
+     vr::ETrackedControllerRole m_activeDragHand
+         = vr::TrackedControllerRole_Invalid;
+     vr::ETrackedControllerRole m_lastMoveHand"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,482,549f65dc3200cedcde5259d0caf5a9955f8a1b64,ver/versioncheck.json,modified,1,1,2,"@@ -1 +1 @@
+-{ ""major"": 5, ""minor"": 2, ""patch"": 0, ""updateMessage"": """", ""optionalMessage"": """" }
+\ No newline at end of file
++{ ""major"": 5, ""minor"": 2, ""patch"": 1, ""updateMessage"": """", ""optionalMessage"": """" }
+\ No newline at end of file"

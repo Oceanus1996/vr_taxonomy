@@ -1,0 +1,80 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+De-Panther/unity-webxr-export,150,63dd749,Packages/webxr-interactions/Runtime/Scripts/ControllerInteraction.cs,modified,3,4,7,"@@ -279,10 +279,9 @@ private void OnHandUpdate(WebXRHandData handData)
+         }
+         else
+         {
+-          var clone = Instantiate(handJointPrefab,
+-                                  rotationOffset * (handData.joints[i].position - handData.joints[0].position),
+-                                  rotationOffset * handData.joints[i].rotation,
+-                                  transform);
++          var clone = Instantiate(handJointPrefab, transform);
++          clone.localPosition = rotationOffset * (handData.joints[i].position - handData.joints[0].position);
++          clone.localRotation = rotationOffset * handData.joints[i].rotation;
+           if (handData.joints[i].radius > 0f)
+           {
+             clone.localScale = new Vector3(handData.joints[i].radius, handData.joints[i].radius, handData.joints[i].radius);"
+De-Panther/unity-webxr-export,150,63dd749,Packages/webxr/CHANGELOG.md,modified,3,0,3,"@@ -5,6 +5,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+ 
+ ## [Unreleased]
++### Fixed
++- Hand joints don't get radius.
++- Hand joints instantiate at wrong position.
+ 
+ ## [0.10.0] - 2021-05-06
+ ### Added"
+De-Panther/unity-webxr-export,150,63dd749,Packages/webxr/Runtime/Plugins/WebGL/webxr.jspre,modified,17,19,36,"@@ -122,8 +122,8 @@ setTimeout(function () {
+         this.radii = new Float32Array(25);
+         this.jointQuaternion = new Float32Array(4);
+         this.jointIndex = 0;
+-        this.handValues = null;
+         this.handValuesType = 0;
++        this.hasRadii = false;
+       }
+     
+       function XRJointData() {
+@@ -620,28 +620,26 @@ setTimeout(function () {
+             }
+             xrHand.enabled = 1;
+ 
+-            switch (xrHand.handValuesType) {
+-              case 0:
+-                if (inputSource.hand.values) {
+-                  xrHand.handValues = inputSource.hand.values();
+-                  xrHand.handValuesType = 1
+-                } else {
+-                  xrHand.handValues = inputSource.hand;
+-                  xrHand.handValuesType = 2
+-                }
+-                break;
+-              case 1:
+-                xrHand.handValues = inputSource.hand.values();
+-                break;
+-              case 2:
+-                xrHand.handValues = inputSource.hand;
+-                break;
++            if (xrHand.handValuesType == 0) {
++              if (inputSource.hand.values) {
++                xrHand.handValuesType = 1
++              } else {
++                xrHand.handValuesType = 2
++              }
+             }
+-            if (!frame.fillPoses(xrHand.handValues, refSpace, xrHand.poses)) {
++            if (!frame.fillPoses(
++                xrHand.handValuesType == 1 ? inputSource.hand.values() : inputSource.hand,
++                refSpace,
++                xrHand.poses)) {
+               xrHand.enabled = 0;
+               continue;
+             }
+-            frame.fillJointRadii(xrHand.handValues, xrHand.radii);
++            if (!xrHand.hasRadii)
++            {
++              xrHand.hasRadii = frame.fillJointRadii(
++                xrHand.handValuesType == 1 ? inputSource.hand.values() : inputSource.hand,
++                xrHand.radii);
++            }
+             for (var j = 0; j < 25; j++) {
+               xrHand.jointIndex = j*16;
+               if (!isNaN(xrHand.poses[xrHand.jointIndex])) {"

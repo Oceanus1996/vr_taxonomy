@@ -1,0 +1,453 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vizorvr/patches,896,ad8e763,browser/scripts/ui-site.js,modified,30,27,57,"@@ -83,17 +83,18 @@ var siteUI = new function() {
+ 			return false;
+ 		});
+ 
+-		var $getStarted = jQuery('section#getstarted').first();
+-		var onResize = VizorUI.makeVRCanvasResizeHandler(jQuery('#webgl-canvas'), $getStarted);
++		var $homePlayerContainer = jQuery('#player_home');
++		var onResize = VizorUI.makeVRCanvasResizeHandler(jQuery('#webgl-canvas'), $homePlayerContainer);
+ 		$(window).on('resize', onResize);
+ 		$(window).on('vizorLoaded', function() {
+ 
+ 			E2.app.isVRCameraActive = function(){return false};	// disable panning on homepage player, see #790
+ 			E2.app.calculateCanvasArea = function() {
+-                return {
+-                    width: $getStarted.innerWidth(),
+-                    height: $getStarted.innerHeight()
++                var ret = {
++                    width: $homePlayerContainer.innerWidth(),
++                    height: $homePlayerContainer.innerHeight()
+                 }
++				return ret;
+             }
+ 			onResize();
+ 		});
+@@ -142,30 +143,32 @@ jQuery('document').ready(siteUI.init);
+ if (typeof VizorUI === 'undefined') var VizorUI = {};
+ 
+ VizorUI.makeVRCanvasResizeHandler = function($playerCanvas, $containerRef) {
+-	if (typeof $containerRef === 'undefined') $containerRef = jQuery(window);
++	if (typeof $containerRef === 'undefined') {
++		msg(""ERROR: - using window for $containerRef"");
++		$containerRef = jQuery(window);
++	}
+ 	return function() {
+-		setTimeout(function() {
+-			var width = $containerRef.width()
+-			var height = $containerRef.height()
+-			var devicePixelRatio = window.devicePixelRatio || 1;
+-			var pixelRatioAdjustedWidth = devicePixelRatio * width;
+-			var pixelRatioAdjustedHeight = devicePixelRatio * height;
+-
+-			$playerCanvas[0].width = pixelRatioAdjustedWidth
+-			$playerCanvas[0].height = pixelRatioAdjustedHeight
+-
+-			var isFullscreen = !!(document.mozFullScreenElement || document.webkitFullscreenElement)
+-
+-			if (isFullscreen) {
+-				$playerCanvas.removeClass('webgl-canvas-normal')
+-				$playerCanvas.addClass('webgl-canvas-fs')
+-			} else {
+-				$playerCanvas.removeClass('webgl-canvas-fs')
+-				$playerCanvas.addClass('webgl-canvas-normal')
+-			}
++		var width = $containerRef.outerWidth()
++		var height = $containerRef.outerHeight()
++		var devicePixelRatio = window.devicePixelRatio || 1;
++		var pixelRatioAdjustedWidth = devicePixelRatio * width;
++		var pixelRatioAdjustedHeight = devicePixelRatio * height;
++
++		$playerCanvas
++			.width(pixelRatioAdjustedWidth)
++			.height(pixelRatioAdjustedHeight);
++
++		var isFullscreen = !!(document.mozFullScreenElement || document.webkitFullscreenElement)
++
++		if (isFullscreen) {
++			$playerCanvas.removeClass('webgl-canvas-normal')
++			$playerCanvas.addClass('webgl-canvas-fs')
++		} else {
++			$playerCanvas.removeClass('webgl-canvas-fs')
++			$playerCanvas.addClass('webgl-canvas-normal')
++		}
+ 
+-			E2.core.emit('resize')
+-		}, 20)
++		E2.core.emit('resize')
+ 	};
+ }
+ "
+vizorvr/patches,896,ad8e763,browser/vendor/three/webvr-manager.js,modified,8,2,10,"@@ -1200,8 +1200,14 @@ WebVRManager.prototype.anyModeToNormal = function() {
+ WebVRManager.prototype.resizeIfNeeded_ = function(camera) {
+   // Only resize the canvas if it needs to be resized.
+   var size = this.renderer.getSize();
+-  if (size.width != window.innerWidth || size.height != window.innerHeight) {
+-    camera.aspect = window.innerWidth / window.innerHeight;
++
++  // gm #896
++  var container = (this.renderer.domElement) ? this.renderer.domElement.parentNode : window;
++  var w = container.innerWidth || container.clientWidth;
++  var h = container.innerHeight || container.clientHeight;
++
++  if ( size.width != w || size.height != h) {
++    camera.aspect = w / h;
+     camera.updateProjectionMatrix();
+     this.resize_()
+   }"
+vizorvr/patches,896,ad8e763,less/homepage.less,modified,1,2,3,"@@ -171,8 +171,7 @@ body.bHome #contentwrap {
+ 
+   section {
+ 	margin:0;
+-	border-top: 1px solid transparent;
+-	border-bottom: 1px solid transparent;
++	border-top: 1px solid transparent;	// fix webkit padding issues
+   }
+ 
+   a, section a {"
+vizorvr/patches,896,ad8e763,views/server/partials/home/getStarted.handlebars,modified,3,3,6,"@@ -1,4 +1,7 @@
+ <section id=""getstarted"" class=""contentcontainer nomobile"" style=""position:relative;"">
++	<div id=""player_home"" style=""position:absolute; top:0; left:0;bottom:0; right:0; z-index:1;"">{{!-- ff requires z 0 --}}
++		{{> playerCanvas width=""100%"" height=""100%"" graphSrc=""/data/graph/eesn/flamingofront.json"" }}
++	</div>
+ 	<div class=""twocol clearfix in"" style=""z-index:10"">
+ 		<h1 class=""decorative light"">
+ 			<span>Get Started with Vizor</span>
+@@ -18,7 +21,4 @@
+ 			</div>
+ 		{{/if}}
+ 	</div>
+-	<div id=""player_home"" style=""position:absolute; top:0; left:0;bottom:0; right:0; z-index:1;"">{{!-- ff requires z 0 --}}
+-		{{> playerCanvas width=""100%"" height=""100%"" graphSrc=""/data/graph/eesn/flamingofront.json"" }}
+-	</div>
+ </section>
+\ No newline at end of file"
+vizorvr/patches,896,ccfb5ff,browser/scripts/ui-site.js,modified,29,27,56,"@@ -83,16 +83,16 @@ var siteUI = new function() {
+ 			return false;
+ 		});
+ 
+-		var $getStarted = jQuery('section#getstarted').first();
+-		var onResize = VizorUI.makeVRCanvasResizeHandler(jQuery('#webgl-canvas'), $getStarted);
++		var $homePlayerContainer = jQuery('#player_home');
++		var onResize = VizorUI.makeVRCanvasResizeHandler(jQuery('#webgl-canvas'), $homePlayerContainer);
+ 		$(window).on('resize', onResize);
+ 		$(window).on('vizorLoaded', function() {
+ 
+ 			E2.app.isVRCameraActive = function(){return false};	// disable panning on homepage player, see #790
+ 			E2.app.calculateCanvasArea = function() {
+-                return {
+-                    width: $getStarted.innerWidth(),
+-                    height: $getStarted.innerHeight()
++                return{
++                    width: $homePlayerContainer.innerWidth(),
++                    height: $homePlayerContainer.innerHeight()
+                 }
+             }
+ 			onResize();
+@@ -142,30 +142,32 @@ jQuery('document').ready(siteUI.init);
+ if (typeof VizorUI === 'undefined') var VizorUI = {};
+ 
+ VizorUI.makeVRCanvasResizeHandler = function($playerCanvas, $containerRef) {
+-	if (typeof $containerRef === 'undefined') $containerRef = jQuery(window);
++	if (typeof $containerRef === 'undefined') {
++		msg(""ERROR: - using window for $containerRef"");
++		$containerRef = jQuery(window);
++	}
+ 	return function() {
+-		setTimeout(function() {
+-			var width = $containerRef.width()
+-			var height = $containerRef.height()
+-			var devicePixelRatio = window.devicePixelRatio || 1;
+-			var pixelRatioAdjustedWidth = devicePixelRatio * width;
+-			var pixelRatioAdjustedHeight = devicePixelRatio * height;
+-
+-			$playerCanvas[0].width = pixelRatioAdjustedWidth
+-			$playerCanvas[0].height = pixelRatioAdjustedHeight
+-
+-			var isFullscreen = !!(document.mozFullScreenElement || document.webkitFullscreenElement)
+-
+-			if (isFullscreen) {
+-				$playerCanvas.removeClass('webgl-canvas-normal')
+-				$playerCanvas.addClass('webgl-canvas-fs')
+-			} else {
+-				$playerCanvas.removeClass('webgl-canvas-fs')
+-				$playerCanvas.addClass('webgl-canvas-normal')
+-			}
++		var width = $containerRef.innerWidth()
++		var height = $containerRef.innerHeight()
++		var devicePixelRatio = window.devicePixelRatio || 1;
++		var pixelRatioAdjustedWidth = devicePixelRatio * width;
++		var pixelRatioAdjustedHeight = devicePixelRatio * height;
++
++		$playerCanvas
++			.width(pixelRatioAdjustedWidth)
++			.height(pixelRatioAdjustedHeight);
++
++		var isFullscreen = !!(document.mozFullScreenElement || document.webkitFullscreenElement)
++
++		if (isFullscreen) {
++			$playerCanvas.removeClass('webgl-canvas-normal')
++			$playerCanvas.addClass('webgl-canvas-fs')
++		} else {
++			$playerCanvas.removeClass('webgl-canvas-fs')
++			$playerCanvas.addClass('webgl-canvas-normal')
++		}
+ 
+-			E2.core.emit('resize')
+-		}, 20)
++		E2.core.emit('resize')
+ 	};
+ }
+ "
+vizorvr/patches,896,ccfb5ff,browser/vendor/three/webvr-manager.js,modified,30,5,35,"@@ -1197,18 +1197,43 @@ WebVRManager.prototype.anyModeToNormal = function() {
+   this.resize_();
+ };
+ 
++WebVRManager.prototype.getContainerDimensions = function() {	  // gm #896
++	var container, width, height;
++	if (this.renderer.domElement) {
++	  container = this.renderer.domElement.parentNode;
++	  width = container.clientWidth;
++	  height = container.clientHeight
++	  if (!width || !height) {	// fullscreen
++		  width = window.innerWidth;
++		  height = window.innerHeight;
++	  }
++	} else {
++	  container = window;
++	  width = container.innerWidth;
++	  height = container.innerHeight;
++	}
++	return {
++		width: width,
++		height: height
++	}
++}
++
+ WebVRManager.prototype.resizeIfNeeded_ = function(camera) {
+   // Only resize the canvas if it needs to be resized.
+   var size = this.renderer.getSize();
+-  if (size.width != window.innerWidth || size.height != window.innerHeight) {
+-    camera.aspect = window.innerWidth / window.innerHeight;
++
++  var d = this.getContainerDimensions();
++
++  if ( size.width != d.width || size.height != d.height) {
++    camera.aspect = d.width / d.height;
+     camera.updateProjectionMatrix();
+-    this.resize_()
++    this.resize_(d)
+   }
+ };
+ 
+-WebVRManager.prototype.resize_ = function() {
+-  this.effect.setSize(window.innerWidth, window.innerHeight);
++WebVRManager.prototype.resize_ = function(dimensions) {
++  dimensions = dimensions || this.getContainerDimensions();
++  this.effect.setSize(dimensions.width, dimensions.height);
+ };
+ 
+ WebVRManager.prototype.onOrientationChange_ = function(e) {"
+vizorvr/patches,896,ccfb5ff,less/homepage.less,modified,1,2,3,"@@ -171,8 +171,7 @@ body.bHome #contentwrap {
+ 
+   section {
+ 	margin:0;
+-	border-top: 1px solid transparent;
+-	border-bottom: 1px solid transparent;
++	border-top: 1px solid transparent;	// fix webkit padding issues
+   }
+ 
+   a, section a {"
+vizorvr/patches,896,ccfb5ff,less/playerpage.less,modified,26,0,26,"@@ -2,6 +2,32 @@ body.bPlayer {
+   height:100%; width:100%;
+ }
+ #playerpage {
++  min-height: 100%;
++
++  #playerWrap {
++	  position: fixed;
++	  top:0;
++	  bottom:0;
++	  left: 0;
++	  right:0;
++	  display: flex;
++	  flex-direction: column;
++	  height: 100%;
++	  display: -webkit-flex;
++	  -webkit-flex-direction: column;
++  }
++  #playerWrap header {
++	  -webkit-flex: 0 1 auto;
++	  -webkit-flex-order: 1;
++	  flex: 0 1 auto;
++	  order: 1;
++  }
++  #stage {
++	  -webkit-flex: 1;
++	  -webkit-flex-order: 2;
++	  flex:1;
++	  order: 2;
++  }
+   header>* {height: 60px; line-height: 60px; border:0; margin: 0; padding:0;}
+   header {
+ 	  background: @bg-light;"
+vizorvr/patches,896,ccfb5ff,views/graph/show.handlebars,modified,38,60,98,"@@ -1,38 +1,40 @@
+ {{> srv/siteSvgSprite }}
+-<header id=""topbar"" class=""clearfix"">
+-    <h1 id=""logo_h"">
+-        <span id=""load_spinner""></span>
+-        <a href=""/""><svg alt=""Vizor logo"" style=""width:64px; height:24px; fill:#eee;""><use xlink:href=""#vizor-top-logo""></use></svg></a>
+-    </h1>
+-    <div class=""controls"">
+-        <button id=""fullscreen"" data-tooltip=""Enter full screen"" class=""svg"">
+-            <svg alt=""Enter full screen""><use xlink:href=""#icon-fullscreen""></use></svg>
+-        </button>
+-        <button id=""edit"" data-tooltip=""Edit graph"" class=""svg"">
+-            <svg alt=""Edit graph""><use xlink:href=""#player-pencil""></use></svg>
+-        </button>
+-    </div>
+-    <h2 id=""graph_heading"">
+-        <span class=""title"">{{graph.name}}</span>
+-        by
+-        <span class=""author"">{{graph.owner}}</span>
+-    </h2>
++<div id=""playerWrap"">
++<header id=""topbar"" class=""clearfix"" style=""height:58px;"">
++	<h1 id=""logo_h"">
++		<span id=""load_spinner""></span>
++		<a href=""/""><svg alt=""Vizor logo"" style=""width:64px; height:24px; fill:#eee;""><use xlink:href=""#vizor-top-logo""></use></svg></a>
++	</h1>
++	<div class=""controls"">
++		<button id=""fullscreen"" data-tooltip=""Enter full screen"" class=""svg"">
++			<svg alt=""Enter full screen""><use xlink:href=""#icon-fullscreen""></use></svg>
++		</button>
++		<button id=""edit"" data-tooltip=""Edit graph"" class=""svg"">
++			<svg alt=""Edit graph""><use xlink:href=""#player-pencil""></use></svg>
++		</button>
++	</div>
++	<h2 id=""graph_heading"">
++		<span class=""title"">{{graph.name}}</span>
++		by
++		<span class=""author"">{{graph.owner}}</span>
++	</h2>
++	<div class=""progress"" style=""display:none"">
++		<div class=""progress-bar"" style=""width: 00%;""></div>
++	</div>
+ </header>
+-<div class=""stage--front"" style=""height:100%; width:100%;"">
++<div id=""stage"" class=""stage--front"" style=""min-height: 100px; background: #666;"">
+ 	<canvas
+-        style=""display:none;""
++		style=""display: none;""
+ 		id=""webgl-canvas""
+ 		class=""webgl-canvas-normal""
+-		width=""1400px""
+-		height=""700px""
++		width=""100%""
++		height=""100%""
+ 		oncontextmenu=""return false;""
+ 		data-autoplay=""true""
+ 		data-graph-url=""{{graphMinUrl}}"">
+ 	>
+ 	</canvas>
+-	<div class=""progress"" style=""display:none"">
+-		<div class=""progress-bar"" style=""width: 00%;""></div>
+-	</div>
++</div>
+ </div>
+ <script>
+     var have_webgl = (function(){   // http://www.browserleaks.com/webgl#howto-detect-webgl
+@@ -51,38 +53,13 @@
+     function initPlayer() {
+         var $canvas = $('#webgl-canvas')
+         $canvas.css({display: 'block'});
+-        var $window = $(window)
+-        var $stage = $('.stage--front')
+-        var footerHeight = 76
++        var $stage = $('#stage')
+ 
+         window.Vizor = {
+             hideWebVRButton: true
+         }
+ 
+-        function onResize() {
+-            setTimeout(function() {
+-                var width = $window.width()
+-                var height = $window.height()
+-                var devicePixelRatio = window.devicePixelRatio || 1;
+-                var pixelRatioAdjustedWidth = devicePixelRatio * width;
+-                var pixelRatioAdjustedHeight = devicePixelRatio * height;
+-
+-                $canvas[0].width = pixelRatioAdjustedWidth
+-                $canvas[0].height = pixelRatioAdjustedHeight
+-
+-                var isFullscreen = !!(document.mozFullScreenElement || document.webkitFullscreenElement)
+-
+-                if (isFullscreen) {
+-                    $canvas.removeClass('webgl-canvas-normal')
+-                    $canvas.addClass('webgl-canvas-fs')
+-                } else {
+-                    $canvas.removeClass('webgl-canvas-fs')
+-                    $canvas.addClass('webgl-canvas-normal')
+-                }
+-
+-                E2.core.emit('resize')
+-            }, 20)
+-        }
++		var onResize = VizorUI.makeVRCanvasResizeHandler($canvas, $stage)
+ 
+         $('#edit').click(function() {
+             window.location = window.location + '/edit'
+@@ -92,18 +69,19 @@
+             E2.core.emit('fullScreenChangeRequested')
+         })
+ 
+-        $(window).on('resize', onResize)
++        $(window).on('resize', onResize);
+         $(window).on('vizorLoaded', function() {
+             $('#load-spinner').hide()
+-
+-            E2.app.calculateCanvasArea = function() {
+-                return {
+-                    width: window.innerWidth,
+-                    height: window.innerHeight
++			var $playerContainer = jQuery('#stage');
++			var onResize = VizorUI.makeVRCanvasResizeHandler(jQuery('#webgl-canvas'), $playerContainer);
++            E2.app.isVRCameraActive = function(){return false};	// disable panning on homepage player, see #790
++			E2.app.calculateCanvasArea = function() {
++                return{
++                    width: $playerContainer.innerWidth(),
++                    height: $playerContainer.innerHeight()
+                 }
+             }
+-
+-            onResize()
++			onResize();
+         })
+     }
+ "
+vizorvr/patches,896,ccfb5ff,views/layouts/player.handlebars,modified,1,0,1,"@@ -3,6 +3,7 @@
+ 	<head id=""head"">
+ 		<meta charset='utf-8' />
+         <title>{{title}}</title>
++		<meta name=""viewport"" content=""initial-scale=1, maximum-scale=1"" />
+         <meta name=""keywords"" content=""vizor, vr, webvr, virtual reality, webgl, visual programming, animation"" />
+         <meta name=""description"" content=""Vizor lets you create compelling VR content right in your browser"" />
+         <meta name=""og:description"" content=""Vizor lets you create compelling VR content right in your browser"" />"
+vizorvr/patches,896,ccfb5ff,views/server/partials/home/getStarted.handlebars,modified,3,3,6,"@@ -1,4 +1,7 @@
+ <section id=""getstarted"" class=""contentcontainer nomobile"" style=""position:relative;"">
++	<div id=""player_home"" style=""position:absolute; top:0; left:0;bottom:0; right:0; z-index:1;"">{{!-- ff requires z 0 --}}
++		{{> playerCanvas width=""100%"" height=""100%"" graphSrc=""/data/graph/eesn/flamingofront.json"" }}
++	</div>
+ 	<div class=""twocol clearfix in"" style=""z-index:10"">
+ 		<h1 class=""decorative light"">
+ 			<span>Get Started with Vizor</span>
+@@ -18,7 +21,4 @@
+ 			</div>
+ 		{{/if}}
+ 	</div>
+-	<div id=""player_home"" style=""position:absolute; top:0; left:0;bottom:0; right:0; z-index:1;"">{{!-- ff requires z 0 --}}
+-		{{> playerCanvas width=""100%"" height=""100%"" graphSrc=""/data/graph/eesn/flamingofront.json"" }}
+-	</div>
+ </section>
+\ No newline at end of file"

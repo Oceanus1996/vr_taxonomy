@@ -1,0 +1,78 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+brandonmousseau/vhvr-mod,559,a05db9501f73f2b6a07f655a5f0f7c3358e157ba,ValheimVRMod/Patches/BowAndFishingPatches.cs,modified,0,27,27,"@@ -210,34 +210,7 @@ static void Prefix(ref float bowDrawPercentage) {
+             }
+         }
+     }
+-    
+-    /**
+-     * Remove attack animation by speeding it up. It only applies to attack moves,
+-     * because the original method switches it back to normal for other animations
+-     */
+-    [HarmonyPatch(typeof(CharacterAnimEvent), nameof(CharacterAnimEvent.CustomFixedUpdate))]
+-
+-    class PatchFixedUpdate {
+ 
+-        public static float lastSpeedUp = 1f;
+-        static void Prefix(Character ___m_character, ref Animator ___m_animator) {
+-            
+-            if (___m_character != Player.m_localPlayer || !VHVRConfig.UseVrControls()) {
+-                return;
+-            }
+-            if (!EquipScript.shouldSkipAttackAnimation() || ___m_character.IsStaggering() || PlayerCustomizaton.IsBarberGuiVisible())
+-            {
+-                ___m_animator.speed = 1f;
+-                return;
+-            }
+-            if(___m_animator.speed != 1 && ___m_animator.speed != 1000)
+-            {
+-                lastSpeedUp = ___m_animator.speed;
+-            }
+-            ___m_animator.speed = 1000f;
+-        }
+-    }  
+-    
+     /**
+     * remove character facing and inaccuracy for projectile stuff
+     */"
+brandonmousseau/vhvr-mod,559,a05db9501f73f2b6a07f655a5f0f7c3358e157ba,ValheimVRMod/Patches/FixPatches.cs,modified,31,0,31,"@@ -1,5 +1,7 @@
+ using System.Collections.Generic;
+ using HarmonyLib;
++using UnityEngine;
++using ValheimVRMod.VRCore;
+ using ValheimVRMod.Utilities;
+ using Valve.VR.InteractionSystem;
+ 
+@@ -50,4 +52,33 @@ static bool Prefix()
+             return false;
+         }
+     }
++
++    /**
++     * Remove attack animation by speeding it up. It only applies to attack moves,
++     * because the original method switches it back to normal for other animations
++     */
++    [HarmonyPatch(typeof(CharacterAnimEvent), nameof(CharacterAnimEvent.CustomFixedUpdate))]
++    class PatchFixedUpdate
++    {
++
++        public static float lastSpeedUp = 1f;
++        static void Prefix(Character ___m_character, ref Animator ___m_animator)
++        {
++
++            if (___m_character != Player.m_localPlayer || !VHVRConfig.UseVrControls())
++            {
++                return;
++            }
++            if (!EquipScript.shouldSkipAttackAnimation() || ___m_character.IsStaggering() || !VRPlayer.attachedToPlayer)
++            {
++                ___m_animator.speed = 1f;
++                return;
++            }
++            if (___m_animator.speed != 1 && ___m_animator.speed != 1000)
++            {
++                lastSpeedUp = ___m_animator.speed;
++            }
++            ___m_animator.speed = 1000f;
++        }
++    }
+ }"

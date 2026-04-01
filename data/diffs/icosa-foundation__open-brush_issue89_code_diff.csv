@@ -1,0 +1,73 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+icosa-foundation/open-brush,89,5556875,.github/workflows/build.yml,modified,6,5,11,"@@ -110,24 +110,25 @@ jobs:
+             targetPlatform: StandaloneWindows64
+             vrsdk: SteamVR
+             extraoptions: -btb-experimental
+-          - name: Windows Monoscopic
++          - name: Windows Monoscopic Experimental
+             targetPlatform: StandaloneWindows64
+             vrsdk: Monoscopic
+-            extraoptions:
++            extraoptions: -btb-experimental
+           - name: Linux SteamVR
+             targetPlatform: StandaloneLinux64
+             vrsdk: SteamVR
+           - name: Linux SteamVR Experimental
+             targetPlatform: StandaloneLinux64
+             vrsdk: SteamVR
+             extraoptions: -btb-experimental
+-          - name: Linux Monoscopic
++          - name: Linux Monoscopic Experimental
+             targetPlatform: StandaloneLinux64
+             vrsdk: Monoscopic
+-            extraoptions:
+-          - name: OSX Monoscopic
++            extraoptions: -btb-experimental
++          - name: OSX Monoscopic Experimental
+             targetPlatform: StandaloneOSX  # SteamVR was removed in Mar 2020
+             vrsdk: Monoscopic
++            extraoptions: -btb-experimental
+           - name: Oculus Quest
+             targetPlatform: Android
+             vrsdk: Oculus"
+icosa-foundation/open-brush,89,5556875,Assets/Prefabs/VrSystems/VrControllers/NonVrControls.prefab,modified,1,1,2,"@@ -111,7 +111,7 @@ MonoBehaviour:
+   m_Script: {fileID: 11500000, guid: 1c94cee59aeb87c4b8738f004b002294, type: 3}
+   m_Name: 
+   m_EditorClassIdentifier: 
+-  m_ControllerName: 0
++  m_ControllerName: 1
+   m_ControllerGeometryPrefab: {fileID: 114000011295956858, guid: 5dc4999f1746f8a4296af50951bb394c,
+     type: 3}
+   m_GeometryOffset: {x: 0, y: 0, z: 0}"
+icosa-foundation/open-brush,89,5556875,Assets/Scripts/App.cs,modified,8,5,13,"@@ -456,11 +456,14 @@ static void SetCurrentDirectoryToApplication() {
+   }
+ 
+   void CreateIntroSketch() {
+-    m_IntroSketch = Instantiate(PlatformConfig.IntroSketchPrefab);
+-    m_IntroSketchRenderers = m_IntroSketch.GetComponentsInChildren<Renderer>();
+-    for (int i = 0; i < m_IntroSketchRenderers.Length; ++i) {
+-      m_IntroSketchRenderers[i].material.SetFloat(""_IntroDissolve"", 1);
+-      m_IntroSketchRenderers[i].material.SetFloat(""_GreyScale"", 0);
++    // Load intro if not already cached.
++    if (m_IntroSketch == null && PlatformConfig.IntroSketchPrefab != null) {
++      m_IntroSketch = Instantiate(PlatformConfig.IntroSketchPrefab);
++      m_IntroSketchRenderers = m_IntroSketch.GetComponentsInChildren<Renderer>();
++      for (int i = 0; i < m_IntroSketchRenderers.Length; ++i) {
++        m_IntroSketchRenderers[i].material.SetFloat(""_IntroDissolve"", 1);
++        m_IntroSketchRenderers[i].material.SetFloat(""_GreyScale"", 0);
++      }
+     }
+   }
+ "
+icosa-foundation/open-brush,89,5556875,Assets/Scripts/GUI/SketchSurfacePanel.cs,modified,2,1,3,"@@ -323,9 +323,10 @@ public void UpdateCurrentTool() {
+     ActiveTool.UpdateTool();
+     if (ActiveTool.ExitRequested()) {
+       // Requesting a tool exit puts us back at our default tool.
++      ActiveTool.EnableTool(false); // clean up current tool
+       EnableDefaultTool();
+       ActiveTool.EatInput();
+-
++      
+       // If we're currently loading, hide our default tool.
+       if (App.Instance.IsLoading()) {
+         PointerManager.m_Instance.RequestPointerRendering(false);"

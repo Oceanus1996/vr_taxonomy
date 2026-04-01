@@ -1,0 +1,918 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+icosa-foundation/open-brush,287,e556c43,Assets/Oculus/OculusProjectConfig.asset,modified,5,2,7,"@@ -20,6 +20,9 @@ MonoBehaviour:
+   anchorSupport: 0
+   renderModelSupport: 0
+   trackedKeyboardSupport: 0
++  bodyTrackingSupport: 0
++  faceTrackingSupport: 0
++  eyeTrackingSupport: 0
+   disableBackups: 0
+   enableNSCConfig: 0
+   securityXmlPath: 
+@@ -29,5 +32,5 @@ MonoBehaviour:
+   experimentalFeaturesEnabled: 0
+   insightPassthroughEnabled: 1
+   systemSplashScreen: {fileID: 0}
+-  ovrPluginMd5Win64: 3f631d8dcae74f1b41cd6725d7393b5d
+-  ovrPluginMd5Android: fcab30d7a06db16806d83a6cca6cc959
++  ovrPluginMd5Win64: a6e05ff383e9e3a73d9998df46d87ba2
++  ovrPluginMd5Android: 856774ba2a60977f7bdf9a5ae06fbac6"
+icosa-foundation/open-brush,287,e556c43,Assets/Scripts/Rendering/RenderWrapper.cs,modified,19,17,36,"@@ -231,23 +231,25 @@ public void OnPreRender()
+                 VideoRecorderUtils.ActiveVideoRecording.IsCapturing;
+ 
+ #if UNITY_ANDROID
+-    int msaa = QualityControls.m_Instance.MSAALevel;
+-    // MSAA disabled in QualityControls = 0, but render texture wants 1.
+-    if (msaa == 0) {
+-      msaa = 1;
+-    }
+-    if (msaa != 1 && msaa != 2 && msaa != 4 && msaa != 8) {
+-      UnityEngine.Debug.LogWarningFormat(""Invalid MSAA {0} != [1,2,4,8]"", msaa);
+-      msaa = 1;
+-    }
+-
+-    if (msaa != QualitySettings.antiAliasing) {
+-      QualitySettings.antiAliasing = msaa;
+-    }
+-    GetComponent<Camera>().allowMSAA = msaa > 1;
+-
+-    // Use a single camera on Android.
+-    return;
++    // TODO:Mike - setting MSAA seems to crash quest when in Vulkan
++    
++    // int msaa = QualityControls.m_Instance.MSAALevel;
++    // // MSAA disabled in QualityControls = 0, but render texture wants 1.
++    // if (msaa == 0) {
++    //   msaa = 1;
++    // }
++    // if (msaa != 1 && msaa != 2 && msaa != 4 && msaa != 8) {
++    //   UnityEngine.Debug.LogWarningFormat(""Invalid MSAA {0} != [1,2,4,8]"", msaa);
++    //   msaa = 1;
++    // }
++
++    // if (msaa != QualitySettings.antiAliasing) {
++    //   QualitySettings.antiAliasing = msaa;
++    // }
++    // GetComponent<Camera>().allowMSAA = msaa > 1;
++
++    // // Use a single camera on Android.
++    // return;
+ #else
+ 
+             Camera srcCam = GetComponent<Camera>();"
+icosa-foundation/open-brush,287,e556c43,Assets/Shaders/ColorPicker.shader,modified,1,5,6,"@@ -18,10 +18,6 @@ Shader ""Custom/ColorPicker"" {
+     _MainTex (""Base (RGB)"", 2D) = ""white"" {}
+     _Cutoff (""Alpha cutoff"", Range(0,1)) = 0.5
+   }
+-  CGINCLUDE
+-    #include ""Assets/Shaders/Include/ColorSpaceConvert.cginc""
+-  ENDCG
+-
+   SubShader {
+     Tags {""Queue""=""AlphaTest+20"" ""IgnoreProjector""=""True"" ""RenderType""=""TransparentCutout""}
+ 
+@@ -41,7 +37,7 @@ Shader ""Custom/ColorPicker"" {
+     void surf (Input IN, inout SurfaceOutput o) {
+       half4 tex = tex2D (_MainTex, IN.uv_MainTex);
+       float4 c = tex * _Color;
+-      o.Emission = SrgbToLinear(c).rgb;
++      o.Emission = c.rgb;
+       o.Albedo = 0;
+       if (c.a < _Cutoff) {
+         discard;"
+icosa-foundation/open-brush,287,e556c43,Assets/Shaders/ColorPicker_hs_l.shader,modified,2,3,5,"@@ -21,8 +21,7 @@ Properties {
+ 
+ CGINCLUDE
+     #include ""Assets/Shaders/Include/ColorSpace.cginc""
+-    #include ""Assets/Shaders/Include/ColorSpaceConvert.cginc""
+-    #include ""Assets/Shaders/Include/Hdr.cginc""
++  #include ""Assets/Shaders/Include/Hdr.cginc""
+     float _Slider01;
+     fixed4 _Color;
+ 
+@@ -95,7 +94,7 @@ SubShader {
+             float2 rang = xy_to_polar(i.texcoord);
+             clip(1 - rang.x);
+             float3 base_rgb = hue33_to_base_rgb(rang.y * 6);
+-            return SrgbToLinear(fixed4(sl_to_rgb(base_rgb, rang.x, _Slider01), 1) * _Color);
++            return fixed4(sl_to_rgb(base_rgb, rang.x, _Slider01), 1) * _Color;
+         }
+ 
+         ENDCG"
+icosa-foundation/open-brush,287,e556c43,Assets/Shaders/ColorPicker_hs_logv.shader,modified,2,3,5,"@@ -20,8 +20,7 @@ Properties {
+ }
+ CGINCLUDE
+     #include ""Assets/Shaders/Include/ColorSpace.cginc""
+-    #include ""Assets/Shaders/Include/ColorSpaceConvert.cginc""
+-    #include ""Assets/Shaders/Include/Hdr.cginc""
++  #include ""Assets/Shaders/Include/Hdr.cginc""
+     float _Slider01;
+     fixed4 _Color;
+ 
+@@ -105,7 +104,7 @@ SubShader {
+             float saturation = rang.x;
+             // Convert from [0, 1] to [_LogVMin, _LogVMax]
+             float hdr_value = hslogv_slider01_to_value(_Slider01, _LogVMin, _LogVMax);
+-            return SrgbToLinear(float4(sv_to_rgb(base_rgb, saturation, hdr_value), 1) * _Color);
++            return float4(sv_to_rgb(base_rgb, saturation, hdr_value), 1) * _Color;
+         }
+ 
+         ENDCG"
+icosa-foundation/open-brush,287,e556c43,Assets/Shaders/ColorPicker_sl_h.shader,modified,2,3,5,"@@ -21,8 +21,7 @@ Properties {
+ 
+ CGINCLUDE
+     #include ""Assets/Shaders/Include/ColorSpace.cginc""
+-    #include ""Assets/Shaders/Include/ColorSpaceConvert.cginc""
+-    #include ""Assets/Shaders/Include/Hdr.cginc""
++  #include ""Assets/Shaders/Include/Hdr.cginc""
+     float _Slider01;
+     fixed4 _Color;
+ 
+@@ -92,7 +91,7 @@ SubShader {
+         {
+             float3 base_rgb = hue06_to_base_rgb(_Slider01 * 6);
+             float2 uv = i.texcoord;
+-            return SrgbToLinear(cl_to_rgb(base_rgb, uv.x, uv.y) * _Color);
++            return cl_to_rgb(base_rgb, uv.x, uv.y) * _Color;
+         }
+ 
+         ENDCG"
+icosa-foundation/open-brush,287,e556c43,Assets/Shaders/ColorPicker_sv_h.shader,modified,2,3,5,"@@ -21,8 +21,7 @@ Properties {
+ 
+ CGINCLUDE
+     #include ""Assets/Shaders/Include/ColorSpace.cginc""
+-    #include ""Assets/Shaders/Include/ColorSpaceConvert.cginc""
+-    #include ""Assets/Shaders/Include/Hdr.cginc""
++  #include ""Assets/Shaders/Include/Hdr.cginc""
+     float _Slider01;
+     fixed4 _Color;
+ 
+@@ -92,7 +91,7 @@ SubShader {
+         {
+             float3 base_rgb = hue06_to_base_rgb(_Slider01 * 6);
+             float2 uv = i.texcoord;
+-            return SrgbToLinear(fixed4(sv_to_rgb(base_rgb, uv.x, uv.y), 1) * _Color);
++            return fixed4(sv_to_rgb(base_rgb, uv.x, uv.y), 1) * _Color;
+         }
+ 
+         ENDCG"
+icosa-foundation/open-brush,287,e556c43,Assets/Shaders/Include/Brush.cginc,modified,30,2,32,"@@ -20,7 +20,6 @@ uniform float4x4 xf_CS;
+ uniform float4x4 xf_I_CS;
+ uniform uint _BatchID;  // NOTOOLKIT
+ #include ""Ods.cginc""  // NOTOOLKIT
+-#include ""ColorSpaceConvert.cginc""
+ 
+ // Unity only guarantees signed 2.8 for fixed4.
+ // In practice, 2*exp(_EmissionGain * 10) = 180, so we need to use float4
+@@ -103,6 +102,35 @@ float4 ParticleVertexToWorld(float4 vertex) {
+ }
+ #endif
+ 
++//
++// For Toolkit support
++//
++
++float4 SrgbToLinear(float4 color) {
++  // Approximation http://chilliant.blogspot.com/2012/08/srgb-approximations-for-hlsl.html
++  float3 sRGB = color.rgb;
++  color.rgb = sRGB * (sRGB * (sRGB * 0.305306011 + 0.682171111) + 0.012522878);
++  return color;
++}
++
++float4 SrgbToLinear_Large(float4 color) {
++    float4 linearColor = SrgbToLinear(color);
++  color.r = color.r < 1.0 ? linearColor.r : color.r;
++  color.g = color.g < 1.0 ? linearColor.g : color.g;
++  color.b = color.b < 1.0 ? linearColor.b : color.b;
++  return color;
++}
++
++float4 LinearToSrgb(float4 color) {
++  // Approximation http://chilliant.blogspot.com/2012/08/srgb-approximations-for-hlsl.html
++  float3 linearColor = color.rgb;
++  float3 S1 = sqrt(linearColor);
++  float3 S2 = sqrt(S1);
++  float3 S3 = sqrt(S2);
++  color.rgb = 0.662002687 * S1 + 0.684122060 * S2 - 0.323583601 * S3 - 0.0225411470 * linearColor;
++  return color;
++}
++
+ // TB mesh colors are sRGB. TBT mesh colors are linear.
+ // TOOLKIT: float4 TbVertToSrgb(float4 color) { return LinearToSrgb(color); }
+ // TOOLKIT: float4 TbVertToLinear(float4 color) { return color; }
+@@ -112,7 +140,7 @@ float4 TbVertToLinear(float4 color) { return SrgbToLinear(color); } // NOTOOLKIT
+ // Conversions to and from native colorspace.
+ // Note that SrgbToLinear_Large only converts to linear in the 0:1 range
+ // because Linear HDR values don't work with the Tilt Brush bloom filter
+-#ifndef TBT_GAMMA_TARGET
++#ifdef TBT_LINEAR_TARGET
+ float4 SrgbToNative(float4 color) { return SrgbToLinear_Large(color); }
+ float4 TbVertToNative(float4 color) { return TbVertToLinear(color); }
+ float4 NativeToSrgb(float4 color) { return LinearToSrgb(color); }"
+icosa-foundation/open-brush,287,e556c43,Assets/Shaders/Include/ColorSpaceConvert.cginc,removed,0,40,40,"@@ -1,40 +0,0 @@
+-// Copyright 2020 The Tilt Brush Authors
+-//
+-// Licensed under the Apache License, Version 2.0 (the ""License"");
+-// you may not use this file except in compliance with the License.
+-// You may obtain a copy of the License at
+-//
+-//      http://www.apache.org/licenses/LICENSE-2.0
+-//
+-// Unless required by applicable law or agreed to in writing, software
+-// distributed under the License is distributed on an ""AS IS"" BASIS,
+-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+-// See the License for the specific language governing permissions and
+-// limitations under the License.
+-
+-// Moved from Brush.cginc to be more helpful in other places.
+-
+-float4 SrgbToLinear(float4 color) {
+-  // Approximation http://chilliant.blogspot.com/2012/08/srgb-approximations-for-hlsl.html
+-  float3 sRGB = color.rgb;
+-  color.rgb = sRGB * (sRGB * (sRGB * 0.305306011 + 0.682171111) + 0.012522878);
+-  return color;
+-}
+-
+-float4 SrgbToLinear_Large(float4 color) {
+-    float4 linearColor = SrgbToLinear(color);
+-  color.r = color.r < 1.0 ? linearColor.r : color.r;
+-  color.g = color.g < 1.0 ? linearColor.g : color.g;
+-  color.b = color.b < 1.0 ? linearColor.b : color.b;
+-  return color;
+-}
+-
+-float4 LinearToSrgb(float4 color) {
+-  // Approximation http://chilliant.blogspot.com/2012/08/srgb-approximations-for-hlsl.html
+-  float3 linearColor = color.rgb;
+-  float3 S1 = sqrt(linearColor);
+-  float3 S2 = sqrt(S1);
+-  float3 S3 = sqrt(S2);
+-  color.rgb = 0.662002687 * S1 + 0.684122060 * S2 - 0.323583601 * S3 - 0.0225411470 * linearColor;
+-  return color;
+-}"
+icosa-foundation/open-brush,287,e556c43,Assets/Shaders/Include/ColorSpaceConvert.cginc.meta,removed,0,7,7,"@@ -1,7 +0,0 @@
+-fileFormatVersion: 2
+-guid: 0080a0f735091bc40938a5a458709e0f
+-ShaderIncludeImporter:
+-  externalObjects: {}
+-  userData: 
+-  assetBundleName: 
+-  assetBundleVariant: "
+icosa-foundation/open-brush,287,e556c43,Assets/XR/Settings/Oculus Settings.asset,modified,8,3,11,"@@ -15,14 +15,19 @@ MonoBehaviour:
+   m_StereoRenderingModeDesktop: 0
+   m_StereoRenderingModeAndroid: 0
+   SharedDepthBuffer: 1
++  DepthSubmission: 0
+   DashSupport: 1
+-  V2Signing: 1
+   LowOverheadMode: 0
+-  ProtectedContext: 0
+-  FocusAware: 1
+   OptimizeBufferDiscards: 1
+   PhaseSync: 0
++  SymmetricProjection: 1
+   SubsampledLayout: 0
++  FoveatedRenderingMethod: 1
++  LateLatching: 0
++  LateLatchingDebug: 0
++  EnableTrackingOriginStageMode: 0
++  SpaceWarp: 0
+   TargetQuest: 1
+   TargetQuest2: 1
++  TargetQuestPro: 1
+   SystemSplashScreen: {fileID: 0}"
+icosa-foundation/open-brush,287,e556c43,Assets/XR/Settings/Open XR Package Settings.asset,modified,150,2,152,"@@ -133,6 +133,37 @@ MonoBehaviour:
+   company: Unity
+   priority: 0
+   required: 0
++--- !u!114 &-5453487588099642660
++MonoBehaviour:
++  m_ObjectHideFlags: 0
++  m_CorrespondingSourceObject: {fileID: 0}
++  m_PrefabInstance: {fileID: 0}
++  m_PrefabAsset: {fileID: 0}
++  m_GameObject: {fileID: 0}
++  m_Enabled: 1
++  m_EditorHideFlags: 0
++  m_Script: {fileID: 11500000, guid: 1927c045052a06d49a9b21fdcaa26db6, type: 3}
++  m_Name: OculusXRFeature Standalone
++  m_EditorClassIdentifier: 
++  m_enabled: 0
++  nameUi: OculusXR Feature
++  version: 0.0.1
++  featureIdInternal: com.oculus.openxr.feature.oculusxr
++  openxrExtensionStrings: 'XR_KHR_vulkan_enable XR_KHR_D3D11_enable XR_OCULUS_common_reference_spaces
++    XR_FB_display_refresh_rate XR_EXT_performance_settings XR_FB_composition_layer_image_layout
++    XR_KHR_android_surface_swapchain XR_FB_android_surface_swapchain_create XR_KHR_composition_layer_color_scale_bias
++    XR_FB_color_space XR_EXT_hand_tracking XR_FB_swapchain_update_state XR_FB_swapchain_update_state_opengl_es
++    XR_FB_swapchain_update_state_vulkan XR_FB_foveation XR_FB_foveation_configuration
++    XR_FB_foveation_vulkan XR_FB_composition_layer_alpha_blend XR_KHR_composition_layer_depth
++    XR_KHR_composition_layer_cylinder XR_KHR_composition_layer_cube XR_KHR_composition_layer_equirect2
++    XR_KHR_convert_timespec_time XR_KHR_visibility_mask XR_FB_render_model XR_FB_spatial_entity
++    XR_FB_spatial_entity_query XR_FB_spatial_entity_storage XR_META_performance_metrics
++    XR_FB_keyboard_tracking XR_FB_passthrough XR_FB_triangle_mesh XR_FB_passthrough_keyboard_hands
++    XR_OCULUS_audio_device_guid XR_FB_common_events XR_FB_space_warp XR_FB_hand_tracking_capsules
++    XR_FB_hand_tracking_mesh XR_FB_hand_tracking_aim '
++  company: Oculus
++  priority: 0
++  required: 0
+ --- !u!114 &-5369529246399082918
+ MonoBehaviour:
+   m_ObjectHideFlags: 0
+@@ -155,6 +186,70 @@ MonoBehaviour:
+   required: 0
+   cacheSize: 1048576
+   perThreadCacheSize: 51200
++--- !u!114 &-5283878353087867321
++MonoBehaviour:
++  m_ObjectHideFlags: 0
++  m_CorrespondingSourceObject: {fileID: 0}
++  m_PrefabInstance: {fileID: 0}
++  m_PrefabAsset: {fileID: 0}
++  m_GameObject: {fileID: 0}
++  m_Enabled: 1
++  m_EditorHideFlags: 0
++  m_Script: {fileID: 11500000, guid: 1927c045052a06d49a9b21fdcaa26db6, type: 3}
++  m_Name: OculusXRFeature Android
++  m_EditorClassIdentifier: 
++  m_enabled: 0
++  nameUi: OculusXR Feature
++  version: 0.0.1
++  featureIdInternal: com.oculus.openxr.feature.oculusxr
++  openxrExtensionStrings: 'XR_KHR_vulkan_enable XR_KHR_D3D11_enable XR_OCULUS_common_reference_spaces
++    XR_FB_display_refresh_rate XR_EXT_performance_settings XR_FB_composition_layer_image_layout
++    XR_KHR_android_surface_swapchain XR_FB_android_surface_swapchain_create XR_KHR_composition_layer_color_scale_bias
++    XR_FB_color_space XR_EXT_hand_tracking XR_FB_swapchain_update_state XR_FB_swapchain_update_state_opengl_es
++    XR_FB_swapchain_update_state_vulkan XR_FB_foveation XR_FB_foveation_configuration
++    XR_FB_foveation_vulkan XR_FB_composition_layer_alpha_blend XR_KHR_composition_layer_depth
++    XR_KHR_composition_layer_cylinder XR_KHR_composition_layer_cube XR_KHR_composition_layer_equirect2
++    XR_KHR_convert_timespec_time XR_KHR_visibility_mask XR_FB_render_model XR_FB_spatial_entity
++    XR_FB_spatial_entity_query XR_FB_spatial_entity_storage XR_META_performance_metrics
++    XR_FB_keyboard_tracking XR_FB_passthrough XR_FB_triangle_mesh XR_FB_passthrough_keyboard_hands
++    XR_OCULUS_audio_device_guid XR_FB_common_events XR_FB_space_warp XR_FB_hand_tracking_capsules
++    XR_FB_hand_tracking_mesh XR_FB_hand_tracking_aim '
++  company: Oculus
++  priority: 0
++  required: 0
++--- !u!114 &-4773087401744612407
++MonoBehaviour:
++  m_ObjectHideFlags: 0
++  m_CorrespondingSourceObject: {fileID: 0}
++  m_PrefabInstance: {fileID: 0}
++  m_PrefabAsset: {fileID: 0}
++  m_GameObject: {fileID: 0}
++  m_Enabled: 1
++  m_EditorHideFlags: 0
++  m_Script: {fileID: 11500000, guid: 1927c045052a06d49a9b21fdcaa26db6, type: 3}
++  m_Name: OculusXRFeature Standalone
++  m_EditorClassIdentifier: 
++  m_enabled: 0
++  nameUi: OculusXR Feature
++  version: 0.0.1
++  featureIdInternal: com.oculus.openxr.feature.oculusxr
++  openxrExtensionStrings: 'XR_KHR_vulkan_enable XR_KHR_D3D11_enable XR_OCULUS_common_reference_spaces
++    XR_FB_display_refresh_rate XR_EXT_performance_settings XR_FB_composition_layer_image_layout
++    XR_KHR_android_surface_swapchain XR_FB_android_surface_swapchain_create XR_KHR_composition_layer_color_scale_bias
++    XR_FB_color_space XR_EXT_hand_tracking XR_FB_swapchain_update_state XR_FB_swapchain_update_state_opengl_es
++    XR_FB_swapchain_update_state_vulkan XR_FB_foveation XR_FB_foveation_configuration
++    XR_FB_foveation_vulkan XR_FB_composition_layer_alpha_blend XR_KHR_composition_layer_depth
++    XR_KHR_composition_layer_cylinder XR_KHR_composition_layer_cube XR_KHR_composition_layer_equirect2
++    XR_KHR_convert_timespec_time XR_KHR_visibility_mask XR_FB_render_model XR_FB_spatial_entity
++    XR_FB_spatial_entity_query XR_FB_spatial_entity_storage XR_META_performance_metrics
++    XR_FB_scene XR_FB_spatial_entity_container XR_FB_scene_capture XR_FB_face_tracking
++    XR_FB_eye_tracking XR_FB_keyboard_tracking XR_FB_passthrough XR_FB_triangle_mesh
++    XR_FB_passthrough_keyboard_hands XR_OCULUS_audio_device_guid XR_FB_common_events
++    XR_FB_hand_tracking_capsules XR_FB_hand_tracking_mesh XR_FB_hand_tracking_aim
++    XR_FB_touch_controller_pro XR_FB_touch_controller_extras '
++  company: Oculus
++  priority: 0
++  required: 0
+ --- !u!114 &-4469311779315207794
+ MonoBehaviour:
+   m_ObjectHideFlags: 0
+@@ -295,10 +390,43 @@ MonoBehaviour:
+   - {fileID: -568313750252970699}
+   - {fileID: -238312934105289492}
+   - {fileID: -3768601675236611697}
+-  - {fileID: 6781313199298781951}
++  - {fileID: -792796085665928788}
+   - {fileID: 4073621059260807014}
+   m_renderMode: 0
+   m_depthSubmissionMode: 1
++--- !u!114 &-792796085665928788
++MonoBehaviour:
++  m_ObjectHideFlags: 0
++  m_CorrespondingSourceObject: {fileID: 0}
++  m_PrefabInstance: {fileID: 0}
++  m_PrefabAsset: {fileID: 0}
++  m_GameObject: {fileID: 0}
++  m_Enabled: 1
++  m_EditorHideFlags: 0
++  m_Script: {fileID: 11500000, guid: 1927c045052a06d49a9b21fdcaa26db6, type: 3}
++  m_Name: OculusXRFeature Android
++  m_EditorClassIdentifier: 
++  m_enabled: 0
++  nameUi: OculusXR Feature
++  version: 0.0.1
++  featureIdInternal: com.oculus.openxr.feature.oculusxr
++  openxrExtensionStrings: 'XR_KHR_vulkan_enable XR_KHR_D3D11_enable XR_OCULUS_common_reference_spaces
++    XR_FB_display_refresh_rate XR_EXT_performance_settings XR_FB_composition_layer_image_layout
++    XR_KHR_android_surface_swapchain XR_FB_android_surface_swapchain_create XR_KHR_composition_layer_color_scale_bias
++    XR_FB_color_space XR_EXT_hand_tracking XR_FB_swapchain_update_state XR_FB_swapchain_update_state_opengl_es
++    XR_FB_swapchain_update_state_vulkan XR_FB_foveation XR_FB_foveation_configuration
++    XR_FB_foveation_vulkan XR_FB_composition_layer_alpha_blend XR_KHR_composition_layer_depth
++    XR_KHR_composition_layer_cylinder XR_KHR_composition_layer_cube XR_KHR_composition_layer_equirect2
++    XR_KHR_convert_timespec_time XR_KHR_visibility_mask XR_FB_render_model XR_FB_spatial_entity
++    XR_FB_spatial_entity_query XR_FB_spatial_entity_storage XR_META_performance_metrics
++    XR_FB_scene XR_FB_spatial_entity_container XR_FB_scene_capture XR_FB_face_tracking
++    XR_FB_eye_tracking XR_FB_keyboard_tracking XR_FB_passthrough XR_FB_triangle_mesh
++    XR_FB_passthrough_keyboard_hands XR_OCULUS_audio_device_guid XR_FB_common_events
++    XR_FB_hand_tracking_capsules XR_FB_hand_tracking_mesh XR_FB_hand_tracking_aim
++    XR_FB_touch_controller_pro XR_FB_touch_controller_extras '
++  company: Oculus
++  priority: 0
++  required: 0
+ --- !u!114 &-568313750252970699
+ MonoBehaviour:
+   m_ObjectHideFlags: 0
+@@ -380,6 +508,26 @@ MonoBehaviour:
+   - {fileID: -1294329756112899549}
+   - {fileID: 9061466112958658113}
+   - {fileID: 5710753191044472963}
++--- !u!114 &1263590293311991825
++MonoBehaviour:
++  m_ObjectHideFlags: 0
++  m_CorrespondingSourceObject: {fileID: 0}
++  m_PrefabInstance: {fileID: 0}
++  m_PrefabAsset: {fileID: 0}
++  m_GameObject: {fileID: 0}
++  m_Enabled: 1
++  m_EditorHideFlags: 0
++  m_Script: {fileID: 11500000, guid: 1927c045052a06d49a9b21fdcaa26db6, type: 3}
++  m_Name: OculusXRFeature Android
++  m_EditorClassIdentifier: 
++  m_enabled: 0
++  nameUi: 
++  version: 
++  featureIdInternal: 
++  openxrExtensionStrings: 
++  company: 
++  priority: 0
++  required: 0
+ --- !u!114 &1638299284819138145
+ MonoBehaviour:
+   m_ObjectHideFlags: 0
+@@ -679,7 +827,7 @@ MonoBehaviour:
+   - {fileID: -6553496117388817208}
+   - {fileID: 3442458366111397828}
+   - {fileID: 6812736204562946406}
+-  - {fileID: -8632917095941882487}
++  - {fileID: -4773087401744612407}
+   - {fileID: -7635896756621915544}
+   - {fileID: -177044242218828340}
+   m_renderMode: 0"
+icosa-foundation/open-brush,287,e556c43,Packages/manifest.json,modified,2,2,4,"@@ -1,6 +1,6 @@
+ {
+   ""dependencies"": {
+-    ""com.meta.xr.sdk.utilities"": ""44.0.0-preview"",
++    ""com.meta.xr.sdk.utilities"": ""https://github.com/icosa-mirror/com.meta.xr.sdk.utilities.git#fix-pre-process-build"",
+     ""com.unity.2d.sprite"": ""1.0.0"",
+     ""com.unity.2d.tilemap"": ""1.0.0"",
+     ""com.unity.editorcoroutines"": ""1.0.0"",
+@@ -17,7 +17,7 @@
+     ""com.unity.ugui"": ""1.0.0"",
+     ""com.unity.xr.core-utils"": ""2.1.0"",
+     ""com.unity.xr.management"": ""4.2.1"",
+-    ""com.unity.xr.oculus"": ""3.0.2"",
++    ""com.unity.xr.oculus"": ""3.2.1"",
+     ""com.unity.xr.openxr"": ""1.5.3"",
+     ""org.nuget.google.apis"": ""1.57.0"",
+     ""org.nuget.google.apis.auth"": ""1.57.0"","
+icosa-foundation/open-brush,287,e556c43,Packages/packages-lock.json,modified,4,4,8,"@@ -7,11 +7,11 @@
+       ""dependencies"": {}
+     },
+     ""com.meta.xr.sdk.utilities"": {
+-      ""version"": ""44.0.0-preview"",
++      ""version"": ""https://github.com/icosa-mirror/com.meta.xr.sdk.utilities.git#fix-pre-process-build"",
+       ""depth"": 0,
+-      ""source"": ""registry"",
++      ""source"": ""git"",
+       ""dependencies"": {},
+-      ""url"": ""https://npm.developer.oculus.com""
++      ""hash"": ""b3a4ef1f353c19c5e6c648d825642c150c6e8a2d""
+     },
+     ""com.unity.2d.sprite"": {
+       ""version"": ""1.0.0"",
+@@ -186,7 +186,7 @@
+       ""url"": ""https://packages.unity.com""
+     },
+     ""com.unity.xr.oculus"": {
+-      ""version"": ""3.0.2"",
++      ""version"": ""3.2.1"",
+       ""depth"": 0,
+       ""source"": ""registry"",
+       ""dependencies"": {"
+icosa-foundation/open-brush,287,e556c43,ProjectSettings/PackageManagerSettings.asset,modified,1,1,2,"@@ -53,6 +53,6 @@ MonoBehaviour:
+   m_RegistryInfoDraft:
+     m_Modified: 0
+     m_ErrorMessage: 
+-    m_UserModificationsInstanceId: -828
++    m_UserModificationsInstanceId: -830
+     m_OriginalInstanceId: -832
+   m_LoadAssets: 0"
+icosa-foundation/open-brush,287,e556c43,ProjectSettings/ProjectSettings.asset,modified,2,2,4,"@@ -50,7 +50,7 @@ PlayerSettings:
+   defaultScreenWidthWeb: 1024
+   defaultScreenHeightWeb: 600
+   m_StereoRenderingPath: 0
+-  m_ActiveColorSpace: 1
++  m_ActiveColorSpace: 0
+   m_MTRendering: 1
+   mipStripping: 0
+   numberOfMipsStripped: 0
+@@ -423,7 +423,7 @@ PlayerSettings:
+     m_APIs: 02000000
+     m_Automatic: 0
+   - m_BuildTarget: AndroidPlayer
+-    m_APIs: 0b000000
++    m_APIs: 15000000
+     m_Automatic: 0
+   - m_BuildTarget: LinuxStandaloneSupport
+     m_APIs: 1500000011000000"
+icosa-foundation/open-brush,287,1598dbd,Assets/Shaders/ColorPicker.shader,modified,5,1,6,"@@ -18,6 +18,10 @@ Shader ""Custom/ColorPicker"" {
+     _MainTex (""Base (RGB)"", 2D) = ""white"" {}
+     _Cutoff (""Alpha cutoff"", Range(0,1)) = 0.5
+   }
++  CGINCLUDE
++    #include ""Assets/Shaders/Include/ColorSpaceConvert.cginc""
++  ENDCG
++
+   SubShader {
+     Tags {""Queue""=""AlphaTest+20"" ""IgnoreProjector""=""True"" ""RenderType""=""TransparentCutout""}
+ 
+@@ -37,7 +41,7 @@ Shader ""Custom/ColorPicker"" {
+     void surf (Input IN, inout SurfaceOutput o) {
+       half4 tex = tex2D (_MainTex, IN.uv_MainTex);
+       float4 c = tex * _Color;
+-      o.Emission = c.rgb;
++      o.Emission = SrgbToLinear(c).rgb;
+       o.Albedo = 0;
+       if (c.a < _Cutoff) {
+         discard;"
+icosa-foundation/open-brush,287,1598dbd,Assets/Shaders/ColorPicker_hs_l.shader,modified,3,2,5,"@@ -21,7 +21,8 @@ Properties {
+ 
+ CGINCLUDE
+     #include ""Assets/Shaders/Include/ColorSpace.cginc""
+-  #include ""Assets/Shaders/Include/Hdr.cginc""
++    #include ""Assets/Shaders/Include/ColorSpaceConvert.cginc""
++    #include ""Assets/Shaders/Include/Hdr.cginc""
+     float _Slider01;
+     fixed4 _Color;
+ 
+@@ -94,7 +95,7 @@ SubShader {
+             float2 rang = xy_to_polar(i.texcoord);
+             clip(1 - rang.x);
+             float3 base_rgb = hue33_to_base_rgb(rang.y * 6);
+-            return fixed4(sl_to_rgb(base_rgb, rang.x, _Slider01), 1) * _Color;
++            return SrgbToLinear(fixed4(sl_to_rgb(base_rgb, rang.x, _Slider01), 1) * _Color);
+         }
+ 
+         ENDCG"
+icosa-foundation/open-brush,287,1598dbd,Assets/Shaders/ColorPicker_hs_logv.shader,modified,3,2,5,"@@ -20,7 +20,8 @@ Properties {
+ }
+ CGINCLUDE
+     #include ""Assets/Shaders/Include/ColorSpace.cginc""
+-  #include ""Assets/Shaders/Include/Hdr.cginc""
++    #include ""Assets/Shaders/Include/ColorSpaceConvert.cginc""
++    #include ""Assets/Shaders/Include/Hdr.cginc""
+     float _Slider01;
+     fixed4 _Color;
+ 
+@@ -104,7 +105,7 @@ SubShader {
+             float saturation = rang.x;
+             // Convert from [0, 1] to [_LogVMin, _LogVMax]
+             float hdr_value = hslogv_slider01_to_value(_Slider01, _LogVMin, _LogVMax);
+-            return float4(sv_to_rgb(base_rgb, saturation, hdr_value), 1) * _Color;
++            return SrgbToLinear(float4(sv_to_rgb(base_rgb, saturation, hdr_value), 1) * _Color);
+         }
+ 
+         ENDCG"
+icosa-foundation/open-brush,287,1598dbd,Assets/Shaders/ColorPicker_sl_h.shader,modified,3,2,5,"@@ -21,7 +21,8 @@ Properties {
+ 
+ CGINCLUDE
+     #include ""Assets/Shaders/Include/ColorSpace.cginc""
+-  #include ""Assets/Shaders/Include/Hdr.cginc""
++    #include ""Assets/Shaders/Include/ColorSpaceConvert.cginc""
++    #include ""Assets/Shaders/Include/Hdr.cginc""
+     float _Slider01;
+     fixed4 _Color;
+ 
+@@ -91,7 +92,7 @@ SubShader {
+         {
+             float3 base_rgb = hue06_to_base_rgb(_Slider01 * 6);
+             float2 uv = i.texcoord;
+-            return cl_to_rgb(base_rgb, uv.x, uv.y) * _Color;
++            return SrgbToLinear(cl_to_rgb(base_rgb, uv.x, uv.y) * _Color);
+         }
+ 
+         ENDCG"
+icosa-foundation/open-brush,287,1598dbd,Assets/Shaders/ColorPicker_sv_h.shader,modified,3,2,5,"@@ -21,7 +21,8 @@ Properties {
+ 
+ CGINCLUDE
+     #include ""Assets/Shaders/Include/ColorSpace.cginc""
+-  #include ""Assets/Shaders/Include/Hdr.cginc""
++    #include ""Assets/Shaders/Include/ColorSpaceConvert.cginc""
++    #include ""Assets/Shaders/Include/Hdr.cginc""
+     float _Slider01;
+     fixed4 _Color;
+ 
+@@ -91,7 +92,7 @@ SubShader {
+         {
+             float3 base_rgb = hue06_to_base_rgb(_Slider01 * 6);
+             float2 uv = i.texcoord;
+-            return fixed4(sv_to_rgb(base_rgb, uv.x, uv.y), 1) * _Color;
++            return SrgbToLinear(fixed4(sv_to_rgb(base_rgb, uv.x, uv.y), 1) * _Color);
+         }
+ 
+         ENDCG"
+icosa-foundation/open-brush,287,1598dbd,Assets/Shaders/Include/Brush.cginc,modified,1,29,30,"@@ -20,6 +20,7 @@ uniform float4x4 xf_CS;
+ uniform float4x4 xf_I_CS;
+ uniform uint _BatchID;  // NOTOOLKIT
+ #include ""Ods.cginc""  // NOTOOLKIT
++#include ""ColorSpaceConvert.cginc""
+ 
+ // Unity only guarantees signed 2.8 for fixed4.
+ // In practice, 2*exp(_EmissionGain * 10) = 180, so we need to use float4
+@@ -102,35 +103,6 @@ float4 ParticleVertexToWorld(float4 vertex) {
+ }
+ #endif
+ 
+-//
+-// For Toolkit support
+-//
+-
+-float4 SrgbToLinear(float4 color) {
+-  // Approximation http://chilliant.blogspot.com/2012/08/srgb-approximations-for-hlsl.html
+-  float3 sRGB = color.rgb;
+-  color.rgb = sRGB * (sRGB * (sRGB * 0.305306011 + 0.682171111) + 0.012522878);
+-  return color;
+-}
+-
+-float4 SrgbToLinear_Large(float4 color) {
+-    float4 linearColor = SrgbToLinear(color);
+-  color.r = color.r < 1.0 ? linearColor.r : color.r;
+-  color.g = color.g < 1.0 ? linearColor.g : color.g;
+-  color.b = color.b < 1.0 ? linearColor.b : color.b;
+-  return color;
+-}
+-
+-float4 LinearToSrgb(float4 color) {
+-  // Approximation http://chilliant.blogspot.com/2012/08/srgb-approximations-for-hlsl.html
+-  float3 linearColor = color.rgb;
+-  float3 S1 = sqrt(linearColor);
+-  float3 S2 = sqrt(S1);
+-  float3 S3 = sqrt(S2);
+-  color.rgb = 0.662002687 * S1 + 0.684122060 * S2 - 0.323583601 * S3 - 0.0225411470 * linearColor;
+-  return color;
+-}
+-
+ // TB mesh colors are sRGB. TBT mesh colors are linear.
+ // TOOLKIT: float4 TbVertToSrgb(float4 color) { return LinearToSrgb(color); }
+ // TOOLKIT: float4 TbVertToLinear(float4 color) { return color; }"
+icosa-foundation/open-brush,287,1598dbd,Assets/Shaders/Include/ColorSpaceConvert.cginc,added,40,0,40,"@@ -0,0 +1,40 @@
++// Copyright 2020 The Tilt Brush Authors
++//
++// Licensed under the Apache License, Version 2.0 (the ""License"");
++// you may not use this file except in compliance with the License.
++// You may obtain a copy of the License at
++//
++//      http://www.apache.org/licenses/LICENSE-2.0
++//
++// Unless required by applicable law or agreed to in writing, software
++// distributed under the License is distributed on an ""AS IS"" BASIS,
++// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++// See the License for the specific language governing permissions and
++// limitations under the License.
++
++// Moved from Brush.cginc to be more helpful in other places.
++
++float4 SrgbToLinear(float4 color) {
++  // Approximation http://chilliant.blogspot.com/2012/08/srgb-approximations-for-hlsl.html
++  float3 sRGB = color.rgb;
++  color.rgb = sRGB * (sRGB * (sRGB * 0.305306011 + 0.682171111) + 0.012522878);
++  return color;
++}
++
++float4 SrgbToLinear_Large(float4 color) {
++    float4 linearColor = SrgbToLinear(color);
++  color.r = color.r < 1.0 ? linearColor.r : color.r;
++  color.g = color.g < 1.0 ? linearColor.g : color.g;
++  color.b = color.b < 1.0 ? linearColor.b : color.b;
++  return color;
++}
++
++float4 LinearToSrgb(float4 color) {
++  // Approximation http://chilliant.blogspot.com/2012/08/srgb-approximations-for-hlsl.html
++  float3 linearColor = color.rgb;
++  float3 S1 = sqrt(linearColor);
++  float3 S2 = sqrt(S1);
++  float3 S3 = sqrt(S2);
++  color.rgb = 0.662002687 * S1 + 0.684122060 * S2 - 0.323583601 * S3 - 0.0225411470 * linearColor;
++  return color;
++}"
+icosa-foundation/open-brush,287,1598dbd,Assets/Shaders/Include/ColorSpaceConvert.cginc.meta,added,7,0,7,"@@ -0,0 +1,7 @@
++fileFormatVersion: 2
++guid: 0080a0f735091bc40938a5a458709e0f
++ShaderIncludeImporter:
++  externalObjects: {}
++  userData: 
++  assetBundleName: 
++  assetBundleVariant: "
+icosa-foundation/open-brush,287,e68e0a5,Assets/Shaders/ColorPicker.shader,modified,1,5,6,"@@ -18,10 +18,6 @@ Shader ""Custom/ColorPicker"" {
+     _MainTex (""Base (RGB)"", 2D) = ""white"" {}
+     _Cutoff (""Alpha cutoff"", Range(0,1)) = 0.5
+   }
+-  CGINCLUDE
+-    #include ""Assets/Shaders/Include/ColorSpaceConvert.cginc""
+-  ENDCG
+-
+   SubShader {
+     Tags {""Queue""=""AlphaTest+20"" ""IgnoreProjector""=""True"" ""RenderType""=""TransparentCutout""}
+ 
+@@ -41,7 +37,7 @@ Shader ""Custom/ColorPicker"" {
+     void surf (Input IN, inout SurfaceOutput o) {
+       half4 tex = tex2D (_MainTex, IN.uv_MainTex);
+       float4 c = tex * _Color;
+-      o.Emission = SrgbToLinear(c).rgb;
++      o.Emission = c.rgb;
+       o.Albedo = 0;
+       if (c.a < _Cutoff) {
+         discard;"
+icosa-foundation/open-brush,287,e68e0a5,Assets/Shaders/ColorPicker_hs_l.shader,modified,2,3,5,"@@ -21,8 +21,7 @@ Properties {
+ 
+ CGINCLUDE
+     #include ""Assets/Shaders/Include/ColorSpace.cginc""
+-    #include ""Assets/Shaders/Include/ColorSpaceConvert.cginc""
+-    #include ""Assets/Shaders/Include/Hdr.cginc""
++  #include ""Assets/Shaders/Include/Hdr.cginc""
+     float _Slider01;
+     fixed4 _Color;
+ 
+@@ -95,7 +94,7 @@ SubShader {
+             float2 rang = xy_to_polar(i.texcoord);
+             clip(1 - rang.x);
+             float3 base_rgb = hue33_to_base_rgb(rang.y * 6);
+-            return SrgbToLinear(fixed4(sl_to_rgb(base_rgb, rang.x, _Slider01), 1) * _Color);
++            return fixed4(sl_to_rgb(base_rgb, rang.x, _Slider01), 1) * _Color;
+         }
+ 
+         ENDCG"
+icosa-foundation/open-brush,287,e68e0a5,Assets/Shaders/ColorPicker_hs_logv.shader,modified,2,3,5,"@@ -20,8 +20,7 @@ Properties {
+ }
+ CGINCLUDE
+     #include ""Assets/Shaders/Include/ColorSpace.cginc""
+-    #include ""Assets/Shaders/Include/ColorSpaceConvert.cginc""
+-    #include ""Assets/Shaders/Include/Hdr.cginc""
++  #include ""Assets/Shaders/Include/Hdr.cginc""
+     float _Slider01;
+     fixed4 _Color;
+ 
+@@ -105,7 +104,7 @@ SubShader {
+             float saturation = rang.x;
+             // Convert from [0, 1] to [_LogVMin, _LogVMax]
+             float hdr_value = hslogv_slider01_to_value(_Slider01, _LogVMin, _LogVMax);
+-            return SrgbToLinear(float4(sv_to_rgb(base_rgb, saturation, hdr_value), 1) * _Color);
++            return float4(sv_to_rgb(base_rgb, saturation, hdr_value), 1) * _Color;
+         }
+ 
+         ENDCG"
+icosa-foundation/open-brush,287,e68e0a5,Assets/Shaders/ColorPicker_sl_h.shader,modified,2,3,5,"@@ -21,8 +21,7 @@ Properties {
+ 
+ CGINCLUDE
+     #include ""Assets/Shaders/Include/ColorSpace.cginc""
+-    #include ""Assets/Shaders/Include/ColorSpaceConvert.cginc""
+-    #include ""Assets/Shaders/Include/Hdr.cginc""
++  #include ""Assets/Shaders/Include/Hdr.cginc""
+     float _Slider01;
+     fixed4 _Color;
+ 
+@@ -92,7 +91,7 @@ SubShader {
+         {
+             float3 base_rgb = hue06_to_base_rgb(_Slider01 * 6);
+             float2 uv = i.texcoord;
+-            return SrgbToLinear(cl_to_rgb(base_rgb, uv.x, uv.y) * _Color);
++            return cl_to_rgb(base_rgb, uv.x, uv.y) * _Color;
+         }
+ 
+         ENDCG"
+icosa-foundation/open-brush,287,e68e0a5,Assets/Shaders/ColorPicker_sv_h.shader,modified,2,3,5,"@@ -21,8 +21,7 @@ Properties {
+ 
+ CGINCLUDE
+     #include ""Assets/Shaders/Include/ColorSpace.cginc""
+-    #include ""Assets/Shaders/Include/ColorSpaceConvert.cginc""
+-    #include ""Assets/Shaders/Include/Hdr.cginc""
++  #include ""Assets/Shaders/Include/Hdr.cginc""
+     float _Slider01;
+     fixed4 _Color;
+ 
+@@ -92,7 +91,7 @@ SubShader {
+         {
+             float3 base_rgb = hue06_to_base_rgb(_Slider01 * 6);
+             float2 uv = i.texcoord;
+-            return SrgbToLinear(fixed4(sv_to_rgb(base_rgb, uv.x, uv.y), 1) * _Color);
++            return fixed4(sv_to_rgb(base_rgb, uv.x, uv.y), 1) * _Color;
+         }
+ 
+         ENDCG"
+icosa-foundation/open-brush,287,e68e0a5,Assets/Shaders/Include/Brush.cginc,modified,29,1,30,"@@ -20,7 +20,6 @@ uniform float4x4 xf_CS;
+ uniform float4x4 xf_I_CS;
+ uniform uint _BatchID;  // NOTOOLKIT
+ #include ""Ods.cginc""  // NOTOOLKIT
+-#include ""ColorSpaceConvert.cginc""
+ 
+ // Unity only guarantees signed 2.8 for fixed4.
+ // In practice, 2*exp(_EmissionGain * 10) = 180, so we need to use float4
+@@ -103,6 +102,35 @@ float4 ParticleVertexToWorld(float4 vertex) {
+ }
+ #endif
+ 
++//
++// For Toolkit support
++//
++
++float4 SrgbToLinear(float4 color) {
++  // Approximation http://chilliant.blogspot.com/2012/08/srgb-approximations-for-hlsl.html
++  float3 sRGB = color.rgb;
++  color.rgb = sRGB * (sRGB * (sRGB * 0.305306011 + 0.682171111) + 0.012522878);
++  return color;
++}
++
++float4 SrgbToLinear_Large(float4 color) {
++    float4 linearColor = SrgbToLinear(color);
++  color.r = color.r < 1.0 ? linearColor.r : color.r;
++  color.g = color.g < 1.0 ? linearColor.g : color.g;
++  color.b = color.b < 1.0 ? linearColor.b : color.b;
++  return color;
++}
++
++float4 LinearToSrgb(float4 color) {
++  // Approximation http://chilliant.blogspot.com/2012/08/srgb-approximations-for-hlsl.html
++  float3 linearColor = color.rgb;
++  float3 S1 = sqrt(linearColor);
++  float3 S2 = sqrt(S1);
++  float3 S3 = sqrt(S2);
++  color.rgb = 0.662002687 * S1 + 0.684122060 * S2 - 0.323583601 * S3 - 0.0225411470 * linearColor;
++  return color;
++}
++
+ // TB mesh colors are sRGB. TBT mesh colors are linear.
+ // TOOLKIT: float4 TbVertToSrgb(float4 color) { return LinearToSrgb(color); }
+ // TOOLKIT: float4 TbVertToLinear(float4 color) { return color; }"
+icosa-foundation/open-brush,287,e68e0a5,Assets/Shaders/Include/ColorSpaceConvert.cginc,removed,0,40,40,"@@ -1,40 +0,0 @@
+-// Copyright 2020 The Tilt Brush Authors
+-//
+-// Licensed under the Apache License, Version 2.0 (the ""License"");
+-// you may not use this file except in compliance with the License.
+-// You may obtain a copy of the License at
+-//
+-//      http://www.apache.org/licenses/LICENSE-2.0
+-//
+-// Unless required by applicable law or agreed to in writing, software
+-// distributed under the License is distributed on an ""AS IS"" BASIS,
+-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+-// See the License for the specific language governing permissions and
+-// limitations under the License.
+-
+-// Moved from Brush.cginc to be more helpful in other places.
+-
+-float4 SrgbToLinear(float4 color) {
+-  // Approximation http://chilliant.blogspot.com/2012/08/srgb-approximations-for-hlsl.html
+-  float3 sRGB = color.rgb;
+-  color.rgb = sRGB * (sRGB * (sRGB * 0.305306011 + 0.682171111) + 0.012522878);
+-  return color;
+-}
+-
+-float4 SrgbToLinear_Large(float4 color) {
+-    float4 linearColor = SrgbToLinear(color);
+-  color.r = color.r < 1.0 ? linearColor.r : color.r;
+-  color.g = color.g < 1.0 ? linearColor.g : color.g;
+-  color.b = color.b < 1.0 ? linearColor.b : color.b;
+-  return color;
+-}
+-
+-float4 LinearToSrgb(float4 color) {
+-  // Approximation http://chilliant.blogspot.com/2012/08/srgb-approximations-for-hlsl.html
+-  float3 linearColor = color.rgb;
+-  float3 S1 = sqrt(linearColor);
+-  float3 S2 = sqrt(S1);
+-  float3 S3 = sqrt(S2);
+-  color.rgb = 0.662002687 * S1 + 0.684122060 * S2 - 0.323583601 * S3 - 0.0225411470 * linearColor;
+-  return color;
+-}"
+icosa-foundation/open-brush,287,e68e0a5,Assets/Shaders/Include/ColorSpaceConvert.cginc.meta,removed,0,7,7,"@@ -1,7 +0,0 @@
+-fileFormatVersion: 2
+-guid: 0080a0f735091bc40938a5a458709e0f
+-ShaderIncludeImporter:
+-  externalObjects: {}
+-  userData: 
+-  assetBundleName: 
+-  assetBundleVariant: "

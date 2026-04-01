@@ -1,0 +1,516 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe,316,c6aad59b40e94239a3379061d8fa93e72370f2bf,src/utils/texture.js,modified,7,0,7,"@@ -223,6 +223,7 @@ function createVideoEl (material, src, width, height) {
+   el.width = width;
+   el.height = height;
+   if (el !== this.videoEl) {
++    el.setAttribute('webkit-playsinline', '');  // To support inline videos in iOS webviews.
+     el.autoplay = true;
+     el.loop = true;
+     el.crossOrigin = true;
+@@ -257,6 +258,12 @@ function fixVideoAttributes (videoEl) {
+   if (videoEl.getAttribute('preload') === 'false') {
+     videoEl.preload = 'none';
+   }
++  if (!videoEl.hasAttribute('crossorigin')) {
++    videoEl.crossOrigin = true;
++  }
++  if (!videoEl.hasAttribute('webkit-playsinline')) {
++    videoEl.setAttribute('webkit-playsinline', '');  // To support inline videos in iOS webviews.
++  }
+   return videoEl;
+ }
+ "
+aframevr/aframe,316,664d794f48bc7fb4c7f99c3c9c5d05af667f7802,docs/primitives/a-video.md,modified,1,1,2,"@@ -37,6 +37,6 @@ Note that the video primitive inherits common [mesh attributes](./mesh-attribute
+ 
+ iOS has a lot of restrictions on playing videos in the browser. To play an inline video texture, we must:
+ 
+-- Set the `<meta name=""apple-mobile-web-app-capable"" content=""yes""` metatag.
++- Set the `<meta name=""apple-mobile-web-app-capable"" content=""yes"">` meta tag (will be injected if missing).
+ - Set the `webkit-playsinline` attribute to the video element.
+ - Pin the webpage to the iOS homescreen."
+aframevr/aframe,316,664d794f48bc7fb4c7f99c3c9c5d05af667f7802,docs/primitives/a-videosphere.md,modified,1,1,2,"@@ -45,6 +45,6 @@ In order to be seamless, videos should be [equirectangular](https://en.wikipedia
+ 
+ iOS has a lot of restrictions on playing videos in the browser. To play an inline video texture, we must:
+ 
+-- Set the `<meta name=""apple-mobile-web-app-capable"" content=""yes""` metatag.
++- Set the `<meta name=""apple-mobile-web-app-capable"" content=""yes"">` meta tag (will be injected if missing).
+ - Set the `webkit-playsinline` attribute to the video element.
+ - Pin the webpage to the iOS homescreen."
+aframevr/aframe,316,664d794f48bc7fb4c7f99c3c9c5d05af667f7802,src/core/scene/a-scene.js,modified,3,1,4,"@@ -1,6 +1,6 @@
+ /* global Promise */
+ var initFullscreen = require('./fullscreen');
+-var initMetaTags = require('./metaTags');
++var initMetaTags = require('./metaTags').inject;
+ var initWakelock = require('./wakelock');
+ var re = require('../a-register-element');
+ var systems = require('../system').systems;
+@@ -12,6 +12,7 @@ var AEntity = require('../a-entity');
+ var ANode = require('../a-node');
+ 
+ var registerElement = re.registerElement;
++var isIOS = utils.isIOS();
+ var isMobile = utils.isMobile();
+ 
+ /**
+@@ -45,6 +46,7 @@ var AScene = module.exports = registerElement('a-scene', {
+     createdCallback: {
+       value: function () {
+         this.isMobile = isMobile;
++        this.isIOS = isIOS;
+         this.isScene = true;
+         this.object3D = new THREE.Scene();
+         this.systems = {};"
+aframevr/aframe,316,664d794f48bc7fb4c7f99c3c9c5d05af667f7802,src/core/scene/metaTags.js,modified,67,35,102,"@@ -1,46 +1,78 @@
+-module.exports = function initMetaTags (scene) {
+-  if (!scene.isMobile) { return; }
+-  injectMetaTags();
+-};
++var extend = require('../../utils').extend;
++
++var MOBILE_HEAD_TAGS = module.exports.MOBILE_HEAD_TAGS = [
++  Meta({name: 'viewport', content: 'width=device-width,initial-scale=1,maximum-scale=1,shrink-to-fit=no,user-scalable=no'}),
++
++  // W3C-standardised meta tags.
++  Meta({name: 'web-app-capable', content: 'yes'}),
++  Meta({name: 'theme-color', content: 'black'}),
++  Link({rel: 'icon', sizes: '192x192', href: 'https://aframe.io/images/aframe-logo-192.png'})
++];
++
++var MOBILE_IOS_HEAD_TAGS = [
++  // iOS-specific meta tags for fullscreen when pinning to homescreen.
++  Meta({name: 'apple-mobile-web-app-capable', content: 'yes'}),
++  Meta({name: 'apple-mobile-web-app-status-bar-style', content: 'black'}),
++  Link({rel: 'apple-touch-icon', href: 'https://aframe.io/images/aframe-logo-152.png'})
++];
++
++function Meta (attrs) {
++  return {
++    tagName: 'meta',
++    attributes: attrs,
++    exists: function () { return document.querySelector('meta[name=""' + attrs.name + '""]'); }
++  };
++}
++
++function Link (attrs) {
++  return {
++    tagName: 'link',
++    attributes: attrs,
++    exists: function () { return document.querySelector('link[rel=""' + attrs.rel + '""]'); }
++  };
++}
+ 
+ /**
+- * Injects the necessary metatags in the document for mobile support to:
+- * 1. Prevent the user to zoom in the document
++ * Injects the necessary metatags in the document for mobile support:
++ * 1. Prevent the user to zoom in the document.
+  * 2. Ensure that window.innerWidth and window.innerHeight have the correct
+- *    values and the canvas is properly scaled
++ *    values and the canvas is properly scaled.
+  * 3. To allow fullscreen mode when pinning a web app on the home screen on
+  *    iOS.
+- * Adapted from: https://www.reddit.com/r/web_design/comments/3la04p/
++ * Adapted from https://www.reddit.com/r/web_design/comments/3la04p/
+  *
+- * @type {Object}
++ * @param {object} scene - Scene element
++ * @returns {Array}
+  */
+-function injectMetaTags () {
+-  var headEl;
+-  var meta = document.querySelector('meta[name=""viewport""]');
+-  var metaTags = [];
++module.exports.inject = function injectHeadTags (scene) {
++  var headEl = document.head;
++  var headScriptEl = headEl.querySelector('script');
++  var tag;
++  var headTags = [];
++  MOBILE_HEAD_TAGS.forEach(createAndInjectTag);
++  if (scene.isIOS) {
++    MOBILE_IOS_HEAD_TAGS.forEach(createAndInjectTag);
++  }
++  return headTags;
+ 
+-  if (meta) { return; }
++  function createAndInjectTag (tagObj) {
++    if (!tagObj || tagObj.exists()) { return; }
+ 
+-  headEl = document.getElementsByTagName('head')[0];
+-  meta = document.createElement('meta');
+-  meta.name = 'viewport';
+-  meta.content =
+-    'width=device-width,initial-scale=1,shrink-to-fit=no,user-scalable=no,maximum-scale=1';
+-  headEl.appendChild(meta);
+-  metaTags.push(meta);
++    tag = createTag(tagObj);
++    if (!tag) { return; }
+ 
+-  // iOS-specific meta tags for fullscreen when pinning to homescreen.
+-  meta = document.createElement('meta');
+-  meta.name = 'apple-mobile-web-app-capable';
+-  meta.content = 'yes';
+-  headEl.appendChild(meta);
+-  metaTags.push(meta);
+-
+-  meta = document.createElement('meta');
+-  meta.name = 'apple-mobile-web-app-status-bar-style';
+-  meta.content = 'black';
+-  headEl.appendChild(meta);
+-  metaTags.push(meta);
+-
+-  return metaTags;
++    if (headScriptEl) {
++      headScriptEl.parentNode.insertBefore(tag, headScriptEl);
++    } else {
++      headEl.appendChild(tag);
++    }
++
++    headTags.push(tag);
++  }
++};
++
++function createTag (tagObj) {
++  if (!tagObj || !tagObj.tagName) { return; }
++  var meta = document.createElement(tagObj.tagName);
++  return extend(meta, tagObj.attributes);
+ }"
+aframevr/aframe,316,664d794f48bc7fb4c7f99c3c9c5d05af667f7802,tests/core/a-scene.test.js,modified,71,4,75,"@@ -4,6 +4,7 @@ var helpers = require('../helpers');
+ var AEntity = require('core/a-entity');
+ var ANode = require('core/a-node');
+ var AScene = require('core/scene/a-scene');
++var metaTags = require('core/scene/metaTags');
+ 
+ /**
+  * Tests in this suite should not involve WebGL contexts or renderer.
+@@ -80,10 +81,6 @@ helpers.getSkipCISuite()('a-scene (with renderer)', function () {
+   });
+ 
+   suite('attachedCallback', function () {
+-    test('sets up meta tags', function () {
+-      assert.ok(document.querySelector('meta[name=""viewport""]'));
+-    });
+-
+     test('sets up renderer', function () {
+       assert.ok(this.el.renderer);
+     });
+@@ -124,3 +121,73 @@ helpers.getSkipCISuite()('a-scene (with renderer)', function () {
+     sinon.assert.calledWith(Component.tick, scene.time);
+   });
+ });
++
++helpers.getSkipCISuite()('a-scene (for iOS)', function () {
++  setup(function (done) {
++    var el;
++    var self = this;
++    // Remove all previous meta tags injected.
++    var metaTags = document.querySelectorAll('meta');
++    for (var i = 0, len = metaTags.length; i < len; i++) {
++      metaTags[i].parentNode.removeChild(metaTags[i]);
++    }
++    AScene.prototype.setupRenderer.restore();
++    AScene.prototype.resize.restore();
++    AScene.prototype.render.restore();
++    process.nextTick(function () {
++      el = self.el = document.createElement('a-scene');
++      el.isIOS = true;
++      document.body.appendChild(el);
++      el.addEventListener('renderstart', function () {
++        done();
++      });
++    });
++  });
++
++  suite('attachedCallback', function () {
++    test('sets up meta tags', function () {
++      assert.equal(document.querySelector('meta[name=""viewport""]').content,
++        metaTags.MOBILE_HEAD_TAGS[0].attributes.content);
++      var webAppCapableMetaTag = document.querySelector('meta[name=""web-app-capable""]');
++      assert.ok(webAppCapableMetaTag);
++      assert.equal(webAppCapableMetaTag.content, 'yes');
++      var appleMobileWebAppCapableMetaTag = document.querySelector('meta[name=""apple-mobile-web-app-capable""]');
++      assert.ok(appleMobileWebAppCapableMetaTag);
++      assert.equal(appleMobileWebAppCapableMetaTag.content, 'yes');
++    });
++  });
++});
++
++helpers.getSkipCISuite()('a-scene (for non-iOS)', function () {
++  setup(function (done) {
++    var el;
++    var self = this;
++    // Remove all previous meta tags injected.
++    var metaTags = document.querySelectorAll('meta');
++    for (var i = 0, len = metaTags.length; i < len; i++) {
++      metaTags[i].parentNode.removeChild(metaTags[i]);
++    }
++    AScene.prototype.setupRenderer.restore();
++    AScene.prototype.resize.restore();
++    AScene.prototype.render.restore();
++    process.nextTick(function () {
++      el = self.el = document.createElement('a-scene');
++      el.isIOS = false;
++      document.body.appendChild(el);
++      el.addEventListener('renderstart', function () {
++        done();
++      });
++    });
++  });
++
++  suite('attachedCallback', function () {
++    test('sets up meta tags', function () {
++      assert.equal(document.querySelector('meta[name=""viewport""]').content,
++        metaTags.MOBILE_HEAD_TAGS[0].attributes.content);
++      var webAppCapableMetaTag = document.querySelector('meta[name=""web-app-capable""]');
++      assert.ok(webAppCapableMetaTag);
++      var appleMobileWebAppCapableMetaTag = document.querySelector('meta[name=""apple-mobile-web-app-capable""]');
++      assert.notOk(appleMobileWebAppCapableMetaTag);
++    });
++  });
++});"
+aframevr/aframe,316,8b6b3b5e9bb27b996bcfad7216b357d722ca0b7d,docs/primitives/a-video.md,modified,1,1,2,"@@ -37,6 +37,6 @@ Note that the video primitive inherits common [mesh attributes](./mesh-attribute
+ 
+ iOS has a lot of restrictions on playing videos in the browser. To play an inline video texture, we must:
+ 
+-- Set the `<meta name=""apple-mobile-web-app-capable"" content=""yes""` metatag.
++- Set the `<meta name=""apple-mobile-web-app-capable"" content=""yes"">` meta tag (will be injected if missing).
+ - Set the `webkit-playsinline` attribute to the video element.
+ - Pin the webpage to the iOS homescreen."
+aframevr/aframe,316,8b6b3b5e9bb27b996bcfad7216b357d722ca0b7d,docs/primitives/a-videosphere.md,modified,1,1,2,"@@ -45,6 +45,6 @@ In order to be seamless, videos should be [equirectangular](https://en.wikipedia
+ 
+ iOS has a lot of restrictions on playing videos in the browser. To play an inline video texture, we must:
+ 
+-- Set the `<meta name=""apple-mobile-web-app-capable"" content=""yes""` metatag.
++- Set the `<meta name=""apple-mobile-web-app-capable"" content=""yes"">` meta tag (will be injected if missing).
+ - Set the `webkit-playsinline` attribute to the video element.
+ - Pin the webpage to the iOS homescreen."
+aframevr/aframe,316,8b6b3b5e9bb27b996bcfad7216b357d722ca0b7d,src/core/scene/a-scene.js,modified,3,1,4,"@@ -1,6 +1,6 @@
+ /* global Promise */
+ var initFullscreen = require('./fullscreen');
+-var initMetaTags = require('./metaTags');
++var initMetaTags = require('./metaTags').inject;
+ var initWakelock = require('./wakelock');
+ var re = require('../a-register-element');
+ var systems = require('../system').systems;
+@@ -12,6 +12,7 @@ var AEntity = require('../a-entity');
+ var ANode = require('../a-node');
+ 
+ var registerElement = re.registerElement;
++var isIOS = utils.isIOS();
+ var isMobile = utils.isMobile();
+ 
+ /**
+@@ -45,6 +46,7 @@ var AScene = module.exports = registerElement('a-scene', {
+     createdCallback: {
+       value: function () {
+         this.isMobile = isMobile;
++        this.isIOS = isIOS;
+         this.isScene = true;
+         this.object3D = new THREE.Scene();
+         this.systems = {};"
+aframevr/aframe,316,8b6b3b5e9bb27b996bcfad7216b357d722ca0b7d,src/core/scene/metaTags.js,modified,67,35,102,"@@ -1,46 +1,78 @@
+-module.exports = function initMetaTags (scene) {
+-  if (!scene.isMobile) { return; }
+-  injectMetaTags();
+-};
++var extend = require('../../utils').extend;
++
++var MOBILE_HEAD_TAGS = module.exports.MOBILE_HEAD_TAGS = [
++  Meta({name: 'viewport', content: 'width=device-width,initial-scale=1,maximum-scale=1,shrink-to-fit=no,user-scalable=no'}),
++
++  // W3C-standardised meta tags.
++  Meta({name: 'web-app-capable', content: 'yes'}),
++  Meta({name: 'theme-color', content: 'black'}),
++  Link({rel: 'icon', sizes: '192x192', href: 'https://aframe.io/images/aframe-logo-192.png'})
++];
++
++var MOBILE_IOS_HEAD_TAGS = [
++  // iOS-specific meta tags for fullscreen when pinning to homescreen.
++  Meta({name: 'apple-mobile-web-app-capable', content: 'yes'}),
++  Meta({name: 'apple-mobile-web-app-status-bar-style', content: 'black'}),
++  Link({rel: 'apple-touch-icon', href: 'https://aframe.io/images/aframe-logo-152.png'})
++];
++
++function Meta (attrs) {
++  return {
++    tagName: 'meta',
++    attributes: attrs,
++    exists: function () { return document.querySelector('meta[name=""' + attrs.name + '""]'); }
++  };
++}
++
++function Link (attrs) {
++  return {
++    tagName: 'link',
++    attributes: attrs,
++    exists: function () { return document.querySelector('link[rel=""' + attrs.rel + '""]'); }
++  };
++}
+ 
+ /**
+- * Injects the necessary metatags in the document for mobile support to:
+- * 1. Prevent the user to zoom in the document
++ * Injects the necessary metatags in the document for mobile support:
++ * 1. Prevent the user to zoom in the document.
+  * 2. Ensure that window.innerWidth and window.innerHeight have the correct
+- *    values and the canvas is properly scaled
++ *    values and the canvas is properly scaled.
+  * 3. To allow fullscreen mode when pinning a web app on the home screen on
+  *    iOS.
+- * Adapted from: https://www.reddit.com/r/web_design/comments/3la04p/
++ * Adapted from https://www.reddit.com/r/web_design/comments/3la04p/
+  *
+- * @type {Object}
++ * @param {object} scene - Scene element
++ * @returns {Array}
+  */
+-function injectMetaTags () {
+-  var headEl;
+-  var meta = document.querySelector('meta[name=""viewport""]');
+-  var metaTags = [];
++module.exports.inject = function injectHeadTags (scene) {
++  var headEl = document.head;
++  var headScriptEl = headEl.querySelector('script');
++  var tag;
++  var headTags = [];
++  MOBILE_HEAD_TAGS.forEach(createAndInjectTag);
++  if (scene.isIOS) {
++    MOBILE_IOS_HEAD_TAGS.forEach(createAndInjectTag);
++  }
++  return headTags;
+ 
+-  if (meta) { return; }
++  function createAndInjectTag (tagObj) {
++    if (!tagObj || tagObj.exists()) { return; }
+ 
+-  headEl = document.getElementsByTagName('head')[0];
+-  meta = document.createElement('meta');
+-  meta.name = 'viewport';
+-  meta.content =
+-    'width=device-width,initial-scale=1,shrink-to-fit=no,user-scalable=no,maximum-scale=1';
+-  headEl.appendChild(meta);
+-  metaTags.push(meta);
++    tag = createTag(tagObj);
++    if (!tag) { return; }
+ 
+-  // iOS-specific meta tags for fullscreen when pinning to homescreen.
+-  meta = document.createElement('meta');
+-  meta.name = 'apple-mobile-web-app-capable';
+-  meta.content = 'yes';
+-  headEl.appendChild(meta);
+-  metaTags.push(meta);
+-
+-  meta = document.createElement('meta');
+-  meta.name = 'apple-mobile-web-app-status-bar-style';
+-  meta.content = 'black';
+-  headEl.appendChild(meta);
+-  metaTags.push(meta);
+-
+-  return metaTags;
++    if (headScriptEl) {
++      headScriptEl.parentNode.insertBefore(tag, headScriptEl);
++    } else {
++      headEl.appendChild(tag);
++    }
++
++    headTags.push(tag);
++  }
++};
++
++function createTag (tagObj) {
++  if (!tagObj || !tagObj.tagName) { return; }
++  var meta = document.createElement(tagObj.tagName);
++  return extend(meta, tagObj.attributes);
+ }"
+aframevr/aframe,316,8b6b3b5e9bb27b996bcfad7216b357d722ca0b7d,tests/core/a-scene.test.js,modified,71,4,75,"@@ -4,6 +4,7 @@ var helpers = require('../helpers');
+ var AEntity = require('core/a-entity');
+ var ANode = require('core/a-node');
+ var AScene = require('core/scene/a-scene');
++var metaTags = require('core/scene/metaTags');
+ 
+ /**
+  * Tests in this suite should not involve WebGL contexts or renderer.
+@@ -80,10 +81,6 @@ helpers.getSkipCISuite()('a-scene (with renderer)', function () {
+   });
+ 
+   suite('attachedCallback', function () {
+-    test('sets up meta tags', function () {
+-      assert.ok(document.querySelector('meta[name=""viewport""]'));
+-    });
+-
+     test('sets up renderer', function () {
+       assert.ok(this.el.renderer);
+     });
+@@ -124,3 +121,73 @@ helpers.getSkipCISuite()('a-scene (with renderer)', function () {
+     sinon.assert.calledWith(Component.tick, scene.time);
+   });
+ });
++
++helpers.getSkipCISuite()('a-scene (for iOS)', function () {
++  setup(function (done) {
++    var el;
++    var self = this;
++    // Remove all previous meta tags injected.
++    var metaTags = document.querySelectorAll('meta');
++    for (var i = 0, len = metaTags.length; i < len; i++) {
++      metaTags[i].parentNode.removeChild(metaTags[i]);
++    }
++    AScene.prototype.setupRenderer.restore();
++    AScene.prototype.resize.restore();
++    AScene.prototype.render.restore();
++    process.nextTick(function () {
++      el = self.el = document.createElement('a-scene');
++      el.isIOS = true;
++      document.body.appendChild(el);
++      el.addEventListener('renderstart', function () {
++        done();
++      });
++    });
++  });
++
++  suite('attachedCallback', function () {
++    test('sets up meta tags', function () {
++      assert.equal(document.querySelector('meta[name=""viewport""]').content,
++        metaTags.MOBILE_HEAD_TAGS[0].attributes.content);
++      var webAppCapableMetaTag = document.querySelector('meta[name=""web-app-capable""]');
++      assert.ok(webAppCapableMetaTag);
++      assert.equal(webAppCapableMetaTag.content, 'yes');
++      var appleMobileWebAppCapableMetaTag = document.querySelector('meta[name=""apple-mobile-web-app-capable""]');
++      assert.ok(appleMobileWebAppCapableMetaTag);
++      assert.equal(appleMobileWebAppCapableMetaTag.content, 'yes');
++    });
++  });
++});
++
++helpers.getSkipCISuite()('a-scene (for non-iOS)', function () {
++  setup(function (done) {
++    var el;
++    var self = this;
++    // Remove all previous meta tags injected.
++    var metaTags = document.querySelectorAll('meta');
++    for (var i = 0, len = metaTags.length; i < len; i++) {
++      metaTags[i].parentNode.removeChild(metaTags[i]);
++    }
++    AScene.prototype.setupRenderer.restore();
++    AScene.prototype.resize.restore();
++    AScene.prototype.render.restore();
++    process.nextTick(function () {
++      el = self.el = document.createElement('a-scene');
++      el.isIOS = false;
++      document.body.appendChild(el);
++      el.addEventListener('renderstart', function () {
++        done();
++      });
++    });
++  });
++
++  suite('attachedCallback', function () {
++    test('sets up meta tags', function () {
++      assert.equal(document.querySelector('meta[name=""viewport""]').content,
++        metaTags.MOBILE_HEAD_TAGS[0].attributes.content);
++      var webAppCapableMetaTag = document.querySelector('meta[name=""web-app-capable""]');
++      assert.ok(webAppCapableMetaTag);
++      var appleMobileWebAppCapableMetaTag = document.querySelector('meta[name=""apple-mobile-web-app-capable""]');
++      assert.notOk(appleMobileWebAppCapableMetaTag);
++    });
++  });
++});"

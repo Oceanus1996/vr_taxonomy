@@ -1,0 +1,78 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+halsafar/BeatSaberSongBrowser,124,b4b2280397dbb68aed2252d8afb5633becb7429f,SongBrowserPlugin/SongBrowserApplication.cs,modified,18,0,18,"@@ -154,6 +154,11 @@ private void InstallHandlers()
+             soloFreePlayButton.onClick.AddListener(HandleSoloModeSelection);
+             partyFreePlayButton.onClick.AddListener(HandlePartyModeSelection);
+             campaignButton.onClick.AddListener(HandleCampaignModeSelection);
++
++            // Append to the 'EditButton' in the host lobby setup, this lets us seperate out Multiplayer easily.
++            var hostLobbyVc = Resources.FindObjectsOfTypeAll<HostLobbySetupViewController>().First();
++            var editButton = hostLobbyVc.GetComponentsInChildren<Button>().First(x => x.name == ""EditButton"");
++            editButton.onClick.AddListener(HandleMultiplayerModeSelection);
+         }
+ 
+         /// <summary>
+@@ -192,6 +197,19 @@ private void HandleCampaignModeSelection()
+             _songBrowserUI.Hide();
+         }
+ 
++        /// <summary>
++        /// Handle Multiplayer Mode.
++        /// Triggers when level select is clicked inside a host lobby.
++        /// </summary>
++        /// <param name=""arg1""></param>
++        /// <param name=""arg2""></param>
++        private void HandleMultiplayerModeSelection()
++        {
++            Logger.Trace(""HandleCampaignModeSelection()"");
++            HandleModeSelection(MainMenuViewController.MenuButton.Multiplayer);
++            _songBrowserUI.Hide();
++        }
++
+         /// <summary>
+         /// Handle Mode
+         /// </summary>"
+halsafar/BeatSaberSongBrowser,124,b4b2280397dbb68aed2252d8afb5633becb7429f,SongBrowserPlugin/UI/Browser/SongBrowserUI.cs,modified,18,2,20,"@@ -112,6 +112,11 @@ public void CreateUI(MainMenuViewController.MenuButton mode)
+                 Logger.Debug(""Entering PARTY mode..."");
+                 flowCoordinator = Resources.FindObjectsOfTypeAll<PartyFreePlayFlowCoordinator>().Last();
+             }
++            else if (mode == MainMenuViewController.MenuButton.Multiplayer)
++            {
++                Logger.Debug(""Entering Multiplayer mode..."");
++                flowCoordinator = Resources.FindObjectsOfTypeAll<MultiplayerLevelSelectionFlowCoordinator>().Last();
++            }
+             else
+             {
+                 Logger.Info(""Entering Unsupported mode..."");                
+@@ -126,6 +131,12 @@ public void CreateUI(MainMenuViewController.MenuButton mode)
+             // returning to the menu and switching modes could trigger this.
+             if (_uiCreated)
+             {
++                var screenContainer = Resources.FindObjectsOfTypeAll<Transform>().First(x => x.name == ""ScreenContainer"");
++                var curvedCanvasSettings = screenContainer.GetComponents<CurvedCanvasSettings>().First();
++                Plugin.Log.Debug($""CurvedCanvasRadius: {curvedCanvasSettings.radius}"");
++
++                var vcCanvasSettings = _viewController.GetComponent<CurvedCanvasSettings>();
++                vcCanvasSettings.SetRadius(curvedCanvasSettings.radius);
+                 return;
+             }
+ 
+@@ -136,12 +147,17 @@ public void CreateUI(MainMenuViewController.MenuButton mode)
+                 {
+                     UnityEngine.GameObject.Destroy(_viewController);
+                 }
+-                _viewController = BeatSaberUI.CreateCurvedViewController<SongBrowserViewController>(""SongBrowserViewController"", 125.0f);
++
++                var screenContainer = Resources.FindObjectsOfTypeAll<Transform>().First(x => x.name == ""ScreenContainer"");
++                var curvedCanvasSettings = screenContainer.GetComponents<CurvedCanvasSettings>().First();
++                Plugin.Log.Debug($""CurvedCanvasRadius: {curvedCanvasSettings.radius}"");
++
++                _viewController = BeatSaberUI.CreateCurvedViewController<SongBrowserViewController>(""SongBrowserViewController"", curvedCanvasSettings.radius);
+                 _viewController.rectTransform.SetParent(_beatUi.LevelCollectionNavigationController.rectTransform, false);
+                 _viewController.rectTransform.anchorMin = new Vector2(0f, 0f);
+                 _viewController.rectTransform.anchorMax = new Vector2(1f, 1f);
+                 _viewController.rectTransform.anchoredPosition = new Vector2(0, 0);
+-                _viewController.rectTransform.sizeDelta = new Vector2(125, 25);
++                _viewController.rectTransform.sizeDelta = new Vector2(curvedCanvasSettings.radius, 25);
+                 _viewController.gameObject.SetActive(true);
+ 
+                 // create song browser main ui"

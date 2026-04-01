@@ -1,0 +1,181 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+scenerygraphics/scenery,456,a397dd06506cb42853f2b6cf691c71a3175ef8f6,src/main/kotlin/graphics/scenery/attribute/material/DefaultMaterial.kt,modified,1,0,1,"@@ -19,6 +19,7 @@ open class DefaultMaterial : Material, Serializable {
+     override var cullingMode: Material.CullingMode = Material.CullingMode.Back
+     override var depthTest: Material.DepthTest = Material.DepthTest.LessEqual
+     override var wireframe: Boolean = false
++    override var timestamp: Long = System.nanoTime()
+ 
+     /** Companion object for Material, emulating static methods */
+     companion object Factory {"
+scenerygraphics/scenery,456,a397dd06506cb42853f2b6cf691c71a3175ef8f6,src/main/kotlin/graphics/scenery/attribute/material/Material.kt,modified,4,0,4,"@@ -55,6 +55,9 @@ interface Material {
+     /** Flag to make the object wireframe */
+     var wireframe: Boolean
+ 
++    /** Timestamp for creation */
++    var timestamp: Long
++
+     /**
+      * Returns a hash of the material, with properties relevant for
+      * presentation taken into account. Does not include [textures], as
+@@ -65,6 +68,7 @@ interface Material {
+         result = 31 * result + cullingMode.hashCode()
+         result = 31 * result + depthTest.hashCode()
+         result = 31 * result + wireframe.hashCode()
++        result = 31 * result + timestamp.hashCode()
+         return result
+     }
+ }"
+scenerygraphics/scenery,456,a397dd06506cb42853f2b6cf691c71a3175ef8f6,src/main/kotlin/graphics/scenery/backends/opengl/OpenGLRenderer.kt,modified,10,8,18,"@@ -774,7 +774,9 @@ open class OpenGLRenderer(hub: Hub,
+ 
+         ShaderType.values().forEach { type ->
+             try {
+-                val m = OpenGLShaderModule.getFromCacheOrCreate(gl, ""main"", shaders.get(Shaders.ShaderTarget.OpenGL, type))
++                // we still request Vulkan shaders here, albeit working on OpenGL, as the shaders
++                // are written for Vulkan and will be converted on-the-fly by [OpenGLShaderModule].
++                val m = OpenGLShaderModule.getFromCacheOrCreate(gl, ""main"", shaders.get(Shaders.ShaderTarget.Vulkan, type))
+                 modules[m.shaderType] = m
+             } catch (e: ShaderNotFoundException) {
+                 if(shaders is Shaders.ShadersFromFiles) {
+@@ -2362,13 +2364,13 @@ open class OpenGLRenderer(hub: Hub,
+ 
+         with(materialUbo) {
+             name = ""MaterialProperties""
+-            add(""materialType"", { material.materialToMaterialType(s) })
+-            add(""Ka"", { material.ambient })
+-            add(""Kd"", { material.diffuse })
+-            add(""Ks"", { material.specular })
+-            add(""Roughness"", { material.roughness })
+-            add(""Metallic"", { material.metallic })
+-            add(""Opacity"", { material.blending.opacity })
++            add(""materialType"", { node.materialOrNull()!!.materialToMaterialType(s) })
++            add(""Ka"", { node.materialOrNull()!!.ambient })
++            add(""Kd"", { node.materialOrNull()!!.diffuse })
++            add(""Ks"", { node.materialOrNull()!!.specular })
++            add(""Roughness"", { node.materialOrNull()!!.roughness })
++            add(""Metallic"", { node.materialOrNull()!!.metallic })
++            add(""Opacity"", { node.materialOrNull()!!.blending.opacity })
+ 
+             s.UBOs.put(""MaterialProperties"", this)
+         }"
+scenerygraphics/scenery,456,a397dd06506cb42853f2b6cf691c71a3175ef8f6,src/main/kotlin/graphics/scenery/backends/vulkan/VulkanNodeHelpers.kt,modified,4,0,4,"@@ -321,6 +321,10 @@ object VulkanNodeHelpers {
+             }
+         }
+ 
++        if(material.textures.isEmpty()) {
++            s.textures.clear()
++        }
++
+         s.texturesLastSeen = now
+ 
+         val isCompute = material is ShaderMaterial && ((material as? ShaderMaterial)?.isCompute() ?: false)"
+scenerygraphics/scenery,456,a397dd06506cb42853f2b6cf691c71a3175ef8f6,src/main/kotlin/graphics/scenery/backends/vulkan/VulkanRenderer.kt,modified,7,7,14,"@@ -902,13 +902,13 @@ open class VulkanRenderer(hub: Hub,
+         val materialUbo = VulkanUBO(device, backingBuffer = buffers.UBOs)
+         with(materialUbo) {
+             name = ""MaterialProperties""
+-            add(""materialType"", { material.materialTypeFromTextures(s) })
+-            add(""Ka"", { material.ambient })
+-            add(""Kd"", { material.diffuse })
+-            add(""Ks"", { material.specular })
+-            add(""Roughness"", { material.roughness})
+-            add(""Metallic"", { material.metallic})
+-            add(""Opacity"", { material.blending.opacity })
++            add(""materialType"", { node.materialOrNull()!!.materialTypeFromTextures(s) })
++            add(""Ka"", { node.materialOrNull()!!.ambient })
++            add(""Kd"", { node.materialOrNull()!!.diffuse })
++            add(""Ks"", { node.materialOrNull()!!.specular })
++            add(""Roughness"", { node.materialOrNull()!!.roughness})
++            add(""Metallic"", { node.materialOrNull()!!.metallic})
++            add(""Opacity"", { node.materialOrNull()!!.blending.opacity })
+ 
+             createUniformBuffer()
+             s.UBOs.put(""MaterialProperties"", materialPropertiesDescriptorSet.contents to this)"
+scenerygraphics/scenery,456,65e39ea2614a98a64e0e1bd9a1e91890c825e7e4,src/main/kotlin/graphics/scenery/attribute/material/DefaultMaterial.kt,modified,1,0,1,"@@ -19,6 +19,7 @@ open class DefaultMaterial : Material, Serializable {
+     override var cullingMode: Material.CullingMode = Material.CullingMode.Back
+     override var depthTest: Material.DepthTest = Material.DepthTest.LessEqual
+     override var wireframe: Boolean = false
++    override var timestamp: Long = System.nanoTime()
+ 
+     /** Companion object for Material, emulating static methods */
+     companion object Factory {"
+scenerygraphics/scenery,456,65e39ea2614a98a64e0e1bd9a1e91890c825e7e4,src/main/kotlin/graphics/scenery/attribute/material/Material.kt,modified,4,0,4,"@@ -55,6 +55,9 @@ interface Material {
+     /** Flag to make the object wireframe */
+     var wireframe: Boolean
+ 
++    /** Timestamp for creation */
++    var timestamp: Long
++
+     /**
+      * Returns a hash of the material, with properties relevant for
+      * presentation taken into account. Does not include [textures], as
+@@ -65,6 +68,7 @@ interface Material {
+         result = 31 * result + cullingMode.hashCode()
+         result = 31 * result + depthTest.hashCode()
+         result = 31 * result + wireframe.hashCode()
++        result = 31 * result + timestamp.hashCode()
+         return result
+     }
+ }"
+scenerygraphics/scenery,456,65e39ea2614a98a64e0e1bd9a1e91890c825e7e4,src/main/kotlin/graphics/scenery/backends/opengl/OpenGLRenderer.kt,modified,10,8,18,"@@ -774,7 +774,9 @@ open class OpenGLRenderer(hub: Hub,
+ 
+         ShaderType.values().forEach { type ->
+             try {
+-                val m = OpenGLShaderModule.getFromCacheOrCreate(gl, ""main"", shaders.get(Shaders.ShaderTarget.OpenGL, type))
++                // we still request Vulkan shaders here, albeit working on OpenGL, as the shaders
++                // are written for Vulkan and will be converted on-the-fly by [OpenGLShaderModule].
++                val m = OpenGLShaderModule.getFromCacheOrCreate(gl, ""main"", shaders.get(Shaders.ShaderTarget.Vulkan, type))
+                 modules[m.shaderType] = m
+             } catch (e: ShaderNotFoundException) {
+                 if(shaders is Shaders.ShadersFromFiles) {
+@@ -2362,13 +2364,13 @@ open class OpenGLRenderer(hub: Hub,
+ 
+         with(materialUbo) {
+             name = ""MaterialProperties""
+-            add(""materialType"", { material.materialToMaterialType(s) })
+-            add(""Ka"", { material.ambient })
+-            add(""Kd"", { material.diffuse })
+-            add(""Ks"", { material.specular })
+-            add(""Roughness"", { material.roughness })
+-            add(""Metallic"", { material.metallic })
+-            add(""Opacity"", { material.blending.opacity })
++            add(""materialType"", { node.materialOrNull()!!.materialToMaterialType(s) })
++            add(""Ka"", { node.materialOrNull()!!.ambient })
++            add(""Kd"", { node.materialOrNull()!!.diffuse })
++            add(""Ks"", { node.materialOrNull()!!.specular })
++            add(""Roughness"", { node.materialOrNull()!!.roughness })
++            add(""Metallic"", { node.materialOrNull()!!.metallic })
++            add(""Opacity"", { node.materialOrNull()!!.blending.opacity })
+ 
+             s.UBOs.put(""MaterialProperties"", this)
+         }"
+scenerygraphics/scenery,456,65e39ea2614a98a64e0e1bd9a1e91890c825e7e4,src/main/kotlin/graphics/scenery/backends/vulkan/VulkanNodeHelpers.kt,modified,4,0,4,"@@ -321,6 +321,10 @@ object VulkanNodeHelpers {
+             }
+         }
+ 
++        if(material.textures.isEmpty()) {
++            s.textures.clear()
++        }
++
+         s.texturesLastSeen = now
+ 
+         val isCompute = material is ShaderMaterial && ((material as? ShaderMaterial)?.isCompute() ?: false)"
+scenerygraphics/scenery,456,65e39ea2614a98a64e0e1bd9a1e91890c825e7e4,src/main/kotlin/graphics/scenery/backends/vulkan/VulkanRenderer.kt,modified,7,7,14,"@@ -902,13 +902,13 @@ open class VulkanRenderer(hub: Hub,
+         val materialUbo = VulkanUBO(device, backingBuffer = buffers.UBOs)
+         with(materialUbo) {
+             name = ""MaterialProperties""
+-            add(""materialType"", { material.materialTypeFromTextures(s) })
+-            add(""Ka"", { material.ambient })
+-            add(""Kd"", { material.diffuse })
+-            add(""Ks"", { material.specular })
+-            add(""Roughness"", { material.roughness})
+-            add(""Metallic"", { material.metallic})
+-            add(""Opacity"", { material.blending.opacity })
++            add(""materialType"", { node.materialOrNull()!!.materialTypeFromTextures(s) })
++            add(""Ka"", { node.materialOrNull()!!.ambient })
++            add(""Kd"", { node.materialOrNull()!!.diffuse })
++            add(""Ks"", { node.materialOrNull()!!.specular })
++            add(""Roughness"", { node.materialOrNull()!!.roughness})
++            add(""Metallic"", { node.materialOrNull()!!.metallic})
++            add(""Opacity"", { node.materialOrNull()!!.blending.opacity })
+ 
+             createUniformBuffer()
+             s.UBOs.put(""MaterialProperties"", materialPropertiesDescriptorSet.contents to this)"

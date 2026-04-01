@@ -1,0 +1,287 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+MolotovCherry/virtual-display-rs,18,401b006,virtual-display-driver/src/device_context.rs,modified,10,4,14,"@@ -206,14 +206,20 @@ impl DeviceContext {
+             processor.terminate();
+         }
+ 
+-        // Safety: wmd_umdf_sys::_LUID and windows::LUID both are repr c and both with the same layouts
+-        let device = Direct3DDevice::init(unsafe { std::mem::transmute(render_adapter) });
++        // transmute would work, but one less unsafe block, so why not
++        let luid = windows::Win32::Foundation::LUID {
++            LowPart: render_adapter.LowPart,
++            HighPart: render_adapter.HighPart,
++        };
++
++        let device = Direct3DDevice::init(luid);
++
+         if let Ok(device) = device {
+             let processor = SwapChainProcessor::new(swap_chain, device, new_frame_event);
+ 
+-            processor.clone().run();
++            self.swap_chain_processor = Some(processor.clone());
+ 
+-            self.swap_chain_processor = Some(processor);
++            processor.run();
+         } else {
+             // It's important to delete the swap-chain if D3D initialization fails, so that the OS knows to generate a new
+             // swap-chain and try again."
+MolotovCherry/virtual-display-rs,18,401b006,virtual-display-driver/src/direct_3d_device.rs,modified,5,4,9,"@@ -1,12 +1,12 @@
+ use windows::{
+     core::Error,
+     Win32::{
+-        Foundation::{HMODULE, LUID},
++        Foundation::LUID,
+         Graphics::{
+             Direct3D::D3D_DRIVER_TYPE_UNKNOWN,
+             Direct3D11::{
+                 D3D11CreateDevice, ID3D11Device, ID3D11DeviceContext,
+-                D3D11_CREATE_DEVICE_BGRA_SUPPORT,
++                D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_SDK_VERSION,
+             },
+             Dxgi::{CreateDXGIFactory2, IDXGIAdapter1, IDXGIFactory5},
+         },
+@@ -27,6 +27,7 @@ impl From<&'static str> for Direct3DError {
+     }
+ }
+ 
++#[derive(Debug)]
+ pub struct Direct3DDevice {
+     // The following are already refcounted, so they're safe to use directly without additional drop impls
+     _dxgi_factory: IDXGIFactory5,
+@@ -48,10 +49,10 @@ impl Direct3DDevice {
+             D3D11CreateDevice(
+                 &adapter,
+                 D3D_DRIVER_TYPE_UNKNOWN,
+-                HMODULE::default(),
++                None,
+                 D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+                 None,
+-                0,
++                D3D11_SDK_VERSION,
+                 Some(&mut device),
+                 None,
+                 Some(&mut device_context),"
+MolotovCherry/virtual-display-rs,18,401b006,virtual-display-driver/src/helpers.rs,added,10,0,10,"@@ -0,0 +1,10 @@
++#[macro_export]
++macro_rules! debug {
++    ($($tt:tt)*) => {
++        if cfg!(debug_assertions) {
++            ::log::debug!($($tt)*);
++        }
++    };
++}
++
++pub use debug;"
+MolotovCherry/virtual-display-rs,18,401b006,virtual-display-driver/src/lib.rs,modified,2,0,2,"@@ -1,3 +1,5 @@
++mod helpers;
++
+ mod callbacks;
+ mod device_context;
+ mod direct_3d_device;"
+MolotovCherry/virtual-display-rs,18,401b006,virtual-display-driver/src/swap_chain_processor.rs,modified,38,39,77,"@@ -1,12 +1,12 @@
+ use std::{
+     sync::{
+         atomic::{AtomicBool, Ordering},
+-        mpsc::{channel, Receiver, Sender},
+         Arc, Mutex,
+     },
+     thread::{self, JoinHandle},
+ };
+ 
++use log::error;
+ use wdf_umdf::{
+     IddCxSwapChainFinishedProcessingFrame, IddCxSwapChainReleaseAndAcquireBuffer,
+     IddCxSwapChainSetDevice, IntoHelper, WdfObjectDelete,
+@@ -16,13 +16,10 @@ use wdf_umdf_sys::{
+     WAIT_TIMEOUT, WDFOBJECT,
+ };
+ use windows::{
+-    core::{w, ComInterface},
++    core::{ComInterface, Interface},
+     Win32::{
+-        Foundation::HANDLE as WHANDLE,
+-        Graphics::Direct3D11::ID3D11Device,
+-        System::Threading::{
+-            AvRevertMmThreadCharacteristics, AvSetMmThreadCharacteristicsW, WaitForSingleObject,
+-        },
++        Foundation::HANDLE as WHANDLE, Graphics::Dxgi::IDXGIDevice,
++        System::Threading::WaitForSingleObject,
+     },
+ };
+ 
+@@ -32,7 +29,7 @@ pub struct SwapChainProcessor {
+     swap_chain: IDDCX_SWAPCHAIN,
+     device: Direct3DDevice,
+     available_buffer_event: HANDLE,
+-    terminate_event: Mutex<Option<Sender<()>>>,
++    terminate_event: AtomicBool,
+     thread: Mutex<Option<JoinHandle<()>>>,
+     dropped: AtomicBool,
+ }
+@@ -50,60 +47,67 @@ impl SwapChainProcessor {
+             swap_chain,
+             device,
+             available_buffer_event: new_frame_event,
+-            terminate_event: Mutex::new(None),
++            terminate_event: AtomicBool::new(false),
+             thread: Mutex::new(None),
+             dropped: AtomicBool::new(false),
+         })
+     }
+ 
+     pub fn run(self: Arc<Self>) {
+-        let (terminate_s, terminate_r) = channel();
+-        {
+-            let mut term = self.terminate_event.lock().unwrap();
+-            *term = Some(terminate_s);
+-        }
+-
+         struct Sendable<T>(T);
+         unsafe impl<T> Send for Sendable<T> {}
+         unsafe impl<T> Sync for Sendable<T> {}
+ 
+         let swap_chain_ptr = Sendable(self.swap_chain);
+         let thread_self = self.clone();
++
+         let join_handle = thread::spawn(move || {
+             // It is very important to prioritize this thread by making use of the Multimedia Scheduler Service.
+             // It will intelligently prioritize the thread for improved throughput in high CPU-load scenarios.
+-            let task_handle = std::ptr::null_mut();
+-            unsafe {
+-                AvSetMmThreadCharacteristicsW(w!(""DisplayPostProcessing""), task_handle).unwrap();
+-            }
++            // let mut task_handle = 0u32;
++            // let res = unsafe {
++            //     AvSetMmThreadCharacteristicsW(w!(""DisplayPostProcessing""), &mut task_handle)
++            // };
++            // if let Err(e) = res {
++            //     error!(""Failed to prioritize thread: {e}"");
++            //     return;
++            // }
+ 
+-            thread_self.run_core(terminate_r);
++            thread_self.run_core();
+ 
+             let swap_chain = swap_chain_ptr;
+             unsafe {
+                 WdfObjectDelete(swap_chain.0 as WDFOBJECT).unwrap();
+             }
+ 
+             // Revert the thread to normal once it's done
+-            unsafe {
+-                AvRevertMmThreadCharacteristics(WHANDLE(task_handle as _)).unwrap();
+-            }
++            // let res = unsafe { AvRevertMmThreadCharacteristics(WHANDLE(task_handle as _)) };
++            // if let Err(e) = res {
++            //     error!(""Failed to prioritize thread: {e}"");
++            // }
+         });
+ 
+         let mut handle = self.thread.lock().unwrap();
+         *handle = Some(join_handle);
+     }
+ 
+-    fn run_core(&self, terminate_r: Receiver<()>) {
+-        let Ok(dxgi_device) = self.device.device.cast::<ID3D11Device>() else {
++    fn run_core(&self) {
++        let dxgi_device = self.device.device.cast::<IDXGIDevice>();
++        let Ok(dxgi_device) = dxgi_device else {
++            error!(
++                ""Failed to cast ID3D11Device to IDXGIDevice: {}"",
++                dxgi_device.unwrap_err()
++            );
++
+             return;
+         };
+ 
+         let set_device = IDARG_IN_SWAPCHAINSETDEVICE {
+-            pDevice: dxgi_device.as_unknown() as *const _ as *mut _,
++            pDevice: dxgi_device.into_raw() as *mut _,
+         };
+ 
+-        if unsafe { IddCxSwapChainSetDevice(self.swap_chain, &set_device) }.is_err() {
++        if let Err(e) = unsafe { IddCxSwapChainSetDevice(self.swap_chain, &set_device) } {
++            error!(""Failed to set up IddcxSwapChainDevice: {e}"");
+             return;
+         }
+ 
+@@ -118,11 +122,12 @@ impl SwapChainProcessor {
+                     unsafe { WaitForSingleObject(WHANDLE(self.available_buffer_event as _), 16).0 };
+ 
+                 // thread requested an end
+-                if terminate_r.try_recv().is_ok() {
++                let terminate = self.terminate_event.load(Ordering::Relaxed);
++                if terminate {
+                     break;
+                 }
+ 
+-                // WAIT_OBJECT_) | WAIT_TIMEOUT
++                // WAIT_OBJECT_0 | WAIT_TIMEOUT
+                 if matches!(wait_result, 0 | WAIT_TIMEOUT) {
+                     // We have a new buffer, so try the AcquireBuffer again
+                     continue;
+@@ -145,23 +150,17 @@ impl SwapChainProcessor {
+         }
+     }
+ 
+-    /// Let it drop OR
++    /// Terminate swap chain if it hasn't already been
+     pub fn terminate(&self) {
+         let dropped = self.dropped.load(Ordering::Relaxed);
+         if !dropped {
++            self.dropped.store(true, Ordering::Relaxed);
++
+             // send signal to end thread
+-            self.terminate_event
+-                .lock()
+-                .unwrap()
+-                .take()
+-                .unwrap()
+-                .send(())
+-                .unwrap();
++            self.terminate_event.store(true, Ordering::Relaxed);
+ 
+             // wait until thread is finished
+             self.thread.lock().unwrap().take().unwrap().join().unwrap();
+-
+-            self.dropped.store(true, Ordering::Relaxed);
+         }
+     }
+ }"
+MolotovCherry/virtual-display-rs,18,fe72ba3,virtual-display-driver/src/direct_3d_device.rs,modified,2,2,4,"@@ -3,7 +3,7 @@ use windows::{
+     Win32::{
+         Foundation::LUID,
+         Graphics::{
+-            Direct3D::D3D_DRIVER_TYPE_UNKNOWN,
++            Direct3D::D3D_DRIVER_TYPE_HARDWARE,
+             Direct3D11::{
+                 D3D11CreateDevice, ID3D11Device, ID3D11DeviceContext,
+                 D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_SDK_VERSION,
+@@ -48,7 +48,7 @@ impl Direct3DDevice {
+         unsafe {
+             D3D11CreateDevice(
+                 &adapter,
+-                D3D_DRIVER_TYPE_UNKNOWN,
++                D3D_DRIVER_TYPE_HARDWARE,
+                 None,
+                 D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+                 None,"
+MolotovCherry/virtual-display-rs,18,9c53c61,README.md,modified,3,0,3,"@@ -57,6 +57,9 @@ The certificate needs installation for Windows to accept the driver
+ ## Using the app
+ Please see the [wiki](https://github.com/MolotovCherry/virtual-display-rs/wiki/Virtual-Display-Driver-Control) for instructions on using the app.
+ 
++## Potential problems
++- If you are using integrated graphics, there may be random black screen flickers. This seems to only affect integrated graphics, and so far Intel. It's unknown right now what the cause is, and it may be an Intel specific issue. If you know anyt information about this, or even any solutions, please report it for others benefit. Thank you!
++
+ ## How to build
+ 1. Download and install [Visual Studio](https://visualstudio.microsoft.com/downloads/) (use the 2022 edition)
+    - Select and install the `Desktop development with C++` workload as well as Windows SDK"
+MolotovCherry/virtual-display-rs,18,245a4d4,README.md,modified,3,0,3,"@@ -57,6 +57,9 @@ The certificate needs installation for Windows to accept the driver
+ ## Using the app
+ Please see the [wiki](https://github.com/MolotovCherry/virtual-display-rs/wiki/Virtual-Display-Driver-Control) for instructions on using the app.
+ 
++## Potential problems
++- If you are using integrated graphics, there may be random black screen flickers. This seems to only affect integrated graphics, and so far Intel. It's unknown right now what the cause is, and it may be an Intel specific issue. If anyone has any information about this, or even solutions to it, please report it for others benefit. Thank you!
++
+ ## How to build
+ 1. Download and install [Visual Studio](https://visualstudio.microsoft.com/downloads/) (use the 2022 edition)
+    - Select and install the `Desktop development with C++` workload as well as Windows SDK"

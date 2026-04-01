@@ -1,0 +1,207 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+alvr-org/ALVR,334,d544c73707320fbd0389416c6e200e53a704e0a9,server_release_template/web_gui/css/darkly/selectal.min.css,modified,3,2,5,"@@ -32,7 +32,8 @@
+   background: rgb(60,60,60);
+ 	color: white;
+ 	border: 1px solid gray;
+-  cursor: pointer;}
++  cursor: pointer;
++  z-index: 10;}
+ 
+ .selectal-dropdown-option {
+   margin: 0;
+@@ -46,7 +47,7 @@
+ 	  background: initial; }
+ 
+ .selectal-btn {
+-  background: rgb(60,60,60);
++  /* background: rgb(60,60,60); */
+ 	color: white;
+ 	border: 1px solid gray;
+   cursor: pointer;"
+alvr-org/ALVR,334,d544c73707320fbd0389416c6e200e53a704e0a9,server_release_template/web_gui/css/darkly/style.css,modified,5,1,6,"@@ -275,6 +275,7 @@ margin-bottom: 10px;
+   position: fixed;
+   bottom: 30px;
+   right: 50px;
++  z-index: 10;
+ }
+ 
+ #registeredDriversInst {
+@@ -298,7 +299,10 @@ input[type=number]::-webkit-outer-spin-button {
+ }
+ 
+ a {
+-  color: #007bff;
++  color: #60adff;
++}
++a:hover {
++  color: #a5d1ff;
+ }
+ 
+ .nav-link {"
+alvr-org/ALVR,334,d544c73707320fbd0389416c6e200e53a704e0a9,server_release_template/web_gui/css/style.css,modified,1,0,1,"@@ -275,6 +275,7 @@ margin-bottom: 10px;
+   position: fixed;
+   bottom: 30px;
+   right: 50px;
++  z-index: 10;
+ }
+ 
+ #registeredDriversInst {"
+alvr-org/ALVR,334,d544c73707320fbd0389416c6e200e53a704e0a9,server_release_template/web_gui/js/app/customSettings.js,modified,1,1,2,"@@ -91,7 +91,7 @@ define([
+             controller.append(`<option value=""3"">Valve Index (no handtracking pinch)</option>`);
+             controller.append(`<option value=""4"">HTC Vive</option>`);
+             controller.append(`<option value=""5"">HTC Vive (no handtracking pinch)</option>`);
+-
++            
+             const select = new Selectal('#_root_headset_controllers_content_controllerMode');
+             controller = $(""#_root_headset_controllers_content_controllerMode"");
+ "
+alvr-org/ALVR,334,d544c73707320fbd0389416c6e200e53a704e0a9,server_release_template/web_gui/js/app/nls/wizard.js,modified,5,1,6,"@@ -32,7 +32,11 @@ define({
+         ""YourGPUIs"": ""Your GPU is"",
+         ""GPUSupported"": ""Great! This GPU is probably supported!"",
+         ""GPUUnsupported"": ""We are sorry, but this card may be unsupported. You can try ALVR anyway and see if it works"",
+-        ""GPUUnknown"": ""Oops. Looks like your GPU is disconnected or you have potato instead""
++        ""GPUUnknown"": ""Oops. Looks like your GPU is disconnected or you have potato instead"",
++        ""titleTheme"": ""Theme"",
++        ""textTheme"": ""Choose you side; Light or Dark"",
++        ""darklyTheme"": ""Darkly"",
++        ""classicTheme"": ""Classic""
+     },
+     ""it"": true,
+     ""es"": true,"
+alvr-org/ALVR,334,d544c73707320fbd0389416c6e200e53a704e0a9,server_release_template/web_gui/js/app/settings.js,modified,26,12,38,"@@ -240,8 +240,13 @@ define([
+                         console.log(""NOT FOUND"")
+                         console.log(""setting value: "", path + ""_"" + pathItem, object[item])
+                     } else {
+-                        if (el.prop(""type"") == ""checkbox"" || el.prop(""type"") == ""radio"") {
++                        if (el.prop(""type"") == ""checkbox"") {
+                             el.prop(""checked"", object[item])
++                        } else if (el.prop(""type"") == ""radio"") {
++                            el.prop(""checked"", object[item])
++                            el.parent().addClass(""active"")
++                            $(`#${el.parent().parent().parent().attr('id')}radioContent .radioContent`).hide()
++                            $(`div.radioContent[for=""${el.attr('id')}""]`).show()
+                         } else {
+                             el.val(object[item]);
+                         }
+@@ -625,15 +630,16 @@ define([
+                          getI18n(path + ""_"" + name + ""_"" + node.content.default + ""-choice-"").name  )}
+                 </div>   
+                 <div>
+-                <form id=""${path + '_' + name + '-choice-'}"">
+-                    <div class=""card-body"">
++                <form id=""${path + '_' + name + '-choice-'}"" class=""card-body"">
++                    <div class=""btn-group btn-group-toggle"" data-toggle=""buttons"">
+                     </div>
++                    <div id=""${path + '_' + name + '-choice-' + 'radioContent'}""></div>
+                 </form>
+                 </div> 
+             </div>`;
+ 
+             element.append(el);
+-            element = element.find("".card-body"").last();
++            element = element.find("".btn-group"").last();
+             return element;
+         }
+ 
+@@ -651,19 +657,24 @@ define([
+ 
+         function addRadioVariant(element, path, name, advanced, radioName, node, isDefault) {
+             let checked = """";
++            let active = """"
+             if (isDefault) {
+                 checked = ""checked"";
++                active = ""active"";
+             }
+ 
+-            var el = `<div class=""${getAdvancedClass(advanced)}"" >
+-                <input type=""radio"" id=""${path}_${name}-choice-"" name=""${radioName}""  value=""${name}"" ${checked}> 
+-                <label for=""${path}_${name}-choice-"">${getI18n(path + ""_"" + name + ""-choice-"").name}</label>
+-                <div class=""radioContent"">
+-                </div>
+-            </div>`;
+-
++            var el = `<div class=""btn btn-primary"" ${getAdvancedClass(advanced)}"" >
++                <input type=""radio"" id=""${path}_${name}-choice-"" name=""${radioName}""  value=""${name}""> 
++                <label for=""${path}_${name}-choice-"" style=""margin-bottom:0"">${getI18n(path + ""_"" + name + ""-choice-"").name}</label>
++                </div>`;
++            var content = `<div class=""radioContent"" for=""${path}_${name}-choice-""></div>`;
++            element.next().append(content)
+             element.append(el);
+-            element = element.find("".radioContent"").last();
++            
++            element = element.next().find("".radioContent"").last();
++            if (!isDefault) {
++                element.hide();
++            }
+             return element;
+         }
+ 
+@@ -845,6 +856,9 @@ define([
+ 
+             if ($(""#"" + path + ""_"" + name).prop(""type"") == ""checkbox"" || $(""#"" + path + ""_"" + name).prop(""type"") == ""radio"") {
+                 if (defaultVal == ""true"") {
++                    if ($(""#"" + path + ""_"" + name).prop(""type"") == ""radio"") {
++                        $(""#"" + path + ""_"" + name).parent().parent().children().filter("".active"").removeClass(""active"")
++                    }
+                     $(""#"" + path + ""_"" + name).prop('checked', true);
+                 } else {
+                     $(""#"" + path + ""_"" + name).prop('checked', false);"
+alvr-org/ALVR,334,d544c73707320fbd0389416c6e200e53a704e0a9,server_release_template/web_gui/js/app/setupWizard.js,modified,2,0,2,"@@ -139,6 +139,7 @@ define([
+                             ffrStrengthTarget.val(2);
+                             
+                             var h264CodecTarget = $(""#_root_video_codec_H264-choice-"");
++                            h264CodecTarget.parent().parent().children().filter("".active"").removeClass(""active"")
+                             h264CodecTarget.prop(""checked"", true);
+                             alvrSettings.storeParam(h264CodecTarget);
+                             break;
+@@ -148,6 +149,7 @@ define([
+                             enableFfrTarget.prop(""checked"", false);
+ 
+                             var hevcCodecTarget = $(""#_root_video_codec_HEVC-choice-"");
++                            hevcCodecTarget.parent().parent().children().filter("".active"").removeClass(""active"")
+                             hevcCodecTarget.prop(""checked"", true);
+                             alvrSettings.storeParam(hevcCodecTarget);
+                             break;"
+alvr-org/ALVR,334,d544c73707320fbd0389416c6e200e53a704e0a9,server_release_template/web_gui/js/app/templates/wizard.html,modified,5,5,10,"@@ -55,15 +55,15 @@ <h6><%= titleTracking %></h6>
+                     <div class=""wizzardSettings"">
+                         <div class=""btn-group"" data-toggle=""buttons"">
+                             <label class=""btn btn-primary"">
+-                                <input type=""radio"" class=""poseOffsetButton"" autocomplete=""off"" value=""normal"">
++                                <input type=""radio"" name=""tracking"" class=""poseOffsetButton"" autocomplete=""off"" value=""normal"">
+                                 <%= normalTracking %>
+                             </label>
+                             <label class=""btn btn-primary"">
+-                                <input type=""radio"" class=""poseOffsetButton"" autocomplete=""off"" value=""medium"">
++                                <input type=""radio"" name=""tracking"" class=""poseOffsetButton"" autocomplete=""off"" value=""medium"">
+                                 <%= mediumTracking %>
+                             </label>
+                             <label class=""btn btn-primary"">
+-                                <input type=""radio"" class=""poseOffsetButton"" autocomplete=""off"" value=""fast"">
++                                <input type=""radio"" name=""tracking"" class=""poseOffsetButton"" autocomplete=""off"" value=""fast"">
+                                 <%= fastTracking %>
+                             </label>
+                         </div>
+@@ -78,11 +78,11 @@ <h6><%= titlePerformance %></h6>
+                     <div class=""wizzardSettings"">
+                         <div class=""btn-group"" data-toggle=""buttons"">
+                             <label class=""btn btn-primary"">
+-                                <input type=""radio"" class=""performanceOptions"" autocomplete=""off"" value=""compatibility"">
++                                <input type=""radio"" name=""performance"" class=""performanceOptions"" autocomplete=""off"" value=""compatibility"">
+                                 <%= compatPerformance %>
+                             </label>
+                             <label class=""btn btn-primary"">
+-                                <input type=""radio"" class=""performanceOptions"" autocomplete=""off""
++                                <input type=""radio"" name=""performance"" class=""performanceOptions"" autocomplete=""off""
+                                     value=""visual_quality"">
+                                 <%= qualityPerformance %>
+                             </label>"
+alvr-org/ALVR,334,d544c73707320fbd0389416c6e200e53a704e0a9,server_release_template/web_gui/js/lib/selectal.min.css,modified,2,1,3,"@@ -31,7 +31,8 @@
+   position: absolute;
+   background-color: white;
+   cursor: pointer;
+-  border: 0.5px solid lightgrey; }
++  border: 0.5px solid lightgrey; 
++  z-index: 10;}
+ 
+ .selectal-dropdown-option {
+   margin: 0;"

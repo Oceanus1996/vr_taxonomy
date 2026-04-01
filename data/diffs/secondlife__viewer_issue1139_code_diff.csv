@@ -1,0 +1,1359 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+secondlife/viewer,1139,8374f24,indra/newview/app_settings/shaders/class1/deferred/avatarF.glsl,modified,3,3,6,"@@ -25,7 +25,7 @@
+ 
+ /*[EXTRA_CODE_HERE]*/
+ 
+-out vec4 frag_data[3];
++out vec4 frag_data[4];
+ 
+ uniform sampler2D diffuseMap;
+ 
+@@ -35,7 +35,6 @@ in vec3 vary_normal;
+ in vec2 vary_texcoord0;
+ in vec3 vary_position;
+ 
+-vec2 encode_normal(vec3 n);
+ void mirrorClip(vec3 pos);
+ 
+ void main() 
+@@ -52,6 +51,7 @@ void main()
+ 	frag_data[0] = vec4(diff.rgb, 0.0);
+ 	frag_data[1] = vec4(0,0,0,0);
+ 	vec3 nvn = normalize(vary_normal);
+-	frag_data[2] = vec4(encode_normal(nvn.xyz), 0.0, GBUFFER_FLAG_HAS_ATMOS);
++	frag_data[2] = vec4(nvn.xyz, GBUFFER_FLAG_HAS_ATMOS);
++    frag_data[3] = vec4(0);
+ }
+ "
+secondlife/viewer,1139,8374f24,indra/newview/app_settings/shaders/class1/deferred/bumpF.glsl,modified,2,4,6,"@@ -39,8 +39,6 @@ in vec4 vertex_color;
+ in vec2 vary_texcoord0;
+ in vec3 vary_position;
+ 
+-vec2 encode_normal(vec3 n);
+-
+ void mirrorClip(vec3 pos);
+ void main() 
+ {
+@@ -64,6 +62,6 @@ void main()
+ 		frag_data[1] = vertex_color.aaaa; // spec
+ 		//frag_data[1] = vec4(vec3(vertex_color.a), vertex_color.a+(1.0-vertex_color.a)*vertex_color.a); // spec - from former class3 - maybe better, but not so well tested
+ 		vec3 nvn = normalize(tnorm);
+-		frag_data[2] = vec4(encode_normal(nvn), vertex_color.a, GBUFFER_FLAG_HAS_ATMOS);
+-        frag_data[3] = vec4(0);
++		frag_data[2] = vec4(nvn, GBUFFER_FLAG_HAS_ATMOS);
++        frag_data[3] = vec4(vertex_color.a, 0, 0, 0);
+ }"
+secondlife/viewer,1139,8374f24,indra/newview/app_settings/shaders/class1/deferred/deferredUtil.glsl,modified,6,14,20,"@@ -50,6 +50,7 @@ SOFTWARE.
+ 
+ uniform sampler2D   normalMap;
+ uniform sampler2D   depthMap;
++uniform sampler2D emissiveMap;
+ uniform sampler2D projectionMap; // rgba
+ uniform sampler2D brdfLut;
+ 
+@@ -140,18 +141,9 @@ vec2 getScreenCoordinate(vec2 screenpos)
+     return sc - vec2(1.0, 1.0);
+ }
+ 
+-// See: https://aras-p.info/texts/CompactNormalStorage.html
+-//      Method #4: Spheremap Transform, Lambert Azimuthal Equal-Area projection
+ vec3 getNorm(vec2 screenpos)
+ {
+-   vec2 enc = texture(normalMap, screenpos.xy).xy;
+-   vec2 fenc = enc*4-2;
+-   float f = dot(fenc,fenc);
+-   float g = sqrt(1-f/4);
+-   vec3 n;
+-   n.xy = fenc*g;
+-   n.z = 1-f/2;
+-   return n;
++    return texture(normalMap, screenpos.xy).rgb;
+ }
+ 
+ vec3 getNormalFromPacked(vec4 packedNormalEnvIntensityFlags)
+@@ -170,10 +162,10 @@ vec3 getNormalFromPacked(vec4 packedNormalEnvIntensityFlags)
+ // See: C++: addDeferredAttachments(), GLSL: softenLightF
+ vec4 getNormalEnvIntensityFlags(vec2 screenpos, out vec3 n, out float envIntensity)
+ {
+-    vec4 packedNormalEnvIntensityFlags = texture(normalMap, screenpos.xy);
+-    n = getNormalFromPacked( packedNormalEnvIntensityFlags );
+-    envIntensity = packedNormalEnvIntensityFlags.z;
+-    return packedNormalEnvIntensityFlags;
++    n = texture(normalMap, screenpos.xy).rgb;
++    envIntensity = texture(emissiveMap, screenpos.xy).r;
++
++    return vec4(n, envIntensity);
+ }
+ 
+ // get linear depth value given a depth buffer sample d and znear and zfar values"
+secondlife/viewer,1139,8374f24,indra/newview/app_settings/shaders/class1/deferred/diffuseAlphaMaskF.glsl,modified,1,3,4,"@@ -37,8 +37,6 @@ in vec3 vary_normal;
+ in vec4 vertex_color;
+ in vec2 vary_texcoord0;
+ 
+-vec2 encode_normal(vec3 n);
+-
+ void mirrorClip(vec3 pos);
+ 
+ void main() 
+@@ -55,7 +53,7 @@ void main()
+ 	frag_data[0] = vec4(col.rgb, 0.0);
+ 	frag_data[1] = vec4(0,0,0,0); // spec
+ 	vec3 nvn = normalize(vary_normal);
+-	frag_data[2] = vec4(encode_normal(nvn.xyz), 0.0, GBUFFER_FLAG_HAS_ATMOS);
++	frag_data[2] = vec4(nvn.xyz, GBUFFER_FLAG_HAS_ATMOS);
+     frag_data[3] = vec4(0);
+ }
+ "
+secondlife/viewer,1139,8374f24,indra/newview/app_settings/shaders/class1/deferred/diffuseAlphaMaskIndexedF.glsl,modified,1,3,4,"@@ -35,8 +35,6 @@ uniform float minimum_alpha;
+ in vec4 vertex_color;
+ in vec2 vary_texcoord0;
+ 
+-vec2 encode_normal(vec3 n);
+-
+ void mirrorClip(vec3 pos);
+ 
+ void main() 
+@@ -53,6 +51,6 @@ void main()
+ 	frag_data[0] = vec4(col.rgb, 0.0);
+ 	frag_data[1] = vec4(0,0,0,0);
+ 	vec3 nvn = normalize(vary_normal);
+-	frag_data[2] = vec4(encode_normal(nvn.xyz), 0.0, GBUFFER_FLAG_HAS_ATMOS);
++	frag_data[2] = vec4(nvn.xyz, GBUFFER_FLAG_HAS_ATMOS);
+     frag_data[3] = vec4(0);
+ }"
+secondlife/viewer,1139,8374f24,indra/newview/app_settings/shaders/class1/deferred/diffuseAlphaMaskNoColorF.glsl,modified,1,3,4,"@@ -34,8 +34,6 @@ uniform sampler2D diffuseMap;
+ in vec3 vary_normal;
+ in vec2 vary_texcoord0;
+ 
+-vec2 encode_normal(vec3 n);
+-
+ void main() 
+ {
+ 	vec4 col = texture(diffuseMap, vary_texcoord0.xy);
+@@ -48,7 +46,7 @@ void main()
+ 	frag_data[0] = vec4(col.rgb, 0.0);
+ 	frag_data[1] = vec4(0,0,0,0); // spec
+ 	vec3 nvn = normalize(vary_normal);
+-	frag_data[2] = vec4(encode_normal(nvn.xyz), 0.0, GBUFFER_FLAG_HAS_ATMOS);
++	frag_data[2] = vec4(nvn.xyz, GBUFFER_FLAG_HAS_ATMOS);
+     frag_data[3] = vec4(0);
+ }
+ "
+secondlife/viewer,1139,8374f24,indra/newview/app_settings/shaders/class1/deferred/diffuseF.glsl,modified,2,3,5,"@@ -34,7 +34,6 @@ in vec4 vertex_color;
+ in vec2 vary_texcoord0;
+ in vec3 vary_position;
+ 
+-vec2 encode_normal(vec3 n);
+ void mirrorClip(vec3 pos);
+ 
+ void main() 
+@@ -45,7 +44,7 @@ void main()
+ 	frag_data[1] = vertex_color.aaaa; // spec
+ 	//frag_data[1] = vec4(vec3(vertex_color.a), vertex_color.a+(1.0-vertex_color.a)*vertex_color.a); // spec - from former class3 - maybe better, but not so well tested
+ 	vec3 nvn = normalize(vary_normal);
+-	frag_data[2] = vec4(encode_normal(nvn.xyz), vertex_color.a, GBUFFER_FLAG_HAS_ATMOS);
+-    frag_data[3] = vec4(0);
++	frag_data[2] = vec4(nvn.xyz, GBUFFER_FLAG_HAS_ATMOS);
++    frag_data[3] = vec4(vertex_color.a, 0, 0, 0);
+ }
+ "
+secondlife/viewer,1139,8374f24,indra/newview/app_settings/shaders/class1/deferred/diffuseIndexedF.glsl,modified,2,3,5,"@@ -33,7 +33,6 @@ in vec2 vary_texcoord0;
+ in vec3 vary_position;
+ 
+ void mirrorClip(vec3 pos);
+-vec2 encode_normal(vec3 n);
+ vec3 linear_to_srgb(vec3 c);
+ 
+ void main() 
+@@ -47,6 +46,6 @@ void main()
+ 	frag_data[0] = vec4(col, 0.0);
+ 	frag_data[1] = vec4(spec, vertex_color.a); // spec
+ 	vec3 nvn = normalize(vary_normal);
+-	frag_data[2] = vec4(encode_normal(nvn.xyz), vertex_color.a, GBUFFER_FLAG_HAS_ATMOS);
+-    frag_data[3] = vec4(0);
++	frag_data[2] = vec4(nvn.xyz, GBUFFER_FLAG_HAS_ATMOS);
++    frag_data[3] = vec4(vertex_color.a, 0, 0, 0);
+ }"
+secondlife/viewer,1139,8374f24,indra/newview/app_settings/shaders/class1/deferred/impostorF.glsl,modified,1,2,3,"@@ -37,7 +37,6 @@ uniform sampler2D specularMap;
+ in vec2 vary_texcoord0;
+ 
+ vec3 linear_to_srgb(vec3 c);
+-vec2 encode_normal (vec3 n);
+ 
+ void main() 
+ {
+@@ -53,6 +52,6 @@ void main()
+ 
+ 	frag_data[0] = vec4(col.rgb, 0.0);
+ 	frag_data[1] = spec;
+-	frag_data[2] = vec4(encode_normal(norm.xyz),0,GBUFFER_FLAG_HAS_ATMOS);
++	frag_data[2] = vec4(norm.xyz, GBUFFER_FLAG_HAS_ATMOS);
+     frag_data[3] = vec4(0);
+ }"
+secondlife/viewer,1139,8374f24,indra/newview/app_settings/shaders/class1/deferred/pbropaqueF.glsl,modified,1,2,3,"@@ -54,7 +54,6 @@ in vec2 emissive_texcoord;
+ 
+ uniform float minimum_alpha; // PBR alphaMode: MASK, See: mAlphaCutoff, setAlphaCutoff()
+ 
+-vec2 encode_normal(vec3 n);
+ vec3 linear_to_srgb(vec3 c);
+ vec3 srgb_to_linear(vec3 c);
+ 
+@@ -110,7 +109,7 @@ void main()
+     // See: C++: addDeferredAttachments(), GLSL: softenLightF
+     frag_data[0] = max(vec4(col, 0.0), vec4(0));                                                   // Diffuse
+     frag_data[1] = max(vec4(spec.rgb,vertex_color.a), vec4(0));                                    // PBR linear packed Occlusion, Roughness, Metal.
+-    frag_data[2] = max(vec4(encode_normal(tnorm), vertex_color.a, GBUFFER_FLAG_HAS_PBR), vec4(0)); // normal, environment intensity, flags
++    frag_data[2] = max(vec4(tnorm, GBUFFER_FLAG_HAS_PBR), vec4(0)); // normal, environment intensity, flags
+     frag_data[3] = max(vec4(emissive,0), vec4(0));                                                // PBR sRGB Emissive
+ }
+ "
+secondlife/viewer,1139,8374f24,indra/newview/app_settings/shaders/class1/deferred/pbrterrainF.glsl,modified,1,2,3,"@@ -140,7 +140,6 @@ flat in float vary_sign;
+ in vec4 vary_texcoord0;
+ in vec4 vary_texcoord1;
+ 
+-vec2 encode_normal(vec3 n);
+ void mirrorClip(vec3 position);
+ 
+ float terrain_mix(TerrainMix tm, vec4 tms4);
+@@ -342,7 +341,7 @@ void main()
+ #endif
+     frag_data[0] = max(vec4(mix.col.xyz, 0.0), vec4(0));                                                   // Diffuse
+     frag_data[1] = max(vec4(orm.rgb, base_color_factor_alpha), vec4(0));                                    // PBR linear packed Occlusion, Roughness, Metal.
+-    frag_data[2] = max(vec4(encode_normal(tnorm), base_color_factor_alpha, GBUFFER_FLAG_HAS_PBR), vec4(0)); // normal, environment intensity, flags
++    frag_data[2] = max(vec4(tnorm, GBUFFER_FLAG_HAS_PBR), vec4(0)); // normal, flags
+     frag_data[3] = max(vec4(emissive,0), vec4(0));                                                // PBR sRGB Emissive
+ }
+ "
+secondlife/viewer,1139,8374f24,indra/newview/app_settings/shaders/class1/deferred/terrainF.glsl,modified,1,2,3,"@@ -38,7 +38,6 @@ in vec3 vary_normal;
+ in vec4 vary_texcoord0;
+ in vec4 vary_texcoord1;
+ 
+-vec2 encode_normal(vec3 n);
+ void mirrorClip(vec3 position);
+ 
+ void main()
+@@ -61,7 +60,7 @@ void main()
+     frag_data[0] = outColor;
+     frag_data[1] = vec4(0.0,0.0,0.0,-1.0);
+     vec3 nvn = normalize(vary_normal);
+-    frag_data[2] = vec4(encode_normal(nvn.xyz), 0.0, GBUFFER_FLAG_HAS_ATMOS);
++    frag_data[2] = vec4(nvn.xyz, GBUFFER_FLAG_HAS_ATMOS);
+     frag_data[3] = vec4(0);
+ }
+ "
+secondlife/viewer,1139,8374f24,indra/newview/app_settings/shaders/class1/deferred/treeF.glsl,modified,1,3,4,"@@ -36,8 +36,6 @@ in vec3 vary_position;
+ 
+ uniform float minimum_alpha;
+ 
+-vec2 encode_normal(vec3 n);
+-
+ void mirrorClip(vec3 pos);
+ void main() 
+ {
+@@ -51,6 +49,6 @@ void main()
+ 	frag_data[0] = vec4(vertex_color.rgb*col.rgb, 0.0);
+ 	frag_data[1] = vec4(0,0,0,0);
+ 	vec3 nvn = normalize(vary_normal);
+-	frag_data[2] = vec4(encode_normal(nvn.xyz), 0.0, GBUFFER_FLAG_HAS_ATMOS);
++	frag_data[2] = vec4(nvn.xyz, GBUFFER_FLAG_HAS_ATMOS);
+     frag_data[3] = vec4(0);
+ }"
+secondlife/viewer,1139,8374f24,indra/newview/app_settings/shaders/class1/environment/encodeNormF.glsl,modified,3,0,3,"@@ -28,7 +28,10 @@
+ // Also see: A_bit_more_deferred_-_CryEngine3.ppt
+ vec2 encode_normal(vec3 n)
+ {
++    n = clamp(n, vec3(-0.999), vec3(0.999));
+ 	float f = sqrt(8 * n.z + 8);
++    f = max(f, 1e-6);
++    //n = vec3(0, 1, 0);
+ 	return n.xy / f + 0.5;
+ }
+ "
+secondlife/viewer,1139,8374f24,indra/newview/app_settings/shaders/class2/deferred/alphaF.glsl,modified,0,1,1,"@@ -68,7 +68,6 @@ void waterClip(vec3 pos);
+ vec3 srgb_to_linear(vec3 c);
+ vec3 linear_to_srgb(vec3 c);
+ 
+-vec2 encode_normal (vec3 n);
+ vec4 applySkyAndWaterFog(vec3 pos, vec3 additive, vec3 atten, vec4 color);
+ void calcAtmosphericVarsLinear(vec3 inPositionEye, vec3 norm, vec3 light_dir, out vec3 sunlit, out vec3 amblit, out vec3 atten, out vec3 additive);
+ "
+secondlife/viewer,1139,8374f24,indra/newview/app_settings/shaders/class3/deferred/materialF.glsl,modified,11,8,19,"@@ -216,8 +216,6 @@ in vec3 vary_normal;
+ in vec4 vertex_color;
+ in vec2 vary_texcoord0;
+ 
+-vec2 encode_normal(vec3 n);
+-
+ // get the transformed normal and apply glossiness component from normal map
+ vec3 getNormal(inout float glossiness)
+ {
+@@ -306,8 +304,6 @@ void main()
+     float glossiness = specular_color.a;
+     vec3 norm = getNormal(glossiness);
+ 
+-    vec2 abnormal = encode_normal(norm.xyz);
+-
+     float emissive = getEmissive(diffcol);
+ 
+ #if (DIFFUSE_ALPHA_MODE == DIFFUSE_ALPHA_MODE_BLEND)
+@@ -417,10 +413,17 @@ void main()
+ 
+     float flag = GBUFFER_FLAG_HAS_ATMOS;
+ 
+-    frag_data[0] = vec4(diffcol.rgb, emissive);        // gbuffer is sRGB for legacy materials
+-    frag_data[1] = vec4(spec.rgb, glossiness);           // XYZ = Specular color. W = Specular exponent.
+-    frag_data[2] = vec4(encode_normal(norm), env, flag);;   // XY = Normal.  Z = Env. intensity. W = 1 skip atmos (mask off fog)
+-    frag_data[3] = vec4(0);
++    frag_data[0] = max(vec4(diffcol.rgb, emissive), vec4(0));        // gbuffer is sRGB for legacy materials
++    frag_data[1] = max(vec4(spec.rgb, glossiness), vec4(0));           // XYZ = Specular color. W = Specular exponent.
++    frag_data[2] = max(vec4(norm, flag), vec4(0));   // XY = Normal.  Z = Env. intensity. W = 1 skip atmos (mask off fog)
++    frag_data[3] = vec4(env, 0, 0, 0);
++
++    //frag_data[0] = vec4(0.5, 0.5, 0.5, 0.0);
++    //frag_data[2] = max(vec4(encode_normal(vec3(0.0, 1.0, 0.0)), env, flag), vec4(0));   // XY = Normal.  Z = Env. intensity. W = 1 skip atmos (mask off fog)
++    //frag_data[2] = vec4(encode_normal(vec3(0.0, 1.0, 0.0)), 0.0, flag);
++    
++
+ #endif
+ }
+ 
++"
+secondlife/viewer,1139,8374f24,indra/newview/app_settings/shaders/class3/deferred/softenLightF.glsl,modified,3,2,5,"@@ -129,7 +129,8 @@ void main()
+     float depth        = getDepth(tc.xy);
+     vec4  pos          = getPositionWithDepth(tc, depth);
+     vec4  norm         = texture(normalMap, tc);
+-    float envIntensity = norm.z;
++    vec3 colorEmissive = texture(emissiveRect, tc).rgb;
++    float envIntensity = colorEmissive.r;
+     norm.xyz           = getNorm(tc);
+     vec3  light_dir   = (sun_up_factor == 1) ? sun_dir : moon_dir;
+ 
+@@ -174,7 +175,7 @@ void main()
+         float metallic = orm.b;
+         float ao = orm.r;
+ 
+-        vec3 colorEmissive = texture(emissiveRect, tc).rgb;
++        
+         // PBR IBL
+         float gloss      = 1.0 - perceptualRoughness;
+         "
+secondlife/viewer,1139,8374f24,indra/newview/lldrawpoolbump.cpp,modified,3,3,6,"@@ -701,8 +701,8 @@ void LLBumpImageList::updateImages()
+ {	
+ 	for (bump_image_map_t::iterator iter = mBrightnessEntries.begin(); iter != mBrightnessEntries.end(); )
+ 	{
+-		bump_image_map_t::iterator curiter = iter++;
+-		LLViewerTexture* image = curiter->second;
++		LLViewerTexture* image = iter->second;
++        ++iter;
+ 		if( image )
+ 		{
+ 			BOOL destroy = TRUE;
+@@ -721,7 +721,7 @@ void LLBumpImageList::updateImages()
+ 			if( destroy )
+ 			{
+ 				//LL_INFOS() << ""*** Destroying bright "" << (void*)image << LL_ENDL;
+-				mBrightnessEntries.erase(curiter);   // deletes the image thanks to reference counting
++				iter = mBrightnessEntries.erase(--iter);   // deletes the image thanks to reference counting
+ 			}
+ 		}
+ 	}"
+secondlife/viewer,1139,8374f24,indra/newview/llviewermenu.cpp,modified,20,0,20,"@@ -740,10 +740,30 @@ U32 render_type_from_string(std::string render_type)
+ 	{
+ 		return LLPipeline::RENDER_TYPE_SIMPLE;
+ 	}
++    if (""materials"" == render_type)
++    {
++        return LLPipeline::RENDER_TYPE_MATERIALS;
++    }
+ 	else if (""alpha"" == render_type)
+ 	{
+ 		return LLPipeline::RENDER_TYPE_ALPHA;
+ 	}
++    else if (""alpha_mask"" == render_type)
++    {
++        return LLPipeline::RENDER_TYPE_ALPHA_MASK;
++    }
++    else if (""fullbright_alpha_mask"" == render_type)
++    {
++        return LLPipeline::RENDER_TYPE_FULLBRIGHT_ALPHA_MASK;
++    }
++    else if (""fullbright"" == render_type)
++    {
++        return LLPipeline::RENDER_TYPE_FULLBRIGHT;
++    }
++    else if (""glow"" == render_type)
++    {
++        return LLPipeline::RENDER_TYPE_GLOW;
++    }
+ 	else if (""tree"" == render_type)
+ 	{
+ 		return LLPipeline::RENDER_TYPE_TREE;"
+secondlife/viewer,1139,8374f24,indra/newview/pipeline.cpp,modified,2,2,4,"@@ -331,8 +331,8 @@ bool addDeferredAttachments(LLRenderTarget& target, bool for_impostor = false)
+ {
+     bool valid = true
+         && target.addColorAttachment(GL_RGBA) // frag-data[1] specular OR PBR ORM
+-        && target.addColorAttachment(GL_RGBA16F)                              // frag_data[2] normal+z+fogmask, See: class1\deferred\materialF.glsl & softenlight
+-        && target.addColorAttachment(GL_RGB16F);                  // frag_data[3] PBR emissive
++        && target.addColorAttachment(GL_RGBA16F)                              // frag_data[2] normal+fogmask, See: class1\deferred\materialF.glsl & softenlight
++        && target.addColorAttachment(GL_RGB16F);                  // frag_data[3] PBR emissive OR material env intensity
+     return valid;
+ }
+ "
+secondlife/viewer,1139,8374f24,indra/newview/skins/default/xui/en/menu_viewer.xml,modified,51,1,52,"@@ -2039,7 +2039,57 @@ function=""World.EnvPreset""
+                  function=""Advanced.ToggleRenderType""
+                  parameter=""simple"" />
+             </menu_item_check>
+-            <menu_item_check
++          <menu_item_check
++             label=""Materials""
++             name=""Rendering Type Materials"">
++            <menu_item_check.on_check
++             function=""Advanced.CheckRenderType""
++             parameter=""materials"" />
++            <menu_item_check.on_click
++             function=""Advanced.ToggleRenderType""
++             parameter=""materials"" />
++          </menu_item_check>
++          <menu_item_check
++             label=""Alpha Mask""
++             name=""Rendering Type Alpha Mask"">
++            <menu_item_check.on_check
++             function=""Advanced.CheckRenderType""
++             parameter=""alpha_mask"" />
++            <menu_item_check.on_click
++             function=""Advanced.ToggleRenderType""
++             parameter=""alpha_mask"" />
++          </menu_item_check>
++          <menu_item_check
++             label=""Fullbright Alpha Mask""
++             name=""Rendering Type Fullbright Alpha Mask"">
++            <menu_item_check.on_check
++             function=""Advanced.CheckRenderType""
++             parameter=""fullbright_alpha_mask"" />
++            <menu_item_check.on_click
++             function=""Advanced.ToggleRenderType""
++             parameter=""fullbright_alpha_mask"" />
++          </menu_item_check>
++          <menu_item_check
++             label=""Glow""
++             name=""Rendering Type Glow"">
++            <menu_item_check.on_check
++             function=""Advanced.CheckRenderType""
++             parameter=""glow"" />
++            <menu_item_check.on_click
++             function=""Advanced.ToggleRenderType""
++             parameter=""glow"" />
++          </menu_item_check>
++          <menu_item_check
++             label=""Fullbright""
++             name=""Rendering Type Glow"">
++            <menu_item_check.on_check
++             function=""Advanced.CheckRenderType""
++             parameter=""fullbright"" />
++            <menu_item_check.on_click
++             function=""Advanced.ToggleRenderType""
++             parameter=""fullbright"" />
++          </menu_item_check>
++          <menu_item_check
+              label=""Alpha""
+              name=""Rendering Type Alpha""
+              shortcut=""control|alt|shift|2"">"
+secondlife/viewer,1139,9b2f4b1,indra/llrender/llglslshader.h,modified,0,1,1,"@@ -49,7 +49,6 @@ class LLShaderFeatures
+     bool hasShadows = false;
+     bool hasAmbientOcclusion = false;
+     bool hasSrgb = false;
+-    bool encodesNormal = false; // include: shaders\class1\environment\encodeNormF.glsl
+     bool isDeferred = false;
+     bool hasScreenSpaceReflections = false;
+     bool disableTextureIndex = false;"
+secondlife/viewer,1139,9b2f4b1,indra/llrender/llshadermgr.cpp,modified,0,8,8,"@@ -264,14 +264,6 @@ BOOL LLShaderMgr::attachShaderFeatures(LLGLSLShader * shader)
+ 		}
+ 	}
+ 
+-    if (features->encodesNormal)
+-	{
+-        if (!shader->attachFragmentObject(""environment/encodeNormF.glsl""))
+-		{
+-			return FALSE;
+-		}
+-	}
+-
+ 	if (features->hasAtmospherics || features->isDeferred)
+     {
+         if (!shader->attachFragmentObject(""windlight/atmosphericsFuncs.glsl"")) {"
+secondlife/viewer,1139,9b2f4b1,indra/newview/app_settings/shaders/class1/environment/encodeNormF.glsl,removed,0,37,37,"@@ -1,37 +0,0 @@
+-/**
+- * @file encodeNormF.glsl
+- *
+- * $LicenseInfo:firstyear=2018&license=viewerlgpl$
+- * Second Life Viewer Source Code
+- * Copyright (C) 2018, Linden Research, Inc.
+- * 
+- * This library is free software; you can redistribute it and/or
+- * modify it under the terms of the GNU Lesser General Public
+- * License as published by the Free Software Foundation;
+- * version 2.1 of the License only.
+- * 
+- * This library is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+- * Lesser General Public License for more details.
+- * 
+- * You should have received a copy of the GNU Lesser General Public
+- * License along with this library; if not, write to the Free Software
+- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+- * 
+- * Linden Research, Inc., 945 Battery Street, San Francisco, CA  94111  USA
+- * $/LicenseInfo$
+- */
+-
+-// Lambert Azimuthal Equal-Area projection
+-// See: https://aras-p.info/texts/CompactNormalStorage.html
+-// Also see: A_bit_more_deferred_-_CryEngine3.ppt
+-vec2 encode_normal(vec3 n)
+-{
+-    n = clamp(n, vec3(-0.999), vec3(0.999));
+-	float f = sqrt(8 * n.z + 8);
+-    f = max(f, 1e-6);
+-    //n = vec3(0, 1, 0);
+-	return n.xy / f + 0.5;
+-}
+-"
+secondlife/viewer,1139,9b2f4b1,indra/newview/app_settings/shaders/class3/deferred/materialF.glsl,modified,0,5,5,"@@ -418,11 +418,6 @@ void main()
+     frag_data[2] = max(vec4(norm, flag), vec4(0));   // XY = Normal.  Z = Env. intensity. W = 1 skip atmos (mask off fog)
+     frag_data[3] = vec4(env, 0, 0, 0);
+ 
+-    //frag_data[0] = vec4(0.5, 0.5, 0.5, 0.0);
+-    //frag_data[2] = max(vec4(encode_normal(vec3(0.0, 1.0, 0.0)), env, flag), vec4(0));   // XY = Normal.  Z = Env. intensity. W = 1 skip atmos (mask off fog)
+-    //frag_data[2] = vec4(encode_normal(vec3(0.0, 1.0, 0.0)), 0.0, flag);
+-    
+-
+ #endif
+ }
+ "
+secondlife/viewer,1139,9b2f4b1,indra/newview/llviewershadermgr.cpp,modified,0,19,19,"@@ -1040,7 +1040,6 @@ BOOL LLViewerShaderMgr::loadShadersDeferred()
+ 	if (success)
+ 	{
+ 		gDeferredDiffuseProgram.mName = ""Deferred Diffuse Shader"";
+-        gDeferredDiffuseProgram.mFeatures.encodesNormal = true;
+         gDeferredDiffuseProgram.mFeatures.hasSrgb = true;
+ 		gDeferredDiffuseProgram.mShaderFiles.clear();
+ 		gDeferredDiffuseProgram.mShaderFiles.push_back(make_pair(""deferred/diffuseV.glsl"", GL_VERTEX_SHADER));
+@@ -1054,7 +1053,6 @@ BOOL LLViewerShaderMgr::loadShadersDeferred()
+ 	if (success)
+ 	{
+ 		gDeferredDiffuseAlphaMaskProgram.mName = ""Deferred Diffuse Alpha Mask Shader"";
+-        gDeferredDiffuseAlphaMaskProgram.mFeatures.encodesNormal = true;
+ 		gDeferredDiffuseAlphaMaskProgram.mShaderFiles.clear();
+ 		gDeferredDiffuseAlphaMaskProgram.mShaderFiles.push_back(make_pair(""deferred/diffuseV.glsl"", GL_VERTEX_SHADER));
+ 		gDeferredDiffuseAlphaMaskProgram.mShaderFiles.push_back(make_pair(""deferred/diffuseAlphaMaskIndexedF.glsl"", GL_FRAGMENT_SHADER));
+@@ -1067,7 +1065,6 @@ BOOL LLViewerShaderMgr::loadShadersDeferred()
+ 	if (success)
+ 	{
+ 		gDeferredNonIndexedDiffuseAlphaMaskProgram.mName = ""Deferred Diffuse Non-Indexed Alpha Mask Shader"";
+-		gDeferredNonIndexedDiffuseAlphaMaskProgram.mFeatures.encodesNormal = true;
+ 		gDeferredNonIndexedDiffuseAlphaMaskProgram.mShaderFiles.clear();
+ 		gDeferredNonIndexedDiffuseAlphaMaskProgram.mShaderFiles.push_back(make_pair(""deferred/diffuseV.glsl"", GL_VERTEX_SHADER));
+ 		gDeferredNonIndexedDiffuseAlphaMaskProgram.mShaderFiles.push_back(make_pair(""deferred/diffuseAlphaMaskF.glsl"", GL_FRAGMENT_SHADER));
+@@ -1079,7 +1076,6 @@ BOOL LLViewerShaderMgr::loadShadersDeferred()
+ 	if (success)
+ 	{
+ 		gDeferredNonIndexedDiffuseAlphaMaskNoColorProgram.mName = ""Deferred Diffuse Non-Indexed Alpha Mask No Color Shader"";
+-		gDeferredNonIndexedDiffuseAlphaMaskNoColorProgram.mFeatures.encodesNormal = true;
+ 		gDeferredNonIndexedDiffuseAlphaMaskNoColorProgram.mShaderFiles.clear();
+ 		gDeferredNonIndexedDiffuseAlphaMaskNoColorProgram.mShaderFiles.push_back(make_pair(""deferred/diffuseNoColorV.glsl"", GL_VERTEX_SHADER));
+ 		gDeferredNonIndexedDiffuseAlphaMaskNoColorProgram.mShaderFiles.push_back(make_pair(""deferred/diffuseAlphaMaskNoColorF.glsl"", GL_FRAGMENT_SHADER));
+@@ -1091,7 +1087,6 @@ BOOL LLViewerShaderMgr::loadShadersDeferred()
+ 	if (success)
+ 	{
+ 		gDeferredBumpProgram.mName = ""Deferred Bump Shader"";
+-		gDeferredBumpProgram.mFeatures.encodesNormal = true;
+ 		gDeferredBumpProgram.mShaderFiles.clear();
+ 		gDeferredBumpProgram.mShaderFiles.push_back(make_pair(""deferred/bumpV.glsl"", GL_VERTEX_SHADER));
+ 		gDeferredBumpProgram.mShaderFiles.push_back(make_pair(""deferred/bumpF.glsl"", GL_FRAGMENT_SHADER));
+@@ -1163,7 +1158,6 @@ BOOL LLViewerShaderMgr::loadShadersDeferred()
+ 
+             
+             gDeferredMaterialProgram[i].mFeatures.hasSrgb = true;
+-            gDeferredMaterialProgram[i].mFeatures.encodesNormal = true;
+             gDeferredMaterialProgram[i].mFeatures.calculatesAtmospherics = true;
+             gDeferredMaterialProgram[i].mFeatures.hasAtmospherics = true;
+             gDeferredMaterialProgram[i].mFeatures.hasGamma = true;
+@@ -1197,7 +1191,6 @@ BOOL LLViewerShaderMgr::loadShadersDeferred()
+     if (success)
+     {
+         gDeferredPBROpaqueProgram.mName = ""Deferred PBR Opaque Shader"";
+-        gDeferredPBROpaqueProgram.mFeatures.encodesNormal = true;
+         gDeferredPBROpaqueProgram.mFeatures.hasSrgb = true;
+ 
+         gDeferredPBROpaqueProgram.mShaderFiles.clear();
+@@ -1258,7 +1251,6 @@ BOOL LLViewerShaderMgr::loadShadersDeferred()
+         shader->mFeatures.hasLighting = false;
+         shader->mFeatures.isAlphaLighting = true;
+         shader->mFeatures.hasSrgb = true;
+-        shader->mFeatures.encodesNormal = true;
+         shader->mFeatures.calculatesAtmospherics = true;
+         shader->mFeatures.hasAtmospherics = true;
+         shader->mFeatures.hasGamma = true;
+@@ -1329,7 +1321,6 @@ BOOL LLViewerShaderMgr::loadShadersDeferred()
+         gDeferredPBRTerrainProgram.mName = llformat(""Deferred PBR Terrain Shader %d %s"",
+                 detail,
+                 (mapping == 1 ? ""flat"" : ""triplanar""));
+-        gDeferredPBRTerrainProgram.mFeatures.encodesNormal = true;
+         gDeferredPBRTerrainProgram.mFeatures.hasSrgb = true;
+         gDeferredPBRTerrainProgram.mFeatures.isAlphaLighting = true;
+         gDeferredPBRTerrainProgram.mFeatures.disableTextureIndex = true; //hack to disable auto-setup of texture channels
+@@ -1353,7 +1344,6 @@ BOOL LLViewerShaderMgr::loadShadersDeferred()
+ 	{
+ 		gDeferredTreeProgram.mName = ""Deferred Tree Shader"";
+ 		gDeferredTreeProgram.mShaderFiles.clear();
+-        gDeferredTreeProgram.mFeatures.encodesNormal = true;
+ 		gDeferredTreeProgram.mShaderFiles.push_back(make_pair(""deferred/treeV.glsl"", GL_VERTEX_SHADER));
+ 		gDeferredTreeProgram.mShaderFiles.push_back(make_pair(""deferred/treeF.glsl"", GL_FRAGMENT_SHADER));
+ 		gDeferredTreeProgram.mShaderLevel = mShaderLevel[SHADER_DEFERRED];
+@@ -1388,8 +1378,6 @@ BOOL LLViewerShaderMgr::loadShadersDeferred()
+ 	{
+ 		gDeferredImpostorProgram.mName = ""Deferred Impostor Shader"";
+ 		gDeferredImpostorProgram.mFeatures.hasSrgb = true;
+-		gDeferredImpostorProgram.mFeatures.encodesNormal = true;
+-		//gDeferredImpostorProgram.mFeatures.isDeferred = true;
+ 		gDeferredImpostorProgram.mShaderFiles.clear();
+ 		gDeferredImpostorProgram.mShaderFiles.push_back(make_pair(""deferred/impostorV.glsl"", GL_VERTEX_SHADER));
+         gDeferredImpostorProgram.mShaderFiles.push_back(make_pair(""deferred/impostorF.glsl"", GL_FRAGMENT_SHADER));
+@@ -1551,7 +1539,6 @@ BOOL LLViewerShaderMgr::loadShadersDeferred()
+             shader->mFeatures.isAlphaLighting = true;
+             shader->mFeatures.disableTextureIndex = true; //hack to disable auto-setup of texture channels
+             shader->mFeatures.hasSrgb = true;
+-            shader->mFeatures.encodesNormal = true;
+             shader->mFeatures.calculatesAtmospherics = true;
+             shader->mFeatures.hasAtmospherics = true;
+             shader->mFeatures.hasGamma = true;
+@@ -1613,7 +1600,6 @@ BOOL LLViewerShaderMgr::loadShadersDeferred()
+ 
+             shader->mFeatures.hasSrgb = true;
+             shader->mFeatures.isAlphaLighting = true;
+-            shader->mFeatures.encodesNormal = true;
+             shader->mFeatures.hasShadows = use_sun_shadow;
+             shader->mFeatures.hasReflectionProbes = true;
+             shader->mFeatures.mIndexedTextureChannels = LLGLSLShader::sIndexedTextureChannels;
+@@ -1661,7 +1647,6 @@ BOOL LLViewerShaderMgr::loadShadersDeferred()
+ 		gDeferredAvatarEyesProgram.mFeatures.hasAtmospherics = true;
+ 		gDeferredAvatarEyesProgram.mFeatures.disableTextureIndex = true;
+ 		gDeferredAvatarEyesProgram.mFeatures.hasSrgb = true;
+-		gDeferredAvatarEyesProgram.mFeatures.encodesNormal = true;
+ 		gDeferredAvatarEyesProgram.mFeatures.hasShadows = true;
+ 
+ 		gDeferredAvatarEyesProgram.mShaderFiles.clear();
+@@ -2059,7 +2044,6 @@ BOOL LLViewerShaderMgr::loadShadersDeferred()
+ 	if (success)
+ 	{
+ 		gDeferredTerrainProgram.mName = ""Deferred Terrain Shader"";
+-		gDeferredTerrainProgram.mFeatures.encodesNormal = true;
+ 		gDeferredTerrainProgram.mFeatures.hasSrgb = true;
+ 		gDeferredTerrainProgram.mFeatures.isAlphaLighting = true;
+ 		gDeferredTerrainProgram.mFeatures.disableTextureIndex = true; //hack to disable auto-setup of texture channels
+@@ -2079,7 +2063,6 @@ BOOL LLViewerShaderMgr::loadShadersDeferred()
+ 	{
+ 		gDeferredAvatarProgram.mName = ""Deferred Avatar Shader"";
+ 		gDeferredAvatarProgram.mFeatures.hasSkinning = true;
+-		gDeferredAvatarProgram.mFeatures.encodesNormal = true;
+ 		gDeferredAvatarProgram.mShaderFiles.clear();
+ 		gDeferredAvatarProgram.mShaderFiles.push_back(make_pair(""deferred/avatarV.glsl"", GL_VERTEX_SHADER));
+ 		gDeferredAvatarProgram.mShaderFiles.push_back(make_pair(""deferred/avatarF.glsl"", GL_FRAGMENT_SHADER));
+@@ -2097,7 +2080,6 @@ BOOL LLViewerShaderMgr::loadShadersDeferred()
+ 		gDeferredAvatarAlphaProgram.mFeatures.isAlphaLighting = true;
+ 		gDeferredAvatarAlphaProgram.mFeatures.disableTextureIndex = true;
+ 		gDeferredAvatarAlphaProgram.mFeatures.hasSrgb = true;
+-		gDeferredAvatarAlphaProgram.mFeatures.encodesNormal = true;
+ 		gDeferredAvatarAlphaProgram.mFeatures.calculatesAtmospherics = true;
+ 		gDeferredAvatarAlphaProgram.mFeatures.hasAtmospherics = true;
+         gDeferredAvatarAlphaProgram.mFeatures.hasGamma = true;
+@@ -2431,7 +2413,6 @@ BOOL LLViewerShaderMgr::loadShadersObject()
+     if (success)
+     {
+         gObjectBumpProgram.mName = ""Bump Shader"";
+-        gObjectBumpProgram.mFeatures.encodesNormal = true;
+         gObjectBumpProgram.mShaderFiles.clear();
+         gObjectBumpProgram.mShaderFiles.push_back(make_pair(""objects/bumpV.glsl"", GL_VERTEX_SHADER));
+         gObjectBumpProgram.mShaderFiles.push_back(make_pair(""objects/bumpF.glsl"", GL_FRAGMENT_SHADER));"
+secondlife/viewer,1139,4f92892,indra/newview/llviewershadermgr.cpp,modified,0,1,1,"@@ -720,7 +720,6 @@ std::string LLViewerShaderMgr::loadBasicShaders()
+     index_channels.push_back(-1);    shaders.push_back( make_pair( ""windlight/atmosphericsFuncs.glsl"",       mShaderLevel[SHADER_WINDLIGHT] ) );
+ 	index_channels.push_back(-1);    shaders.push_back( make_pair( ""windlight/atmosphericsF.glsl"",          mShaderLevel[SHADER_WINDLIGHT] ) );
+ 	index_channels.push_back(-1);    shaders.push_back( make_pair( ""environment/waterFogF.glsl"",                mShaderLevel[SHADER_WATER] ) );
+-	index_channels.push_back(-1);    shaders.push_back( make_pair( ""environment/encodeNormF.glsl"",	mShaderLevel[SHADER_ENVIRONMENT] ) );
+ 	index_channels.push_back(-1);    shaders.push_back( make_pair( ""environment/srgbF.glsl"",                    mShaderLevel[SHADER_ENVIRONMENT] ) );
+ 	index_channels.push_back(-1);    shaders.push_back( make_pair( ""deferred/deferredUtil.glsl"",                    1) );
+     index_channels.push_back(-1);    shaders.push_back( make_pair( ""deferred/globalF.glsl"",                          1));"
+secondlife/viewer,1139,4c9d89a,indra/newview/app_settings/shaders/class1/deferred/deferredUtil.glsl,modified,2,2,4,"@@ -50,7 +50,7 @@ SOFTWARE.
+ 
+ uniform sampler2D   normalMap;
+ uniform sampler2D   depthMap;
+-uniform sampler2D emissiveMap;
++uniform sampler2D emissiveRect;
+ uniform sampler2D projectionMap; // rgba
+ uniform sampler2D brdfLut;
+ 
+@@ -163,7 +163,7 @@ vec3 getNormalFromPacked(vec4 packedNormalEnvIntensityFlags)
+ vec4 getNormalEnvIntensityFlags(vec2 screenpos, out vec3 n, out float envIntensity)
+ {
+     n = texture(normalMap, screenpos.xy).rgb;
+-    envIntensity = texture(emissiveMap, screenpos.xy).r;
++    envIntensity = texture(emissiveRect, screenpos.xy).r;
+ 
+     return vec4(n, envIntensity);
+ }"
+secondlife/viewer,1139,2880e5c,indra/llrender/llglslshader.h,modified,0,1,1,"@@ -49,7 +49,6 @@ class LLShaderFeatures
+     bool hasShadows = false;
+     bool hasAmbientOcclusion = false;
+     bool hasSrgb = false;
+-    bool encodesNormal = false; // include: shaders\class1\environment\encodeNormF.glsl
+     bool isDeferred = false;
+     bool hasScreenSpaceReflections = false;
+     bool disableTextureIndex = false;"
+secondlife/viewer,1139,2880e5c,indra/llrender/llshadermgr.cpp,modified,0,8,8,"@@ -264,14 +264,6 @@ BOOL LLShaderMgr::attachShaderFeatures(LLGLSLShader * shader)
+ 		}
+ 	}
+ 
+-    if (features->encodesNormal)
+-	{
+-        if (!shader->attachFragmentObject(""environment/encodeNormF.glsl""))
+-		{
+-			return FALSE;
+-		}
+-	}
+-
+ 	if (features->hasAtmospherics || features->isDeferred)
+     {
+         if (!shader->attachFragmentObject(""windlight/atmosphericsFuncs.glsl"")) {"
+secondlife/viewer,1139,2880e5c,indra/newview/app_settings/shaders/class1/deferred/avatarF.glsl,modified,3,3,6,"@@ -25,7 +25,7 @@
+ 
+ /*[EXTRA_CODE_HERE]*/
+ 
+-out vec4 frag_data[3];
++out vec4 frag_data[4];
+ 
+ uniform sampler2D diffuseMap;
+ 
+@@ -35,7 +35,6 @@ in vec3 vary_normal;
+ in vec2 vary_texcoord0;
+ in vec3 vary_position;
+ 
+-vec2 encode_normal(vec3 n);
+ void mirrorClip(vec3 pos);
+ 
+ void main() 
+@@ -52,6 +51,7 @@ void main()
+ 	frag_data[0] = vec4(diff.rgb, 0.0);
+ 	frag_data[1] = vec4(0,0,0,0);
+ 	vec3 nvn = normalize(vary_normal);
+-	frag_data[2] = vec4(encode_normal(nvn.xyz), 0.0, GBUFFER_FLAG_HAS_ATMOS);
++	frag_data[2] = vec4(nvn.xyz, GBUFFER_FLAG_HAS_ATMOS);
++    frag_data[3] = vec4(0);
+ }
+ "
+secondlife/viewer,1139,2880e5c,indra/newview/app_settings/shaders/class1/deferred/bumpF.glsl,modified,2,4,6,"@@ -39,8 +39,6 @@ in vec4 vertex_color;
+ in vec2 vary_texcoord0;
+ in vec3 vary_position;
+ 
+-vec2 encode_normal(vec3 n);
+-
+ void mirrorClip(vec3 pos);
+ void main() 
+ {
+@@ -64,6 +62,6 @@ void main()
+ 		frag_data[1] = vertex_color.aaaa; // spec
+ 		//frag_data[1] = vec4(vec3(vertex_color.a), vertex_color.a+(1.0-vertex_color.a)*vertex_color.a); // spec - from former class3 - maybe better, but not so well tested
+ 		vec3 nvn = normalize(tnorm);
+-		frag_data[2] = vec4(encode_normal(nvn), vertex_color.a, GBUFFER_FLAG_HAS_ATMOS);
+-        frag_data[3] = vec4(0);
++		frag_data[2] = vec4(nvn, GBUFFER_FLAG_HAS_ATMOS);
++        frag_data[3] = vec4(vertex_color.a, 0, 0, 0);
+ }"
+secondlife/viewer,1139,2880e5c,indra/newview/app_settings/shaders/class1/deferred/deferredUtil.glsl,modified,6,14,20,"@@ -50,6 +50,7 @@ SOFTWARE.
+ 
+ uniform sampler2D   normalMap;
+ uniform sampler2D   depthMap;
++uniform sampler2D emissiveRect;
+ uniform sampler2D projectionMap; // rgba
+ uniform sampler2D brdfLut;
+ 
+@@ -140,18 +141,9 @@ vec2 getScreenCoordinate(vec2 screenpos)
+     return sc - vec2(1.0, 1.0);
+ }
+ 
+-// See: https://aras-p.info/texts/CompactNormalStorage.html
+-//      Method #4: Spheremap Transform, Lambert Azimuthal Equal-Area projection
+ vec3 getNorm(vec2 screenpos)
+ {
+-   vec2 enc = texture(normalMap, screenpos.xy).xy;
+-   vec2 fenc = enc*4-2;
+-   float f = dot(fenc,fenc);
+-   float g = sqrt(1-f/4);
+-   vec3 n;
+-   n.xy = fenc*g;
+-   n.z = 1-f/2;
+-   return n;
++    return texture(normalMap, screenpos.xy).rgb;
+ }
+ 
+ vec3 getNormalFromPacked(vec4 packedNormalEnvIntensityFlags)
+@@ -170,10 +162,10 @@ vec3 getNormalFromPacked(vec4 packedNormalEnvIntensityFlags)
+ // See: C++: addDeferredAttachments(), GLSL: softenLightF
+ vec4 getNormalEnvIntensityFlags(vec2 screenpos, out vec3 n, out float envIntensity)
+ {
+-    vec4 packedNormalEnvIntensityFlags = texture(normalMap, screenpos.xy);
+-    n = getNormalFromPacked( packedNormalEnvIntensityFlags );
+-    envIntensity = packedNormalEnvIntensityFlags.z;
+-    return packedNormalEnvIntensityFlags;
++    n = texture(normalMap, screenpos.xy).rgb;
++    envIntensity = texture(emissiveRect, screenpos.xy).r;
++
++    return vec4(n, envIntensity);
+ }
+ 
+ // get linear depth value given a depth buffer sample d and znear and zfar values"
+secondlife/viewer,1139,2880e5c,indra/newview/app_settings/shaders/class1/deferred/diffuseAlphaMaskF.glsl,modified,1,3,4,"@@ -37,8 +37,6 @@ in vec3 vary_normal;
+ in vec4 vertex_color;
+ in vec2 vary_texcoord0;
+ 
+-vec2 encode_normal(vec3 n);
+-
+ void mirrorClip(vec3 pos);
+ 
+ void main() 
+@@ -55,7 +53,7 @@ void main()
+ 	frag_data[0] = vec4(col.rgb, 0.0);
+ 	frag_data[1] = vec4(0,0,0,0); // spec
+ 	vec3 nvn = normalize(vary_normal);
+-	frag_data[2] = vec4(encode_normal(nvn.xyz), 0.0, GBUFFER_FLAG_HAS_ATMOS);
++	frag_data[2] = vec4(nvn.xyz, GBUFFER_FLAG_HAS_ATMOS);
+     frag_data[3] = vec4(0);
+ }
+ "
+secondlife/viewer,1139,2880e5c,indra/newview/app_settings/shaders/class1/deferred/diffuseAlphaMaskIndexedF.glsl,modified,1,3,4,"@@ -35,8 +35,6 @@ uniform float minimum_alpha;
+ in vec4 vertex_color;
+ in vec2 vary_texcoord0;
+ 
+-vec2 encode_normal(vec3 n);
+-
+ void mirrorClip(vec3 pos);
+ 
+ void main() 
+@@ -53,6 +51,6 @@ void main()
+ 	frag_data[0] = vec4(col.rgb, 0.0);
+ 	frag_data[1] = vec4(0,0,0,0);
+ 	vec3 nvn = normalize(vary_normal);
+-	frag_data[2] = vec4(encode_normal(nvn.xyz), 0.0, GBUFFER_FLAG_HAS_ATMOS);
++	frag_data[2] = vec4(nvn.xyz, GBUFFER_FLAG_HAS_ATMOS);
+     frag_data[3] = vec4(0);
+ }"
+secondlife/viewer,1139,2880e5c,indra/newview/app_settings/shaders/class1/deferred/diffuseAlphaMaskNoColorF.glsl,modified,1,3,4,"@@ -34,8 +34,6 @@ uniform sampler2D diffuseMap;
+ in vec3 vary_normal;
+ in vec2 vary_texcoord0;
+ 
+-vec2 encode_normal(vec3 n);
+-
+ void main() 
+ {
+ 	vec4 col = texture(diffuseMap, vary_texcoord0.xy);
+@@ -48,7 +46,7 @@ void main()
+ 	frag_data[0] = vec4(col.rgb, 0.0);
+ 	frag_data[1] = vec4(0,0,0,0); // spec
+ 	vec3 nvn = normalize(vary_normal);
+-	frag_data[2] = vec4(encode_normal(nvn.xyz), 0.0, GBUFFER_FLAG_HAS_ATMOS);
++	frag_data[2] = vec4(nvn.xyz, GBUFFER_FLAG_HAS_ATMOS);
+     frag_data[3] = vec4(0);
+ }
+ "
+secondlife/viewer,1139,2880e5c,indra/newview/app_settings/shaders/class1/deferred/diffuseF.glsl,modified,2,3,5,"@@ -34,7 +34,6 @@ in vec4 vertex_color;
+ in vec2 vary_texcoord0;
+ in vec3 vary_position;
+ 
+-vec2 encode_normal(vec3 n);
+ void mirrorClip(vec3 pos);
+ 
+ void main() 
+@@ -45,7 +44,7 @@ void main()
+ 	frag_data[1] = vertex_color.aaaa; // spec
+ 	//frag_data[1] = vec4(vec3(vertex_color.a), vertex_color.a+(1.0-vertex_color.a)*vertex_color.a); // spec - from former class3 - maybe better, but not so well tested
+ 	vec3 nvn = normalize(vary_normal);
+-	frag_data[2] = vec4(encode_normal(nvn.xyz), vertex_color.a, GBUFFER_FLAG_HAS_ATMOS);
+-    frag_data[3] = vec4(0);
++	frag_data[2] = vec4(nvn.xyz, GBUFFER_FLAG_HAS_ATMOS);
++    frag_data[3] = vec4(vertex_color.a, 0, 0, 0);
+ }
+ "
+secondlife/viewer,1139,2880e5c,indra/newview/app_settings/shaders/class1/deferred/diffuseIndexedF.glsl,modified,2,3,5,"@@ -33,7 +33,6 @@ in vec2 vary_texcoord0;
+ in vec3 vary_position;
+ 
+ void mirrorClip(vec3 pos);
+-vec2 encode_normal(vec3 n);
+ vec3 linear_to_srgb(vec3 c);
+ 
+ void main() 
+@@ -47,6 +46,6 @@ void main()
+ 	frag_data[0] = vec4(col, 0.0);
+ 	frag_data[1] = vec4(spec, vertex_color.a); // spec
+ 	vec3 nvn = normalize(vary_normal);
+-	frag_data[2] = vec4(encode_normal(nvn.xyz), vertex_color.a, GBUFFER_FLAG_HAS_ATMOS);
+-    frag_data[3] = vec4(0);
++	frag_data[2] = vec4(nvn.xyz, GBUFFER_FLAG_HAS_ATMOS);
++    frag_data[3] = vec4(vertex_color.a, 0, 0, 0);
+ }"
+secondlife/viewer,1139,2880e5c,indra/newview/app_settings/shaders/class1/deferred/impostorF.glsl,modified,1,2,3,"@@ -37,7 +37,6 @@ uniform sampler2D specularMap;
+ in vec2 vary_texcoord0;
+ 
+ vec3 linear_to_srgb(vec3 c);
+-vec2 encode_normal (vec3 n);
+ 
+ void main() 
+ {
+@@ -53,6 +52,6 @@ void main()
+ 
+ 	frag_data[0] = vec4(col.rgb, 0.0);
+ 	frag_data[1] = spec;
+-	frag_data[2] = vec4(encode_normal(norm.xyz),0,GBUFFER_FLAG_HAS_ATMOS);
++	frag_data[2] = vec4(norm.xyz, GBUFFER_FLAG_HAS_ATMOS);
+     frag_data[3] = vec4(0);
+ }"
+secondlife/viewer,1139,2880e5c,indra/newview/app_settings/shaders/class1/deferred/pbropaqueF.glsl,modified,1,2,3,"@@ -54,7 +54,6 @@ in vec2 emissive_texcoord;
+ 
+ uniform float minimum_alpha; // PBR alphaMode: MASK, See: mAlphaCutoff, setAlphaCutoff()
+ 
+-vec2 encode_normal(vec3 n);
+ vec3 linear_to_srgb(vec3 c);
+ vec3 srgb_to_linear(vec3 c);
+ 
+@@ -110,7 +109,7 @@ void main()
+     // See: C++: addDeferredAttachments(), GLSL: softenLightF
+     frag_data[0] = max(vec4(col, 0.0), vec4(0));                                                   // Diffuse
+     frag_data[1] = max(vec4(spec.rgb,vertex_color.a), vec4(0));                                    // PBR linear packed Occlusion, Roughness, Metal.
+-    frag_data[2] = max(vec4(encode_normal(tnorm), vertex_color.a, GBUFFER_FLAG_HAS_PBR), vec4(0)); // normal, environment intensity, flags
++    frag_data[2] = max(vec4(tnorm, GBUFFER_FLAG_HAS_PBR), vec4(0)); // normal, environment intensity, flags
+     frag_data[3] = max(vec4(emissive,0), vec4(0));                                                // PBR sRGB Emissive
+ }
+ "
+secondlife/viewer,1139,2880e5c,indra/newview/app_settings/shaders/class1/deferred/pbrterrainF.glsl,modified,1,2,3,"@@ -140,7 +140,6 @@ flat in float vary_sign;
+ in vec4 vary_texcoord0;
+ in vec4 vary_texcoord1;
+ 
+-vec2 encode_normal(vec3 n);
+ void mirrorClip(vec3 position);
+ 
+ float terrain_mix(TerrainMix tm, vec4 tms4);
+@@ -342,7 +341,7 @@ void main()
+ #endif
+     frag_data[0] = max(vec4(mix.col.xyz, 0.0), vec4(0));                                                   // Diffuse
+     frag_data[1] = max(vec4(orm.rgb, base_color_factor_alpha), vec4(0));                                    // PBR linear packed Occlusion, Roughness, Metal.
+-    frag_data[2] = max(vec4(encode_normal(tnorm), base_color_factor_alpha, GBUFFER_FLAG_HAS_PBR), vec4(0)); // normal, environment intensity, flags
++    frag_data[2] = max(vec4(tnorm, GBUFFER_FLAG_HAS_PBR), vec4(0)); // normal, flags
+     frag_data[3] = max(vec4(emissive,0), vec4(0));                                                // PBR sRGB Emissive
+ }
+ "
+secondlife/viewer,1139,2880e5c,indra/newview/app_settings/shaders/class1/deferred/terrainF.glsl,modified,1,2,3,"@@ -38,7 +38,6 @@ in vec3 vary_normal;
+ in vec4 vary_texcoord0;
+ in vec4 vary_texcoord1;
+ 
+-vec2 encode_normal(vec3 n);
+ void mirrorClip(vec3 position);
+ 
+ void main()
+@@ -61,7 +60,7 @@ void main()
+     frag_data[0] = outColor;
+     frag_data[1] = vec4(0.0,0.0,0.0,-1.0);
+     vec3 nvn = normalize(vary_normal);
+-    frag_data[2] = vec4(encode_normal(nvn.xyz), 0.0, GBUFFER_FLAG_HAS_ATMOS);
++    frag_data[2] = vec4(nvn.xyz, GBUFFER_FLAG_HAS_ATMOS);
+     frag_data[3] = vec4(0);
+ }
+ "
+secondlife/viewer,1139,2880e5c,indra/newview/app_settings/shaders/class1/deferred/treeF.glsl,modified,1,3,4,"@@ -36,8 +36,6 @@ in vec3 vary_position;
+ 
+ uniform float minimum_alpha;
+ 
+-vec2 encode_normal(vec3 n);
+-
+ void mirrorClip(vec3 pos);
+ void main() 
+ {
+@@ -51,6 +49,6 @@ void main()
+ 	frag_data[0] = vec4(vertex_color.rgb*col.rgb, 0.0);
+ 	frag_data[1] = vec4(0,0,0,0);
+ 	vec3 nvn = normalize(vary_normal);
+-	frag_data[2] = vec4(encode_normal(nvn.xyz), 0.0, GBUFFER_FLAG_HAS_ATMOS);
++	frag_data[2] = vec4(nvn.xyz, GBUFFER_FLAG_HAS_ATMOS);
+     frag_data[3] = vec4(0);
+ }"
+secondlife/viewer,1139,2880e5c,indra/newview/app_settings/shaders/class1/environment/encodeNormF.glsl,removed,0,34,34,"@@ -1,34 +0,0 @@
+-/**
+- * @file encodeNormF.glsl
+- *
+- * $LicenseInfo:firstyear=2018&license=viewerlgpl$
+- * Second Life Viewer Source Code
+- * Copyright (C) 2018, Linden Research, Inc.
+- * 
+- * This library is free software; you can redistribute it and/or
+- * modify it under the terms of the GNU Lesser General Public
+- * License as published by the Free Software Foundation;
+- * version 2.1 of the License only.
+- * 
+- * This library is distributed in the hope that it will be useful,
+- * but WITHOUT ANY WARRANTY; without even the implied warranty of
+- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+- * Lesser General Public License for more details.
+- * 
+- * You should have received a copy of the GNU Lesser General Public
+- * License along with this library; if not, write to the Free Software
+- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+- * 
+- * Linden Research, Inc., 945 Battery Street, San Francisco, CA  94111  USA
+- * $/LicenseInfo$
+- */
+-
+-// Lambert Azimuthal Equal-Area projection
+-// See: https://aras-p.info/texts/CompactNormalStorage.html
+-// Also see: A_bit_more_deferred_-_CryEngine3.ppt
+-vec2 encode_normal(vec3 n)
+-{
+-	float f = sqrt(8 * n.z + 8);
+-	return n.xy / f + 0.5;
+-}
+-"
+secondlife/viewer,1139,2880e5c,indra/newview/app_settings/shaders/class2/deferred/alphaF.glsl,modified,0,1,1,"@@ -68,7 +68,6 @@ void waterClip(vec3 pos);
+ vec3 srgb_to_linear(vec3 c);
+ vec3 linear_to_srgb(vec3 c);
+ 
+-vec2 encode_normal (vec3 n);
+ vec4 applySkyAndWaterFog(vec3 pos, vec3 additive, vec3 atten, vec4 color);
+ void calcAtmosphericVarsLinear(vec3 inPositionEye, vec3 norm, vec3 light_dir, out vec3 sunlit, out vec3 amblit, out vec3 atten, out vec3 additive);
+ "
+secondlife/viewer,1139,2880e5c,indra/newview/app_settings/shaders/class3/deferred/materialF.glsl,modified,6,8,14,"@@ -216,8 +216,6 @@ in vec3 vary_normal;
+ in vec4 vertex_color;
+ in vec2 vary_texcoord0;
+ 
+-vec2 encode_normal(vec3 n);
+-
+ // get the transformed normal and apply glossiness component from normal map
+ vec3 getNormal(inout float glossiness)
+ {
+@@ -306,8 +304,6 @@ void main()
+     float glossiness = specular_color.a;
+     vec3 norm = getNormal(glossiness);
+ 
+-    vec2 abnormal = encode_normal(norm.xyz);
+-
+     float emissive = getEmissive(diffcol);
+ 
+ #if (DIFFUSE_ALPHA_MODE == DIFFUSE_ALPHA_MODE_BLEND)
+@@ -417,10 +413,12 @@ void main()
+ 
+     float flag = GBUFFER_FLAG_HAS_ATMOS;
+ 
+-    frag_data[0] = vec4(diffcol.rgb, emissive);        // gbuffer is sRGB for legacy materials
+-    frag_data[1] = vec4(spec.rgb, glossiness);           // XYZ = Specular color. W = Specular exponent.
+-    frag_data[2] = vec4(encode_normal(norm), env, flag);;   // XY = Normal.  Z = Env. intensity. W = 1 skip atmos (mask off fog)
+-    frag_data[3] = vec4(0);
++    frag_data[0] = max(vec4(diffcol.rgb, emissive), vec4(0));        // gbuffer is sRGB for legacy materials
++    frag_data[1] = max(vec4(spec.rgb, glossiness), vec4(0));           // XYZ = Specular color. W = Specular exponent.
++    frag_data[2] = max(vec4(norm, flag), vec4(0));   // XY = Normal.  Z = Env. intensity. W = 1 skip atmos (mask off fog)
++    frag_data[3] = vec4(env, 0, 0, 0);
++
+ #endif
+ }
+ 
++"
+secondlife/viewer,1139,2880e5c,indra/newview/app_settings/shaders/class3/deferred/softenLightF.glsl,modified,3,2,5,"@@ -129,7 +129,8 @@ void main()
+     float depth        = getDepth(tc.xy);
+     vec4  pos          = getPositionWithDepth(tc, depth);
+     vec4  norm         = texture(normalMap, tc);
+-    float envIntensity = norm.z;
++    vec3 colorEmissive = texture(emissiveRect, tc).rgb;
++    float envIntensity = colorEmissive.r;
+     norm.xyz           = getNorm(tc);
+     vec3  light_dir   = (sun_up_factor == 1) ? sun_dir : moon_dir;
+ 
+@@ -174,7 +175,7 @@ void main()
+         float metallic = orm.b;
+         float ao = orm.r;
+ 
+-        vec3 colorEmissive = texture(emissiveRect, tc).rgb;
++        
+         // PBR IBL
+         float gloss      = 1.0 - perceptualRoughness;
+         "
+secondlife/viewer,1139,2880e5c,indra/newview/lldrawpoolbump.cpp,modified,4,3,7,"@@ -701,8 +701,7 @@ void LLBumpImageList::updateImages()
+ {	
+ 	for (bump_image_map_t::iterator iter = mBrightnessEntries.begin(); iter != mBrightnessEntries.end(); )
+ 	{
+-		bump_image_map_t::iterator curiter = iter++;
+-		LLViewerTexture* image = curiter->second;
++		LLViewerTexture* image = iter->second;
+ 		if( image )
+ 		{
+ 			BOOL destroy = TRUE;
+@@ -721,9 +720,11 @@ void LLBumpImageList::updateImages()
+ 			if( destroy )
+ 			{
+ 				//LL_INFOS() << ""*** Destroying bright "" << (void*)image << LL_ENDL;
+-				mBrightnessEntries.erase(curiter);   // deletes the image thanks to reference counting
++				iter = mBrightnessEntries.erase(iter);   // deletes the image thanks to reference counting
++                continue;
+ 			}
+ 		}
++        ++iter;
+ 	}
+ 	
+ 	for (bump_image_map_t::iterator iter = mDarknessEntries.begin(); iter != mDarknessEntries.end(); )"
+secondlife/viewer,1139,2880e5c,indra/newview/llviewermenu.cpp,modified,20,0,20,"@@ -740,10 +740,30 @@ U32 render_type_from_string(std::string render_type)
+ 	{
+ 		return LLPipeline::RENDER_TYPE_SIMPLE;
+ 	}
++    if (""materials"" == render_type)
++    {
++        return LLPipeline::RENDER_TYPE_MATERIALS;
++    }
+ 	else if (""alpha"" == render_type)
+ 	{
+ 		return LLPipeline::RENDER_TYPE_ALPHA;
+ 	}
++    else if (""alpha_mask"" == render_type)
++    {
++        return LLPipeline::RENDER_TYPE_ALPHA_MASK;
++    }
++    else if (""fullbright_alpha_mask"" == render_type)
++    {
++        return LLPipeline::RENDER_TYPE_FULLBRIGHT_ALPHA_MASK;
++    }
++    else if (""fullbright"" == render_type)
++    {
++        return LLPipeline::RENDER_TYPE_FULLBRIGHT;
++    }
++    else if (""glow"" == render_type)
++    {
++        return LLPipeline::RENDER_TYPE_GLOW;
++    }
+ 	else if (""tree"" == render_type)
+ 	{
+ 		return LLPipeline::RENDER_TYPE_TREE;"
+secondlife/viewer,1139,2880e5c,indra/newview/llviewershadermgr.cpp,modified,0,20,20,"@@ -720,7 +720,6 @@ std::string LLViewerShaderMgr::loadBasicShaders()
+     index_channels.push_back(-1);    shaders.push_back( make_pair( ""windlight/atmosphericsFuncs.glsl"",       mShaderLevel[SHADER_WINDLIGHT] ) );
+ 	index_channels.push_back(-1);    shaders.push_back( make_pair( ""windlight/atmosphericsF.glsl"",          mShaderLevel[SHADER_WINDLIGHT] ) );
+ 	index_channels.push_back(-1);    shaders.push_back( make_pair( ""environment/waterFogF.glsl"",                mShaderLevel[SHADER_WATER] ) );
+-	index_channels.push_back(-1);    shaders.push_back( make_pair( ""environment/encodeNormF.glsl"",	mShaderLevel[SHADER_ENVIRONMENT] ) );
+ 	index_channels.push_back(-1);    shaders.push_back( make_pair( ""environment/srgbF.glsl"",                    mShaderLevel[SHADER_ENVIRONMENT] ) );
+ 	index_channels.push_back(-1);    shaders.push_back( make_pair( ""deferred/deferredUtil.glsl"",                    1) );
+     index_channels.push_back(-1);    shaders.push_back( make_pair( ""deferred/globalF.glsl"",                          1));
+@@ -1040,7 +1039,6 @@ BOOL LLViewerShaderMgr::loadShadersDeferred()
+ 	if (success)
+ 	{
+ 		gDeferredDiffuseProgram.mName = ""Deferred Diffuse Shader"";
+-        gDeferredDiffuseProgram.mFeatures.encodesNormal = true;
+         gDeferredDiffuseProgram.mFeatures.hasSrgb = true;
+ 		gDeferredDiffuseProgram.mShaderFiles.clear();
+ 		gDeferredDiffuseProgram.mShaderFiles.push_back(make_pair(""deferred/diffuseV.glsl"", GL_VERTEX_SHADER));
+@@ -1054,7 +1052,6 @@ BOOL LLViewerShaderMgr::loadShadersDeferred()
+ 	if (success)
+ 	{
+ 		gDeferredDiffuseAlphaMaskProgram.mName = ""Deferred Diffuse Alpha Mask Shader"";
+-        gDeferredDiffuseAlphaMaskProgram.mFeatures.encodesNormal = true;
+ 		gDeferredDiffuseAlphaMaskProgram.mShaderFiles.clear();
+ 		gDeferredDiffuseAlphaMaskProgram.mShaderFiles.push_back(make_pair(""deferred/diffuseV.glsl"", GL_VERTEX_SHADER));
+ 		gDeferredDiffuseAlphaMaskProgram.mShaderFiles.push_back(make_pair(""deferred/diffuseAlphaMaskIndexedF.glsl"", GL_FRAGMENT_SHADER));
+@@ -1067,7 +1064,6 @@ BOOL LLViewerShaderMgr::loadShadersDeferred()
+ 	if (success)
+ 	{
+ 		gDeferredNonIndexedDiffuseAlphaMaskProgram.mName = ""Deferred Diffuse Non-Indexed Alpha Mask Shader"";
+-		gDeferredNonIndexedDiffuseAlphaMaskProgram.mFeatures.encodesNormal = true;
+ 		gDeferredNonIndexedDiffuseAlphaMaskProgram.mShaderFiles.clear();
+ 		gDeferredNonIndexedDiffuseAlphaMaskProgram.mShaderFiles.push_back(make_pair(""deferred/diffuseV.glsl"", GL_VERTEX_SHADER));
+ 		gDeferredNonIndexedDiffuseAlphaMaskProgram.mShaderFiles.push_back(make_pair(""deferred/diffuseAlphaMaskF.glsl"", GL_FRAGMENT_SHADER));
+@@ -1079,7 +1075,6 @@ BOOL LLViewerShaderMgr::loadShadersDeferred()
+ 	if (success)
+ 	{
+ 		gDeferredNonIndexedDiffuseAlphaMaskNoColorProgram.mName = ""Deferred Diffuse Non-Indexed Alpha Mask No Color Shader"";
+-		gDeferredNonIndexedDiffuseAlphaMaskNoColorProgram.mFeatures.encodesNormal = true;
+ 		gDeferredNonIndexedDiffuseAlphaMaskNoColorProgram.mShaderFiles.clear();
+ 		gDeferredNonIndexedDiffuseAlphaMaskNoColorProgram.mShaderFiles.push_back(make_pair(""deferred/diffuseNoColorV.glsl"", GL_VERTEX_SHADER));
+ 		gDeferredNonIndexedDiffuseAlphaMaskNoColorProgram.mShaderFiles.push_back(make_pair(""deferred/diffuseAlphaMaskNoColorF.glsl"", GL_FRAGMENT_SHADER));
+@@ -1091,7 +1086,6 @@ BOOL LLViewerShaderMgr::loadShadersDeferred()
+ 	if (success)
+ 	{
+ 		gDeferredBumpProgram.mName = ""Deferred Bump Shader"";
+-		gDeferredBumpProgram.mFeatures.encodesNormal = true;
+ 		gDeferredBumpProgram.mShaderFiles.clear();
+ 		gDeferredBumpProgram.mShaderFiles.push_back(make_pair(""deferred/bumpV.glsl"", GL_VERTEX_SHADER));
+ 		gDeferredBumpProgram.mShaderFiles.push_back(make_pair(""deferred/bumpF.glsl"", GL_FRAGMENT_SHADER));
+@@ -1163,7 +1157,6 @@ BOOL LLViewerShaderMgr::loadShadersDeferred()
+ 
+             
+             gDeferredMaterialProgram[i].mFeatures.hasSrgb = true;
+-            gDeferredMaterialProgram[i].mFeatures.encodesNormal = true;
+             gDeferredMaterialProgram[i].mFeatures.calculatesAtmospherics = true;
+             gDeferredMaterialProgram[i].mFeatures.hasAtmospherics = true;
+             gDeferredMaterialProgram[i].mFeatures.hasGamma = true;
+@@ -1197,7 +1190,6 @@ BOOL LLViewerShaderMgr::loadShadersDeferred()
+     if (success)
+     {
+         gDeferredPBROpaqueProgram.mName = ""Deferred PBR Opaque Shader"";
+-        gDeferredPBROpaqueProgram.mFeatures.encodesNormal = true;
+         gDeferredPBROpaqueProgram.mFeatures.hasSrgb = true;
+ 
+         gDeferredPBROpaqueProgram.mShaderFiles.clear();
+@@ -1258,7 +1250,6 @@ BOOL LLViewerShaderMgr::loadShadersDeferred()
+         shader->mFeatures.hasLighting = false;
+         shader->mFeatures.isAlphaLighting = true;
+         shader->mFeatures.hasSrgb = true;
+-        shader->mFeatures.encodesNormal = true;
+         shader->mFeatures.calculatesAtmospherics = true;
+         shader->mFeatures.hasAtmospherics = true;
+         shader->mFeatures.hasGamma = true;
+@@ -1329,7 +1320,6 @@ BOOL LLViewerShaderMgr::loadShadersDeferred()
+         gDeferredPBRTerrainProgram.mName = llformat(""Deferred PBR Terrain Shader %d %s"",
+                 detail,
+                 (mapping == 1 ? ""flat"" : ""triplanar""));
+-        gDeferredPBRTerrainProgram.mFeatures.encodesNormal = true;
+         gDeferredPBRTerrainProgram.mFeatures.hasSrgb = true;
+         gDeferredPBRTerrainProgram.mFeatures.isAlphaLighting = true;
+         gDeferredPBRTerrainProgram.mFeatures.disableTextureIndex = true; //hack to disable auto-setup of texture channels
+@@ -1353,7 +1343,6 @@ BOOL LLViewerShaderMgr::loadShadersDeferred()
+ 	{
+ 		gDeferredTreeProgram.mName = ""Deferred Tree Shader"";
+ 		gDeferredTreeProgram.mShaderFiles.clear();
+-        gDeferredTreeProgram.mFeatures.encodesNormal = true;
+ 		gDeferredTreeProgram.mShaderFiles.push_back(make_pair(""deferred/treeV.glsl"", GL_VERTEX_SHADER));
+ 		gDeferredTreeProgram.mShaderFiles.push_back(make_pair(""deferred/treeF.glsl"", GL_FRAGMENT_SHADER));
+ 		gDeferredTreeProgram.mShaderLevel = mShaderLevel[SHADER_DEFERRED];
+@@ -1388,8 +1377,6 @@ BOOL LLViewerShaderMgr::loadShadersDeferred()
+ 	{
+ 		gDeferredImpostorProgram.mName = ""Deferred Impostor Shader"";
+ 		gDeferredImpostorProgram.mFeatures.hasSrgb = true;
+-		gDeferredImpostorProgram.mFeatures.encodesNormal = true;
+-		//gDeferredImpostorProgram.mFeatures.isDeferred = true;
+ 		gDeferredImpostorProgram.mShaderFiles.clear();
+ 		gDeferredImpostorProgram.mShaderFiles.push_back(make_pair(""deferred/impostorV.glsl"", GL_VERTEX_SHADER));
+         gDeferredImpostorProgram.mShaderFiles.push_back(make_pair(""deferred/impostorF.glsl"", GL_FRAGMENT_SHADER));
+@@ -1551,7 +1538,6 @@ BOOL LLViewerShaderMgr::loadShadersDeferred()
+             shader->mFeatures.isAlphaLighting = true;
+             shader->mFeatures.disableTextureIndex = true; //hack to disable auto-setup of texture channels
+             shader->mFeatures.hasSrgb = true;
+-            shader->mFeatures.encodesNormal = true;
+             shader->mFeatures.calculatesAtmospherics = true;
+             shader->mFeatures.hasAtmospherics = true;
+             shader->mFeatures.hasGamma = true;
+@@ -1613,7 +1599,6 @@ BOOL LLViewerShaderMgr::loadShadersDeferred()
+ 
+             shader->mFeatures.hasSrgb = true;
+             shader->mFeatures.isAlphaLighting = true;
+-            shader->mFeatures.encodesNormal = true;
+             shader->mFeatures.hasShadows = use_sun_shadow;
+             shader->mFeatures.hasReflectionProbes = true;
+             shader->mFeatures.mIndexedTextureChannels = LLGLSLShader::sIndexedTextureChannels;
+@@ -1661,7 +1646,6 @@ BOOL LLViewerShaderMgr::loadShadersDeferred()
+ 		gDeferredAvatarEyesProgram.mFeatures.hasAtmospherics = true;
+ 		gDeferredAvatarEyesProgram.mFeatures.disableTextureIndex = true;
+ 		gDeferredAvatarEyesProgram.mFeatures.hasSrgb = true;
+-		gDeferredAvatarEyesProgram.mFeatures.encodesNormal = true;
+ 		gDeferredAvatarEyesProgram.mFeatures.hasShadows = true;
+ 
+ 		gDeferredAvatarEyesProgram.mShaderFiles.clear();
+@@ -2059,7 +2043,6 @@ BOOL LLViewerShaderMgr::loadShadersDeferred()
+ 	if (success)
+ 	{
+ 		gDeferredTerrainProgram.mName = ""Deferred Terrain Shader"";
+-		gDeferredTerrainProgram.mFeatures.encodesNormal = true;
+ 		gDeferredTerrainProgram.mFeatures.hasSrgb = true;
+ 		gDeferredTerrainProgram.mFeatures.isAlphaLighting = true;
+ 		gDeferredTerrainProgram.mFeatures.disableTextureIndex = true; //hack to disable auto-setup of texture channels
+@@ -2079,7 +2062,6 @@ BOOL LLViewerShaderMgr::loadShadersDeferred()
+ 	{
+ 		gDeferredAvatarProgram.mName = ""Deferred Avatar Shader"";
+ 		gDeferredAvatarProgram.mFeatures.hasSkinning = true;
+-		gDeferredAvatarProgram.mFeatures.encodesNormal = true;
+ 		gDeferredAvatarProgram.mShaderFiles.clear();
+ 		gDeferredAvatarProgram.mShaderFiles.push_back(make_pair(""deferred/avatarV.glsl"", GL_VERTEX_SHADER));
+ 		gDeferredAvatarProgram.mShaderFiles.push_back(make_pair(""deferred/avatarF.glsl"", GL_FRAGMENT_SHADER));
+@@ -2097,7 +2079,6 @@ BOOL LLViewerShaderMgr::loadShadersDeferred()
+ 		gDeferredAvatarAlphaProgram.mFeatures.isAlphaLighting = true;
+ 		gDeferredAvatarAlphaProgram.mFeatures.disableTextureIndex = true;
+ 		gDeferredAvatarAlphaProgram.mFeatures.hasSrgb = true;
+-		gDeferredAvatarAlphaProgram.mFeatures.encodesNormal = true;
+ 		gDeferredAvatarAlphaProgram.mFeatures.calculatesAtmospherics = true;
+ 		gDeferredAvatarAlphaProgram.mFeatures.hasAtmospherics = true;
+         gDeferredAvatarAlphaProgram.mFeatures.hasGamma = true;
+@@ -2431,7 +2412,6 @@ BOOL LLViewerShaderMgr::loadShadersObject()
+     if (success)
+     {
+         gObjectBumpProgram.mName = ""Bump Shader"";
+-        gObjectBumpProgram.mFeatures.encodesNormal = true;
+         gObjectBumpProgram.mShaderFiles.clear();
+         gObjectBumpProgram.mShaderFiles.push_back(make_pair(""objects/bumpV.glsl"", GL_VERTEX_SHADER));
+         gObjectBumpProgram.mShaderFiles.push_back(make_pair(""objects/bumpF.glsl"", GL_FRAGMENT_SHADER));"
+secondlife/viewer,1139,2880e5c,indra/newview/pipeline.cpp,modified,2,2,4,"@@ -331,8 +331,8 @@ bool addDeferredAttachments(LLRenderTarget& target, bool for_impostor = false)
+ {
+     bool valid = true
+         && target.addColorAttachment(GL_RGBA) // frag-data[1] specular OR PBR ORM
+-        && target.addColorAttachment(GL_RGBA16F)                              // frag_data[2] normal+z+fogmask, See: class1\deferred\materialF.glsl & softenlight
+-        && target.addColorAttachment(GL_RGB16F);                  // frag_data[3] PBR emissive
++        && target.addColorAttachment(GL_RGBA16F)                              // frag_data[2] normal+fogmask, See: class1\deferred\materialF.glsl & softenlight
++        && target.addColorAttachment(GL_RGB16F);                  // frag_data[3] PBR emissive OR material env intensity
+     return valid;
+ }
+ "
+secondlife/viewer,1139,2880e5c,indra/newview/skins/default/xui/en/menu_viewer.xml,modified,51,1,52,"@@ -2039,7 +2039,57 @@ function=""World.EnvPreset""
+                  function=""Advanced.ToggleRenderType""
+                  parameter=""simple"" />
+             </menu_item_check>
+-            <menu_item_check
++          <menu_item_check
++             label=""Materials""
++             name=""Rendering Type Materials"">
++            <menu_item_check.on_check
++             function=""Advanced.CheckRenderType""
++             parameter=""materials"" />
++            <menu_item_check.on_click
++             function=""Advanced.ToggleRenderType""
++             parameter=""materials"" />
++          </menu_item_check>
++          <menu_item_check
++             label=""Alpha Mask""
++             name=""Rendering Type Alpha Mask"">
++            <menu_item_check.on_check
++             function=""Advanced.CheckRenderType""
++             parameter=""alpha_mask"" />
++            <menu_item_check.on_click
++             function=""Advanced.ToggleRenderType""
++             parameter=""alpha_mask"" />
++          </menu_item_check>
++          <menu_item_check
++             label=""Fullbright Alpha Mask""
++             name=""Rendering Type Fullbright Alpha Mask"">
++            <menu_item_check.on_check
++             function=""Advanced.CheckRenderType""
++             parameter=""fullbright_alpha_mask"" />
++            <menu_item_check.on_click
++             function=""Advanced.ToggleRenderType""
++             parameter=""fullbright_alpha_mask"" />
++          </menu_item_check>
++          <menu_item_check
++             label=""Glow""
++             name=""Rendering Type Glow"">
++            <menu_item_check.on_check
++             function=""Advanced.CheckRenderType""
++             parameter=""glow"" />
++            <menu_item_check.on_click
++             function=""Advanced.ToggleRenderType""
++             parameter=""glow"" />
++          </menu_item_check>
++          <menu_item_check
++             label=""Fullbright""
++             name=""Rendering Type Glow"">
++            <menu_item_check.on_check
++             function=""Advanced.CheckRenderType""
++             parameter=""fullbright"" />
++            <menu_item_check.on_click
++             function=""Advanced.ToggleRenderType""
++             parameter=""fullbright"" />
++          </menu_item_check>
++          <menu_item_check
+              label=""Alpha""
+              name=""Rendering Type Alpha""
+              shortcut=""control|alt|shift|2"">"

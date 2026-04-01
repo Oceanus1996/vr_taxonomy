@@ -1,0 +1,47 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+hammy275/immersive-mc,547,5fd85c8dee2cb9eb2a2fd90d349efc4c2ca85325,common/src/main/java/com/hammy275/immersivemc/api/common/hitbox/HitboxInfo.java,modified,5,3,8,"@@ -2,9 +2,11 @@
+ 
+ /**
+  * An object representing one hitbox for an {@link com.hammy275.immersivemc.api.client.immersive.Immersive}. You
+- * may obtain instances of this interface using {@link HitboxInfoFactory}. You could also implement this yourself,
+- * but that is NOT covered under the API, so API changes may result in your implementations of this interface breaking
+- * without warning.
++ * may obtain instances of this interface using {@link HitboxInfoFactory}, though if your hitbox moves, you'll
++ * likely want to create an implementation of this yourself so you can properly implement
++ * {@link #getRenderHitbox(float)}. Although not in the API,
++ * {@link com.hammy275.immersivemc.client.immersive.info.HitboxItemPair} is a good example of an implementation of
++ * this interface.
+  */
+ public interface HitboxInfo {
+ "
+hammy275/immersive-mc,547,5fd85c8dee2cb9eb2a2fd90d349efc4c2ca85325,common/src/main/java/com/hammy275/immersivemc/client/immersive/ImmersiveBackpack.java,modified,3,1,4,"@@ -146,7 +146,9 @@ protected void render(BackpackInfo info, PoseStack stack, boolean isInVR) {
+             // info actually holds item information, so we use that here
+             ItemStack item = i == 31 ? info.craftingOutput : info.craftingInput[i - 27];
+             if (!item.isEmpty() && info.getPosition(i) != null) {
+-                renderItem(item, stack, info.getPosition(i), ClientConstants.itemScaleSizeBackpack, null, info.getHitbox(i), true, info.light);
++                final float size =
++                        info.slotHovered == i ? ClientConstants.itemScaleSizeBackpackSelected : ClientConstants.itemScaleSizeBackpack;
++                renderItem(item, stack, info.getPosition(i), size, null, info.getHitbox(i), true, info.light);
+             }
+         }
+ "
+hammy275/immersive-mc,547,5fd85c8dee2cb9eb2a2fd90d349efc4c2ca85325,common/src/main/java/com/hammy275/immersivemc/client/immersive/ImmersiveBeacon.java,modified,3,1,4,"@@ -435,7 +435,9 @@ private Vec3 posToRotatedPos(Vec3 forwardPos, double rotRad, Direction playerFor
+         Direction.Axis axisFacing = playerForwardDir.getAxis();
+         double xz = axisFacing == Direction.Axis.Z ? circleCenter.x : circleCenter.z;
+ 
+-        rotRad = -rotRad;
++        if (playerForwardDir == Direction.NORTH || playerForwardDir == Direction.EAST) {
++            rotRad = -rotRad;
++        }
+ 
+         double newXZ = xz
+                 + effectCircleRadius * Math.cos(rotRad)"
+hammy275/immersive-mc,547,5fd85c8dee2cb9eb2a2fd90d349efc4c2ca85325,common/src/main/java/com/hammy275/immersivemc/server/swap/Swap.java,modified,1,1,2,"@@ -301,7 +301,7 @@ public static ItemStack[] handleDoCraft(ServerPlayer player, ItemStack[] stacksI
+                 Util.ItemStackMergeResult itemRes = Util.mergeStacks(handStack, toGive, true);
+                 player.setItemInHand(InteractionHand.MAIN_HAND, itemRes.mergedInto);
+                 toGive = itemRes.mergedFrom;
+-            } else if (handStack.isEmpty()) {
++            } else if (handStack.isEmpty() && !Util.hasItemInInventoryWithStackSpace(player, toGive)) {
+                 player.setItemInHand(InteractionHand.MAIN_HAND, toGive);
+                 toGive = ItemStack.EMPTY;
+             }"

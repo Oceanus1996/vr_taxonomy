@@ -1,0 +1,121 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe,3735,2b2b7fbd35d7adc852df47908ace9378b39c8e97,src/core/component.js,modified,9,2,11,"@@ -222,6 +222,7 @@ Component.prototype = {
+     var key;
+     var skipTypeChecking;
+     var oldData = this.oldData;
++    var hasComponentChanged;
+ 
+     // Just cache the attribute if the entity has not loaded
+     // Components are not initialized until the entity has loaded
+@@ -282,12 +283,17 @@ Component.prototype = {
+       if (el.isPlaying) { this.play(); }
+       el.emit('componentinitialized', this.evtDetail, false);
+     } else {
+-      // Don't update if properties haven't changed
+-      if (utils.deepEqual(this.oldData, this.data)) { return; }
++      hasComponentChanged = !utils.deepEqual(this.oldData, this.data);
++      // Don't update if properties haven't changed.
++      // Always update rotation, position, scale.
++      if (!this.isPositionRotationScale && !hasComponentChanged) { return; }
+      // Store current data as previous data for future updates.
+       this.oldData = extendProperties({}, this.data, isSinglePropSchema);
+       // Update component.
+       this.update(oldData);
++      // In the case of position, rotation, scale always update the component
++      // but don't emit componentchanged event if component has not changed.
++      if (!hasComponentChanged) { return; }
+       this.throttledEmitComponentChanged();
+     }
+   },
+@@ -476,6 +482,7 @@ module.exports.registerComponent = function (name, definition) {
+ 
+   NewComponent.prototype = Object.create(Component.prototype, proto);
+   NewComponent.prototype.name = name;
++  NewComponent.prototype.isPositionRotationScale = name === 'position' || name === 'rotation' || name === 'scale';
+   NewComponent.prototype.constructor = NewComponent;
+   NewComponent.prototype.system = systems && systems.systems[name];
+   NewComponent.prototype.play = wrapPlay(NewComponent.prototype.play);"
+aframevr/aframe,3735,2b2b7fbd35d7adc852df47908ace9378b39c8e97,tests/core/component.test.js,modified,17,0,17,"@@ -481,6 +481,23 @@ suite('Component', function () {
+       assert.equal(data.el.constructor, HTMLHeadElement);
+       assert.equal(data.el, el.components.dummy.attrValue.el);
+     });
++
++    test('updates data when combining setAttribute and object3D manipulation', function () {
++      var el = document.createElement('a-entity');
++      el.hasLoaded = true;
++      el.setAttribute('position', '3 3 3');
++      assert.equal(3, el.object3D.position.x);
++      assert.equal(3, el.object3D.position.y);
++      assert.equal(3, el.object3D.position.z);
++      el.object3D.position.set(5, 5, 5);
++      assert.equal(5, el.object3D.position.x);
++      assert.equal(5, el.object3D.position.y);
++      assert.equal(5, el.object3D.position.z);
++      el.setAttribute('position', '3 3 3');
++      assert.equal(3, el.object3D.position.x);
++      assert.equal(3, el.object3D.position.y);
++      assert.equal(3, el.object3D.position.z);
++    });
+   });
+ 
+   suite('resetProperty', function () {"
+aframevr/aframe,3735,155ca9d5b0cb20f0fa409531a84d44ab19bb17dd,src/core/component.js,modified,9,2,11,"@@ -222,6 +222,7 @@ Component.prototype = {
+     var key;
+     var skipTypeChecking;
+     var oldData = this.oldData;
++    var hasComponentChanged;
+ 
+     // Just cache the attribute if the entity has not loaded
+     // Components are not initialized until the entity has loaded
+@@ -282,12 +283,17 @@ Component.prototype = {
+       if (el.isPlaying) { this.play(); }
+       el.emit('componentinitialized', this.evtDetail, false);
+     } else {
+-      // Don't update if properties haven't changed
+-      if (utils.deepEqual(this.oldData, this.data)) { return; }
++      hasComponentChanged = !utils.deepEqual(this.oldData, this.data);
++      // Don't update if properties haven't changed.
++      // Always update rotation, position, scale.
++      if (!this.isPositionRotationScale && !hasComponentChanged) { return; }
+      // Store current data as previous data for future updates.
+       this.oldData = extendProperties({}, this.data, isSinglePropSchema);
+       // Update component.
+       this.update(oldData);
++      // In the case of position, rotation, scale always update the component
++      // but don't emit componentchanged event if component has not changed.
++      if (!hasComponentChanged) { return; }
+       this.throttledEmitComponentChanged();
+     }
+   },
+@@ -476,6 +482,7 @@ module.exports.registerComponent = function (name, definition) {
+ 
+   NewComponent.prototype = Object.create(Component.prototype, proto);
+   NewComponent.prototype.name = name;
++  NewComponent.prototype.isPositionRotationScale = name === 'position' || name === 'rotation' || name === 'scale';
+   NewComponent.prototype.constructor = NewComponent;
+   NewComponent.prototype.system = systems && systems.systems[name];
+   NewComponent.prototype.play = wrapPlay(NewComponent.prototype.play);"
+aframevr/aframe,3735,155ca9d5b0cb20f0fa409531a84d44ab19bb17dd,tests/core/component.test.js,modified,17,0,17,"@@ -481,6 +481,23 @@ suite('Component', function () {
+       assert.equal(data.el.constructor, HTMLHeadElement);
+       assert.equal(data.el, el.components.dummy.attrValue.el);
+     });
++
++    test('updates data when combining setAttribute and object3D manipulation', function () {
++      var el = document.createElement('a-entity');
++      el.hasLoaded = true;
++      el.setAttribute('position', '3 3 3');
++      assert.equal(3, el.object3D.position.x);
++      assert.equal(3, el.object3D.position.y);
++      assert.equal(3, el.object3D.position.z);
++      el.object3D.position.set(5, 5, 5);
++      assert.equal(5, el.object3D.position.x);
++      assert.equal(5, el.object3D.position.y);
++      assert.equal(5, el.object3D.position.z);
++      el.setAttribute('position', '3 3 3');
++      assert.equal(3, el.object3D.position.x);
++      assert.equal(3, el.object3D.position.y);
++      assert.equal(3, el.object3D.position.z);
++    });
+   });
+ 
+   suite('resetProperty', function () {"

@@ -1,0 +1,77 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vizorvr/patches,873,1f77eea,browser/plugins/three_vr_camera.plugin.js,modified,9,16,25,"@@ -98,18 +98,20 @@
+ 	}
+ 
+ 	ThreeVRCameraPlugin.prototype.update_state = function() {
+-		this.perspectiveCamera.position.set(this.state.position.x, this.state.position.y, this.state.position.z)
+-		this.perspectiveCamera.quaternion.set(this.state.quaternion._x, this.state.quaternion._y, this.state.quaternion._z, this.state.quaternion._w)
++		this.perspectiveCamera.position.set(
++			this.positionFromGraph.x + this.state.position.x,
++			this.positionFromGraph.y + this.state.position.y,
++			this.positionFromGraph.z + this.state.position.z)
+ 
+-		var eulerRotation = new THREE.Euler().setFromQuaternion(this.perspectiveCamera.quaternion)
+-		this.rotationFromGraph.set(eulerRotation.x, eulerRotation.y, eulerRotation.z)
++		this.perspectiveCamera.quaternion.setFromEuler(this.rotationFromGraph)
++		this.perspectiveCamera.quaternion.multiply(this.state.quaternion)
+ 
+ 		if (this.dirty)
+ 			this.perspectiveCamera.updateProjectionMatrix()
+ 
+ 		this.perspectiveCamera.updateMatrixWorld()
+ 
+-		this.controls.update(this.positionFromGraph, this.rotationFromGraph)
++		this.controls.update(this.perspectiveCamera.position.clone(), this.perspectiveCamera.quaternion.clone())
+ 	}
+ 
+ 	ThreeVRCameraPlugin.prototype.update_input = function(slot, data) {
+@@ -119,20 +121,11 @@
+ 
+ 		switch(slot.index) {
+ 		case 0: // position
+-			this.positionFromGraph = data
+-			//this.perspectiveCamera.position.set(data.x, data.y, data.z)
+-			this.state.position.x = data.x
+-			this.state.position.y = data.y
+-			this.state.position.z = data.z
++			this.positionFromGraph.copy(data)
+ 			this.dirty = true
+ 			break
+ 		case 1: // rotation
+-			var temp = new THREE.Quaternion().setFromEuler(new THREE.Euler(data.x, data.y, data.z))
+-			this.state.quaternion._x = temp._x
+-			this.state.quaternion._y = temp._y
+-			this.state.quaternion._z = temp._z
+-			this.state.quaternion._w = temp._w
+-
++			this.rotationFromGraph.set(data.x, data.y, data.z)
+ 			this.dirty = true
+ 			break
+ 		case 2: // fov"
+vizorvr/patches,873,1f77eea,browser/vendor/three/VRControls.js,modified,10,3,13,"@@ -64,16 +64,23 @@ THREE.VRControls = function ( object, onError ) {
+ 
+ 	this.scale = 1;
+ 
+-	this.update = function (positionOffset, rotationOffset) {
++	var tempOrientationQuaternion = new THREE.Quaternion()
++
++	this.update = function (positionOffset, quaternionOffset) {
+ 		for ( var i = 0; i < vrInputs.length; i ++ ) {
+ 
+ 			var vrInput = vrInputs[ i ];
+ 
+ 			var state = vrInput.getState();
+ 
++
+ 			if ( state.orientation !== null ) {
+-				object.quaternion.setFromEuler(rotationOffset, /*update = */false)
+-				object.quaternion.multiply(state.orientation)
++				object.quaternion.copy(quaternionOffset)
++
++				// state is a DOMPoint object by webvr specification, not a three.js Quaternion, so we need to convert to one before multiplying
++				tempOrientationQuaternion.set(state.orientation.x, state.orientation.y, state.orientation.z, state.orientation.w)
++
++				object.quaternion.multiply(tempOrientationQuaternion)
+ 
+ 			}
+ "

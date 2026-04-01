@@ -1,0 +1,83 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe,1935,9e44b7ebeb8dead6aad8d6ef561a86ea2e06ce70,src/components/cursor.js,modified,11,2,13,"@@ -87,8 +87,14 @@ module.exports.Component = registerComponent('cursor', {
+     var self = this;
+     var cursorEl = this.el;
+     var data = this.data;
+-    var intersection = evt.detail.intersections[0];  // Grab the closest.
+-    var intersectedEl = evt.detail.els[0];
++
++    // Select closest object, other than the cursor.
++    var index = evt.detail.els[0] === cursorEl ? 1 : 0;
++    var intersection = evt.detail.intersections[index];
++    var intersectedEl = evt.detail.els[index];
++
++    // If cursor is the only intersected object, ignore the event.
++    if (!intersectedEl) { return; }
+ 
+     // Set intersected entity if not already intersecting.
+     if (this.intersectedEl === intersectedEl) { return; }
+@@ -116,6 +122,9 @@ module.exports.Component = registerComponent('cursor', {
+     var cursorEl = this.el;
+     var intersectedEl = evt.detail.el;
+ 
++    // Ignore the cursor.
++    if (cursorEl === intersectedEl) { return; }
++
+     // Not intersecting.
+     if (!intersectedEl || !this.intersectedEl) { return; }
+ "
+aframevr/aframe,1935,9e44b7ebeb8dead6aad8d6ef561a86ea2e06ce70,tests/components/cursor.test.js,modified,34,0,34,"@@ -130,6 +130,16 @@ suite('cursor', function () {
+       assert.notOk(intersectedEl.is('cursor-hovered'));
+     });
+ 
++    test('does not do anything if only the cursor is intersecting', function () {
++      var cursorEl = this.cursorEl;
++      var intersection = this.intersection;
++      cursorEl.emit('raycaster-intersection', {
++        intersections: [intersection],
++        els: [cursorEl]
++      });
++      assert.notOk(cursorEl.is('cursor-hovered'));
++    });
++
+     test('sets hovered state on intersectedEl', function () {
+       var cursorEl = this.cursorEl;
+       var intersection = this.intersection;
+@@ -169,6 +179,21 @@ suite('cursor', function () {
+       });
+     });
+ 
++    test('emits mousenter event on intersectedEl, ignoring cursorEl intersection', function (done) {
++      var cursorEl = this.cursorEl;
++      var intersection = this.intersection;
++      var intersectedEl = this.intersectedEl;
++      cursorEl.addEventListener('mouseenter', this.fail);
++      intersectedEl.addEventListener('mouseenter', function (evt) {
++        assert.equal(evt.detail.cursorEl, cursorEl);
++        done();
++      });
++      cursorEl.emit('raycaster-intersection', {
++        intersections: [intersection, intersection],
++        els: [cursorEl, intersectedEl]
++      });
++    });
++
+     test('sets hovering state on cursor', function () {
+       var cursorEl = this.cursorEl;
+       var intersection = this.intersection;
+@@ -240,6 +265,15 @@ suite('cursor', function () {
+       cursorEl.emit('raycaster-intersection-cleared', {el: intersectedEl});
+     });
+ 
++    test('does not do anything if only the cursor is intersecting', function () {
++      var cursorEl = this.cursorEl;
++      cursorEl.components.cursor.intersection = this.intersection;
++      cursorEl.components.cursor.intersectedEl = this.intersectedEl;
++      cursorEl.emit('raycaster-intersection-cleared', {els: [cursorEl]});
++      assert.ok(cursorEl.components.cursor.intersection);
++      assert.ok(cursorEl.components.cursor.intersectedEl);
++    });
++
+     test('unsets intersectedEl', function () {
+       var cursorEl = this.cursorEl;
+       var intersection = this.intersection;"

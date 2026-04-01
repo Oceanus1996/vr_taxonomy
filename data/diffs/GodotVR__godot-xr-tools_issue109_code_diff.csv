@@ -1,0 +1,262 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+GodotVR/godot-xr-tools,109,663ddb8b4aa4369657309e61353abf02b3a630b7,addons/godot-xr-tools/images/ring.png,added,0,0,0,
+GodotVR/godot-xr-tools,109,663ddb8b4aa4369657309e61353abf02b3a630b7,addons/godot-xr-tools/images/ring.png.import,added,38,0,38,"@@ -0,0 +1,38 @@
++[remap]
++
++importer=""texture""
++type=""StreamTexture""
++path.s3tc=""res://.import/ring.png-34d9c9e9780f2732148a5b14fcac48dd.s3tc.stex""
++path.etc2=""res://.import/ring.png-34d9c9e9780f2732148a5b14fcac48dd.etc2.stex""
++path.etc=""res://.import/ring.png-34d9c9e9780f2732148a5b14fcac48dd.etc.stex""
++metadata={
++""imported_formats"": [ ""s3tc"", ""etc2"", ""etc"" ],
++""vram_texture"": true
++}
++
++[deps]
++
++source_file=""res://addons/godot-xr-tools/images/ring.png""
++dest_files=[ ""res://.import/ring.png-34d9c9e9780f2732148a5b14fcac48dd.s3tc.stex"", ""res://.import/ring.png-34d9c9e9780f2732148a5b14fcac48dd.etc2.stex"", ""res://.import/ring.png-34d9c9e9780f2732148a5b14fcac48dd.etc.stex"" ]
++
++[params]
++
++compress/mode=2
++compress/lossy_quality=0.7
++compress/hdr_mode=0
++compress/bptc_ldr=0
++compress/normal_map=0
++flags/repeat=0
++flags/filter=true
++flags/mipmaps=true
++flags/anisotropic=false
++flags/srgb=1
++process/fix_alpha_border=true
++process/premult_alpha=false
++process/HDR_as_SRGB=false
++process/invert_color=false
++process/normal_map_invert_y=false
++stream=false
++size_limit=0
++detect_3d=false
++svg/scale=1.0"
+GodotVR/godot-xr-tools,109,663ddb8b4aa4369657309e61353abf02b3a630b7,addons/godot-xr-tools/objects/Object_pickable.gd,modified,17,27,44,"@@ -5,7 +5,6 @@ class_name XRToolsPickable
+ # Set hold mode
+ export (bool) var press_to_hold = true
+ export (bool) var reset_transform_on_pickup = true
+-export (NodePath) var highlight_mesh_instance = null
+ export  (int, LAYERS_3D_PHYSICS) var picked_up_layer = 0
+ 
+ # Remember some state so we can return to it when the user drops the object
+@@ -14,10 +13,6 @@ onready var original_collision_mask = collision_mask
+ onready var original_collision_layer = collision_layer
+ var original_mode
+ 
+-onready var highlight_material = preload(""res://addons/godot-xr-tools/materials/highlight.tres"")
+-var original_materials = Array()
+-var highlight_mesh_instance_node : MeshInstance = null
+-
+ # Who picked us up?
+ var picked_up_by = null
+ var center_pickup_on_node = null
+@@ -33,6 +28,9 @@ signal dropped(pickable)
+ # Signal emitted when the user presses the action button while holding this object
+ signal action_pressed(pickable)
+ 
++# Signal emitted when the highlight state changes
++signal highlight_updated(pickable, enable)
++
+ # have we been picked up?
+ func is_picked_up():
+ 	if picked_up_by:
+@@ -45,25 +43,25 @@ func action():
+ 	# let interested parties know
+ 	emit_signal(""action_pressed"", self)
+ 
+-func _update_highlight():
+-	if highlight_mesh_instance_node:
+-		# if we can find a node remember which materials are currently set on each surface
+-		for i in range(0, highlight_mesh_instance_node.get_surface_material_count()):
+-			if closest_count > 0:
+-				highlight_mesh_instance_node.set_surface_material(i, highlight_material)
+-			else:
+-				highlight_mesh_instance_node.set_surface_material(i, original_materials[i])
+-	else:
+-		# should probably implement this in our subclass
+-		pass
+-
++# This method is invoked when it becomes the closest pickable object to one of 
++# the pickup functions.
+ func increase_is_closest():
++	# Increment the closest counter
+ 	closest_count += 1
+-	_update_highlight()
+ 
++	# If this object has just become highlighted then emit the signal
++	if closest_count == 1:
++		emit_signal(""highlight_updated"", self, true)
++
++# This method is invoked when it stops being the closest pickable object to one
++# of the pickup functions.
+ func decrease_is_closest():
++	# Decrement the closest counter
+ 	closest_count -= 1
+-	_update_highlight()
++
++	# If no-longer highlighted then emit the signal
++	if closest_count == 0:
++		emit_signal(""highlight_updated"", self, false)
+ 
+ func drop_and_free():
+ 	if picked_up_by:
+@@ -137,14 +135,6 @@ func let_go(p_linear_velocity = Vector3(), p_angular_velocity = Vector3()):
+ 		emit_signal(""dropped"", self)
+ 
+ func _ready():
+-	if highlight_mesh_instance:
+-		# if we have a highlight mesh instance selected obtain our node
+-		highlight_mesh_instance_node = get_node(highlight_mesh_instance)
+-		if highlight_mesh_instance_node:
+-			# if we can find a node remember which materials are currently set on each surface
+-			for i in range(0, highlight_mesh_instance_node.get_surface_material_count()):
+-				original_materials.push_back(highlight_mesh_instance_node.get_surface_material(i))
+-
+ 	# if we have center pickup on set obtain our node
+ 	if reset_transform_on_pickup:
+ 		center_pickup_on_node = get_node(""PickupCenter"")"
+GodotVR/godot-xr-tools,109,663ddb8b4aa4369657309e61353abf02b3a630b7,addons/godot-xr-tools/objects/highlight/highlight_material.gd,added,51,0,51,"@@ -0,0 +1,51 @@
++tool
++class_name XRTHighlightMaterial
++extends Node
++
++
++## Mesh to highlight
++export(NodePath) var highlight_mesh_instance
++
++## Material to set
++export(Resource) var highlight_material
++
++
++var _original_materials = Array()
++var _highlight_mesh_instance: MeshInstance
++
++
++# Called when the node enters the scene tree for the first time.
++func _ready():
++	# Get the mesh to highlight
++	_highlight_mesh_instance = get_node(highlight_mesh_instance)
++
++	# Save the materials
++	if _highlight_mesh_instance:
++		# if we can find a node remember which materials are currently set on each surface
++		for i in range(0, _highlight_mesh_instance.get_surface_material_count()):
++			_original_materials.push_back(_highlight_mesh_instance.get_surface_material(i))
++
++	# Hook the highlight update
++	get_parent().connect(""highlight_updated"", self, ""_on_highlight_updated"")
++
++
++# Called when the pickable highlight changes
++func _on_highlight_updated(pickable, enable: bool) -> void:
++	# Set the materials
++	if _highlight_mesh_instance:
++		for i in range(0, _highlight_mesh_instance.get_surface_material_count()):
++			if enable:
++				_highlight_mesh_instance.set_surface_material(i, highlight_material)
++			else:
++				_highlight_mesh_instance.set_surface_material(i, _original_materials[i])
++
++
++# This method verifies the node
++func _get_configuration_warning():
++	# Verify parent supports highlighting
++	var parent := get_parent()
++	if not parent or not parent.has_signal(""highlight_updated""):
++		return ""Parent does not support highlighting""
++
++	# No issues
++	return """""
+GodotVR/godot-xr-tools,109,663ddb8b4aa4369657309e61353abf02b3a630b7,addons/godot-xr-tools/objects/highlight/highlight_ring.gd,added,29,0,29,"@@ -0,0 +1,29 @@
++tool
++class_name XRTHighlightRing
++extends MeshInstance
++
++
++# Called when the node enters the scene tree for the first time.
++func _ready():
++	# Turn off until requested
++	if not Engine.editor_hint:
++		visible = false
++
++	# Hook the highlight update
++	get_parent().connect(""highlight_updated"", self, ""_on_highlight_updated"")
++
++
++# Called when the pickable highlight changes
++func _on_highlight_updated(pickable, enable: bool) -> void:
++	visible = enable
++
++
++# This method verifies the node
++func _get_configuration_warning():
++	# Verify parent supports highlighting
++	var parent := get_parent()
++	if not parent or not parent.has_signal(""highlight_updated""):
++		return ""Parent does not support highlighting""
++
++	# No issues
++	return """""
+GodotVR/godot-xr-tools,109,663ddb8b4aa4369657309e61353abf02b3a630b7,addons/godot-xr-tools/objects/highlight/highlight_ring.tres,added,10,0,10,"@@ -0,0 +1,10 @@
++[gd_resource type=""SpatialMaterial"" load_steps=2 format=2]
++
++[ext_resource path=""res://addons/godot-xr-tools/images/ring.png"" type=""Texture"" id=1]
++
++[resource]
++flags_transparent = true
++flags_unshaded = true
++flags_no_depth_test = true
++params_billboard_mode = 1
++albedo_texture = ExtResource( 1 )"
+GodotVR/godot-xr-tools,109,663ddb8b4aa4369657309e61353abf02b3a630b7,addons/godot-xr-tools/objects/highlight/highlight_ring.tscn,added,12,0,12,"@@ -0,0 +1,12 @@
++[gd_scene load_steps=4 format=2]
++
++[ext_resource path=""res://addons/godot-xr-tools/objects/highlight/highlight_ring.gd"" type=""Script"" id=1]
++[ext_resource path=""res://addons/godot-xr-tools/objects/highlight/highlight_ring.tres"" type=""Material"" id=2]
++
++[sub_resource type=""QuadMesh"" id=1]
++size = Vector2( 0.05, 0.05 )
++
++[node name=""XRTHighlightRing"" type=""MeshInstance""]
++mesh = SubResource( 1 )
++material/0 = ExtResource( 2 )
++script = ExtResource( 1 )"
+GodotVR/godot-xr-tools,109,663ddb8b4aa4369657309e61353abf02b3a630b7,addons/godot-xr-tools/objects/highlight/highlight_visible.gd,added,30,0,30,"@@ -0,0 +1,30 @@
++tool
++class_name XRTHighlightVisible
++extends Spatial
++
++
++
++# Called when the node enters the scene tree for the first time.
++func _ready():
++	# Turn off until requested
++	if not Engine.editor_hint:
++		visible = false
++
++	# Hook the highlight update
++	get_parent().connect(""highlight_updated"", self, ""_on_highlight_updated"")
++
++
++# Called when the pickable highlight changes
++func _on_highlight_updated(pickable, enable: bool) -> void:
++	visible = enable
++
++
++# This method verifies the node
++func _get_configuration_warning():
++	# Verify parent supports highlighting
++	var parent := get_parent()
++	if not parent or not parent.has_signal(""highlight_updated""):
++		return ""Parent does not support highlighting""
++
++	# No issues
++	return """""

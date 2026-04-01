@@ -1,0 +1,71 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+StereoKit/StereoKit,599,0c1bfd8,StereoKitC/ui/stereokit_ui.cpp,modified,16,8,24,"@@ -37,6 +37,7 @@ struct ui_hand_t {
+ 	bool     ray_enabled;
+ 	bool     ray_discard;
+ 	float    ray_visibility;
++	uint64_t focused_prev_prev;
+ 	uint64_t focused_prev;
+ 	uint64_t focused;
+ 	float    focus_priority;
+@@ -867,8 +868,9 @@ void ui_update() {
+ 		skui_hand[i].finger_world        = hand->fingers[1][4].position;
+ 		skui_hand[i].pinch_pt_world_prev = skui_hand[i].pinch_pt;
+ 		skui_hand[i].pinch_pt_world      = hand->pinch_pt;
+-		skui_hand[i].focused_prev = skui_hand[i].focused;
+-		skui_hand[i].active_prev  = skui_hand[i].active;
++		skui_hand[i].focused_prev_prev   = skui_hand[i].focused_prev;
++		skui_hand[i].focused_prev        = skui_hand[i].focused;
++		skui_hand[i].active_prev         = skui_hand[i].active;
+ 
+ 		skui_hand[i].focus_priority = FLT_MAX;
+ 		skui_hand[i].focused = 0;
+@@ -1096,8 +1098,8 @@ void ui_pop_surface() {
+ 
+ button_state_ ui_last_element_hand_used(handed_ hand) {
+ 	return button_make_state(
+-		skui_hand[hand].active_prev == skui_last_element || skui_hand[hand].focused_prev == skui_last_element,
+-		skui_hand[hand].active      == skui_last_element || skui_hand[hand].focused      == skui_last_element);
++		skui_hand[hand].active_prev == skui_last_element || skui_hand[hand].focused_prev_prev == skui_last_element,
++		skui_hand[hand].active      == skui_last_element || skui_hand[hand].focused_prev      == skui_last_element);
+ }
+ 
+ ///////////////////////////////////////////
+@@ -1111,9 +1113,12 @@ button_state_ ui_last_element_hand_active(handed_ hand) {
+ ///////////////////////////////////////////
+ 
+ button_state_ ui_last_element_hand_focused(handed_ hand) {
++	// Because focus can change at any point during the frame, we'll check
++	// against the last two frame's focus ids, which are set in stone after the
++	// frame ends.
+ 	return button_make_state(
+-		skui_hand[hand].focused_prev == skui_last_element,
+-		skui_hand[hand].focused      == skui_last_element);
++		skui_hand[hand].focused_prev_prev == skui_last_element,
++		skui_hand[hand].focused_prev      == skui_last_element);
+ }
+ 
+ ///////////////////////////////////////////
+@@ -1127,9 +1132,12 @@ button_state_ ui_last_element_active() {
+ ///////////////////////////////////////////
+ 
+ button_state_ ui_last_element_focused() {
++	// Because focus can change at any point during the frame, we'll check
++	// against the last two frame's focus ids, which are set in stone after the
++	// frame ends.
+ 	return button_make_state(
+-		skui_hand[handed_left].focused_prev == skui_last_element || skui_hand[handed_right].focused_prev == skui_last_element,
+-		skui_hand[handed_left].focused      == skui_last_element || skui_hand[handed_right].focused      == skui_last_element);
++		skui_hand[handed_left].focused_prev_prev == skui_last_element || skui_hand[handed_right].focused_prev_prev == skui_last_element,
++		skui_hand[handed_left].focused_prev      == skui_last_element || skui_hand[handed_right].focused_prev      == skui_last_element);
+ }
+ 
+ ///////////////////////////////////////////"
+StereoKit/StereoKit,599,c72b83e,StereoKitC/ui/stereokit_ui.cpp,modified,1,1,2,"@@ -2447,7 +2447,7 @@ bool32_t _ui_handle_begin(uint64_t id, pose_t &movement, bounds_t handle, bool32
+ 			vec3  from_pt             = finger_pos[i];
+ 			bool  has_hand_attention  = skui_hand[i].active_prev == id;
+ 			float hand_attention_dist = 0;
+-			if (ui_in_box(skui_hand[i].pinch_pt, skui_hand[i].pinch_pt_prev, skui_finger_radius, box)) {
++			if (skui_hand[i].tracked  && ui_in_box(skui_hand[i].pinch_pt, skui_hand[i].pinch_pt_prev, skui_finger_radius, box)) {
+ 				has_hand_attention = true;
+ 			} else if (skui_hand[i].ray_enabled && skui_enable_far_interact) {
+ 				pointer_t *ptr = input_get_pointer(input_hand_pointer_id[i]);"

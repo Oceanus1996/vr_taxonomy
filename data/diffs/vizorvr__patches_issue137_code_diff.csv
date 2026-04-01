@@ -1,0 +1,409 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vizorvr/patches,137,a4794a8,browser/scripts/peopleStore.js,modified,8,4,12,"@@ -86,13 +86,17 @@ PeopleStore.prototype._mouseClickHandler = function() {
+ }
+ 
+ PeopleStore.prototype._mouseMoveHandler = function(e) {
+-	var x = e.pageX, y = e.pageY
+ 
+-	if (Date.now() - mousePositionLastSentAt > 60) {
++	var x = e.pageX
++	var y = e.pageY
++	var cp = E2.dom.canvas_parent[0]
++
++	// Limit the broadcasted mouse movement area to the canvas
++	if (Date.now() - mousePositionLastSentAt > 60 && x > cp.offsetLeft && y > cp.offsetTop) {
+ 		E2.app.dispatcher.dispatch({
+ 			actionType: 'uiMouseMoved',
+-			x: x,
+-			y: y
++			x: x + E2.app.scrollOffset[0], // Make sure to add the scroll offset so we're
++			y: y + E2.app.scrollOffset[1] // showing the correct place when scrolled.
+ 		})
+ 
+ 		mousePositionLastSentAt = Date.now()"
+vizorvr/patches,137,a4794a8,browser/style/less.css,modified,1,0,1,"@@ -6906,6 +6906,7 @@ table {
+   z-index: 99;
+   width: 10px;
+   height: 10px;
++  pointer-events: none;
+   transition: all 0.1s ease-in-out;
+ }
+ .remote-mouse-pointer.clicked {"
+vizorvr/patches,137,a4794a8,less/core.less,modified,1,1,2,"@@ -559,7 +559,7 @@ table
+ 	z-index: 99;
+ 	width: 10px;
+ 	height: 10px;
+-
++	pointer-events: none;
+ 	transition: all .1s ease-in-out;
+ }
+ "
+vizorvr/patches,137,13503c3,browser/scripts/application.js,modified,67,2,69,"@@ -1776,6 +1776,7 @@ Application.prototype.onGraphSelected = function(graph) {
+ Application.prototype.setupPeopleEvents = function() {
+ 	var that = this
+ 	var cursors = this.mouseCursors = {}
++	var lastMovementTimeouts = this.lastMovementTimeouts = []
+ 
+ 	this.peopleStore.on('removed', function(uid) {
+ 		if (uid === that.channel.uid)
+@@ -1795,8 +1796,10 @@ Application.prototype.setupPeopleEvents = function() {
+ 
+ 		var $cursor = $('<div>')
+ 		cursors[person.uid] = $cursor
++		lastMovementTimeouts[person.uid] = undefined
+ 
+ 		$cursor.addClass('remote-mouse-pointer')
++		$cursor.addClass('inactive')
+ 		$cursor.addClass('user-'+person.uid)
+ 		$cursor.css('background-color', person.color)
+ 		$cursor.appendTo('body')
+@@ -1807,8 +1810,63 @@ Application.prototype.setupPeopleEvents = function() {
+ 
+ 	this.peopleStore.on('mouseMoved', function(person) {
+ 		var $cursor = cursors[person.uid]
+-		$cursor.css('left', person.x)
+-		$cursor.css('top', person.y)
++		var cp = E2.dom.canvas_parent[0];
++		$cursor.removeClass('inactive outside')
++
++		// Update the user's cursor fade-out timeout
++		clearTimeout(lastMovementTimeouts[person.uid])
++		lastMovementTimeouts[person.uid] = setTimeout(function() {
++			$cursor.addClass('inactive')
++		}, 2000);
++
++		// Received x/y are coordinates atop the canvas.
++		var adjustedX = person.x;
++		var adjustedY = person.y;
++		var cursorIsOutsideViewportX = false;
++		var cursorIsOutsideViewportY = false;
++
++		// Calculate viewport top left and bottom right X/Y 
++		var viewPortLeftX = E2.app.scrollOffset[0];
++		var viewPortTopY = E2.app.scrollOffset[1];
++
++		var viewPortBottomY = E2.app.scrollOffset[1] + E2.app.canvas.height();
++		var viewPortRightX = E2.app.scrollOffset[0] + E2.app.canvas.width();
++
++		if(adjustedX < viewPortLeftX) { // On left of the viewport
++			adjustedX = cp.offsetLeft;
++			cursorIsOutsideViewportX = true;
++		}
++		else if(adjustedX > viewPortRightX) { // On right side of the viewport
++			adjustedX = $(window).width();
++			cursorIsOutsideViewportX = true;
++		}
++
++		if(adjustedY < viewPortTopY) { // Above viewport
++			adjustedY = cp.offsetTop;
++			cursorIsOutsideViewportY = true;
++		}
++		else if(adjustedY > viewPortBottomY) { // Below viewport
++			adjustedY = $(window).height();
++			cursorIsOutsideViewportY = true;
++		}
++
++		if(cursorIsOutsideViewportX) { // If cursor is outside viewport boundaries, blur the cursor
++			$cursor.addClass('outside')
++		}
++		else { // Otherwise, just adjust the received X position for current viewport scrolling so we can get a position relative to the canvas
++			adjustedX += cp.offsetLeft - E2.app.scrollOffset[0];
++		}
++
++		if(cursorIsOutsideViewportY) { 
++			$cursor.addClass('outside')
++		}
++		else { 
++			adjustedY += cp.offsetTop - E2.app.scrollOffset[1];
++		}
++
++		$cursor.css('left', adjustedX)
++		$cursor.css('top', adjustedY)
++
+ 	})
+ 
+ 	this.peopleStore.on('mouseClicked', function(uid) {
+@@ -1818,6 +1876,13 @@ Application.prototype.setupPeopleEvents = function() {
+ 		setTimeout(function() {
+ 			$cursor.removeClass('clicked')
+ 		}, 100)
++
++
++		clearTimeout(lastMovementTimes[uid].timeout)
++		lastMovementTimes[uid].timeout = setTimeout(function() {
++			$cursor.addClass('inactive')
++		}, 2000);
++
+ 	})
+ 
+ 	this.peopleStore.on('activeGraphChanged', function(person) {"
+vizorvr/patches,137,13503c3,browser/scripts/editorChannel.js,modified,1,1,2,"@@ -155,4 +155,4 @@ if (typeof(module) !== 'undefined')
+ else
+ 	window.EditorChannel = EditorChannel
+ 
+-})();
+\ No newline at end of file
++})();"
+vizorvr/patches,137,13503c3,browser/scripts/peopleStore.js,modified,12,6,18,"@@ -1,7 +1,5 @@
+ (function() {
+ 
+-var mousePositionLastSentAt = 0
+-
+ if (typeof(module) !== 'undefined') {
+ 	Store = require('./store')
+ }
+@@ -22,6 +20,7 @@ function PeopleStore() {
+ 	Store.apply(this, arguments)
+ 
+ 	this.people = {}
++	this.mousePositionLastSentAt = 0
+ }
+ 
+ PeopleStore.prototype = Object.create(Store.prototype)
+@@ -47,6 +46,8 @@ PeopleStore.prototype.initialize = function() {
+ 	E2.app.dispatcher.register(function(payload) {
+ 		var uid = payload.from = payload.from || myUid
+ 		var isOwn = payload.from === myUid
++	
++		that.people[uid].lastSeen = Date.now()
+ 
+ 		switch(payload.actionType) {
+ 			case 'uiUserIdUnfollowed':
+@@ -127,6 +128,7 @@ PeopleStore.prototype.initialize = function() {
+ 		that.people[m.id].color = m.color
+ 		that.people[m.id].activeGraphUid = m.activeGraphUid
+ 		that.people[m.id].followers = m.followers || 0
++		that.people[m.id].lastSeen = Date.now()
+ 
+ 		if (m.id === myUid)
+ 			that.me = that.people[m.id]
+@@ -147,16 +149,20 @@ PeopleStore.prototype._mouseMoveHandler = function(e) {
+ 	var y = e.pageY
+ 	var cp = E2.dom.canvas_parent[0]
+ 
++	var adjustedX = x - cp.offsetLeft
++	var adjustedY = y - cp.offsetTop
++
+ 	// Limit the broadcasted mouse movement area to the canvas
+-	if (Date.now() - mousePositionLastSentAt > 60 && x > cp.offsetLeft && y > cp.offsetTop) {
++	if (Date.now() - this.mousePositionLastSentAt > 60 && adjustedX > -1 && adjustedY > -1) {
+ 		E2.app.dispatcher.dispatch({
+ 			actionType: 'uiMouseMoved',
+-			x: x + E2.app.scrollOffset[0], // Make sure to add the scroll offset so we're
+-			y: y + E2.app.scrollOffset[1] // showing the correct place when scrolled.
++			x: adjustedX + E2.app.scrollOffset[0],
++			y: adjustedY + E2.app.scrollOffset[1]
+ 		})
+ 
+-		mousePositionLastSentAt = Date.now()
++		this.mousePositionLastSentAt = Date.now()
+ 	}
++
+ }
+ 
+ /**"
+vizorvr/patches,137,13503c3,browser/style/less.css,modified,33,0,33,"@@ -6899,6 +6899,39 @@ table {
+   cursor: no-drop !important;
+   pointer-events: none;
+ }
++.remote-mouse-pointer {
++  position: absolute;
++  background-color: #fff;
++  border-radius: 7px;
++  z-index: 99;
++  width: 14px;
++  height: 14px;
++  margin: -7px 0 0 -7px;
++  pointer-events: none;
++  transition: all 0.05s ease-out;
++  opacity: 0.75;
++}
++.remote-mouse-pointer.inactive {
++  opacity: 0.25;
++  transition: all 1s ease-in-out;
++}
++.remote-mouse-pointer.outside {
++  opacity: 0.5 !important;
++  width: 24px;
++  height: 24px;
++  margin-left: -12px;
++  margin-top: -12px;
++  border-radius: 16px;
++  -webkit-filter: blur(6px);
++  -moz-filter: blur(6px);
++  -o-filter: blur(6px);
++  -ms-filter: blur(6px);
++  filter: blur(6px);
++}
++.remote-mouse-pointer.clicked {
++  transform: scale(2);
++  opacity: 1.0;
++}
+ html,
+ body {
+   height: 100%;"
+vizorvr/patches,137,13503c3,browser/test/unit/peopleStore.js,modified,79,5,84,"@@ -1,4 +1,5 @@
+ global.EventEmitter = require('events').EventEmitter
++global.sinon = require('sinon')
+ global.document = { addEventListener: function() {} }
+ 
+ var dispatchListener
+@@ -14,10 +15,19 @@ global.E2 = {
+ 			register: function(cb) {
+ 				dispatchListener = cb
+ 			}
+-		}
++		},
++		scrollOffset: [0, 0]
++	},
++	dom: {
++		canvas_parent: [{
++			offsetLeft: 32,
++			offsetTop: 32
++		}]
+ 	}
+ }
+ 
++E2.app.channel.setMaxListeners(16)
++
+ var assert = require('assert')
+ var PeopleStore = require('../../scripts/peopleStore')
+ 
+@@ -83,15 +93,80 @@ describe('PeopleStore', function() {
+ 		assert.equal(ps.findByUid('foo').uid, 'foo')
+ 	})
+ 
+-	it('dispatches on mousemove', function(done) {
++	it('dispatches on mousemove when over the canvas', function(done) {
+ 		global.E2.app.dispatcher.dispatch = function(pl) {
+ 			assert.equal(pl.actionType, 'uiMouseMoved')
+ 			assert.equal(pl.x, 32)
+-			assert.equal(pl.y, 64)
++			assert.equal(pl.y, 32)
+ 			done()
+ 		}
+ 
+-		ps._mouseMoveHandler.call(ps, { pageX: 32, pageY: 64 })
++		ps._mouseMoveHandler.call(ps, { pageX: 64, pageY: 64 })
++	})
++
++	it('does not dispatch on mousemove when not over the canvas', function(done) {
++
++		global.E2.app.dispatcher.dispatch = function(pl) {
++			if (pl.actionType === 'uiMouseMoved')
++				done(new Error('uiMouseMoved received'))			
++		}
++
++		ps._mouseMoveHandler.call(ps, { pageX: 16, pageY: 16 })
++		done()
++
++	})
++
++	it('updates lastSeen when joined', function() {
++
++		E2.app.channel.emit('join', { id: 'foo'})
++		assert.ok(ps.findByUid('foo').lastSeen > 1000)
++
++	})
++
++	it('updates lastSeen when user moves their mouse', function() {
++
++		var lastSeenWhenJoined
++		var lastSeenAfterMousemove
++
++		E2.app.channel.emit('join', { id: 'antero'})
++		lastSeenWhenJoined = ps.findByUid('antero').lastSeen
++
++		var clock = sinon.useFakeTimers(lastSeenWhenJoined + 100);
++
++		dispatchListener({
++			from: 'antero',
++			actionType: 'uiMouseMoved',
++			x: 64,
++			y: 64
++		})
++
++		lastSeenAfterMousemove = ps.findByUid('antero').lastSeen
++		assert.notEqual(lastSeenWhenJoined, lastSeenAfterMousemove)
++
++		clock.restore()
++
++	})
++
++	it('updates lastSeen when user clicks', function() {
++
++		var lastSeenWhenJoined
++		var lastSeenAfterClick
++
++		E2.app.channel.emit('join', { id: 'antero'})
++		lastSeenWhenJoined = ps.findByUid('antero').lastSeen
++
++		var clock = sinon.useFakeTimers(lastSeenWhenJoined + 100);
++
++		dispatchListener({
++			from: 'antero',
++			actionType: 'uiMouseClicked'
++		})
++
++		lastSeenAfterClick = ps.findByUid('antero').lastSeen
++		assert.notEqual(lastSeenWhenJoined, lastSeenAfterClick)
++
++		clock.restore()
++
+ 	})
+ 
+ 	it('changes active graph on uiActiveGraphChanged', function() {
+@@ -166,5 +241,4 @@ describe('PeopleStore', function() {
+ 		assert.equal(ps.me.followers, 4)
+ 	})
+ 
+-
+ })"
+vizorvr/patches,137,13503c3,less/core.less,modified,36,0,36,"@@ -552,3 +552,39 @@ table
+ 	pointer-events: none;
+ }
+ 
++.remote-mouse-pointer {
++	position: absolute;
++	background-color: #fff;
++	border-radius: 7px;
++	z-index: 99;
++	width: 14px;
++	height: 14px;
++	margin: -7px 0 0 -7px;
++	pointer-events: none;
++	transition: all .05s ease-out;
++	opacity: 0.75;
++}
++
++.remote-mouse-pointer.inactive {
++	opacity: 0.25;
++	transition: all 1s ease-in-out;
++}
++
++.remote-mouse-pointer.outside {
++	opacity: 0.5 !important;
++	width: 24px;
++	height: 24px;
++	margin-left: -12px;
++	margin-top: -12px;
++	border-radius: 16px;
++	-webkit-filter: blur(6px);
++	-moz-filter: blur(6px);
++	-o-filter: blur(6px);
++	-ms-filter: blur(6px);
++	filter: blur(6px);
++}
++
++.remote-mouse-pointer.clicked {
++	transform: scale(2.0);
++	opacity: 1.0;
++}"
+vizorvr/patches,137,13503c3,package.json,modified,1,0,1,"@@ -73,6 +73,7 @@
+     ""minimist"": ""0.0.8"",
+     ""mocha"": ""^1.21.5"",
+     ""multiline"": ""^0.3.4"",
++    ""sinon"": ""^1.15.4"",
+     ""supertest"": ""^0.13.0"",
+     ""uglify-js2"": ""^2.1.11"",
+     ""yui-compressor"": ""^0.1.3"""

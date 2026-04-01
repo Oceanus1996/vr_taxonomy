@@ -1,0 +1,101 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe,1011,076cefa2839290264186d7e1447c917a11861057,src/core/a-entity.js,modified,1,0,1,"@@ -61,6 +61,7 @@ var proto = Object.create(ANode.prototype, {
+       this.addToParent();
+       if (!this.isScene) {
+         this.load();
++        if (!this.parentNode.paused) { this.play(); }
+       }
+     }
+   },"
+aframevr/aframe,1011,076cefa2839290264186d7e1447c917a11861057,tests/core/a-entity.test.js,modified,15,1,16,"@@ -69,19 +69,32 @@ suite('a-entity', function () {
+     });
+ 
+     test('waits for children to load', function (done) {
++      var scene = document.createElement('a-scene');
+       var entity = document.createElement('a-entity');
+       var entityChild1 = document.createElement('a-entity');
+       var entityChild2 = document.createElement('a-entity');
+       entity.appendChild(entityChild1);
+       entity.appendChild(entityChild2);
+-      document.body.appendChild(entity);
++      scene.appendChild(entity);
++      document.body.appendChild(scene);
+ 
+       entity.addEventListener('loaded', function () {
+         assert.ok(entityChild1.hasLoaded);
+         assert.ok(entityChild2.hasLoaded);
+         done();
+       });
+     });
++
++    test('plays when entity is attached after scene load', function (done) {
++      var el = document.createElement('a-entity');
++      this.sinon.spy(AEntity.prototype, 'play');
++
++      this.el.sceneEl.appendChild(el);
++      el.addEventListener('loaded', function () {
++        sinon.assert.called(AEntity.prototype.play);
++        done();
++      });
++    });
+   });
+ 
+   /**
+@@ -508,6 +521,7 @@ suite('a-entity component lifecycle management', function () {
+   test('calls play on entity play', function () {
+     var el = this.el;
+     var TestComponent = this.TestComponent.prototype;
++    this.el.pause();
+ 
+     this.sinon.spy(TestComponent, 'play');
+     el.setAttribute('test', '');"
+aframevr/aframe,1011,20911834d03693e46ba53cd25c3af2a5bc03469f,src/core/a-entity.js,modified,1,0,1,"@@ -61,6 +61,7 @@ var proto = Object.create(ANode.prototype, {
+       this.addToParent();
+       if (!this.isScene) {
+         this.load();
++        if (!this.parentNode.paused) { this.play(); }
+       }
+     }
+   },"
+aframevr/aframe,1011,20911834d03693e46ba53cd25c3af2a5bc03469f,tests/core/a-entity.test.js,modified,15,1,16,"@@ -69,19 +69,32 @@ suite('a-entity', function () {
+     });
+ 
+     test('waits for children to load', function (done) {
++      var scene = document.createElement('a-scene');
+       var entity = document.createElement('a-entity');
+       var entityChild1 = document.createElement('a-entity');
+       var entityChild2 = document.createElement('a-entity');
+       entity.appendChild(entityChild1);
+       entity.appendChild(entityChild2);
+-      document.body.appendChild(entity);
++      scene.appendChild(entity);
++      document.body.appendChild(scene);
+ 
+       entity.addEventListener('loaded', function () {
+         assert.ok(entityChild1.hasLoaded);
+         assert.ok(entityChild2.hasLoaded);
+         done();
+       });
+     });
++
++    test('plays when entity is attached after scene load', function (done) {
++      var el = document.createElement('a-entity');
++      this.sinon.spy(AEntity.prototype, 'play');
++
++      this.el.sceneEl.appendChild(el);
++      el.addEventListener('loaded', function () {
++        sinon.assert.called(AEntity.prototype.play);
++        done();
++      });
++    });
+   });
+ 
+   /**
+@@ -508,6 +521,7 @@ suite('a-entity component lifecycle management', function () {
+   test('calls play on entity play', function () {
+     var el = this.el;
+     var TestComponent = this.TestComponent.prototype;
++    this.el.pause();
+ 
+     this.sinon.spy(TestComponent, 'play');
+     el.setAttribute('test', '');"

@@ -1,0 +1,69 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch,gpt_bug_detection
+KozGit/DOOM-3-BFG-VR,17,b37f4a5170b38c930c2b469b46c628de8c1a05c0,neo/d3xp/Player.cpp,modified,2,1,3,"@@ -10042,7 +10042,8 @@ void idPlayer::Move()
+ 				idMat3 bodyAx = idAngles( bodyAng.pitch, bodyAng.yaw - commonVr->bodyYawOffset, bodyAng.roll ).Normalize180().ToMat3();
+ 			
+ 				
+-				newBodyOrigin = bodyOrigin + bodyAx[0] * commonVr->poseHmdBodyPositionDelta.x + bodyAx[1] * commonVr->poseHmdBodyPositionDelta.y;
++				newBodyOrigin = bodyOrigin + bodyAx[0] * commonVr->remainingMoveHmdBodyPositionDelta.x + bodyAx[1] * commonVr->remainingMoveHmdBodyPositionDelta.y;
++				commonVr->remainingMoveHmdBodyPositionDelta.x = commonVr->remainingMoveHmdBodyPositionDelta.y = 0;
+ 				//newBodyOrigin.z = 0.0f;
+ 			
+ 				commonVr->motionMoveDelta = newBodyOrigin - bodyOrigin;","{""has_bug"": true, ""bugs"": [{""line_start"": 141, ""line_end"": 141, ""description"": ""Typo in variable name: 'vr_by1' is defined twice, which can lead to unexpected behavior."", ""buggy_code"": ""idCVar vr_by2( \""vr_by1\"", \""5\"", CVAR_FLOAT, \""\"" );""}]}"
+KozGit/DOOM-3-BFG-VR,17,b37f4a5170b38c930c2b469b46c628de8c1a05c0,neo/vr/Vr.cpp,modified,2,0,2,"@@ -1764,6 +1764,7 @@ void iVr::FrameStart( void )
+ 	if ( hasOculusRift )
+ 	{
+ 		HMDGetOrientation( poseHmdAngles, poseHmdHeadPositionDelta, poseHmdBodyPositionDelta, poseHmdAbsolutePosition, false );
++		remainingMoveHmdBodyPositionDelta = poseHmdBodyPositionDelta;
+ 		return;
+ 	}
+ 
+@@ -1795,6 +1796,7 @@ void iVr::FrameStart( void )
+ 
+ 
+ 	HMDGetOrientation( poseHmdAngles, poseHmdHeadPositionDelta, poseHmdBodyPositionDelta, poseHmdAbsolutePosition, false );
++	remainingMoveHmdBodyPositionDelta = poseHmdBodyPositionDelta;
+ 	
+ 	for ( int i = 0; i < 2; i++ )
+ 	{","{""has_bug"": true, ""bugs"": [{""line_start"": 169, ""line_end"": 169, ""description"": ""The line is incomplete, which could lead to a compilation error or undefined behavior."", ""buggy_code"": ""idCVar vr_hudObjective( \""vr_hudObjective\"", \""1\"", CVAR_BOOL | CVAR_GAME | CVAR_AR""}]}"
+KozGit/DOOM-3-BFG-VR,17,b37f4a5170b38c930c2b469b46c628de8c1a05c0,neo/vr/Vr.h,modified,1,0,1,"@@ -332,6 +332,7 @@ class iVr
+ 	idAngles			poseHmdAngles;
+ 	idVec3				poseHmdHeadPositionDelta;
+ 	idVec3				poseHmdBodyPositionDelta;
++	idVec3				remainingMoveHmdBodyPositionDelta;
+ 	idVec3				poseHmdAbsolutePosition;
+ 
+ 	idVec3				poseHandPos[2];","{""has_bug"": true, ""bugs"": [{""line_start"": 199, ""line_end"": 199, ""description"": ""Typo in parameter name 'positoin', which should be 'position'. This can lead to undefined behavior or incorrect results when the function is called."", ""buggy_code"": ""void HMDGetOrientationAbsolute( idAngles &hmdAngles, idVec3 &positoin );""}, {""line_start"": 261, ""line_end"": 261, ""description"": ""The function 'ForceChaperone' does not have a clear implementation in the provided code. If it is not implemented, it may lead to unexpected behavior when trying to lock the virtual world to the real world."", ""buggy_code"": ""void ForceChaperone(bool force);""}, {""line_start"": 431, ""line_end"": 431, ""description"": ""Potential resource leak if 'm_pHMD' is not properly initialized or released. This can lead to memory issues."", ""buggy_code"": ""vr::IVRSystem *m_pHMD;""}, {""line_start"": 433, ""line_end"": 433, ""description"": ""Potential resource leak if 'm_pCompositor' is not properly initialized or released. This can lead to memory issues."", ""buggy_code"": ""vr::IVRCompositor *m_pCompositor;""}, {""line_start"": 435, ""line_end"": 435, ""description"": ""Potential resource leak if 'm_pChaperone' is not properly initialized or released. This can lead to memory issues."", ""buggy_code"": ""vr::IVRChaperone *m_pChaperone;""}]}"
+KozGit/DOOM-3-BFG-VR,17,4aaa9cb3540d0810a5fd4d7ee01e8fec8f9c2b13,neo/d3xp/Player.cpp,modified,2,1,3,"@@ -9866,7 +9866,8 @@ void idPlayer::Move()
+ 				idMat3 bodyAx = idAngles( bodyAng.pitch, bodyAng.yaw - commonVr->bodyYawOffset, bodyAng.roll ).Normalize180().ToMat3();
+ 			
+ 				
+-				newBodyOrigin = bodyOrigin + bodyAx[0] * commonVr->poseHmdBodyPositionDelta.x + bodyAx[1] * commonVr->poseHmdBodyPositionDelta.y;
++				newBodyOrigin = bodyOrigin + bodyAx[0] * commonVr->remainingMoveHmdBodyPositionDelta.x + bodyAx[1] * commonVr->remainingMoveHmdBodyPositionDelta.y;
++				commonVr->remainingMoveHmdBodyPositionDelta.x = commonVr->remainingMoveHmdBodyPositionDelta.y = 0;
+ 				//newBodyOrigin.z = 0.0f;
+ 			
+ 				commonVr->motionMoveDelta = newBodyOrigin - bodyOrigin;","{""has_bug"": true, ""bugs"": [{""line_start"": 141, ""line_end"": 141, ""description"": ""Typo in variable name: 'vr_by1' is defined twice, which can cause confusion and incorrect behavior."", ""buggy_code"": ""idCVar vr_by2( \""vr_by1\"", \""5\"", CVAR_FLOAT, \""\"" );""}, {""line_start"": 71, ""line_end"": 71, ""description"": ""Incorrect path separator used for including the VR header file, which may lead to file not found errors on non-Windows systems."", ""buggy_code"": ""#include \""vr\\Vr.h\"" // koz""}]}"
+KozGit/DOOM-3-BFG-VR,17,4aaa9cb3540d0810a5fd4d7ee01e8fec8f9c2b13,neo/vr/Vr.cpp,modified,2,0,2,"@@ -1772,6 +1772,7 @@ void iVr::FrameStart( void )
+ 	if ( hasOculusRift )
+ 	{
+ 		HMDGetOrientation( poseHmdAngles, poseHmdHeadPositionDelta, poseHmdBodyPositionDelta, poseHmdAbsolutePosition, false );
++		remainingMoveHmdBodyPositionDelta = poseHmdBodyPositionDelta;
+ 		return;
+ 	}
+ 
+@@ -1803,6 +1804,7 @@ void iVr::FrameStart( void )
+ 
+ 
+ 	HMDGetOrientation( poseHmdAngles, poseHmdHeadPositionDelta, poseHmdBodyPositionDelta, poseHmdAbsolutePosition, false );
++	remainingMoveHmdBodyPositionDelta = poseHmdBodyPositionDelta;
+ 	
+ 	for ( int i = 0; i < 2; i++ )
+ 	{","{""has_bug"": true, ""bugs"": [{""line_start"": 111, ""line_end"": 111, ""description"": ""Potential logic error in movement keyhole calculation. The value may not be correctly applied to movement logic, leading to incorrect forward movement behavior."", ""buggy_code"": ""idCVar vr_forward_keyhole( \""vr_forward_keyhole\"", \""11.25\"", CVAR_FLOAT | CVAR_ARCHIVE | CVAR_GAME, \""Forward movement keyhole in deg. If view is inside body direction +/- this value, forward movement is in view direction, not body direction\"" );""}, {""line_start"": 161, ""line_end"": 161, ""description"": ""Type mismatch in hud transparency value range. The upper limit should be 1.0 instead of 100.0, as transparency values typically range from 0.0 to 1.0."", ""buggy_code"": ""idCVar vr_hudTransparency( \""vr_hudTransparency\"", \""1\"", CVAR_FLOAT | CVAR_GAME | CVAR_ARCHIVE, \"" Hud transparency. 0.0 = Invisible thru 1.0 = full\"", 0.0, 100.0 );""}]}"
+KozGit/DOOM-3-BFG-VR,17,4aaa9cb3540d0810a5fd4d7ee01e8fec8f9c2b13,neo/vr/Vr.h,modified,1,0,1,"@@ -329,6 +329,7 @@ class iVr
+ 	idAngles			poseHmdAngles;
+ 	idVec3				poseHmdHeadPositionDelta;
+ 	idVec3				poseHmdBodyPositionDelta;
++	idVec3				remainingMoveHmdBodyPositionDelta;
+ 	idVec3				poseHmdAbsolutePosition;
+ 
+ 	idVec3				poseHandPos[2];","{""has_bug"": true, ""bugs"": [{""line_start"": 201, ""line_end"": 201, ""description"": ""Typo in function parameter name 'positoin', which should be 'position'. This can lead to undefined behavior or compilation errors."", ""buggy_code"": ""void HMDGetOrientationAbsolute( idAngles &hmdAngles, idVec3 &positoin );""}, {""line_start"": 227, ""line_end"": 227, ""description"": ""The function 'MotionControlGetHand' does not validate the 'hand' parameter, which can lead to out-of-bounds access if an invalid value is passed."", ""buggy_code"": ""void MotionControlGetHand( int hand, idVec3 &position, idQuat &rotation );""}, {""line_start"": 247, ""line_end"": 247, ""description"": ""The function 'FXAASetUniforms' takes a Framebuffer object by value, which can lead to unnecessary copies and potential resource leaks. It should take it by reference."", ""buggy_code"": ""void FXAASetUniforms( Framebuffer FBO );""}]}"

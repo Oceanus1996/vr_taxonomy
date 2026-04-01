@@ -1,0 +1,180 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+webaverse/app,3329,91ad213c901f2acb8ed2aefbd2968145c0a84d6a,avatars/animationHelpers.js,modified,37,30,67,"@@ -788,25 +788,6 @@ export const _applyAnimation = (avatar, now, moveFactors, timeDiffS) => {
+       };
+     }
+ 
+-    if (avatar.fallLoopState) {
+-      return spec => {
+-        const {
+-          animationTrackName: k,
+-          dst,
+-          // isTop,
+-          isPosition,
+-        } = spec;
+-
+-        const t2 = (avatar.fallLoopTime / 1000);
+-        const src2 = fallLoopAnimation.interpolants[k];
+-        const v2 = src2.evaluate(t2);
+-
+-        dst.fromArray(v2);
+-
+-        _clearXZ(dst, isPosition);
+-      };
+-    }
+-
+     if (avatar.sitState) {
+       return spec => {
+         const {
+@@ -1274,32 +1255,57 @@ export const _applyAnimation = (avatar, now, moveFactors, timeDiffS) => {
+         const src2 = landingAnimation.interpolants[k];
+         const v2 = src2.evaluate(t2);
+ 
+-        const t3 = landTimeS * animationSpeed;
+-        const src3 = fallLoopAnimation.interpolants[k];
+-        const v3 = src3.evaluate(t3);
+-
++        /* Calculating the time since the player landed on the ground. */
+         let f3 = landTimeS / 0.1;
+         f3 = MathUtils.clamp(f3, 0, 1);
+ 
++        /* Calculating the time remaining until the landing animation is complete. */
+         let f2 = (landingAnimationDuration - landTimeS) / 0.15;
+         f2 = MathUtils.clamp(f2, 0, 1);
+ 
++        const f = Math.min(f3, f2);
++
+         if (!isPosition) {
+-          localQuaternion3.fromArray(v3);
+           localQuaternion2.fromArray(v2);
+-          localQuaternion3.slerp(localQuaternion2, f3);
+-          dst.slerp(localQuaternion3, f2);
++          dst.slerp(localQuaternion2, f);
+         } else {
+-          localVector3.fromArray(v3);
+           localVector2.fromArray(v2);
+-          localVector3.lerp(localVector2, f3);
+-          dst.lerp(localVector3, f2);
++          dst.lerp(localVector2, f);
+           _clearXZ(dst, isPosition);
+         }
+       }
+     }
+   };
+ 
++  const _blendFallLoop = spec => {
++    const {
++      animationTrackName: k,
++      dst,
++      isPosition,
++      lerpFn,
++    } = spec;
++
++    if (avatar.fallLoopFactor > 0) {
++      const t2 = (avatar.fallLoopTime / 1000);
++      const src2 = fallLoopAnimation.interpolants[k];
++      const v2 = src2.evaluate(t2);
++      const f = MathUtils.clamp(t2 / 0.3, 0, 1);
++
++      if (avatar.fallLoopFrom === 'jump') {
++        dst.fromArray(v2);
++      } else {
++        lerpFn
++          .call(
++            dst,
++            localQuaternion.fromArray(v2),
++            f,
++          );
++      }
++
++      _clearXZ(dst, isPosition);
++    }
++  };
++
+   const _blendSwim = spec => {
+     const {
+       animationTrackName: k,
+@@ -1400,8 +1406,9 @@ export const _applyAnimation = (avatar, now, moveFactors, timeDiffS) => {
+     } = spec;
+ 
+     applyFn(spec);
+-    _blendLand(spec);
+     _blendFly(spec);
++    _blendFallLoop(spec);
++    _blendLand(spec);
+     _blendActivateAction(spec);
+     _blendSwim(spec);
+ "
+webaverse/app,3329,91ad213c901f2acb8ed2aefbd2968145c0a84d6a,avatars/avatars.js,modified,1,0,1,"@@ -956,6 +956,7 @@ class Avatar {
+     // this.standChargeTime = 0;
+     this.fallLoopState = false;
+     this.fallLoopTime = 0;
++    this.fallLoopFactor = 0;
+     // this.swordSideSlashState = false;
+     // this.swordSideSlashTime = 0;
+     // this.swordTopDownSlashState = false;"
+webaverse/app,3329,91ad213c901f2acb8ed2aefbd2968145c0a84d6a,character-controller.js,modified,2,1,3,"@@ -990,7 +990,7 @@ class UninterpolatedPlayer extends StatePlayer {
+       fly: new InfiniteActionInterpolant(() => this.hasAction('fly'), 0),
+       swim: new InfiniteActionInterpolant(() => this.hasAction('swim'), 0),
+       jump: new InfiniteActionInterpolant(() => this.hasAction('jump'), 0),
+-      land: new InfiniteActionInterpolant(() => !this.hasAction('jump') && !this.hasAction('fallLoop'), 0),
++      land: new InfiniteActionInterpolant(() => !this.hasAction('jump') && !this.hasAction('fallLoop') && !this.hasAction('fly'), 0),
+       dance: new BiActionInterpolant(() => this.hasAction('dance'), 0, crouchMaxTime),
+       emote: new BiActionInterpolant(() => this.hasAction('emote'), 0, crouchMaxTime),
+       movements: new InfiniteActionInterpolant(() => {
+@@ -1009,6 +1009,7 @@ class UninterpolatedPlayer extends StatePlayer {
+       // chargeJump: new InfiniteActionInterpolant(() => this.hasAction('chargeJump'), 0),
+       // standCharge: new InfiniteActionInterpolant(() => this.hasAction('standCharge'), 0),
+       fallLoop: new InfiniteActionInterpolant(() => this.hasAction('fallLoop'), 0),
++      fallLoopTransition: new BiActionInterpolant(() => this.hasAction('fallLoop'), 0, 300),
+       // swordSideSlash: new InfiniteActionInterpolant(() => this.hasAction('swordSideSlash'), 0),
+       // swordTopDownSlash: new InfiniteActionInterpolant(() => this.hasAction('swordTopDownSlash'), 0),
+       hurt: new InfiniteActionInterpolant(() => this.hasAction('hurt'), 0),"
+webaverse/app,3329,91ad213c901f2acb8ed2aefbd2968145c0a84d6a,character-physics.js,modified,9,3,12,"@@ -43,6 +43,7 @@ class CharacterPhysics {
+ 
+     this.velocity = new THREE.Vector3();
+     this.lastGrounded = null;
++    this.lastGroundedTime = 0;
+     this.lastCharacterControllerY = null;
+     this.sitOffset = new THREE.Vector3();
+    
+@@ -91,7 +92,7 @@ class CharacterPhysics {
+         const jumpTime = this.player.actionInterpolants.jump.get();
+         localVector3.y = Math.sin(jumpTime * (Math.PI / flatGroundJumpAirTime)) * jumpHeight + jumpAction.startPositionY - this.lastCharacterControllerY;
+         if (jumpTime >= flatGroundJumpAirTime) {
+-          this.player.setControlAction({type: 'fallLoop'});
++          this.player.setControlAction({type: 'fallLoop', from: 'jump'});
+         }
+       }
+         
+@@ -157,6 +158,7 @@ class CharacterPhysics {
+         }
+ 
+         if (grounded) {
++          this.lastGroundedTime = now;
+           if (!this.lastGrounded) {
+             if (this.player.hasAction('jump') || this.player.hasAction('fallLoop')) {
+               this.player.setControlAction({type: 'land', time: now});
+@@ -165,8 +167,12 @@ class CharacterPhysics {
+ 
+           this.velocity.y = -1;
+         } else {
+-          if (!this.player.hasAction('fallLoop') && !this.player.hasAction('jump') && !this.player.hasAction('fly') && !this.player.hasAction('swim')) {
+-            this.player.setControlAction({type: 'fallLoop'});
++          const lastGroundedTimeDiff = now - this.lastGroundedTime;
++          if (lastGroundedTimeDiff > 200) {
++            if (!this.player.hasAction('fallLoop') && !this.player.hasAction('jump') && !this.player.hasAction('fly') && !this.player.hasAction('swim')) {
++              this.player.setControlAction({type: 'fallLoop'});
++              this.velocity.y = 0;
++            }
+           }
+         }
+       } else {"
+webaverse/app,3329,91ad213c901f2acb8ed2aefbd2968145c0a84d6a,player-avatar-binding.js,modified,2,0,2,"@@ -205,6 +205,8 @@ export function applyPlayerActionsToAvatar(player, rig) {
+   // rig.standChargeAnimation = standChargeAnimation;
+   // rig.standChargeState = !!standCharge;
+   rig.fallLoopTime = player.actionInterpolants.fallLoop.get();
++  rig.fallLoopFactor = player.actionInterpolants.fallLoopTransition.getNormalized();
++  rig.fallLoopFrom = fallLoopAction ? fallLoopAction.from : '';
+   // rig.fallLoopAnimation = fallLoopAnimation;
+   rig.fallLoopState = !!fallLoopAction;
+   // rig.swordSideSlashTime = player.actionInterpolants.swordSideSlash.get();"

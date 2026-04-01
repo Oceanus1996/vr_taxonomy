@@ -1,0 +1,125 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+scenerygraphics/scenery,213,1e3c17fb0d99a69b24d9120fd1a2b6026dfed43f,src/main/kotlin/graphics/scenery/backends/Renderer.kt,modified,1,1,2,"@@ -64,7 +64,7 @@ abstract class Renderer : Hubable {
+      *
+      * @param[filename] The filename where to save the screenshot.
+      */
+-    abstract fun screenshot(filename: String = """")
++    abstract fun screenshot(filename: String = """", overwrite: Boolean = false)
+ 
+     /**
+      * Reshapes the window to the given sizes."
+scenerygraphics/scenery,213,1e3c17fb0d99a69b24d9120fd1a2b6026dfed43f,src/main/kotlin/graphics/scenery/backends/opengl/OpenGLRenderer.kt,modified,5,2,7,"@@ -99,6 +99,7 @@ open class OpenGLRenderer(hub: Hub,
+     private var uboCache = ConcurrentHashMap<String, OpenGLUBO>()
+     private var joglDrawable: GLAutoDrawable? = null
+     private var screenshotRequested = false
++    private var screenshotOverwriteExisting = false
+     private var screenshotFilename = """"
+     private var encoder: H264Encoder? = null
+     private var recordMovie = false
+@@ -1845,7 +1846,7 @@ open class OpenGLRenderer(hub: Hub,
+                     File(System.getProperty(""user.home""), ""Desktop"" + File.separator + ""$applicationName - ${SimpleDateFormat(""yyyy-MM-dd HH.mm.ss"").format(Date())}.png"")
+                 } else {
+                     File(screenshotFilename)
+-                })
++                }, screenshotOverwriteExisting)
+ 
+                 ImageIO.write(image, ""png"", file)
+                 logger.info(""Screenshot saved to ${file.absolutePath}"")
+@@ -1854,6 +1855,7 @@ open class OpenGLRenderer(hub: Hub,
+                 e.printStackTrace()
+             }
+ 
++            screenshotOverwriteExisting = false
+             screenshotRequested = false
+         }
+ 
+@@ -2516,8 +2518,9 @@ open class OpenGLRenderer(hub: Hub,
+         gl.glBindVertexArray(0)
+     }
+ 
+-    override fun screenshot(filename: String) {
++    override fun screenshot(filename: String, overwrite: Boolean) {
+         screenshotRequested = true
++        screenshotOverwriteExisting = overwrite
+         screenshotFilename = filename
+     }
+ "
+scenerygraphics/scenery,213,1e3c17fb0d99a69b24d9120fd1a2b6026dfed43f,src/main/kotlin/graphics/scenery/backends/vulkan/VulkanRenderer.kt,modified,5,2,7,"@@ -260,6 +260,7 @@ open class VulkanRenderer(hub: Hub,
+         protected set
+ 
+     private var screenshotRequested = false
++    private var screenshotOverwriteExisting = false
+     private var screenshotFilename = """"
+     var screenshotBuffer: VulkanBuffer? = null
+     var imageBuffer: ByteBuffer? = null
+@@ -1660,7 +1661,7 @@ open class VulkanRenderer(hub: Hub,
+                                 File(System.getProperty(""user.home""), ""Desktop"" + File.separator + ""$applicationName - ${SimpleDateFormat(""yyyy-MM-dd HH.mm.ss"").format(Date())}.png"")
+                             } else {
+                                 File(screenshotFilename)
+-                            })
++                            }, screenshotOverwriteExisting)
+                             file.createNewFile()
+                             ib.rewind()
+ 
+@@ -1692,6 +1693,7 @@ open class VulkanRenderer(hub: Hub,
+                     }
+                 }
+ 
++                screenshotOverwriteExisting = false
+                 screenshotRequested = false
+             }
+         }
+@@ -2887,8 +2889,9 @@ open class VulkanRenderer(hub: Hub,
+     }
+ 
+     @Suppress(""UNUSED"")
+-    override fun screenshot(filename: String) {
++    override fun screenshot(filename: String, overwrite: Boolean) {
+         screenshotRequested = true
++        screenshotOverwriteExisting = overwrite
+         screenshotFilename = filename
+     }
+ "
+scenerygraphics/scenery,213,1e3c17fb0d99a69b24d9120fd1a2b6026dfed43f,src/main/kotlin/graphics/scenery/utils/SystemHelpers.kt,modified,5,1,6,"@@ -182,10 +182,14 @@ class SystemHelpers {
+          * Adds a counter to the file given in [f], if it already exists, and
+          * returns the new file object.
+          */
+-        fun addFileCounter(f: File): File {
++        fun addFileCounter(f: File, overwrite: Boolean): File {
+             var file = f
+             var c = 0
+ 
++            if(overwrite) {
++                return file
++            }
++
+             while(file.exists()) {
+                 val ext = file.name.substringAfterLast(""."")
+                 var name = file.name.substringBeforeLast(""."")"
+scenerygraphics/scenery,213,8e45efa3fa8b37b71c09ceeff6812cd50dfa8910,src/main/kotlin/graphics/scenery/backends/opengl/OpenGLRenderer.kt,modified,2,2,4,"@@ -1382,7 +1382,7 @@ open class OpenGLRenderer(hub: Hub,
+         updateInstanceBuffers(sceneObjects.await())
+         stats?.add(""OpenGLRenderer.updateInstanceBuffers"", System.nanoTime() - startInstanceUpdate)
+ 
+-        if(pushMode && !updated && !sceneUpdated) {
++        if(pushMode && !updated && !sceneUpdated && !screenshotRequested) {
+             if(updateLatch == null) {
+                 updateLatch = CountDownLatch(2)
+             }
+@@ -1407,7 +1407,7 @@ open class OpenGLRenderer(hub: Hub,
+             }
+         }
+ 
+-        if(updated || sceneUpdated) {
++        if(updated || sceneUpdated || screenshotRequested) {
+             updateLatch = null
+         }
+ "
+scenerygraphics/scenery,213,8e45efa3fa8b37b71c09ceeff6812cd50dfa8910,src/main/kotlin/graphics/scenery/backends/vulkan/VulkanRenderer.kt,modified,1,1,2,"@@ -1806,7 +1806,7 @@ open class VulkanRenderer(hub: Hub,
+         }
+ 
+         // return if neither UBOs were updated, nor the scene was modified
+-        if (pushMode && !ubosUpdated && !forceRerecording && totalFrames > 3) {
++        if (pushMode && !ubosUpdated && !forceRerecording && !screenshotRequested && totalFrames > 3) {
+             logger.trace(""UBOs have not been updated, returning ({}, {}, {}, {})"", pushMode, ubosUpdated, forceRerecording, totalFrames)
+             Thread.sleep(2)
+ "

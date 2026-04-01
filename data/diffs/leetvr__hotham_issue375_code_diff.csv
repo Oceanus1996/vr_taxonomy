@@ -1,0 +1,69 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+leetvr/hotham,375,38044b2,hotham-simulator/src/simulator.rs,modified,7,4,11,"@@ -66,6 +66,7 @@ static SWAPCHAIN_COLOR_FORMAT: vk::Format = vk::Format::B8G8R8A8_SRGB;
+ pub const NUM_VIEWS: usize = 2; // TODO: Make dynamic
+ pub const VIEWPORT_HEIGHT: u32 = 1000;
+ pub const VIEWPORT_WIDTH: u32 = 1000;
++pub const CAMERA_FIELD_OF_VIEW: f32 = 1.; // about 57 degrees
+ 
+ lazy_static! {
+     static ref STATE: Mutex<State> = Default::default();
+@@ -1560,15 +1561,17 @@ pub unsafe extern ""system"" fn locate_views(
+     #[allow(clippy::approx_constant)]
+     for (i, view) in views.iter_mut().enumerate() {
+         let pose = state.view_poses[i];
++
++        // The actual fov is defined as (right - left). As these are all symetrical, we just divide the fov variable by 2.
+         *view = View {
+             ty: StructureType::VIEW,
+             next: null_mut(),
+             pose,
+             fov: Fovf {
+-                angle_down: -0.785398,
+-                angle_up: 0.785398,
+-                angle_left: -0.785398,
+-                angle_right: 0.785398,
++                angle_down: -CAMERA_FIELD_OF_VIEW / 2.,
++                angle_up: CAMERA_FIELD_OF_VIEW / 2.,
++                angle_left: -CAMERA_FIELD_OF_VIEW / 2.,
++                angle_right: CAMERA_FIELD_OF_VIEW / 2.,
+             },
+         };
+     }"
+leetvr/hotham,375,38044b2,hotham-simulator/src/state.rs,modified,9,7,16,"@@ -237,8 +237,8 @@ impl State {
+         let forward = orientation * Vec3::Z;
+         // get the right vector rotated by the camera rotation quaternion
+         let right = orientation * Vec3::X;
+-
+         let up = Vec3::Y;
++
+         let movement_speed = 2f32 * dt;
+         for pressed in self.input_state.pressed.iter() {
+             match pressed {
+@@ -291,19 +291,21 @@ impl State {
+             y_rot -= y as f32;
+         }
+ 
++        if x_rot == 0. && y_rot == 0. {
++            return Some(());
++        }
++
+         // Camera position & Rotation
+         let pose = &mut self.view_poses[0];
+-
+-        // Update Rotation
+-        let orientation = &mut pose.orientation;
+-
+         let mouse_sensitivity = 0.2 * std::f32::consts::TAU / 360f32;
+ 
++        let rotation =
++            Quat::from_euler(glam::EulerRot::YXZ, self.camera.yaw, self.camera.pitch, 0.);
+         self.camera.yaw += x_rot * mouse_sensitivity;
+         self.camera.pitch += y_rot * mouse_sensitivity;
+ 
+-        let rotation =
+-            Quat::from_euler(glam::EulerRot::XYZ, self.camera.pitch, self.camera.yaw, 0.);
++        // Update Rotation
++        let orientation = &mut pose.orientation;
+ 
+         // Could probably just do this with mem::transmute, but.. better not.
+         orientation.x = rotation.x;"

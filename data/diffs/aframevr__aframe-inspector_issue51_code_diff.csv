@@ -1,0 +1,97 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe-inspector,51,eb140c14971ff1326239cc7558d351765cfc9d79,src/components/components/CommonComponents.js,modified,1,1,2,"@@ -133,7 +133,7 @@ export default class CommonComponents extends React.Component {
+               ID
+             </label>
+             <InputWidget
+-              onChange={changeId}
++              onBlur={changeId}
+               entity={entity}
+               name=""id""
+               value={entity.id}"
+aframevr/aframe-inspector,51,eb140c14971ff1326239cc7558d351765cfc9d79,src/components/widgets/InputWidget.js,modified,24,2,26,"@@ -5,23 +5,42 @@ export default class InputWidget extends React.Component {
+   static propTypes = {
+     id: PropTypes.string,
+     name: PropTypes.string.isRequired,
++    onBlur: PropTypes.func,
+     onChange: PropTypes.func,
+     value: PropTypes.any
+   };
+ 
+   constructor(props) {
+     super(props);
+     this.state = { value: this.props.value || '' };
++    this.input = React.createRef();
+   }
+ 
+-  onChange = (e) => {
+-    var value = e.target.value;
++  onChange = (event) => {
++    const value = event.target.value;
+     this.setState({ value: value });
+     if (this.props.onChange) {
+       this.props.onChange(this.props.name, value);
+     }
+   };
+ 
++  onBlur = (event) => {
++    if (this.props.onBlur) {
++      const value = event.target.value;
++      this.props.onBlur(this.props.name, value);
++    }
++  };
++
++  onKeyDown = (event) => {
++    event.stopPropagation();
++
++    // enter
++    if (event.keyCode === 13) {
++      this.input.current.blur();
++      return;
++    }
++  };
++
+   componentDidUpdate(prevProps) {
+     if (this.props.value !== prevProps.value) {
+       this.setState({ value: this.props.value || '' });
+@@ -32,10 +51,13 @@ export default class InputWidget extends React.Component {
+     return (
+       <input
+         id={this.props.id}
++        ref={this.input}
+         type=""text""
+         className=""string""
+         value={this.state.value}
++        onBlur={this.onBlur}
+         onChange={this.onChange}
++        onKeyDown={this.onKeyDown}
+       />
+     );
+   }"
+aframevr/aframe-inspector,51,a96923ccec3483b0fe13e7ee6a497ea90c233fb7,src/components/scenegraph/SceneGraph.js,modified,12,4,16,"@@ -175,15 +175,23 @@ export default class SceneGraph extends React.Component {
+       })
+       .map((option, idx) => {
+         let className = 'option' + (option.value === this.state.value ? ' active' : '');
++        let cloneButton = <a onClick={() => this.cloneEntity(option.value)}
++          title=""Clone entity"" className=""button fa fa-clone""></a>;
++        let removeButton = <a onClick={event => { event.stopPropagation(); removeEntity(option.value); } }
++            title=""Remove entity"" className=""button fa fa-trash-o""></a>;
++
++        if (option.value.tagName === 'A-SCENE') {
++          cloneButton = '';
++          removeButton = '';
++        }
++
+         return (
+           <div key={idx} className={className} value={option.value}
+             onClick={() => this.setValue(option.value)}>
+             <span dangerouslySetInnerHTML={{__html: option.html}}></span>
+               <span className=""icons"">
+-                <a onClick={() => this.cloneEntity(option.value)}
+-                  title=""Clone entity"" className=""button fa fa-clone""></a>
+-                <a onClick={event => { event.stopPropagation(); removeEntity(option.value); } }
+-                  title=""Remove entity"" className=""button fa fa-trash-o""></a>
++                {cloneButton}
++                {removeButton}
+               </span>
+           </div>
+         );"

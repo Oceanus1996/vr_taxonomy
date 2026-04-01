@@ -1,0 +1,371 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+StereoKit/StereoKit,399,52e7a01,StereoKitC/asset_types/animation.cpp,modified,13,7,20,"@@ -16,23 +16,21 @@ int32_t anim_frame(const anim_curve_t *curve, int32_t prev_index, float t) {
+ 		if (prev_index + 2 < curve->keyframe_count && curve->keyframe_times[prev_index+1] <= t && curve->keyframe_times[prev_index+2] > t) return prev_index + 1;
+ 	}
+ 	if (t <= curve->keyframe_times[0] || curve->keyframe_count == 1) return 0;
+-	if (t >= curve->keyframe_times[curve->keyframe_count - 1]) return curve->keyframe_count - 1;
++	if (t >= curve->keyframe_times[curve->keyframe_count - 1]) return curve->keyframe_count - 2;
+ 
+ 	int32_t l = 0, r = curve->keyframe_count - 1;
+ 	while (l <= r) {
+ 		int32_t mid = (l+r) / 2;
+ 		if      (curve->keyframe_times[mid] <= t && curve->keyframe_times[mid+1] > t) return mid;
+ 		else if (curve->keyframe_times[mid] < t) l = mid + 1;
+ 		else if (curve->keyframe_times[mid] > t) r = mid - 1;
+-		else log_err(""anim_frame 1"");
+ 	}
+-	log_err(""anim_frame 2"");
+ 	return -1;
+ }
+ 
+ ///////////////////////////////////////////
+ 
+-vec3 gltf_cubic_f3(vec3 in_tangent_next, vec3 value, vec3 next_value, vec3 out_tangent, float t, float frame_duration) {
++vec3 gltf_cubic_f3(vec3 value, vec3 in_tangent_next, vec3 out_tangent, vec3 next_value, float t, float frame_duration) {
+ 	// From the spec https://www.khronos.org/registry/glTF/specs/2.0/glTF-2.0.html#interpolation-cubic
+ 	const float t_2 = t * t;
+ 	const float t_3 = t_2 * t;
+@@ -47,7 +45,7 @@ vec3 gltf_cubic_f3(vec3 in_tangent_next, vec3 value, vec3 next_value, vec3 out_t
+ 
+ ///////////////////////////////////////////
+ 
+-vec4 gltf_cubic_f4(vec4 in_tangent_next, vec4 value, vec4 next_value, vec4 out_tangent, float t, float frame_duration) {
++vec4 gltf_cubic_f4(vec4 value, vec4 in_tangent_next, vec4 out_tangent, vec4 next_value, float t, float frame_duration) {
+ 	// From the spec https://www.khronos.org/registry/glTF/specs/2.0/glTF-2.0.html#interpolation-cubic
+ 	const float t_2 = t * t;
+ 	const float t_3 = t_2 * t;
+@@ -70,13 +68,17 @@ vec3 anim_curve_sample_f3(const anim_curve_t *curve, int32_t *prev_index, float
+ 	vec3   *pts        = (vec3*)curve->keyframe_values;
+ 	*prev_index = frame;
+ 
++	if (curve->keyframe_count <= 1) {
++		return pts[0];
++	}
++
+ 	switch (curve->interpolation) {
+ 	case anim_interpolation_linear: return vec3_lerp(pts[frame], pts[frame + 1], pct); break;
+ 	case anim_interpolation_step:   return pts[frame]; break;
+ 	case anim_interpolation_cubic: {
+ 		int32_t id      = frame * 3;
+ 		int32_t id_next = (frame+1) * 3;
+-		return gltf_cubic_f3(pts[id_next], pts[id + 1], pts[id_next + 1], pts[id + 2], pct, frame_dur);
++		return gltf_cubic_f3(pts[id + 1], pts[id_next], pts[id + 2], pts[id_next + 1], pct, frame_dur);
+ 	}break;
+ 	default: return pts[frame]; break;
+ 	}
+@@ -92,14 +94,18 @@ quat anim_curve_sample_f4(const anim_curve_t *curve, int32_t *prev_index, float
+ 	quat   *pts        = (quat*)curve->keyframe_values;
+ 	*prev_index = frame;
+ 
++	if (curve->keyframe_count <= 1) {
++		return pts[0];
++	}
++
+ 	switch (curve->interpolation) {
+ 	case anim_interpolation_linear: return quat_slerp(pts[frame], pts[frame + 1], pct); break;
+ 	case anim_interpolation_step:   return pts[frame]; break;
+ 	case anim_interpolation_cubic:  {
+ 		vec4   *vecs    = (vec4*)curve->keyframe_values;
+ 		int32_t id      = frame * 3;
+ 		int32_t id_next = (frame+1) * 3;
+-		vec4    result  = gltf_cubic_f4(vecs[id_next], vecs[id + 1], vecs[id_next + 1], vecs[id + 2], pct, frame_dur);
++		vec4    result  = gltf_cubic_f4(vecs[id + 1], vecs[id_next], vecs[id + 2], vecs[id_next + 1], pct, frame_dur);
+ 		return { result.x, result.y, result.z, result.w };
+ 	} break;
+ 	default: return pts[frame]; break;"
+StereoKit/StereoKit,399,d656a14,StereoKitC/systems/platform/platform_utils.cpp,modified,24,8,32,"@@ -111,50 +111,65 @@ bool32_t platform_read_file(const char *filename, void **out_data, size_t *out_s
+ 	*out_data = nullptr;
+ 	*out_size = 0;
+ 
++	char* slash_fix_filename = string_copy(filename);
++	char* curr = slash_fix_filename;
++	while (*curr != '\0') {
++		if (*curr == '\\' || *curr == '/') {
++			*curr = platform_path_separator_c;
++		}
++		curr++;
++	}
++	
+ 	// Open file
+ #if defined(SK_OS_ANDROID)
+ 	// See: http://www.50ply.com/blog/2013/01/19/loading-compressed-android-assets-with-file-pointer/
+ 
+ 	// Try and load using Android API first!
+-	AAsset *asset = AAssetManager_open(android_asset_manager, filename, AASSET_MODE_BUFFER);
++	AAsset *asset = AAssetManager_open(android_asset_manager, slash_fix_filename, AASSET_MODE_BUFFER);
+ 	if (asset) {
+ 		*out_size = AAsset_getLength(asset);
+ 		*out_data = sk_malloc(*out_size + 1);
+ 		AAsset_read(asset, *out_data, *out_size);
+ 		AAsset_close(asset);
+ 		((uint8_t *)*out_data)[*out_size] = 0;
++		sk_free(slash_fix_filename);
+ 		return true;
+ 	}
+ 
+ 	// Fall back to standard file io functions, they -can- work on Android
+ #elif defined(SK_OS_WINDOWS_UWP)
+ 	// See if we have a Handle cached from the FilePicker that matches this
+ 	// file name.
+-	if (file_picker_cache_read(filename, out_data, out_size))
++	if (file_picker_cache_read(slash_fix_filename, out_data, out_size)) {
++		sk_free(slash_fix_filename);
+ 		return true;
++	}
+ #endif
+ 
+ #if defined(SK_OS_LINUX)
++
+ 	// Linux thinks folders are files, but then fails in a bad way when
+ 	// treating them like files.
+ 	struct stat buffer;
+-	if (stat(filename, &buffer) == 0 && (S_ISDIR(buffer.st_mode))) {
+-		log_diagf(""platform_read_file can't read folders: %s"", filename);
++	if (stat(slash_fix_filename, &buffer) == 0 && (S_ISDIR(buffer.st_mode))) {
++		log_diagf(""platform_read_file can't read folders: %s"", slash_fix_filename);
++		sk_free(slash_fix_filename);
+ 		return false;
+ 	}
+ #endif
+ 
+ #if defined(SK_OS_WINDOWS) || defined(SK_OS_WINDOWS_UWP)
+-	int32_t  wsize     = MultiByteToWideChar(CP_UTF8, 0, filename, -1, nullptr, 0);
++	int32_t  wsize     = MultiByteToWideChar(CP_UTF8, 0, slash_fix_filename, -1, nullptr, 0);
+ 	wchar_t *wfilename = sk_malloc_t(wchar_t, wsize);
+-	MultiByteToWideChar(CP_UTF8, 0, filename, -1, wfilename, wsize);
++	MultiByteToWideChar(CP_UTF8, 0, slash_fix_filename, -1, wfilename, wsize);
+ 	FILE *fp = _wfopen(wfilename, L""rb"");
+ 	sk_free(wfilename);
+ #else
+-	FILE *fp = fopen(filename, ""rb"");
++	FILE *fp = fopen(slash_fix_filename, ""rb"");
+ #endif
+ 	if (fp == nullptr) {
+-		log_diagf(""platform_read_file can't find %s"", filename);
++		log_diagf(""platform_read_file can't find %s"", slash_fix_filename);
++		sk_free(slash_fix_filename);
+ 		return false;
+ 	}
+ 
+@@ -172,6 +187,7 @@ bool32_t platform_read_file(const char *filename, void **out_data, size_t *out_s
+ 	// to treat it like a string
+ 	((uint8_t *)*out_data)[*out_size] = 0;
+ 
++	sk_free(slash_fix_filename);
+ 	return read != 0 || *out_size == 0;
+ }
+ "
+StereoKit/StereoKit,399,cb2b32e,CMakeLists.txt,modified,1,1,2,"@@ -22,7 +22,7 @@ cmake_minimum_required(VERSION 3.10)
+ set(CMAKE_CXX_STANDARD 17)
+ set(CMAKE_CXX_STANDARD_REQUIRED ON)
+ 
+-project(StereoKit VERSION ""0.3.6"" LANGUAGES CXX C)
++project(StereoKit VERSION ""0.3.7"" LANGUAGES CXX C)
+ 
+ # Default build configuration to RelWithDebInfo 
+ if (NOT EXISTS ${CMAKE_BINARY_DIR}/CMakeCache.txt)"
+StereoKit/StereoKit,399,cb2b32e,StereoKitC/stereokit.h,modified,2,2,4,"@@ -2,8 +2,8 @@
+ 
+ #define SK_VERSION_MAJOR 0
+ #define SK_VERSION_MINOR 3
+-#define SK_VERSION_PATCH 6
+-#define SK_VERSION_PRERELEASE 0
++#define SK_VERSION_PATCH 7
++#define SK_VERSION_PRERELEASE 1
+ 
+ #if defined(__GNUC__) || defined(__clang__)
+ 	#define SK_DEPRECATED __attribute__((deprecated))"
+StereoKit/StereoKit,399,cb2b32e,xmake.lua,modified,1,1,2,"@@ -66,7 +66,7 @@ target(""StereoKitC"")
+     add_options(""uwp"")
+     add_options(""linux-graphics-backend"")
+     add_options(""oculus-openxr"")
+-    set_version(""0.3.6"")
++    set_version(""0.3.7-preview.1"")
+     set_kind(""shared"")
+     set_symbols(""debug"")
+     if is_plat(""windows"") then"
+StereoKit/StereoKit,399,7aaff3c,StereoKitC/asset_types/animation.cpp,modified,13,7,20,"@@ -16,23 +16,21 @@ int32_t anim_frame(const anim_curve_t *curve, int32_t prev_index, float t) {
+ 		if (prev_index + 2 < curve->keyframe_count && curve->keyframe_times[prev_index+1] <= t && curve->keyframe_times[prev_index+2] > t) return prev_index + 1;
+ 	}
+ 	if (t <= curve->keyframe_times[0] || curve->keyframe_count == 1) return 0;
+-	if (t >= curve->keyframe_times[curve->keyframe_count - 1]) return curve->keyframe_count - 1;
++	if (t >= curve->keyframe_times[curve->keyframe_count - 1]) return curve->keyframe_count - 2;
+ 
+ 	int32_t l = 0, r = curve->keyframe_count - 1;
+ 	while (l <= r) {
+ 		int32_t mid = (l+r) / 2;
+ 		if      (curve->keyframe_times[mid] <= t && curve->keyframe_times[mid+1] > t) return mid;
+ 		else if (curve->keyframe_times[mid] < t) l = mid + 1;
+ 		else if (curve->keyframe_times[mid] > t) r = mid - 1;
+-		else log_err(""anim_frame 1"");
+ 	}
+-	log_err(""anim_frame 2"");
+ 	return -1;
+ }
+ 
+ ///////////////////////////////////////////
+ 
+-vec3 gltf_cubic_f3(vec3 in_tangent_next, vec3 value, vec3 next_value, vec3 out_tangent, float t, float frame_duration) {
++vec3 gltf_cubic_f3(vec3 value, vec3 in_tangent_next, vec3 out_tangent, vec3 next_value, float t, float frame_duration) {
+ 	// From the spec https://www.khronos.org/registry/glTF/specs/2.0/glTF-2.0.html#interpolation-cubic
+ 	const float t_2 = t * t;
+ 	const float t_3 = t_2 * t;
+@@ -47,7 +45,7 @@ vec3 gltf_cubic_f3(vec3 in_tangent_next, vec3 value, vec3 next_value, vec3 out_t
+ 
+ ///////////////////////////////////////////
+ 
+-vec4 gltf_cubic_f4(vec4 in_tangent_next, vec4 value, vec4 next_value, vec4 out_tangent, float t, float frame_duration) {
++vec4 gltf_cubic_f4(vec4 value, vec4 in_tangent_next, vec4 out_tangent, vec4 next_value, float t, float frame_duration) {
+ 	// From the spec https://www.khronos.org/registry/glTF/specs/2.0/glTF-2.0.html#interpolation-cubic
+ 	const float t_2 = t * t;
+ 	const float t_3 = t_2 * t;
+@@ -70,13 +68,17 @@ vec3 anim_curve_sample_f3(const anim_curve_t *curve, int32_t *prev_index, float
+ 	vec3   *pts        = (vec3*)curve->keyframe_values;
+ 	*prev_index = frame;
+ 
++	if (curve->keyframe_count <= 1) {
++		return pts[0];
++	}
++
+ 	switch (curve->interpolation) {
+ 	case anim_interpolation_linear: return vec3_lerp(pts[frame], pts[frame + 1], pct); break;
+ 	case anim_interpolation_step:   return pts[frame]; break;
+ 	case anim_interpolation_cubic: {
+ 		int32_t id      = frame * 3;
+ 		int32_t id_next = (frame+1) * 3;
+-		return gltf_cubic_f3(pts[id_next], pts[id + 1], pts[id_next + 1], pts[id + 2], pct, frame_dur);
++		return gltf_cubic_f3(pts[id + 1], pts[id_next], pts[id + 2], pts[id_next + 1], pct, frame_dur);
+ 	}break;
+ 	default: return pts[frame]; break;
+ 	}
+@@ -92,14 +94,18 @@ quat anim_curve_sample_f4(const anim_curve_t *curve, int32_t *prev_index, float
+ 	quat   *pts        = (quat*)curve->keyframe_values;
+ 	*prev_index = frame;
+ 
++	if (curve->keyframe_count <= 1) {
++		return pts[0];
++	}
++
+ 	switch (curve->interpolation) {
+ 	case anim_interpolation_linear: return quat_slerp(pts[frame], pts[frame + 1], pct); break;
+ 	case anim_interpolation_step:   return pts[frame]; break;
+ 	case anim_interpolation_cubic:  {
+ 		vec4   *vecs    = (vec4*)curve->keyframe_values;
+ 		int32_t id      = frame * 3;
+ 		int32_t id_next = (frame+1) * 3;
+-		vec4    result  = gltf_cubic_f4(vecs[id_next], vecs[id + 1], vecs[id_next + 1], vecs[id + 2], pct, frame_dur);
++		vec4    result  = gltf_cubic_f4(vecs[id + 1], vecs[id_next], vecs[id + 2], vecs[id_next + 1], pct, frame_dur);
+ 		return { result.x, result.y, result.z, result.w };
+ 	} break;
+ 	default: return pts[frame]; break;"
+StereoKit/StereoKit,399,b6ff3a7,StereoKitC/systems/platform/platform_utils.cpp,modified,24,8,32,"@@ -111,50 +111,65 @@ bool32_t platform_read_file(const char *filename, void **out_data, size_t *out_s
+ 	*out_data = nullptr;
+ 	*out_size = 0;
+ 
++	char* slash_fix_filename = string_copy(filename);
++	char* curr = slash_fix_filename;
++	while (*curr != '\0') {
++		if (*curr == '\\' || *curr == '/') {
++			*curr = platform_path_separator_c;
++		}
++		curr++;
++	}
++	
+ 	// Open file
+ #if defined(SK_OS_ANDROID)
+ 	// See: http://www.50ply.com/blog/2013/01/19/loading-compressed-android-assets-with-file-pointer/
+ 
+ 	// Try and load using Android API first!
+-	AAsset *asset = AAssetManager_open(android_asset_manager, filename, AASSET_MODE_BUFFER);
++	AAsset *asset = AAssetManager_open(android_asset_manager, slash_fix_filename, AASSET_MODE_BUFFER);
+ 	if (asset) {
+ 		*out_size = AAsset_getLength(asset);
+ 		*out_data = sk_malloc(*out_size + 1);
+ 		AAsset_read(asset, *out_data, *out_size);
+ 		AAsset_close(asset);
+ 		((uint8_t *)*out_data)[*out_size] = 0;
++		sk_free(slash_fix_filename);
+ 		return true;
+ 	}
+ 
+ 	// Fall back to standard file io functions, they -can- work on Android
+ #elif defined(SK_OS_WINDOWS_UWP)
+ 	// See if we have a Handle cached from the FilePicker that matches this
+ 	// file name.
+-	if (file_picker_cache_read(filename, out_data, out_size))
++	if (file_picker_cache_read(slash_fix_filename, out_data, out_size)) {
++		sk_free(slash_fix_filename);
+ 		return true;
++	}
+ #endif
+ 
+ #if defined(SK_OS_LINUX)
++
+ 	// Linux thinks folders are files, but then fails in a bad way when
+ 	// treating them like files.
+ 	struct stat buffer;
+-	if (stat(filename, &buffer) == 0 && (S_ISDIR(buffer.st_mode))) {
+-		log_diagf(""platform_read_file can't read folders: %s"", filename);
++	if (stat(slash_fix_filename, &buffer) == 0 && (S_ISDIR(buffer.st_mode))) {
++		log_diagf(""platform_read_file can't read folders: %s"", slash_fix_filename);
++		sk_free(slash_fix_filename);
+ 		return false;
+ 	}
+ #endif
+ 
+ #if defined(SK_OS_WINDOWS) || defined(SK_OS_WINDOWS_UWP)
+-	int32_t  wsize     = MultiByteToWideChar(CP_UTF8, 0, filename, -1, nullptr, 0);
++	int32_t  wsize     = MultiByteToWideChar(CP_UTF8, 0, slash_fix_filename, -1, nullptr, 0);
+ 	wchar_t *wfilename = sk_malloc_t(wchar_t, wsize);
+-	MultiByteToWideChar(CP_UTF8, 0, filename, -1, wfilename, wsize);
++	MultiByteToWideChar(CP_UTF8, 0, slash_fix_filename, -1, wfilename, wsize);
+ 	FILE *fp = _wfopen(wfilename, L""rb"");
+ 	sk_free(wfilename);
+ #else
+-	FILE *fp = fopen(filename, ""rb"");
++	FILE *fp = fopen(slash_fix_filename, ""rb"");
+ #endif
+ 	if (fp == nullptr) {
+-		log_diagf(""platform_read_file can't find %s"", filename);
++		log_diagf(""platform_read_file can't find %s"", slash_fix_filename);
++		sk_free(slash_fix_filename);
+ 		return false;
+ 	}
+ 
+@@ -172,6 +187,7 @@ bool32_t platform_read_file(const char *filename, void **out_data, size_t *out_s
+ 	// to treat it like a string
+ 	((uint8_t *)*out_data)[*out_size] = 0;
+ 
++	sk_free(slash_fix_filename);
+ 	return read != 0 || *out_size == 0;
+ }
+ "
+StereoKit/StereoKit,399,4e2d357,CMakeLists.txt,modified,1,1,2,"@@ -22,7 +22,7 @@ cmake_minimum_required(VERSION 3.10)
+ set(CMAKE_CXX_STANDARD 17)
+ set(CMAKE_CXX_STANDARD_REQUIRED ON)
+ 
+-project(StereoKit VERSION ""0.3.6"" LANGUAGES CXX C)
++project(StereoKit VERSION ""0.3.7"" LANGUAGES CXX C)
+ 
+ # Default build configuration to RelWithDebInfo 
+ if (NOT EXISTS ${CMAKE_BINARY_DIR}/CMakeCache.txt)"
+StereoKit/StereoKit,399,4e2d357,StereoKitC/stereokit.h,modified,2,2,4,"@@ -2,8 +2,8 @@
+ 
+ #define SK_VERSION_MAJOR 0
+ #define SK_VERSION_MINOR 3
+-#define SK_VERSION_PATCH 6
+-#define SK_VERSION_PRERELEASE 0
++#define SK_VERSION_PATCH 7
++#define SK_VERSION_PRERELEASE 1
+ 
+ #if defined(__GNUC__) || defined(__clang__)
+ 	#define SK_DEPRECATED __attribute__((deprecated))"
+StereoKit/StereoKit,399,4e2d357,xmake.lua,modified,1,1,2,"@@ -66,7 +66,7 @@ target(""StereoKitC"")
+     add_options(""uwp"")
+     add_options(""linux-graphics-backend"")
+     add_options(""oculus-openxr"")
+-    set_version(""0.3.6"")
++    set_version(""0.3.7-preview.1"")
+     set_kind(""shared"")
+     set_symbols(""debug"")
+     if is_plat(""windows"") then"

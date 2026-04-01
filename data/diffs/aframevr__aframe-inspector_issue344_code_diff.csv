@@ -1,0 +1,214 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe-inspector,344,14f254bb4954dbaabc046a94380fa28f65a6cbef,src/components/Main.js,modified,10,0,10,"@@ -6,6 +6,7 @@ import ReactDOM from 'react-dom';
+ 
+ const Events = require('../lib/Events.js');
+ import ComponentsSidebar from './components/Sidebar';
++import ModalHelp from './modals/ModalHelp';
+ import SceneGraph from './scenegraph/SceneGraph';
+ import ToolBar from './ToolBar';
+ 
+@@ -45,6 +46,14 @@ export default class Main extends React.Component {
+     Events.on('inspectorModeChanged', enabled => {
+       this.setState({inspectorEnabled: enabled});
+     });
++
++    Events.on('openHelpModal', () => {
++      this.setState({isHelpOpen: true});
++    });
++  }
++
++  onCloseHelpModal = value => {
++    this.setState({isHelpOpen: false});
+   }
+ 
+   onModalTextureOnClose = value => {
+@@ -82,6 +91,7 @@ export default class Main extends React.Component {
+             <ComponentsSidebar entity={this.state.entity}/>
+           </div>
+         </div>
++        <ModalHelp isOpen={this.state.isHelpOpen} onClose={this.onCloseHelpModal}/>
+       </div>
+     );
+   }"
+aframevr/aframe-inspector,344,14f254bb4954dbaabc046a94380fa28f65a6cbef,src/components/modals/Modal.js,modified,6,1,7,"@@ -7,6 +7,7 @@ export default class Modal extends React.Component {
+       React.PropTypes.element
+     ]).isRequired,
+     isOpen: React.PropTypes.bool,
++    extraCloseKeyCode: React.PropTypes.number,
+     onClose: React.PropTypes.func,
+     title: React.PropTypes.string
+   };
+@@ -22,8 +23,12 @@ export default class Modal extends React.Component {
+   }
+ 
+   handleGlobalKeydown = event => {
+-    if (this.state.isOpen && event.keyCode === 27) {
++    if (this.state.isOpen && (event.keyCode === 27 ||
++      this.props.extraCloseKeyCode && event.keyCode === this.props.extraCloseKeyCode)) {
+       this.close();
++
++      // Prevent closing the inspector
++      event.stopPropagation();
+     }
+   }
+ "
+aframevr/aframe-inspector,344,14f254bb4954dbaabc046a94380fa28f65a6cbef,src/components/modals/ModalHelp.js,added,77,0,77,"@@ -0,0 +1,77 @@
++import React from 'react';
++import Modal from './Modal';
++
++export default class ModalHelp extends React.Component {
++  static propTypes = {
++    isOpen: React.PropTypes.bool,
++    onClose: React.PropTypes.func
++  };
++
++  constructor (props) {
++    super(props);
++    this.state = {
++      isOpen: this.props.isOpen
++    };
++  }
++
++  componentWillReceiveProps (newProps) {
++    if (this.state.isOpen !== newProps.isOpen) {
++      this.setState({isOpen: newProps.isOpen});
++    }
++  }
++
++  onClose = value => {
++    if (this.props.onClose) {
++      this.props.onClose();
++    }
++  }
++
++  render () {
++    var self = this;
++
++    let shortcuts = [
++      [
++        {key: ['w'], description: 'Translate'},
++        {key: ['e'], description: 'Rotate'},
++        {key: ['r'], description: 'Scale'},
++        {key: ['d'], description: 'Duplicate selected entity'},
++        {key: ['g'], description: 'Toggle grid visibility'},
++        {key: ['n'], description: 'Add new entity'}
++      ],
++      [
++        {key: ['h'], description: 'Show this help'},
++        {key: ['supr'], description: 'Delete selected entity'},
++        {key: ['Esc'], description: 'Exit edit mode'},
++        {key: ['backspace'], description: 'Delete selected entity'},
++        {key: ['ctrl','alt','i'], description: 'Switch Edit and VR Modes'}
++      ]
++    ];
++
++    return (
++      <Modal title=""Shortcuts"" isOpen={this.state.isOpen} onClose={this.onClose} extraCloseKeyCode={72}>
++        <div className=""help-lists"">
++        {
++          shortcuts.map(function (column, idx) {
++            return <ul className=""help-list"" key={idx}>
++            {
++              column.map(function (shortcut) {
++                return (
++                  <li key={shortcut.key} className=""help-key-unit"">
++                  {
++                    shortcut.key.map(function (key) {
++                      return <kbd key={key} className=""help-key""><span>{key}</span></kbd>
++                    })
++                  }
++                  <span className=""help-key-def"">{shortcut.description}</span>
++                  </li>
++                )
++              })
++            }
++            </ul>
++          })
++        }
++        </div>
++      </Modal>
++    );
++  }
++}"
+aframevr/aframe-inspector,344,14f254bb4954dbaabc046a94380fa28f65a6cbef,src/css/main.css,modified,50,2,52,"@@ -389,7 +389,7 @@ a.button:hover {
+ 
+ .modal {
+   position: fixed;
+-  z-index: 1;
++  z-index: 9999;
+   padding-top: 100px;
+   left: 0;
+   top: 0;
+@@ -843,7 +843,6 @@ span.entity-name {
+   height: 22px;
+ }
+ 
+-
+ .row input[type=text],
+ .row input[type=number],
+ .row input.string,
+@@ -855,3 +854,52 @@ span.entity-name {
+   border: 1px solid transparent;
+   background: #222;
+ }
++
++/* shortcuts help */
++.help-lists {
++  display: flex;
++  justify-content: space-around;
++}
++
++.help-list {
++  list-style: none;
++  margin: 0;
++  padding: 0 0 10px 0;
++  width: 350px;
++}
++
++.help-list li {
++  margin-right: 40px;
++}
++
++.help-key-unit {
++  line-height: 1.8;
++  margin-right: 2em;
++  padding: 5px 0;
++}
++
++.help-key {
++  min-width: 60px;
++  position: relative;
++  bottom: 2px;
++  margin-right: 4px;
++}
++
++.help-key span {
++  font-size: 12px;
++  color: #999;
++  display: inline-block;
++  padding: 0 8px;
++  text-align: center;
++  background-color: #2e2e2e;
++  background-repeat: repeat-x;
++  border: 1px solid #666;
++  border-radius: 3px;
++  box-shadow: 0 0 5px #000;
++}
++
++.help-key-def {
++  display: inline-block;
++  margin-left: 1em;
++  color: #BBB;
++}"
+aframevr/aframe-inspector,344,14f254bb4954dbaabc046a94380fa28f65a6cbef,src/lib/shortcuts.js,modified,5,0,5,"@@ -7,6 +7,11 @@ module.exports = {
+   onKeyUp: function (event) {
+     if (!shouldCaptureKeyEvent(event)) { return; }
+ 
++    // h: help
++    if (event.keyCode === 72) {
++      Events.emit('openHelpModal');
++    }
++
+     // esc: close inspector
+     if (event.keyCode === 27) {
+       AFRAME.INSPECTOR.close();"

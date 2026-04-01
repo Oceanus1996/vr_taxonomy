@@ -1,0 +1,510 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vrcx-team/VRCX,1192,71d8cc22bfeff6a5abbe69acecd5fac17ad64262,src/app.js,modified,23,28,51,"@@ -6908,6 +6908,21 @@ console.log(`isLinux: ${LINUX}`);
+         );
+     }
+     $app.data.pendingOfflineDelay = 180000;
++
++    // It's a mess, but it'll be fine afterward with the state manager
++    $app.data.isAgeGatedInstancesVisible = await configRepository.getBool(
++        'VRCX_isAgeGatedInstancesVisible',
++        true
++    );
++
++    $app.methods.toggleIsAgeGatedInstancesVisible = function () {
++        this.isAgeGatedInstancesVisible = !this.isAgeGatedInstancesVisible;
++        configRepository.setBool(
++            'VRCX_isAgeGatedInstancesVisible',
++            this.isAgeGatedInstancesVisible
++        );
++    };
++
+     if (await configRepository.getString('VRCX_avatarRemoteDatabaseProvider')) {
+         // move existing provider to new list
+         var avatarRemoteDatabaseProvider = await configRepository.getString(
+@@ -16694,25 +16709,6 @@ console.log(`isLinux: ${LINUX}`);
+         resolution = '128',
+         isUserDialogIcon = false
+     ) {
+-        function convertFileUrlToImageUrl(url) {
+-            /**
+-             * possible patterns?
+-             * /file/file_fileId/version
+-             * /file/file_fileId/version/
+-             * /file/file_fileId/version/file
+-             * /file/file_fileId/version/file/
+-             */
+-            const pattern = /file\/file_([a-f0-9-]+)\/(\d+)(\/file)?\/?$/;
+-            const match = url.match(pattern);
+-
+-            if (match) {
+-                const fileId = match[1];
+-                const version = match[2];
+-                return `https://api.vrchat.cloud/api/1/image/file_${fileId}/${version}/${resolution}`;
+-            }
+-            // return /image/file_fileId url?
+-            return url;
+-        }
+         if (!user) {
+             return '';
+         }
+@@ -16721,7 +16717,7 @@ console.log(`isLinux: ${LINUX}`);
+             (this.displayVRCPlusIconsAsAvatar && user.userIcon)
+         ) {
+             if (isIcon) {
+-                return convertFileUrlToImageUrl(user.userIcon);
++                return $utils.convertFileUrlToImageUrl(user.userIcon);
+             }
+             return user.userIcon;
+         }
+@@ -16752,7 +16748,9 @@ console.log(`isLinux: ${LINUX}`);
+         }
+         if (user.currentAvatarImageUrl) {
+             if (isIcon) {
+-                return convertFileUrlToImageUrl(user.currentAvatarImageUrl);
++                return $utils.convertFileUrlToImageUrl(
++                    user.currentAvatarImageUrl
++                );
+             }
+             return user.currentAvatarImageUrl;
+         }
+@@ -19908,12 +19906,8 @@ console.log(`isLinux: ${LINUX}`);
+         );
+     };
+ 
+-    $app.methods.getSmallThumbnailUrl = function (url, resolution = 128) {
+-        return (
+-            url
+-                ?.replace('/file/', '/image/')
+-                .replace('/1/file', `/1/${resolution}`) || url
+-        );
++    $app.methods.getSmallThumbnailUrl = function (url) {
++        return $utils.convertFileUrlToImageUrl(url);
+     };
+ 
+     // #endregion
+@@ -19975,7 +19969,8 @@ console.log(`isLinux: ${LINUX}`);
+             groupInstances: this.groupInstances,
+             inGameGroupOrder: this.inGameGroupOrder,
+             groupedByGroupKeyFavoriteFriends:
+-                this.groupedByGroupKeyFavoriteFriends
++                this.groupedByGroupKeyFavoriteFriends,
++            isAgeGatedInstancesVisible: this.isAgeGatedInstancesVisible
+         };
+     };
+ "
+vrcx-team/VRCX,1192,71d8cc22bfeff6a5abbe69acecd5fac17ad64262,src/classes/gameLog.js,modified,4,2,6,"@@ -4,6 +4,7 @@ import configRepository from '../repository/config.js';
+ import database from '../repository/database.js';
+ import { baseClass, $app, API, $t, $utils } from './baseClass.js';
+ import { userRequest } from './request';
++import dayjs from 'dayjs';
+ 
+ export default class extends baseClass {
+     constructor(_app, _API, _t) {
+@@ -168,7 +169,8 @@ export default class extends baseClass {
+                     if (typeof friendRef?.ref !== 'undefined') {
+                         friendRef.ref.$joinCount++;
+                         friendRef.ref.$lastSeen = new Date().toJSON();
+-                        friendRef.ref.$timeSpent += Date.now() - ref.joinTime;
++                        friendRef.ref.$timeSpent +=
++                            dayjs(gameLog.dt) - ref.joinTime;
+                         if (
+                             this.sidebarSortMethods.includes(
+                                 'Sort by Last Seen'
+@@ -178,7 +180,7 @@ export default class extends baseClass {
+                             this.sortOnlineFriends = true;
+                         }
+                     }
+-                    var time = Date.now() - ref.joinTime;
++                    var time = dayjs(gameLog.dt) - ref.joinTime;
+                     this.lastLocation.playerList.delete(userId);
+                     this.lastLocation.friendList.delete(userId);
+                     this.photonLobbyAvatars.delete(userId);"
+vrcx-team/VRCX,1192,71d8cc22bfeff6a5abbe69acecd5fac17ad64262,src/classes/utils.js,modified,19,0,19,"@@ -402,5 +402,24 @@ export default {
+             }
+         }
+         return false;
++    },
++    convertFileUrlToImageUrl(url, resolution = 128) {
++        /**
++         * possible patterns?
++         * /file/file_fileId/version
++         * /file/file_fileId/version/
++         * /file/file_fileId/version/file
++         * /file/file_fileId/version/file/
++         */
++        const pattern = /file\/file_([a-f0-9-]+)\/(\d+)(\/file)?\/?$/;
++        const match = url.match(pattern);
++
++        if (match) {
++            const fileId = match[1];
++            const version = match[2];
++            return `https://api.vrchat.cloud/api/1/image/file_${fileId}/${version}/${resolution}`;
++        }
++        // no match return origin url
++        return url;
+     }
+ };"
+vrcx-team/VRCX,1192,71d8cc22bfeff6a5abbe69acecd5fac17ad64262,src/components/sidebar/GroupsSidebar.vue,modified,22,12,34,"@@ -22,18 +22,20 @@
+                     :key=""ref.instance.id""
+                     class=""x-friend-item""
+                     @click=""$emit('show-group-dialog', ref.instance.ownerId)"">
+-                    <div class=""avatar"">
+-                        <img v-lazy=""ref.group.iconUrl"" />
+-                    </div>
+-                    <div class=""detail"">
+-                        <span class=""name"">
+-                            <span v-text=""ref.group.name""></span>
+-                            <span style=""font-weight: normal; margin-left: 5px""
+-                                >({{ ref.instance.userCount }}/{{ ref.instance.capacity }})</span
+-                            >
+-                        </span>
+-                        <location class=""extra"" :location=""ref.instance.location"" :link=""false"" />
+-                    </div>
++                    <template v-if=""isAgeGatedInstancesVisible || !(ref.ageGate || ref.location?.includes('~ageGate'))"">
++                        <div class=""avatar"">
++                            <img v-lazy=""getSmallGroupIconUrl(ref.group.iconUrl)"" />
++                        </div>
++                        <div class=""detail"">
++                            <span class=""name"">
++                                <span v-text=""ref.group.name""></span>
++                                <span style=""font-weight: normal; margin-left: 5px""
++                                    >({{ ref.instance.userCount }}/{{ ref.instance.capacity }})</span
++                                >
++                            </span>
++                            <location class=""extra"" :location=""ref.instance.location"" :link=""false"" />
++                        </div>
++                    </template>
+                 </div>
+             </template>
+         </template>
+@@ -42,6 +44,7 @@
+ 
+ <script>
+     import Location from '../common/Location.vue';
++    import utils from '../../classes/utils';
+ 
+     export default {
+         name: 'GroupsSidebar',
+@@ -56,6 +59,10 @@
+             groupOrder: {
+                 type: Array,
+                 default: () => []
++            },
++            isAgeGatedInstancesVisible: {
++                type: Boolean,
++                default: false
+             }
+         },
+         data() {
+@@ -89,6 +96,9 @@
+             }
+         },
+         methods: {
++            getSmallGroupIconUrl(url) {
++                return utils.convertFileUrlToImageUrl(url);
++            },
+             toggleGroupSidebarCollapse(groupId) {
+                 this.groupInstancesCfg[groupId].isCollapsed = !this.groupInstancesCfg[groupId].isCollapsed;
+             },"
+vrcx-team/VRCX,1192,71d8cc22bfeff6a5abbe69acecd5fac17ad64262,src/localization/en/en.json,modified,1,0,1,"@@ -381,6 +381,7 @@
+                     ""zoom"": ""Zoom"",
+                     ""vrcplus_profile_icons"": ""VRCPlus Profile Icons"",
+                     ""tooltips"": ""Tooltips"",
++                    ""age_gated_instances"": ""Age Gated Instances"",
+                     ""nicknames"": ""Memo Nicknames"",
+                     ""sort_favorite_by"": ""Sort Favorites by"",
+                     ""sort_favorite_by_name"": ""name"","
+vrcx-team/VRCX,1192,71d8cc22bfeff6a5abbe69acecd5fac17ad64262,src/mixins/dialogs/userDialog.pug,modified,1,1,2,"@@ -477,7 +477,7 @@ mixin userDialog
+                             .detail
+                                 span.name {{ $t('dialog.user.info.bio') }}
+                                 pre.extra(
+-                                    style='font-family: inherit; font-size: 12px; white-space: pre-wrap; margin: 0 0.5em 0 0') {{ userDialog.ref.bio || '-' }}
++                                    style='font-family: inherit; font-size: 12px; white-space: pre-wrap; margin: 0 0.5em 0 0; max-height: 40vh; overflow-y: auto') {{ userDialog.ref.bio || '-' }}
+                                 div(v-if='userDialog.id === API.currentUser.id' style='float: right')
+                                     el-button(
+                                         type='text'"
+vrcx-team/VRCX,1192,71d8cc22bfeff6a5abbe69acecd5fac17ad64262,src/mixins/dialogs/worldDialog.pug,modified,1,0,1,"@@ -6,6 +6,7 @@ mixin worldDialog
+         :last-location='lastLocation'
+         :instance-join-history='instanceJoinHistory'
+         :update-instance-info='updateInstanceInfo'
++        :is-age-gated-instances-visible='isAgeGatedInstancesVisible'
+         @open-folder-generic='openFolderGeneric'
+         @delete-vrchat-cache='deleteVRChatCache'
+         @world-dialog-command='worldDialogCommand'"
+vrcx-team/VRCX,1192,71d8cc22bfeff6a5abbe69acecd5fac17ad64262,src/mixins/tabs/gameLog.pug,modified,8,5,13,"@@ -36,11 +36,14 @@ mixin gameLogTab
+                         span {{ scope.row.created_at | formatDate('short') }}
+             el-table-column(:label='$t(""table.gameLog.type"")' prop='type' width='120')
+                 template(#default='scope')
+-                    span.x-link(
+-                        v-if='scope.row.location && scope.row.type !== ""Location""'
+-                        v-text='$t(""view.game_log.filters."" + scope.row.type)'
+-                        @click='showWorldDialog(scope.row.location)')
+-                    span(v-else v-text='$t(""view.game_log.filters."" + scope.row.type)')
++                    el-tooltip(placement='right' :open-delay='500' :disabled='hideTooltips')
++                        template(#content)
++                            span {{ $t(""view.game_log.filters."" + scope.row.type) }}
++                        span.x-link(
++                            v-if='scope.row.location && scope.row.type !== ""Location""'
++                            v-text='$t(""view.game_log.filters."" + scope.row.type)'
++                            @click='showWorldDialog(scope.row.location)')
++                        span(v-else v-text='$t(""view.game_log.filters."" + scope.row.type)')
+             el-table-column(:label='$t(""table.gameLog.icon"")' prop='isFriend' width='70' align='center')
+                 template(#default='scope')
+                     template(v-if='gameLogIsFriend(scope.row)')"
+vrcx-team/VRCX,1192,71d8cc22bfeff6a5abbe69acecd5fac17ad64262,src/mixins/tabs/settings.pug,modified,4,0,4,"@@ -273,6 +273,10 @@ mixin settingsTab
+                         :label='$t(""view.settings.appearance.appearance.tooltips"")'
+                         :value='!hideTooltips'
+                         @change='saveOpenVROption(""VRCX_hideTooltips"")')
++                    simple-switch(
++                        :label='$t(""view.settings.appearance.appearance.age_gated_instances"")'
++                        :value='isAgeGatedInstancesVisible'
++                        @change='toggleIsAgeGatedInstancesVisible')
+                     .options-container-item
+                         span.name {{ $t('view.settings.appearance.appearance.sort_favorite_by') }}
+                         el-radio-group(v-model='sortFavorites' @change='saveSortFavoritesOption')"
+vrcx-team/VRCX,1192,71d8cc22bfeff6a5abbe69acecd5fac17ad64262,src/theme.material3.scss,modified,6,0,6,"@@ -2061,4 +2061,10 @@ i.x-user-status {
+     background: linear-gradient(90deg, #302E34 25%, #423F46 37%, #302E34 63%);
+     background-size: 400% 100%;
+     animation: el-skeleton-loading 1.4s ease infinite;
++}
++.el-table .el-table__body-wrapper .el-table__row .cell > span {
++    display: block;
++    white-space: nowrap;
++    text-overflow: ellipsis;
++    overflow: hidden;
+ }
+\ No newline at end of file"
+vrcx-team/VRCX,1192,71d8cc22bfeff6a5abbe69acecd5fac17ad64262,src/views/SideBar.vue,modified,3,1,4,"@@ -95,6 +95,7 @@
+                 <groups-sidebar
+                     :group-instances=""groupInstances""
+                     :group-order=""inGameGroupOrder""
++                    :is-age-gated-instances-visible=""isAgeGatedInstancesVisible""
+                     @show-group-dialog=""$emit('show-group-dialog', $event)""></groups-sidebar>
+             </el-tab-pane>
+         </el-tabs>
+@@ -108,12 +109,12 @@
+ 
+     export default {
+         name: 'SideBar',
+-        inject: ['API', 'userImage'],
+         components: {
+             FriendsSidebar,
+             GroupsSidebar,
+             Location
+         },
++        inject: ['API', 'userImage'],
+         props: {
+             // settings
+             // remove these props when have a state manager.
+@@ -124,6 +125,7 @@
+             gameLogDisabled: Boolean,
+             hideNicknames: Boolean,
+             isHideFriendsInSameInstance: Boolean,
++            isAgeGatedInstancesVisible: Boolean,
+ 
+             isSideBarTabShow: Boolean,
+ "
+vrcx-team/VRCX,1192,71d8cc22bfeff6a5abbe69acecd5fac17ad64262,src/views/dialogs/world/WorldDialog.vue,modified,91,87,178,"@@ -325,103 +325,106 @@
+                         }}
+                     </div>
+                     <div v-for=""room in worldDialog.rooms"" :key=""room.id"">
+-                        <div style=""margin: 5px 0"">
+-                            <location-world
+-                                :locationobject=""room.$location""
+-                                :currentuserid=""API.currentUser.id""
+-                                :worlddialogshortname=""worldDialog.$location.shortName""
+-                                @show-launch-dialog=""showLaunchDialog"" />
+-                            <launch
+-                                :location=""room.tag""
+-                                style=""margin-left: 5px""
+-                                @show-launch-dialog=""showLaunchDialog"" />
+-                            <el-tooltip
+-                                placement=""top""
+-                                :content=""$t('dialog.world.instances.self_invite_tooltip')""
+-                                :disabled=""hideTooltips"">
+-                                <invite-yourself
+-                                    :location=""room.$location.tag""
+-                                    :shortname=""room.$location.shortName""
+-                                    style=""margin-left: 5px"" />
+-                            </el-tooltip>
+-                            <el-tooltip
+-                                placement=""top""
+-                                :content=""$t('dialog.world.instances.refresh_instance_info')""
+-                                :disabled=""hideTooltips"">
+-                                <el-button
+-                                    size=""mini""
+-                                    icon=""el-icon-refresh""
++                        <template
++                            v-if=""isAgeGatedInstancesVisible || !(room.ageGate || room.location?.includes('~ageGate'))"">
++                            <div style=""margin: 5px 0"">
++                                <location-world
++                                    :locationobject=""room.$location""
++                                    :currentuserid=""API.currentUser.id""
++                                    :worlddialogshortname=""worldDialog.$location.shortName""
++                                    @show-launch-dialog=""showLaunchDialog"" />
++                                <launch
++                                    :location=""room.tag""
+                                     style=""margin-left: 5px""
+-                                    circle
+-                                    @click=""refreshInstancePlayerCount(room.tag)"" />
+-                            </el-tooltip>
+-                            <el-tooltip
+-                                v-if=""instanceJoinHistory.get(room.$location.tag)""
+-                                placement=""top""
+-                                :content=""$t('dialog.previous_instances.info')""
+-                                :disabled=""hideTooltips"">
+-                                <el-button
+-                                    size=""mini""
+-                                    icon=""el-icon-s-data""
+-                                    style=""margin-left: 5px""
+-                                    plain
+-                                    circle
+-                                    @click=""showPreviousInstanceInfoDialog(room.location)"" />
+-                            </el-tooltip>
+-                            <last-join :location=""room.$location.tag"" :currentlocation=""lastLocation.location"" />
+-                            <instance-info
+-                                :location=""room.tag""
+-                                :instance=""room.ref""
+-                                :friendcount=""room.friendCount""
+-                                :updateelement=""updateInstanceInfo"" />
+-                            <div
+-                                v-if=""room.$location.userId || room.users.length""
+-                                class=""x-friend-list""
+-                                style=""margin: 10px 0; max-height: unset"">
++                                    @show-launch-dialog=""showLaunchDialog"" />
++                                <el-tooltip
++                                    placement=""top""
++                                    :content=""$t('dialog.world.instances.self_invite_tooltip')""
++                                    :disabled=""hideTooltips"">
++                                    <invite-yourself
++                                        :location=""room.$location.tag""
++                                        :shortname=""room.$location.shortName""
++                                        style=""margin-left: 5px"" />
++                                </el-tooltip>
++                                <el-tooltip
++                                    placement=""top""
++                                    :content=""$t('dialog.world.instances.refresh_instance_info')""
++                                    :disabled=""hideTooltips"">
++                                    <el-button
++                                        size=""mini""
++                                        icon=""el-icon-refresh""
++                                        style=""margin-left: 5px""
++                                        circle
++                                        @click=""refreshInstancePlayerCount(room.tag)"" />
++                                </el-tooltip>
++                                <el-tooltip
++                                    v-if=""instanceJoinHistory.get(room.$location.tag)""
++                                    placement=""top""
++                                    :content=""$t('dialog.previous_instances.info')""
++                                    :disabled=""hideTooltips"">
++                                    <el-button
++                                        size=""mini""
++                                        icon=""el-icon-s-data""
++                                        style=""margin-left: 5px""
++                                        plain
++                                        circle
++                                        @click=""showPreviousInstanceInfoDialog(room.location)"" />
++                                </el-tooltip>
++                                <last-join :location=""room.$location.tag"" :currentlocation=""lastLocation.location"" />
++                                <instance-info
++                                    :location=""room.tag""
++                                    :instance=""room.ref""
++                                    :friendcount=""room.friendCount""
++                                    :updateelement=""updateInstanceInfo"" />
+                                 <div
+-                                    v-if=""room.$location.userId""
+-                                    class=""x-friend-item x-friend-item-border""
+-                                    @click=""showUserDialog(room.$location.userId)"">
+-                                    <template v-if=""room.$location.user"">
+-                                        <div class=""avatar"" :class=""userStatusClass(room.$location.user)"">
+-                                            <img v-lazy=""userImage(room.$location.user, true)"" />
++                                    v-if=""room.$location.userId || room.users.length""
++                                    class=""x-friend-list""
++                                    style=""margin: 10px 0; max-height: unset"">
++                                    <div
++                                        v-if=""room.$location.userId""
++                                        class=""x-friend-item x-friend-item-border""
++                                        @click=""showUserDialog(room.$location.userId)"">
++                                        <template v-if=""room.$location.user"">
++                                            <div class=""avatar"" :class=""userStatusClass(room.$location.user)"">
++                                                <img v-lazy=""userImage(room.$location.user, true)"" />
++                                            </div>
++                                            <div class=""detail"">
++                                                <span
++                                                    class=""name""
++                                                    :style=""{ color: room.$location.user.$userColour }""
++                                                    v-text=""room.$location.user.displayName"" />
++                                                <span class=""extra"">
++                                                    {{ $t('dialog.world.instances.instance_creator') }}
++                                                </span>
++                                            </div>
++                                        </template>
++                                        <span v-else v-text=""room.$location.userId"" />
++                                    </div>
++                                    <div
++                                        v-for=""user in room.users""
++                                        :key=""user.id""
++                                        class=""x-friend-item x-friend-item-border""
++                                        @click=""showUserDialog(user.id)"">
++                                        <div class=""avatar"" :class=""userStatusClass(user)"">
++                                            <img v-lazy=""userImage(user, true)"" />
+                                         </div>
+                                         <div class=""detail"">
+                                             <span
+                                                 class=""name""
+-                                                :style=""{ color: room.$location.user.$userColour }""
+-                                                v-text=""room.$location.user.displayName"" />
+-                                            <span class=""extra"">
+-                                                {{ $t('dialog.world.instances.instance_creator') }}
++                                                :style=""{ color: user.$userColour }""
++                                                v-text=""user.displayName"" />
++                                            <span v-if=""user.location === 'traveling'"" class=""extra"">
++                                                <i class=""el-icon-loading"" style=""margin-right: 5px"" />
++                                                <timer :epoch=""user.$travelingToTime"" />
++                                            </span>
++                                            <span v-else class=""extra"">
++                                                <timer :epoch=""user.$location_at"" />
+                                             </span>
+                                         </div>
+-                                    </template>
+-                                    <span v-else v-text=""room.$location.userId"" />
+-                                </div>
+-                                <div
+-                                    v-for=""user in room.users""
+-                                    :key=""user.id""
+-                                    class=""x-friend-item x-friend-item-border""
+-                                    @click=""showUserDialog(user.id)"">
+-                                    <div class=""avatar"" :class=""userStatusClass(user)"">
+-                                        <img v-lazy=""userImage(user, true)"" />
+-                                    </div>
+-                                    <div class=""detail"">
+-                                        <span
+-                                            class=""name""
+-                                            :style=""{ color: user.$userColour }""
+-                                            v-text=""user.displayName"" />
+-                                        <span v-if=""user.location === 'traveling'"" class=""extra"">
+-                                            <i class=""el-icon-loading"" style=""margin-right: 5px"" />
+-                                            <timer :epoch=""user.$travelingToTime"" />
+-                                        </span>
+-                                        <span v-else class=""extra"">
+-                                            <timer :epoch=""user.$location_at"" />
+-                                        </span>
+                                     </div>
+                                 </div>
+                             </div>
+-                        </div>
++                        </template>
+                     </div>
+                 </el-tab-pane>
+                 <el-tab-pane :label=""$t('dialog.world.info.header')"" lazy>
+@@ -756,8 +759,9 @@
+             isGameRunning: Boolean,
+             lastLocation: Object,
+             instanceJoinHistory: Map,
++            isAgeGatedInstancesVisible: Boolean,
+ 
+-            // ok
++            // TODO: Remove
+             updateInstanceInfo: Number
+         },
+         data() {"

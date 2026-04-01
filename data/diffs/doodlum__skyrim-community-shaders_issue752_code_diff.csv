@@ -1,0 +1,145 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+doodlum/skyrim-community-shaders,752,b0a85fc45d6ca6018baedbc40d92a80eda64554f,package/Shaders/DeferredCompositeCS.hlsl,modified,15,15,30,"@@ -2,6 +2,7 @@
+ #include ""Common/Color.hlsli""
+ #include ""Common/FrameBuffer.hlsli""
+ #include ""Common/GBuffer.hlsli""
++#include ""Common/MotionBlur.hlsli""
+ #include ""Common/SharedData.hlsli""
+ #include ""Common/VR.hlsli""
+ 
+@@ -13,7 +14,7 @@ Texture2D<unorm half3> Masks2Texture : register(t4);
+ 
+ RWTexture2D<half3> MainRW : register(u0);
+ RWTexture2D<half4> NormalTAAMaskSpecularMaskRW : register(u1);
+-RWTexture2D<half2> SnowParametersRW : register(u2);
++RWTexture2D<half2> MotionVectorsRW : register(u2);
+ 
+ #if defined(DYNAMIC_CUBEMAPS)
+ Texture2D<float> DepthTexture : register(t5);
+@@ -42,7 +43,7 @@ Texture2D<half4> SpecularSSGITexture : register(t10);
+ 								: SV_DispatchThreadID) {
+ 	half2 uv = half2(dispatchID.xy + 0.5) * BufferDim.zw;
+ 	uint eyeIndex = Stereo::GetEyeIndexFromTexCoord(uv);
+-	uv *= DynamicResolutionParams2.xy;  // adjust for dynamic res
++	uv *= DynamicResolutionParams2.xy;  // Adjust for dynamic res
+ 	uv = Stereo::ConvertFromStereoUV(uv, eyeIndex);
+ 
+ 	half3 normalGlossiness = NormalRoughnessTexture[dispatchID.xy];
+@@ -53,7 +54,15 @@ Texture2D<half4> SpecularSSGITexture : register(t10);
+ 	half3 albedo = AlbedoTexture[dispatchID.xy];
+ 	half3 masks2 = Masks2Texture[dispatchID.xy];
+ 
+-	half2 snowParameters = masks2.xy;
++	half depth = DepthTexture[dispatchID.xy];
++	half4 positionWS = half4(2 * half2(uv.x, -uv.y + 1) - 1, depth, 1);
++	positionWS = mul(CameraViewProjInverse[eyeIndex], positionWS);
++	positionWS.xyz = positionWS.xyz / positionWS.w;
++
++	if (depth == 1.0) {
++		MotionVectorsRW[dispatchID.xy] = GetSSMotionVector(positionWS, positionWS, eyeIndex);  // Apply sky motion vectors
++	}
++
+ 	half pbrWeight = masks2.z;
+ 
+ 	half glossiness = normalGlossiness.z;
+@@ -73,15 +82,7 @@ Texture2D<half4> SpecularSSGITexture : register(t10);
+ 
+ 		color = Color::GammaToLinear(color);
+ 
+-		half depth = DepthTexture[dispatchID.xy];
+-
+-		half4 positionCS = half4(2 * half2(uv.x, -uv.y + 1) - 1, depth, 1);
+-		positionCS = mul(CameraViewProjInverse[eyeIndex], positionCS);
+-		positionCS.xyz = positionCS.xyz / positionCS.w;
+-
+-		half3 positionWS = positionCS.xyz;
+-
+-		half3 V = normalize(positionWS);
++		half3 V = normalize(positionWS.xyz);
+ 		half3 R = reflect(V, normalWS);
+ 
+ 		half roughness = 1.0 - glossiness;
+@@ -96,9 +97,9 @@ Texture2D<half4> SpecularSSGITexture : register(t10);
+ 		finalIrradiance += specularIrradiance;
+ #	elif defined(SKYLIGHTING)
+ #		if defined(VR)
+-		float3 positionMS = positionWS + CameraPosAdjust[eyeIndex].xyz - CameraPosAdjust[0].xyz;
++		float3 positionMS = positionWS.xyz + CameraPosAdjust[eyeIndex].xyz - CameraPosAdjust[0].xyz;
+ #		else
+-		float3 positionMS = positionWS;
++		float3 positionMS = positionWS.xyz;
+ #		endif
+ 
+ 		sh2 skylighting = Skylighting::sample(skylightingSettings, SkylightingProbeArray, positionMS.xyz, normalWS);
+@@ -172,5 +173,4 @@ Texture2D<half4> SpecularSSGITexture : register(t10);
+ 
+ 	MainRW[dispatchID.xy] = color;
+ 	NormalTAAMaskSpecularMaskRW[dispatchID.xy] = half4(GBuffer::EncodeNormalVanilla(normalVS), 0.0, 0.0);
+-	SnowParametersRW[dispatchID.xy] = snowParameters;
+ }
+\ No newline at end of file"
+doodlum/skyrim-community-shaders,752,b0a85fc45d6ca6018baedbc40d92a80eda64554f,package/Shaders/Sky.hlsl,modified,1,9,10,"@@ -240,15 +240,7 @@ PS_OUTPUT main(PS_INPUT input)
+ 	psout.Color = float4(0, 0, 0, 1.0);
+ #	endif  // OCCLUSION
+ 
+-	float3 viewPosition = mul(CameraView[eyeIndex], float4(input.WorldPosition.xyz, 1)).xyz;
+-	float2 screenUV = FrameBuffer::ViewToUV(viewPosition, true, eyeIndex);
+-
+-	float4 positionWS = half4(2 * half2(screenUV.x, -screenUV.y + 1) - 1, 1.0, 1);
+-	positionWS = mul(CameraViewProjInverse[eyeIndex], positionWS);
+-	positionWS.xyz = positionWS.xyz / positionWS.w;
+-	positionWS.w = 1;
+-
+-	float2 screenMotionVector = GetSSMotionVector(positionWS, positionWS, eyeIndex);
++	float2 screenMotionVector = GetSSMotionVector(input.WorldPosition, input.PreviousWorldPosition, eyeIndex);
+ 
+ 	psout.MotionVectors = float4(screenMotionVector, 0, psout.Color.w);
+ 	psout.Normal = float4(0.5, 0.5, 0, psout.Color.w);"
+doodlum/skyrim-community-shaders,752,b0a85fc45d6ca6018baedbc40d92a80eda64554f,src/Deferred.cpp,modified,3,3,6,"@@ -366,11 +366,11 @@ void Deferred::DeferredPasses()
+ 
+ 	auto main = renderer->GetRuntimeData().renderTargets[forwardRenderTargets[0]];
+ 	auto normals = renderer->GetRuntimeData().renderTargets[forwardRenderTargets[2]];
+-	auto snow = renderer->GetRuntimeData().renderTargets[forwardRenderTargets[3]];
+-
+ 	auto depth = renderer->GetDepthStencilData().depthStencils[RE::RENDER_TARGETS_DEPTHSTENCIL::kPOST_ZPREPASS_COPY];
+ 	auto reflectance = renderer->GetRuntimeData().renderTargets[REFLECTANCE];
+ 
++	auto motionVectors = renderer->GetRuntimeData().renderTargets[RE::RENDER_TARGETS::kMOTION_VECTOR];
++
+ 	bool interior = true;
+ 	if (auto sky = RE::Sky::GetSingleton())
+ 		interior = sky->mode.get() != RE::Sky::Mode::kFull;
+@@ -455,7 +455,7 @@ void Deferred::DeferredPasses()
+ 
+ 		context->CSSetShaderResources(0, ARRAYSIZE(srvs), srvs);
+ 
+-		ID3D11UnorderedAccessView* uavs[3]{ main.UAV, normals.UAV, snow.UAV };
++		ID3D11UnorderedAccessView* uavs[3]{ main.UAV, normals.UAV, motionVectors.UAV };
+ 		context->CSSetUnorderedAccessViews(0, ARRAYSIZE(uavs), uavs, nullptr);
+ 
+ 		auto shader = interior ? GetComputeMainCompositeInterior() : GetComputeMainComposite();"
+doodlum/skyrim-community-shaders,752,b0a85fc45d6ca6018baedbc40d92a80eda64554f,src/Hooks.cpp,modified,11,0,11,"@@ -443,6 +443,16 @@ namespace Hooks
+ 		static inline REL::Relocation<decltype(thunk)> func;
+ 	};
+ 
++	struct CreateRenderTarget_MotionVectors
++	{
++		static void thunk(RE::BSGraphics::Renderer* This, RE::RENDER_TARGETS::RENDER_TARGET a_target, RE::BSGraphics::RenderTargetProperties* a_properties)
++		{
++			State::GetSingleton()->ModifyRenderTarget(a_target, a_properties);
++			func(This, a_target, a_properties);
++		}
++		static inline REL::Relocation<decltype(thunk)> func;
++	};
++
+ 	struct BSShader__BeginTechnique_SetVertexShader
+ 	{
+ 		static void thunk(RE::BSGraphics::Renderer* This, RE::BSGraphics::VertexShader* a_vertexShader)
+@@ -674,6 +684,7 @@ namespace Hooks
+ 		stl::write_thunk_call<CreateRenderTarget_Normals>(REL::RelocationID(100458, 107175).address() + REL::Relocate(0x458, 0x45B, 0x5B0));
+ 		stl::write_thunk_call<CreateRenderTarget_NormalsSwap>(REL::RelocationID(100458, 107175).address() + REL::Relocate(0x46B, 0x46E, 0x5C3));
+ 		stl::write_thunk_call<CreateRenderTarget_Snow>(REL::RelocationID(100458, 107175).address() + REL::Relocate(0x406, 0x409, 0x55e));
++		stl::write_thunk_call<CreateRenderTarget_MotionVectors>(REL::RelocationID(100458, 107175).address() + REL::Relocate(0x4F0, 0x4EF, 0x64E));
+ 		stl::write_thunk_call<CreateDepthStencil_PrecipitationMask>(REL::RelocationID(100458, 107175).address() + REL::Relocate(0x1245, 0x123B, 0x1917));
+ 		stl::write_thunk_call<CreateCubemapRenderTarget_Reflections>(REL::RelocationID(100458, 107175).address() + REL::Relocate(0xA25, 0xA25, 0xCD2));
+ "

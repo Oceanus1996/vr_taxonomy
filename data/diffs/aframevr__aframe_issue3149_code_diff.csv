@@ -1,0 +1,39 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe,3149,2f33f2270142b158e21775730bb0702a244edb5a,src/components/camera.js,modified,6,1,7,"@@ -39,6 +39,9 @@ module.exports.Component = registerComponent('camera', {
+     this.onExitVR = bind(this.onExitVR, this);
+     sceneEl.addEventListener('enter-vr', this.onEnterVR);
+     sceneEl.addEventListener('exit-vr', this.onExitVR);
++
++    // Call enter VR handler if the scene has entered VR before the event listeners attached.
++    if (sceneEl.is('vr-mode')) { this.onEnterVR(); }
+   },
+ 
+   /**
+@@ -131,7 +134,9 @@ module.exports.Component = registerComponent('camera', {
+     // Remove the offset if there is positional tracking when entering VR.
+     // Necessary for fullscreen mode with no headset.
+     // Checking this.hasPositionalTracking to make the value injectable for unit tests.
+-    hasPositionalTracking = this.hasPositionalTracking !== undefined ? this.hasPositionalTracking : checkHasPositionalTracking();
++    hasPositionalTracking = this.hasPositionalTracking !== undefined
++      ? this.hasPositionalTracking
++      : checkHasPositionalTracking();
+ 
+     if (!userHeightOffset || !hasPositionalTracking) { return; }
+ "
+aframevr/aframe,3149,2f33f2270142b158e21775730bb0702a244edb5a,tests/__init.test.js,modified,4,3,7,"@@ -8,12 +8,13 @@ window.debug = true;
+ navigator.getVRDisplays = function () {
+   var resolvePromise = Promise.resolve();
+   var mockVRDisplay = {
+-    requestPresent: resolvePromise,
++    cancelAnimationFrame: function (h) { return window.cancelAnimationFrame(1); },
++    capabilities: {},
+     exitPresent: resolvePromise,
+-    submitFrame: function () { return; },
+     getPose: function () { return { orientation: null, position: null }; },
+     requestAnimationFrame: function () { return 1; },
+-    cancelAnimationFrame: function (h) { return window.cancelAnimationFrame(1); }
++    requestPresent: resolvePromise,
++    submitFrame: function () { return; }
+   };
+   return Promise.resolve([mockVRDisplay]);
+ };"

@@ -1,0 +1,562 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+secondlife/viewer,2469,2f1ceef,indra/llui/llcombobox.cpp,modified,80,10,90,"@@ -498,9 +498,9 @@ void LLComboBox::setButtonVisible(bool visible)
+     }
+ }
+ 
+-bool LLComboBox::setCurrentByIndex( S32 index )
++bool LLComboBox::setCurrentByIndex(S32 index)
+ {
+-    bool found = mList->selectNthItem( index );
++    bool found = mList->selectNthItem(index);
+     if (found)
+     {
+         setLabel(getSelectedItemLabel());
+@@ -511,14 +511,53 @@ bool LLComboBox::setCurrentByIndex( S32 index )
+ 
+ S32 LLComboBox::getCurrentIndex() const
+ {
+-    LLScrollListItem* item = mList->getFirstSelected();
+-    if( item )
++    if (LLScrollListItem* item = mList->getFirstSelected())
+     {
+-        return mList->getItemIndex( item );
++        return mList->getItemIndex(item);
+     }
+     return -1;
+ }
+ 
++bool LLComboBox::selectNextItem()
++{
++    S32 last_index = getItemCount() - 1;
++    if (last_index < 0)
++        return false;
++
++    S32 current_index = getCurrentIndex();
++    if (current_index >= last_index)
++        return false;
++
++    S32 new_index = llmax(current_index, -1);
++    while (++new_index <= last_index)
++    {
++        if (setCurrentByIndex(new_index))
++            return true;
++    }
++
++    return false;
++}
++
++bool LLComboBox::selectPrevItem()
++{
++    S32 last_index = getItemCount() - 1;
++    if (last_index < 0)
++        return false;
++
++    S32 current_index = getCurrentIndex();
++    if (!current_index)
++        return false;
++
++    S32 new_index = current_index > 0 ? current_index : last_index + 1;
++    while (--new_index >= 0)
++    {
++        if (setCurrentByIndex(new_index))
++            return true;
++    }
++
++    return false;
++}
++
+ void LLComboBox::setEnabledByValue(const LLSD& value, bool enabled)
+ {
+     LLScrollListItem *found = mList->getItem(value);
+@@ -878,15 +917,46 @@ bool LLComboBox::handleUnicodeCharHere(llwchar uni_char)
+ // virtual
+ bool LLComboBox::handleScrollWheel(S32 x, S32 y, S32 clicks)
+ {
+-    if (mList->getVisible()) return mList->handleScrollWheel(x, y, clicks);
++    if (mList->getVisible())
++    {
++        return mList->handleScrollWheel(x, y, clicks);
++    }
++
+     if (mAllowTextEntry) // We might be editable
++    {
+         if (!mList->getFirstSelected()) // We aren't in the list, don't kill their text
++        {
+             return false;
++        }
++    }
+ 
+-    setCurrentByIndex(llclamp(getCurrentIndex() + clicks, 0, getItemCount() - 1));
+-    prearrangeList();
+-    onCommit();
+-    return true;
++    S32 current_index = getCurrentIndex();
++    if (clicks > 0)
++    {
++        for (S32 i = 0; i < clicks; ++i)
++        {
++            if (!selectNextItem())
++                break;
++        }
++    }
++    else
++    {
++        for (S32 i = 0; i < -clicks; ++i)
++        {
++            if (!selectPrevItem())
++                break;
++        }
++    }
++    S32 new_index = getCurrentIndex();
++
++    if (new_index != current_index)
++    {
++        prearrangeList();
++        onCommit();
++        return true;
++    }
++
++    return false;
+ }
+ 
+ void LLComboBox::setTextEntry(const LLStringExplicit& text)"
+secondlife/viewer,2469,2f1ceef,indra/llui/llcombobox.h,modified,4,1,5,"@@ -163,9 +163,12 @@ class LLComboBox
+ 
+     bool            remove(const std::string& name);    // remove item ""name"", return true if found and removed
+ 
+-    bool            setCurrentByIndex( S32 index );
++    bool            setCurrentByIndex(S32 index);
+     S32             getCurrentIndex() const;
+ 
++    bool            selectNextItem();
++    bool            selectPrevItem();
++
+     void            setEnabledByValue(const LLSD& value, bool enabled);
+ 
+     void            createLineEditor(const Params&);"
+secondlife/viewer,2469,2f1ceef,indra/llui/llscrolllistctrl.cpp,modified,9,13,22,"@@ -889,13 +889,13 @@ bool LLScrollListCtrl::selectFirstItem()
+ 
+ // Deselects all other items
+ // virtual
+-bool LLScrollListCtrl::selectNthItem( S32 target_index )
++bool LLScrollListCtrl::selectNthItem(S32 target_index)
+ {
+     return selectItemRange(target_index, target_index);
+ }
+ 
+ // virtual
+-bool LLScrollListCtrl::selectItemRange( S32 first_index, S32 last_index )
++bool LLScrollListCtrl::selectItemRange(S32 first_index, S32 last_index)
+ {
+     if (mItemList.empty())
+     {
+@@ -905,28 +905,24 @@ bool LLScrollListCtrl::selectItemRange( S32 first_index, S32 last_index )
+     // make sure sort is up to date
+     updateSort();
+ 
+-    S32 listlen = (S32)mItemList.size();
+-    first_index = llclamp(first_index, 0, listlen-1);
+-
+-    if (last_index < 0)
+-        last_index = listlen-1;
+-    else
+-        last_index = llclamp(last_index, first_index, listlen-1);
++    S32 bottom = (S32)mItemList.size() - 1;
++    first_index = llclamp(first_index, 0, bottom);
++    last_index = last_index < 0 ? bottom : llclamp(last_index, first_index, bottom);
+ 
+     bool success = false;
+     S32 index = 0;
+     for (item_list::iterator iter = mItemList.begin(); iter != mItemList.end(); )
+     {
+         LLScrollListItem *itemp = *iter;
+-        if(!itemp)
++        if (!itemp)
+         {
+             iter = mItemList.erase(iter);
+-            continue ;
++            continue;
+         }
+ 
+-        if( index >= first_index && index <= last_index )
++        if (index >= first_index && index <= last_index)
+         {
+-            if( itemp->getEnabled() )
++            if (itemp->getEnabled())
+             {
+                 // TODO: support range selection for cells
+                 selectItem(itemp, -1, false);"
+secondlife/viewer,2469,96ade1f,indra/llui/llcombobox.cpp,modified,80,10,90,"@@ -498,9 +498,9 @@ void LLComboBox::setButtonVisible(bool visible)
+     }
+ }
+ 
+-bool LLComboBox::setCurrentByIndex( S32 index )
++bool LLComboBox::setCurrentByIndex(S32 index)
+ {
+-    bool found = mList->selectNthItem( index );
++    bool found = mList->selectNthItem(index);
+     if (found)
+     {
+         setLabel(getSelectedItemLabel());
+@@ -511,14 +511,53 @@ bool LLComboBox::setCurrentByIndex( S32 index )
+ 
+ S32 LLComboBox::getCurrentIndex() const
+ {
+-    LLScrollListItem* item = mList->getFirstSelected();
+-    if( item )
++    if (LLScrollListItem* item = mList->getFirstSelected())
+     {
+-        return mList->getItemIndex( item );
++        return mList->getItemIndex(item);
+     }
+     return -1;
+ }
+ 
++bool LLComboBox::selectNextItem()
++{
++    S32 last_index = getItemCount() - 1;
++    if (last_index < 0)
++        return false;
++
++    S32 current_index = getCurrentIndex();
++    if (current_index >= last_index)
++        return false;
++
++    S32 new_index = llmax(current_index, -1);
++    while (++new_index <= last_index)
++    {
++        if (setCurrentByIndex(new_index))
++            return true;
++    }
++
++    return false;
++}
++
++bool LLComboBox::selectPrevItem()
++{
++    S32 last_index = getItemCount() - 1;
++    if (last_index < 0)
++        return false;
++
++    S32 current_index = getCurrentIndex();
++    if (!current_index)
++        return false;
++
++    S32 new_index = current_index > 0 ? current_index : last_index + 1;
++    while (--new_index >= 0)
++    {
++        if (setCurrentByIndex(new_index))
++            return true;
++    }
++
++    return false;
++}
++
+ void LLComboBox::setEnabledByValue(const LLSD& value, bool enabled)
+ {
+     LLScrollListItem *found = mList->getItem(value);
+@@ -878,15 +917,46 @@ bool LLComboBox::handleUnicodeCharHere(llwchar uni_char)
+ // virtual
+ bool LLComboBox::handleScrollWheel(S32 x, S32 y, S32 clicks)
+ {
+-    if (mList->getVisible()) return mList->handleScrollWheel(x, y, clicks);
++    if (mList->getVisible())
++    {
++        return mList->handleScrollWheel(x, y, clicks);
++    }
++
+     if (mAllowTextEntry) // We might be editable
++    {
+         if (!mList->getFirstSelected()) // We aren't in the list, don't kill their text
++        {
+             return false;
++        }
++    }
+ 
+-    setCurrentByIndex(llclamp(getCurrentIndex() + clicks, 0, getItemCount() - 1));
+-    prearrangeList();
+-    onCommit();
+-    return true;
++    S32 current_index = getCurrentIndex();
++    if (clicks > 0)
++    {
++        for (S32 i = 0; i < clicks; ++i)
++        {
++            if (!selectNextItem())
++                break;
++        }
++    }
++    else
++    {
++        for (S32 i = 0; i < -clicks; ++i)
++        {
++            if (!selectPrevItem())
++                break;
++        }
++    }
++    S32 new_index = getCurrentIndex();
++
++    if (new_index != current_index)
++    {
++        prearrangeList();
++        onCommit();
++        return true;
++    }
++
++    return false;
+ }
+ 
+ void LLComboBox::setTextEntry(const LLStringExplicit& text)"
+secondlife/viewer,2469,96ade1f,indra/llui/llcombobox.h,modified,4,1,5,"@@ -163,9 +163,12 @@ class LLComboBox
+ 
+     bool            remove(const std::string& name);    // remove item ""name"", return true if found and removed
+ 
+-    bool            setCurrentByIndex( S32 index );
++    bool            setCurrentByIndex(S32 index);
+     S32             getCurrentIndex() const;
+ 
++    bool            selectNextItem();
++    bool            selectPrevItem();
++
+     void            setEnabledByValue(const LLSD& value, bool enabled);
+ 
+     void            createLineEditor(const Params&);"
+secondlife/viewer,2469,96ade1f,indra/llui/llscrolllistctrl.cpp,modified,9,13,22,"@@ -889,13 +889,13 @@ bool LLScrollListCtrl::selectFirstItem()
+ 
+ // Deselects all other items
+ // virtual
+-bool LLScrollListCtrl::selectNthItem( S32 target_index )
++bool LLScrollListCtrl::selectNthItem(S32 target_index)
+ {
+     return selectItemRange(target_index, target_index);
+ }
+ 
+ // virtual
+-bool LLScrollListCtrl::selectItemRange( S32 first_index, S32 last_index )
++bool LLScrollListCtrl::selectItemRange(S32 first_index, S32 last_index)
+ {
+     if (mItemList.empty())
+     {
+@@ -905,28 +905,24 @@ bool LLScrollListCtrl::selectItemRange( S32 first_index, S32 last_index )
+     // make sure sort is up to date
+     updateSort();
+ 
+-    S32 listlen = (S32)mItemList.size();
+-    first_index = llclamp(first_index, 0, listlen-1);
+-
+-    if (last_index < 0)
+-        last_index = listlen-1;
+-    else
+-        last_index = llclamp(last_index, first_index, listlen-1);
++    S32 bottom = (S32)mItemList.size() - 1;
++    first_index = llclamp(first_index, 0, bottom);
++    last_index = last_index < 0 ? bottom : llclamp(last_index, first_index, bottom);
+ 
+     bool success = false;
+     S32 index = 0;
+     for (item_list::iterator iter = mItemList.begin(); iter != mItemList.end(); )
+     {
+         LLScrollListItem *itemp = *iter;
+-        if(!itemp)
++        if (!itemp)
+         {
+             iter = mItemList.erase(iter);
+-            continue ;
++            continue;
+         }
+ 
+-        if( index >= first_index && index <= last_index )
++        if (index >= first_index && index <= last_index)
+         {
+-            if( itemp->getEnabled() )
++            if (itemp->getEnabled())
+             {
+                 // TODO: support range selection for cells
+                 selectItem(itemp, -1, false);"
+secondlife/viewer,2469,400c212,indra/llui/llcombobox.cpp,modified,80,10,90,"@@ -498,9 +498,9 @@ void LLComboBox::setButtonVisible(bool visible)
+     }
+ }
+ 
+-bool LLComboBox::setCurrentByIndex( S32 index )
++bool LLComboBox::setCurrentByIndex(S32 index)
+ {
+-    bool found = mList->selectNthItem( index );
++    bool found = mList->selectNthItem(index);
+     if (found)
+     {
+         setLabel(getSelectedItemLabel());
+@@ -511,14 +511,53 @@ bool LLComboBox::setCurrentByIndex( S32 index )
+ 
+ S32 LLComboBox::getCurrentIndex() const
+ {
+-    LLScrollListItem* item = mList->getFirstSelected();
+-    if( item )
++    if (LLScrollListItem* item = mList->getFirstSelected())
+     {
+-        return mList->getItemIndex( item );
++        return mList->getItemIndex(item);
+     }
+     return -1;
+ }
+ 
++bool LLComboBox::selectNextItem()
++{
++    S32 last_index = getItemCount() - 1;
++    if (last_index < 0)
++        return false;
++
++    S32 current_index = getCurrentIndex();
++    if (current_index >= last_index)
++        return false;
++
++    S32 new_index = llmax(current_index, -1);
++    while (++new_index <= last_index)
++    {
++        if (setCurrentByIndex(new_index))
++            return true;
++    }
++
++    return false;
++}
++
++bool LLComboBox::selectPrevItem()
++{
++    S32 last_index = getItemCount() - 1;
++    if (last_index < 0)
++        return false;
++
++    S32 current_index = getCurrentIndex();
++    if (!current_index)
++        return false;
++
++    S32 new_index = current_index > 0 ? current_index : last_index + 1;
++    while (--new_index >= 0)
++    {
++        if (setCurrentByIndex(new_index))
++            return true;
++    }
++
++    return false;
++}
++
+ void LLComboBox::setEnabledByValue(const LLSD& value, bool enabled)
+ {
+     LLScrollListItem *found = mList->getItem(value);
+@@ -878,15 +917,46 @@ bool LLComboBox::handleUnicodeCharHere(llwchar uni_char)
+ // virtual
+ bool LLComboBox::handleScrollWheel(S32 x, S32 y, S32 clicks)
+ {
+-    if (mList->getVisible()) return mList->handleScrollWheel(x, y, clicks);
++    if (mList->getVisible())
++    {
++        return mList->handleScrollWheel(x, y, clicks);
++    }
++
+     if (mAllowTextEntry) // We might be editable
++    {
+         if (!mList->getFirstSelected()) // We aren't in the list, don't kill their text
++        {
+             return false;
++        }
++    }
+ 
+-    setCurrentByIndex(llclamp(getCurrentIndex() + clicks, 0, getItemCount() - 1));
+-    prearrangeList();
+-    onCommit();
+-    return true;
++    S32 current_index = getCurrentIndex();
++    if (clicks > 0)
++    {
++        for (S32 i = 0; i < clicks; ++i)
++        {
++            if (!selectNextItem())
++                break;
++        }
++    }
++    else
++    {
++        for (S32 i = 0; i < -clicks; ++i)
++        {
++            if (!selectPrevItem())
++                break;
++        }
++    }
++    S32 new_index = getCurrentIndex();
++
++    if (new_index != current_index)
++    {
++        prearrangeList();
++        onCommit();
++        return true;
++    }
++
++    return false;
+ }
+ 
+ void LLComboBox::setTextEntry(const LLStringExplicit& text)"
+secondlife/viewer,2469,400c212,indra/llui/llcombobox.h,modified,4,1,5,"@@ -163,9 +163,12 @@ class LLComboBox
+ 
+     bool            remove(const std::string& name);    // remove item ""name"", return true if found and removed
+ 
+-    bool            setCurrentByIndex( S32 index );
++    bool            setCurrentByIndex(S32 index);
+     S32             getCurrentIndex() const;
+ 
++    bool            selectNextItem();
++    bool            selectPrevItem();
++
+     void            setEnabledByValue(const LLSD& value, bool enabled);
+ 
+     void            createLineEditor(const Params&);"
+secondlife/viewer,2469,400c212,indra/llui/llscrolllistctrl.cpp,modified,9,13,22,"@@ -889,13 +889,13 @@ bool LLScrollListCtrl::selectFirstItem()
+ 
+ // Deselects all other items
+ // virtual
+-bool LLScrollListCtrl::selectNthItem( S32 target_index )
++bool LLScrollListCtrl::selectNthItem(S32 target_index)
+ {
+     return selectItemRange(target_index, target_index);
+ }
+ 
+ // virtual
+-bool LLScrollListCtrl::selectItemRange( S32 first_index, S32 last_index )
++bool LLScrollListCtrl::selectItemRange(S32 first_index, S32 last_index)
+ {
+     if (mItemList.empty())
+     {
+@@ -905,28 +905,24 @@ bool LLScrollListCtrl::selectItemRange( S32 first_index, S32 last_index )
+     // make sure sort is up to date
+     updateSort();
+ 
+-    S32 listlen = (S32)mItemList.size();
+-    first_index = llclamp(first_index, 0, listlen-1);
+-
+-    if (last_index < 0)
+-        last_index = listlen-1;
+-    else
+-        last_index = llclamp(last_index, first_index, listlen-1);
++    S32 bottom = (S32)mItemList.size() - 1;
++    first_index = llclamp(first_index, 0, bottom);
++    last_index = last_index < 0 ? bottom : llclamp(last_index, first_index, bottom);
+ 
+     bool success = false;
+     S32 index = 0;
+     for (item_list::iterator iter = mItemList.begin(); iter != mItemList.end(); )
+     {
+         LLScrollListItem *itemp = *iter;
+-        if(!itemp)
++        if (!itemp)
+         {
+             iter = mItemList.erase(iter);
+-            continue ;
++            continue;
+         }
+ 
+-        if( index >= first_index && index <= last_index )
++        if (index >= first_index && index <= last_index)
+         {
+-            if( itemp->getEnabled() )
++            if (itemp->getEnabled())
+             {
+                 // TODO: support range selection for cells
+                 selectItem(itemp, -1, false);"

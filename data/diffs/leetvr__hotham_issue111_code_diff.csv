@@ -1,0 +1,302 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+leetvr/hotham,111,f44b24a,examples/beat-saber-clone/src/lib.rs,modified,7,1,8,"@@ -30,6 +30,12 @@ pub fn main() {
+     real_main().unwrap();
+ }
+ 
++#[cfg(target_os = ""android"")]
++const SPAWN_RATE: usize = 100;
++
++#[cfg(not(target_os = ""android""))]
++const SPAWN_RATE: usize = 1000;
++
+ #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+ struct DebugInfo {
+     position: Vector3<f32>,
+@@ -98,7 +104,7 @@ pub fn real_main() -> HothamResult<()> {
+         .add_system(sabers_system())
+         .add_thread_local_fn(physics_step)
+         .add_system(collision_system())
+-        .add_system(cube_spawner_system(1000))
++        .add_system(cube_spawner_system(SPAWN_RATE))
+         .add_system(update_rigid_body_transforms_system())
+         .add_system(update_transform_matrix_system())
+         .add_system(update_parent_transform_matrix_system())"
+leetvr/hotham,111,f44b24a,hotham-debug-frontend/src/App.test.tsx,modified,5,4,9,"@@ -45,13 +45,14 @@ const stubFrames: Frame[] = [
+         name: 'Test Entity 1',
+         transform: {
+           translation: [0, 0, 0],
+-          rotation: [0, 0, 0],
++          rotation: [0, 0, 0, 1],
+           scale: [1, 1, 1],
+         },
+         collider: {
+           colliderType: 'cube',
+           geometry: [1, 2, 3],
+           translation: [0, 0.5, 0],
++          rotation: [0, 0, 0, 1],
+         },
+       },
+       {
+@@ -172,9 +173,9 @@ test('renders a list of sessions ordered in reverse chronological order when not
+   const { getByText } = await setupAndRender();
+   const sessionContainer = getByText(/Previous sessions/i).parentElement;
+   const sessionDate = await within(sessionContainer!).findAllByText(DATE_REGEX);
+-  expect(sessionDate[0]).toHaveTextContent('01/01/2021, 11:00:00 am');
+-  expect(sessionDate[1]).toHaveTextContent('01/01/2021, 10:00:00 am');
+-  expect(sessionDate[2]).toHaveTextContent('01/01/2020, 12:00:00 pm');
++  expect(sessionDate[0]).toHaveTextContent('01/01/2021, 12:00:00 pm');
++  expect(sessionDate[1]).toHaveTextContent('01/01/2021, 11:00:00 am');
++  expect(sessionDate[2]).toHaveTextContent('01/01/2020, 1:00:00 pm');
+ });
+ 
+ test('does not show sessions when connected', async () => {"
+leetvr/hotham,111,f44b24a,hotham-debug-frontend/src/App.tsx,modified,3,2,5,"@@ -101,6 +101,7 @@ const LoadingContainer = styled.div`
+ `;
+ 
+ export type Vector3 = [number, number, number];
++export type Vector4 = [number, number, number, number];
+ 
+ export enum Command {
+   Reset,
+@@ -133,15 +134,15 @@ export interface Session {
+ 
+ export interface Transform {
+   translation: Vector3;
+-  rotation: Vector3;
++  rotation: Vector4;
+   scale: Vector3;
+ }
+ 
+ export interface Collider {
+   colliderType: 'cube' | 'cylinder';
+   geometry: number[];
+   translation: Vector3;
+-  rotation: Vector3;
++  rotation: Vector4;
+ }
+ 
+ export interface Entity {"
+leetvr/hotham,111,f44b24a,hotham-debug-frontend/src/components/Inspector.tsx,modified,5,2,7,"@@ -1,5 +1,6 @@
+ import styled from 'styled-components';
+ import { Collider, Entity, Transform } from '../App';
++import { vec4toEuler } from '../util';
+ 
+ const Container = styled.div`
+   display: flex;
+@@ -20,6 +21,8 @@ interface Props {
+ 
+ function TransformInspector({ t }: { t?: Transform }): JSX.Element | null {
+   if (!t) return null;
++  const rotation = vec4toEuler(t.rotation);
++
+   return (
+     <Indent>
+       <strong>transform: </strong>
+@@ -33,8 +36,8 @@ function TransformInspector({ t }: { t?: Transform }): JSX.Element | null {
+         <strong>rotation: </strong>
+         <br />
+         <Indent>
+-          <strong>x:</strong> {t.rotation[0]} <strong>y:</strong>{' '}
+-          {t.rotation[1]} <strong>z:</strong> {t.rotation[2]}
++          <strong>x:</strong> {rotation.x} <strong>y:</strong> {rotation.y}{' '}
++          <strong>z:</strong> {rotation.z}
+         </Indent>
+         <strong>scale: </strong>
+         <br />"
+leetvr/hotham,111,f44b24a,hotham-debug-frontend/src/components/Viewer.tsx,modified,18,17,35,"@@ -5,8 +5,9 @@ import styled from 'styled-components';
+ import { ViewOptions } from './ViewOptions';
+ import { useGLTF } from '@react-three/drei';
+ import { GLTF } from 'three/examples/jsm/loaders/GLTFLoader';
+-import THREE, { Euler, Mesh } from 'three';
++import THREE, { Matrix4, Mesh, Vector3 } from 'three';
+ import { Entity, Transform } from '../App';
++import { vec4toQuaternion } from '../util';
+ 
+ const CanvasContainer = styled.div`
+   display: flex;
+@@ -38,28 +39,25 @@ function Model({
+   transform: Transform;
+ }): JSX.Element {
+   const group = useRef<THREE.Group>();
+-  const rotation = getRotation(transform);
++  const { translation: t, rotation: r, scale: s } = transform;
++  const translation = new Vector3(t[0], t[1], t[2]);
++  const rotation = vec4toQuaternion(r);
++  const scale = new Vector3(s[0], s[1], s[2]);
++  const matrix = new Matrix4().compose(translation, rotation, scale);
++
+   return (
+-    <group ref={group} dispose={null}>
++    <group ref={group} dispose={null} matrix={matrix} matrixAutoUpdate={false}>
+       <mesh
+         castShadow
+         receiveShadow
+         geometry={mesh.geometry}
+         material={mesh.material}
+-        position={transform.translation}
+-        scale={transform.scale}
+-        rotation={rotation}
+         userData={{ name: 'Environment' }}
+       />
+     </group>
+   );
+ }
+ 
+-function getRotation(t: Transform): Euler {
+-  const r = t.rotation;
+-  return new Euler(r[0], r[1], r[2]);
+-}
+-
+ interface Props {
+   entities: Entity[];
+ }
+@@ -128,14 +126,17 @@ function getPhsicsObjects(
+     const { collider } = e;
+     if (!collider) return;
+ 
+-    const { colliderType, geometry, translation, rotation: r } = collider;
+-    const rotation = new Euler(r[0], r[1], r[2]);
++    const { colliderType, geometry, translation: t, rotation: r } = collider;
++    const rotationQuaternion = vec4toQuaternion(r);
++    const transformMatrix = new Matrix4()
++      .makeRotationFromQuaternion(rotationQuaternion)
++      .setPosition(t[0], t[1], t[2]);
+ 
+     if (colliderType === 'cube') {
+       elements.push(
+         <Box
+-          position={translation}
+-          rotation={rotation}
++          matrixAutoUpdate={false}
++          matrix={transformMatrix}
+           args={[geometry[0] * 2, geometry[1] * 2, geometry[2] * 2]}
+         >
+           <meshPhongMaterial attach=""material"" color=""#bbb"" wireframe />
+@@ -149,8 +150,8 @@ function getPhsicsObjects(
+       elements.push(
+         <Cylinder
+           args={[radius, radius, height]}
+-          position={translation}
+-          rotation={rotation}
++          matrixAutoUpdate={false}
++          matrix={transformMatrix}
+         >
+           <meshPhongMaterial attach=""material"" color=""#bbb"" wireframe />
+         </Cylinder>"
+leetvr/hotham,111,f44b24a,hotham-debug-frontend/src/util.ts,added,13,0,13,"@@ -0,0 +1,13 @@
++import { Euler, Quaternion } from 'three';
++import { Vector4 } from './App';
++
++export function vec4toQuaternion([x, y, z, w]: Vector4): Quaternion {
++  return new Quaternion(x, y, z, w);
++}
++
++export function vec4toEuler([x, y, z, w]: Vector4): Euler {
++  const q = new Quaternion(x, y, z, w);
++  const e = new Euler();
++  e.setFromQuaternion(q);
++  return e;
++}"
+leetvr/hotham,111,f44b24a,hotham-debug-server/src/debug_frame.rs,modified,2,2,4,"@@ -25,7 +25,7 @@ pub struct DebugEntity {
+ #[serde(rename_all = ""camelCase"")]
+ pub struct DebugTransform {
+     pub translation: [f32; 3],
+-    pub rotation: [f32; 3],
++    pub rotation: [f32; 4],
+     pub scale: [f32; 3],
+ }
+ 
+@@ -49,7 +49,7 @@ pub struct DebugCollider {
+     pub collider_type: String,
+     pub geometry: Vec<f32>,
+     pub translation: [f32; 3],
+-    pub rotation: [f32; 3],
++    pub rotation: [f32; 4],
+ }
+ 
+ // impl PartialEq for DebugCollider {"
+leetvr/hotham,111,f44b24a,hotham-debug-server/src/lib.rs,modified,1,1,2,"@@ -200,7 +200,7 @@ mod tests {
+             id: ""test"".to_string(),
+             transform: Some(DebugTransform {
+                 translation: [0., 0., 0.],
+-                rotation: [0., 0., 0.],
++                rotation: [0., 0., 0., 1.],
+                 scale: [1., 1., 1.],
+             }),
+             collider: None,"
+leetvr/hotham,111,f44b24a,hotham/src/schedule_functions/sync_debug_server.rs,modified,9,9,18,"@@ -69,12 +69,12 @@ pub fn world_to_debug_data(
+ 
+ fn parse_transform(transform: &Transform) -> DebugTransform {
+     let t = transform.translation;
+-    let r = transform.rotation.euler_angles();
++    let r = transform.rotation.quaternion();
+     let s = transform.scale;
+ 
+     return DebugTransform {
+         translation: [t[0], t[1], t[2]],
+-        rotation: [r.0, r.1, r.2],
++        rotation: [r[0], r[1], r[2], r[3]],
+         scale: [s[0], s[1], s[2]],
+     };
+ }
+@@ -98,13 +98,13 @@ fn parse_collider(collider: &rapier3d::geometry::Collider) -> DebugCollider {
+ 
+     let t = collider.translation();
+     let translation = [t[0], t[1], t[2]];
+-    let r = collider.rotation().euler_angles();
++    let r = collider.rotation().quaternion();
+ 
+     DebugCollider {
+         collider_type: collider_type.to_string(),
+         geometry,
+         translation,
+-        rotation: [r.0, r.1, r.2],
++        rotation: [r[0], r[1], r[2], r[3]],
+     }
+ }
+ 
+@@ -133,7 +133,7 @@ mod tests {
+             Transform {
+                 translation: vector![1., 2., 3.],
+                 scale: vector![3., 2., 1.],
+-                rotation: UnitQuaternion::from_euler_angles(0.1, 0.2, 0.3),
++                rotation: UnitQuaternion::from_euler_angles(0., 0., 0.),
+             },
+         ));
+ 
+@@ -157,7 +157,7 @@ mod tests {
+             Transform {
+                 translation: vector![4., 5., 6.],
+                 scale: vector![6., 5., 4.],
+-                rotation: UnitQuaternion::from_euler_angles(0.4, 0.5, 0.6),
++                rotation: UnitQuaternion::from_euler_angles(0., 0., 0.),
+             },
+         ));
+ 
+@@ -189,7 +189,7 @@ mod tests {
+             debug_entity1.transform,
+             Some(DebugTransform {
+                 translation: [1., 2., 3.],
+-                rotation: [0.1, 0.2, 0.3],
++                rotation: [0.0, 0.0, 0.0, 1.0],
+                 scale: [3., 2., 1.]
+             })
+         );
+@@ -199,7 +199,7 @@ mod tests {
+                 collider_type: ""cube"".to_string(),
+                 geometry: vec![1., 1., 1.,],
+                 translation: [0., 0.5, 0.],
+-                rotation: [0., 0., 0.]
++                rotation: [0.0, 0.0, 0.0, 1.0],
+             })
+         );
+ 
+@@ -214,7 +214,7 @@ mod tests {
+             debug_entity2.transform,
+             Some(DebugTransform {
+                 translation: [4., 5., 6.],
+-                rotation: [0.4, 0.5, 0.6],
++                rotation: [0.0, 0.0, 0.0, 1.0],
+                 scale: [6., 5., 4.]
+             })
+         );"

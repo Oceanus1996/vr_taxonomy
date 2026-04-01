@@ -1,0 +1,252 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+ju1ce/April-Tag-VR-FullBody-Tracker,64,ed452f9a62feabde4e9665e1ea2bcbc80ae8c32b,AprilTagTrackers/Config.h,modified,4,4,8,"@@ -78,10 +78,10 @@ class UserConfig : public FS::Serializable<UserConfig>
+     FIELD(int, cameraApiPreference) = 0;
+     FIELD(int, trackerNum) = 3;
+     FIELD(FS::Valid<double>, markerSize){
+-        0.05,
++        5.0,
+         [](auto& value)
+         {
+-            if (value <= 0.) value = 0.001;
++            if (value <= 0.) value = 0.1;
+         }};
+     FIELD(int, numOfPrevValues) = 5;
+     FIELD(double, quadDecimate) = 1;
+@@ -90,8 +90,8 @@ class UserConfig : public FS::Serializable<UserConfig>
+     FIELD(int, calibrationTracker) = 0;
+     FIELD(bool, chessboardCalib) = false;
+     FIELD(bool, ignoreTracker0) = false;
+-    FIELD(bool, rotateCl) = false;
+-    FIELD(bool, rotateCounterCl) = false;
++    FIELD(int, rotateCl) = 0;
++    FIELD(bool, mirrorCam) = false;
+     FIELD(bool, coloredMarkers) = true;
+     FIELD(ManualCalib, manualCalib);
+     FIELD(bool, circularWindow) = true;"
+ju1ce/April-Tag-VR-FullBody-Tracker,64,ed452f9a62feabde4e9665e1ea2bcbc80ae8c32b,AprilTagTrackers/GUI/FormBuilder.tpp,modified,3,2,5,"@@ -97,14 +97,15 @@ inline void CheckBoxButton<F>::Create(RefPtr<wxWindow> parent, RefPtr<wxSizer> s
+ template <typename T>
+ template <typename StrList>
+ inline Choice<T>::Choice(T& _backingValue, const StrList& _options)
+-    : backingValue(_backingValue), mappings(_options.size())
++    : backingValue(_backingValue), mappings()
+ {
+     int index = 0;
+     options.Alloc(_options.size());
++    mappings.reserve(_options.size());
+     for (const auto& str : _options)
+     {
+         options.Add(str);
+-        mappings.push_back(index++);
++        mappings.emplace_back(index++);
+     }
+ 
+     ATASSERT(""Options is not empty."","
+ju1ce/April-Tag-VR-FullBody-Tracker,64,ed452f9a62feabde4e9665e1ea2bcbc80ae8c32b,AprilTagTrackers/GUI/MainFrame.cpp,modified,28,29,57,"@@ -187,18 +187,6 @@ void GUI::MainFrame::ValidateParams()
+         ShowPopup(lc.PARAMS_NOTE_HIGH_SMOOTHING, PopupStyle::Warning);
+     if (config.ignoreTracker0 && config.trackerNum == 2)
+         ShowPopup(lc.PARAMS_NOTE_2TRACKERS_IGNORE0, PopupStyle::Warning);
+-    if (config.quadDecimate != 1 && config.quadDecimate != 1.5 &&
+-        config.quadDecimate != 2 && config.quadDecimate != 3 &&
+-        config.quadDecimate != 4)
+-        ShowPopup(lc.PARAMS_NOTE_QUAD_NONSTANDARD, PopupStyle::Warning);
+-    if (config.cameraSettings && config.cameraApiPreference != 700)
+-        ShowPopup(lc.PARAMS_NOTE_NO_DSHOW_CAMSETTINGS, PopupStyle::Warning);
+-    if (config.smoothingFactor <= config.camLatency)
+-        ShowPopup(lc.PARAMS_NOTE_LATENCY_GREATER_SMOOTHING, PopupStyle::Warning);
+-    if (config.smoothingFactor > 1)
+-        ShowPopup(lc.PARAMS_NOTE_HIGH_SMOOTHING, PopupStyle::Warning);
+-    if (config.ignoreTracker0 && config.trackerNum == 2)
+-        ShowPopup(lc.PARAMS_NOTE_2TRACKERS_IGNORE0, PopupStyle::Warning);
+ 
+     tracker->UpdateConfig();
+     ShowPopup(lc.PARAMS_SAVED_MSG, PopupStyle::Info);
+@@ -270,15 +258,6 @@ void GUI::MainFrame::CreateCameraPage(RefPtr<wxNotebook> pages)
+                        }})
+             ->GetWidget();
+ 
+-    cam.Add(CheckBoxButton{lc.CAMERA_MULTICAM_CALIB, [this](auto& evt)
+-                {
+-                    tracker->multicamAutocalib = evt.IsChecked();
+-                }})
+-        .Add(CheckBoxButton{lc.CAMERA_LOCK_HEIGHT, [this](auto& evt)
+-            {
+-                tracker->lockHeightCalib = evt.IsChecked();
+-            }});
+-
+     manualCalibForm = cam.PopSizer().SubForm();
+ 
+     manualCalibForm->PushSizer<wxBoxSizer>(wxVERTICAL)
+@@ -288,7 +267,15 @@ void GUI::MainFrame::CreateCameraPage(RefPtr<wxNotebook> pages)
+         .Add(Labeled{lc.calib.Z, InputNumber{manualCalib.posOffset[2]}})
+         .Add(Labeled{lc.calib.PITCH, InputNumber{manualCalib.angleOffset[0]}})
+         .Add(Labeled{lc.calib.YAW, InputNumber{manualCalib.angleOffset[1]}})
+-        .Add(Labeled{lc.calib.ROLL, InputNumber{manualCalib.angleOffset[2]}});
++        .Add(Labeled{lc.calib.ROLL, InputNumber{manualCalib.angleOffset[2]}})
++        .Add(CheckBoxButton{ lc.CAMERA_MULTICAM_CALIB, [this](auto& evt)
++            {
++                tracker->multicamAutocalib = evt.IsChecked();
++            } })
++        .Add(CheckBoxButton{ lc.CAMERA_LOCK_HEIGHT, [this](auto& evt)
++            {
++                tracker->lockHeightCalib = evt.IsChecked();
++            } });
+ 
+     manualCalibForm->SetSizerVisible(false);
+ }
+@@ -304,7 +291,19 @@ void GUI::MainFrame::CreateParamsPage(RefPtr<wxNotebook> pages)
+     params = FormBuilder{panel, boxSizer};
+ 
+     static constexpr std::array<U8StringView, 4> markerLibraries =
+-        {""AprilTag Standard"", ""AprilTag Circular"", ""Aruco4x4"", ""AprilTag Color""};
++    { ""AprilTag Standard"", ""AprilTag Circular"", ""Aruco4x4"", ""AprilTag Color"" };
++
++    static constexpr std::array<U8StringView, 4> camRotOptions =
++    { ""0"", ""90"", ""180"", ""270"" };
++
++    static constexpr std::array<int, 4> camRotCodes =
++    { -1, cv::ROTATE_90_CLOCKWISE, cv::ROTATE_180, cv::ROTATE_90_COUNTERCLOCKWISE };
++
++    static constexpr std::array<U8StringView, 6> quadDecimateOptions =
++    { ""1"", ""1.5"", ""2"", ""3"", ""4"", ""5"" };
++
++    static constexpr std::array<double, 6> quadDecimateValues =
++    { 1, 1.5, 2, 3, 4, 5 };
+ 
+     params.Border(wxALL, 5)
+         .PushSizer<wxFlexGridSizer>(4, wxSize(10, 10))
+@@ -319,10 +318,10 @@ void GUI::MainFrame::CreateParamsPage(RefPtr<wxNotebook> pages)
+             InputText{config.cameraAddr}})
+         .Add(Labeled{lc.PARAMS_CAMERA_NAME_API, CreateCVCaptureAPIToolTip(lc),
+             InputText{config.cameraApiPreference}})
+-        .Add(Labeled{lc.PARAMS_CAMERA_NAME_ROT_CLOCKWISE, lc.PARAMS_CAMERA_TOOLTIP_ROT_CLOCKWISE,
+-            CheckBox{config.rotateCl}})
+-        .Add(Labeled{lc.PARAMS_CAMERA_NAME_ROT_CCLOCKWISE, lc.PARAMS_CAMERA_TOOLTIP_ROT_CCLOCKWISE,
+-            CheckBox{config.rotateCounterCl}})
++        .Add(Labeled{ lc.PARAMS_CAMERA_NAME_ROT_CLOCKWISE, lc.PARAMS_CAMERA_TOOLTIP_ROT_CLOCKWISE,
++            Choice{config.rotateCl, camRotOptions, camRotCodes} })
++        .Add(Labeled{lc.PARAMS_CAMERA_NAME_MIRROR, lc.PARAMS_CAMERA_TOOLTIP_MIRROR,
++            CheckBox{config.mirrorCam}})
+         .Add(Labeled{lc.PARAMS_CAMERA_NAME_WIDTH, lc.PARAMS_CAMERA_TOOLTIP_WIDTH,
+             InputText{config.camWidth}})
+         .Add(Labeled{lc.PARAMS_CAMERA_NAME_HEIGHT, lc.PARAMS_CAMERA_TOOLTIP_HEIGHT,
+@@ -366,7 +365,7 @@ void GUI::MainFrame::CreateParamsPage(RefPtr<wxNotebook> pages)
+         .Add(Labeled{lc.PARAMS_TRACKER_NAME_MARKER_SIZE, lc.PARAMS_TRACKER_TOOLTIP_MARKER_SIZE,
+             InputText{config.markerSize}})
+         .Add(Labeled{lc.PARAMS_TRACKER_NAME_QUAD_DECIMATE, lc.PARAMS_TRACKER_TOOLTIP_QUAD_DECIMATE,
+-            InputText{config.quadDecimate}})
++            Choice{config.quadDecimate, quadDecimateOptions, quadDecimateValues}})
+         .Add(Labeled{lc.PARAMS_TRACKER_NAME_SEARCH_WINDOW, lc.PARAMS_TRACKER_TOOLTIP_SEARCH_WINDOW,
+             InputText{config.searchWindow}})
+         .Add(Labeled{lc.PARAMS_TRACKER_NAME_MARKER_LIBRARY, lc.PARAMS_TRACKER_TOOLTIP_MARKER_LIBRARY,
+@@ -428,7 +427,7 @@ U8String GUI::MainFrame::CreateCVCaptureAPIToolTip(const Localization& lc)
+                          << cv::videoio_registry::getBackendName(backend);
+     }
+ #ifdef ATT_ENABLE_PS3EYE
+-    cameraTooltipApi << ""2300: PS3EYE\n"";
++    cameraTooltipApi << ""\n9100: PS3EYE"";
+ #endif
+     cameraTooltipApi << ""\n\n""
+                      << lc.PARAMS_CAMERA_TOOLTIP_API_2;"
+ju1ce/April-Tag-VR-FullBody-Tracker,64,ed452f9a62feabde4e9665e1ea2bcbc80ae8c32b,AprilTagTrackers/Localization.h,modified,3,4,7,"@@ -132,8 +132,7 @@ class Localization : public FS::Serializable<Localization>
+     T(CAMERA_LOCK_HEIGHT) = ""Lock camera height"";
+     T(CAMERA_CALIBRATION_INSTRUCTION) =
+         R""(Disable SteamVR home to see the camera.
+-Use your left trigger to grab the camera and move it into position,
+-then use grip to grab trackers and move those into position.
++Use your left trigger to grab the camera and move it into position, then use grip to grab trackers and move those into position.
+ 
+ Uncheck Calibration mode when done!)"";
+     T(CAMERA_DISABLE_OUT) = ""Disable out window"";
+@@ -149,8 +148,8 @@ Uncheck Calibration mode when done!)"";
+     T(PARAMS_CAMERA_NAME_API) = ""Camera API preference"";
+     T(PARAMS_CAMERA_NAME_ROT_CLOCKWISE) = ""Rotate camera clockwise"";
+     T(PARAMS_CAMERA_TOOLTIP_ROT_CLOCKWISE) = ""Rotate the camera 90°. Use both to rotate image 180°"";
+-    T(PARAMS_CAMERA_NAME_ROT_CCLOCKWISE) = ""Rotate camera counterclockwise"";
+-    T(PARAMS_CAMERA_TOOLTIP_ROT_CCLOCKWISE) = ""Rotate the camera 90°. Use both to rotate image 180°"";
++    T(PARAMS_CAMERA_NAME_MIRROR) = ""Mirror camera"";
++    T(PARAMS_CAMERA_TOOLTIP_MIRROR) = ""Mirror the camera horizontaly"";
+     T(PARAMS_CAMERA_NAME_WIDTH) = ""Camera width in pixels"";
+     T(PARAMS_CAMERA_TOOLTIP_WIDTH) = ""Width and height should be fine on 0, but change it to the camera resolution in case camera doesn't work correctly."";
+     T(PARAMS_CAMERA_NAME_HEIGHT) = ""Camera height in pixels"";"
+ju1ce/April-Tag-VR-FullBody-Tracker,64,ed452f9a62feabde4e9665e1ea2bcbc80ae8c32b,AprilTagTrackers/Tracker.cpp,modified,15,12,27,"@@ -199,7 +199,7 @@ void Tracker::StartCamera(std::string id, int apiPreference)
+         else
+ #endif
+ #if ATT_ENABLE_PS3EYE
+-            if (apiPreference == 2300)
++            if (apiPreference == 9100)
+         {
+             cap = PSEyeVideoCapture(i);
+         }
+@@ -263,21 +263,20 @@ void Tracker::CameraLoop()
+ {
+     bool rotate = false;
+     int rotateFlag = -1;
+-    if (user_config.rotateCl && user_config.rotateCounterCl)
+-    {
+-        rotate = true;
+-        rotateFlag = cv::ROTATE_180;
+-    }
+-    else if (user_config.rotateCl)
++
++    bool mirror = false;
++
++    if (user_config.rotateCl >= 0)
+     {
+         rotate = true;
+-        rotateFlag = cv::ROTATE_90_CLOCKWISE;
++        rotateFlag = user_config.rotateCl;
+     }
+-    else if (user_config.rotateCounterCl)
++
++    if (user_config.mirrorCam)
+     {
+-        rotate = true;
+-        rotateFlag = cv::ROTATE_90_COUNTERCLOCKWISE;
++        mirror = true;
+     }
++
+     cv::Mat img;
+     cv::Mat drawImg;
+     double fps = 0;
+@@ -301,6 +300,10 @@ void Tracker::CameraLoop()
+         {
+             cv::rotate(img, img, rotateFlag);
+         }
++        if (mirror)
++        {
++            cv::flip(img, img, 1);
++        }
+         // Ensure that preview isnt shown more than 60 times per second.
+         // In some cases opencv will return a solid color image without any blocking delay (unlike a camera locked to a framerate),
+         // and we would just be drawing fps text on nothing.
+@@ -866,7 +869,7 @@ void Tracker::CalibrateTracker()
+ 
+     // making a marker model of our markersize for later use
+     std::vector<cv::Point3f> modelMarker;
+-    double markerSize = user_config.markerSize;
++    double markerSize = user_config.markerSize*0.01;                                 //markerSize is in centimeters, but we need it in meters
+     modelMarker.push_back(cv::Point3f(-markerSize / 2.f, markerSize / 2.f, 0));
+     modelMarker.push_back(cv::Point3f(markerSize / 2.f, markerSize / 2.f, 0));
+     modelMarker.push_back(cv::Point3f(markerSize / 2.f, -markerSize / 2.f, 0));"
+ju1ce/April-Tag-VR-FullBody-Tracker,64,ed452f9a62feabde4e9665e1ea2bcbc80ae8c32b,locales/en.template.yaml,modified,2,2,4,"@@ -28,8 +28,8 @@ PARAMS_CAMERA_TOOLTIP_ID: ""Will be a number 0-10 for USB cameras and\nhttp://<ip
+ PARAMS_CAMERA_NAME_API: Camera API preference
+ PARAMS_CAMERA_NAME_ROT_CLOCKWISE: Rotate camera clockwise
+ PARAMS_CAMERA_TOOLTIP_ROT_CLOCKWISE: ""Rotate the camera 90Â°. Use both to rotate image 180Â°""
+-PARAMS_CAMERA_NAME_ROT_CCLOCKWISE: Rotate camera counterclockwise
+-PARAMS_CAMERA_TOOLTIP_ROT_CCLOCKWISE: ""Rotate the camera 90Â°. Use both to rotate image 180Â°""
++PARAMS_CAMERA_NAME_MIRROR = ""Mirror camera"";
++PARAMS_CAMERA_TOOLTIP_MIRROR = ""Mirror the camera horizontaly"";
+ PARAMS_CAMERA_NAME_WIDTH: Camera width in pixels
+ PARAMS_CAMERA_TOOLTIP_WIDTH: ""Width and height should be fine on 0, but change it to the camera resolution in case camera doesn't work correctly.""
+ PARAMS_CAMERA_NAME_HEIGHT: Camera height in pixels"
+ju1ce/April-Tag-VR-FullBody-Tracker,64,ed452f9a62feabde4e9665e1ea2bcbc80ae8c32b,locales/zh-CN.yaml,modified,2,2,4,"@@ -28,8 +28,8 @@ PARAMS_CAMERA_TOOLTIP_ID: ""USB摄像头需要填写数字 ID， 比如 0，1，2
+ PARAMS_CAMERA_NAME_API: ""视频捕获 API""
+ PARAMS_CAMERA_NAME_ROT_CLOCKWISE: ""顺时针旋转图像""
+ PARAMS_CAMERA_TOOLTIP_ROT_CLOCKWISE: ""将图像顺时针旋转90°，与旁边的选项一起使用会将图像旋转180°""
+-PARAMS_CAMERA_NAME_ROT_CCLOCKWISE: ""逆时针旋转图像""
+-PARAMS_CAMERA_TOOLTIP_ROT_CCLOCKWISE: ""将图像逆时针旋转90°，与旁边的选项一起使用会将图像旋转180°""
++PARAMS_CAMERA_NAME_MIRROR = ""Mirror camera"";
++PARAMS_CAMERA_TOOLTIP_MIRROR = ""Mirror the camera horizontaly"";
+ PARAMS_CAMERA_NAME_WIDTH: ""图像宽度""
+ PARAMS_CAMERA_TOOLTIP_WIDTH: ""图像宽度和图像高度通常会自动进行调整，但如果图像不符合实际的分辨率，请手动填写这两个参数的值。""
+ PARAMS_CAMERA_NAME_HEIGHT: ""图像高度"""

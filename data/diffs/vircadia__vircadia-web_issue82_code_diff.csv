@@ -1,0 +1,200 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vircadia/vircadia-web,82,e3dd2b741a5f23648e57a3a1fb43b39f1d2e5c5d,src/components/overlays/avatar/Avatar.vue,modified,29,2,31,"@@ -62,8 +62,20 @@
+                             >
+                                 <span class=""q-focus-helper""></span>
+                             </q-icon>
+-                            <q-popup-edit v-model=""displayNameStore"" auto-save v-slot=""scope"">
+-                                <q-input v-model=""scope.value"" dense autofocus counter @keyup.enter=""scope.set"" />
++                            <q-popup-edit
++                                v-model=""displayNameStore""
++                                auto-save
++                                v-slot=""scope""
++                                :validate=""validateDisplayName""
++                                >
++                                <q-input
++                                    v-model=""scope.value""
++                                    dense
++                                    autofocus
++                                    counter
++                                    :color=""validateDisplayName(scope.value) ? 'primary' : 'negative'""
++                                    @keyup.enter=""scope.set""
++                                />
+                             </q-popup-edit>
+                         </div>
+                         <div class=""row q-ml-md q-pl-xs"" style=""border: 1px solid #8888;border-radius: 7px;"">
+@@ -178,6 +190,7 @@ import { defineComponent } from ""vue"";
+ 
+ import OverlayShell from ""../OverlayShell.vue"";
+ import { Renderer } from ""@Modules/scene"";
++import { MyAvatarController } from ""@Modules/avatar"";
+ 
+ import Log from ""@Modules/debugging/log"";
+ 
+@@ -226,6 +239,11 @@ export default defineComponent({
+             set: function(pVal: string): void {
+                 Log.debug(Log.types.AVATAR, `Avatar.vue: set displayNameStore. inputInfo=${pVal}`);
+                 this.displayName = pVal;
++                const scene = Renderer.getScene();
++                const avatarController = scene._myAvatar?.getComponent(MyAvatarController.typeName) as MyAvatarController;
++                if (avatarController) {
++                    avatarController.displayName = pVal;
++                }
+             }
+         }
+     },
+@@ -272,6 +290,15 @@ export default defineComponent({
+                     // eslint-disable-next-line @typescript-eslint/dot-notation
+                     .catch((err) => console.log(""Failed to load avatar:"", err));
+             }
++        },
++        validateDisplayName(value: string): boolean {
++            // Validates against:
++            // 1. Only contains alphanumeric characters, underscore, hyphen, and dot.
++            // 2. Underscore, hyphen, and dot can't be at the start or end of a username.
++            // 3. Underscore, hyphen, and dot can't be next to each other (e.g user_.name).
++            // 4. Underscore, hyphen, or dot can't be used multiple times in a row (e.g user__name / user..name).
++            // 5. Number of characters must be between 2 and 20.
++            return (/^(?=[a-z0-9._-]{2,20}$)(?!.*[-_.]{2})[^-_.].*[^-_.]$/iu).test(value);
+         }
+     },
+ "
+vircadia/vircadia-web,82,e3dd2b741a5f23648e57a3a1fb43b39f1d2e5c5d,src/components/overlays/chat/ChatWindow.vue,modified,17,4,21,"@@ -46,14 +46,17 @@
+                     <div v-for=""msg in $store.state.messages.messages"" :key=""msg.whenReceived"">
+                         <q-chat-message
+                             :text=""[ msgText(msg) ]""
+-                            :sent=""msgSentBySelf(msg)""
+-                            :name=""msgSender(msg)""
++                            :sent=""msgIsFromThisClient(msg.senderId)""
++                            :name=""msgIsFromThisClient(msg.senderId) ? `${msgSender(msg)} (you)` : msgSender(msg)""
+                             :stamp=""msgTime(msg)""
+                             text-color=""white""
+-                            bg-color=""primary""
++                            :bg-color=""msgIsFromThisClient(msg.senderId) ? 'primary' : 'grey-9'""
+                         >
+                             <template v-slot:avatar>
+-                                <q-avatar color=""primary"" class=""q-mr-xs"">
++                                <q-avatar
++                                    :color=""msgIsFromThisClient(msg.senderId) ? 'primary' : 'grey-9'""
++                                    class=""q-mx-xs""
++                                >
+                                     <img v-if=""getProfilePicture(msgSender(msg))"" :src=""getProfilePicture(msgSender(msg))"">
+                                     <span v-else>{{ msgSender(msg).charAt(0) }}</span>
+                                 </q-avatar>
+@@ -94,6 +97,7 @@ import OverlayShell from ""../OverlayShell.vue"";
+ 
+ import { AMessage, DomainMessage, FloofChatMessage } from ""@Modules/domain/message"";
+ import { DomainMgr } from ""@Modules/domain"";
++import { Uuid } from ""@vircadia/web-sdk"";
+ 
+ // import Log from ""@Modules/debugging/log"";
+ 
+@@ -220,6 +224,15 @@ export default defineComponent({
+             // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+             return pMsg.self ?? false;
+         },
++        msgIsFromThisClient(senderId: Uuid): boolean {
++            if (DomainMgr.ActiveDomain) {
++                const ID = DomainMgr.ActiveDomain.DomainClient?.sessionUUID;
++                if (ID?.value() === senderId?.value()) {
++                    return true;
++                }
++            }
++            return false;
++        },
+         submitMessage(): void {
+             if (DomainMgr.ActiveDomain) {
+                 const msger = DomainMgr.ActiveDomain.MessageClient;"
+vircadia/vircadia-web,82,e3dd2b741a5f23648e57a3a1fb43b39f1d2e5c5d,src/components/overlays/people/People.vue,modified,1,1,2,"@@ -60,7 +60,7 @@
+                                         v-model=""avaInfo.volume""
+                                         :min=""0""
+                                         :max=""100""
+-                                        step=""10""
++                                        :step=""10""
+                                         snap
+                                         :color=""avaInfo.muted || avaInfo.volume === 0 ? 'red' : 'primary'""
+                                         style=""width: calc(100% - 48px);"""
+vircadia/vircadia-web,82,e3dd2b741a5f23648e57a3a1fb43b39f1d2e5c5d,src/components/overlays/settings/Audio.vue,modified,2,1,3,"@@ -48,7 +48,8 @@
+                                 <q-btn
+                                     fab
+                                     class=""q-mr-sm""
+-                                    :color=""$store.state.audio.user.hasInputAccess ? 'primary' : 'red'""
++                                    :color=""!$store.state.audio.user.hasInputAccess ?
++                                        'grey' : $store.state.audio.user.muted ? 'red' : 'primary'""
+                                     :icon=""$store.state.audio.user.muted ? 'mic_off' : 'mic'""
+                                     @click=""micToggled""
+                                 />"
+vircadia/vircadia-web,82,e3dd2b741a5f23648e57a3a1fb43b39f1d2e5c5d,src/layouts/MainLayout.vue,modified,28,3,31,"@@ -119,6 +119,16 @@
+                                     @click=""disconnect()""
+                                     :label=""getDisconnectLabel""
+                                 />
++                                <q-btn
++                                    v-show=""getShowConnect""
++                                    dense
++                                    color=""purple""
++                                    size=""sm""
++                                    class=""q-ml-sm absolute""
++                                    style=""margin-top: -4px;""
++                                    @click=""connectToLastAddress()""
++                                    label=""Connect""
++                                />
+                             </q-item-label>
+                         </q-item-section>
+                     </q-toolbar-title>
+@@ -347,7 +357,8 @@ export default defineComponent({
+                 }
+             ],
+             aMenuIsOpen: false,
+-            defaultProductLogo: ""assets/vircadia-icon.svg""
++            defaultProductLogo: ""assets/vircadia-icon.svg"",
++            lastConnectedDomain: undefined as string | undefined
+         };
+     },
+ 
+@@ -388,6 +399,13 @@ export default defineComponent({
+             }
+             return ""account_circle"";
+         },
++        getShowConnect: function() : boolean {
++            if (this.$store.state.domain.url && this.$store.state.domain.url.length > 0
++                    && this.$store.state.domain.connectionState === ""DISCONNECTED"" && this.lastConnectedDomain) {
++                return true;
++            }
++            return false;
++        },
+         getShowDisconnect: function() : boolean {
+             if (this.$store.state.domain.url && this.$store.state.domain.url.length > 0
+                     && this.$store.state.domain.connectionState.startsWith(""CONNECT"")) {
+@@ -443,15 +461,22 @@ export default defineComponent({
+             // eslint-disable-next-line @typescript-eslint/no-unsafe-call
+             await this.connectToAddress(this.locationInput);
+         },
++        connectToLastAddress: async function() {
++            if (this.lastConnectedDomain) {
++                // eslint-disable-next-line @typescript-eslint/no-unsafe-call
++                await this.connectToAddress(this.lastConnectedDomain);
++            }
++        },
+         connectToAddress: async function(locationAddress: string) {
+             // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
+-            Log.info(Log.types.UI, `Connecting to...${locationAddress}`);
++            Log.info(Log.types.UI, `Connecting to... ${locationAddress}`);
+             // eslint-disable-next-line @typescript-eslint/unbound-method
+             await Utility.connectionSetup(locationAddress);
+         },
+ 
+         disconnect: async function() {
+-            Log.info(Log.types.UI, `Disconnecting from to...${this.$store.state.avatar.location}`);
++            Log.info(Log.types.UI, `Disconnecting from... ${this.$store.state.avatar.location}`);
++            this.lastConnectedDomain = this.$store.state.avatar.location;
+             // eslint-disable-next-line @typescript-eslint/no-unsafe-call
+             await Utility.disconnectActiveDomain();
+         },"
+vircadia/vircadia-web,82,e3dd2b741a5f23648e57a3a1fb43b39f1d2e5c5d,src/store/index.ts,modified,1,1,2,"@@ -531,7 +531,7 @@ export const Store = createStore<IRootState>({
+ 
+             // Log.debug(Log.types.OTHER, `StoreAction.UpdateAvatarInfo`);
+ 
+-            const domainLoc = pPayload.domain.DomainClient?.location ?? ""Unconnected"";
++            const domainLoc = pPayload.domain.DomainClient?.location ?? ""Disconnected"";
+             // If we have information on my avatar, update same
+             if (pPayload.domainAvatar) {
+                 const myAvaInfo = pPayload.domainAvatar.MyAvatar;"

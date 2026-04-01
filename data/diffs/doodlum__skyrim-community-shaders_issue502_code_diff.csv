@@ -1,0 +1,933 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+doodlum/skyrim-community-shaders,502,18087801c383f25fc6546955b1d44ff331a6032c,package/Shaders/Common/FrameBuffer.hlsli,modified,40,6,46,"@@ -1,3 +1,6 @@
++#ifndef __FRAMEBUFFER_DEPENDENCY_HLSL__
++#define __FRAMEBUFFER_DEPENDENCY_HLSL__
++
+ cbuffer PerFrame : register(b12)
+ {
+ #if !defined(VR)
+@@ -47,26 +50,39 @@ cbuffer PerFrame : register(b12)
+ #endif  // !VR
+ }
+ 
+-float2 GetDynamicResolutionAdjustedScreenPosition(float2 screenPosition)
++float2 GetDynamicResolutionAdjustedScreenPosition(float2 screenPosition, uint stereo = 1)
+ {
+ 	float2 screenPositionDR = DynamicResolutionParams1.xy * screenPosition;
+ 	float2 minValue = 0;
+ 	float2 maxValue = float2(DynamicResolutionParams2.z, DynamicResolutionParams1.y);
+ #if defined(VR)
+-	bool isRight = screenPosition.x >= 0.5;
+-	float minFactor = isRight ? 1 : 0;
+-	minValue.x = 0.5 * (DynamicResolutionParams2.z * minFactor);
+-	float maxFactor = isRight ? 2 : 1;
+-	maxValue.x = 0.5 * (DynamicResolutionParams2.z * maxFactor);
++	// VR sometimes will clamp to stereouv
++	if (stereo) {
++		bool isRight = screenPosition.x >= 0.5;
++		float minFactor = isRight ? 1 : 0;
++		minValue.x = 0.5 * (DynamicResolutionParams2.z * minFactor);
++		float maxFactor = isRight ? 2 : 1;
++		maxValue.x = 0.5 * (DynamicResolutionParams2.z * maxFactor);
++	}
+ #endif
+ 	return clamp(screenPositionDR, minValue, maxValue);
+ }
+ 
++float3 GetDynamicResolutionAdjustedScreenPosition(float3 screenPositionDR, uint stereo = 1)
++{
++	return float3(GetDynamicResolutionAdjustedScreenPosition(screenPositionDR.xy, stereo), screenPositionDR.z);
++}
++
+ float2 GetDynamicResolutionUnadjustedScreenPosition(float2 screenPositionDR)
+ {
+ 	return screenPositionDR * DynamicResolutionParams2.xy;
+ }
+ 
++float3 GetDynamicResolutionUnadjustedScreenPosition(float3 screenPositionDR)
++{
++	return float3(GetDynamicResolutionUnadjustedScreenPosition(screenPositionDR.xy), screenPositionDR.z);
++}
++
+ float2 GetPreviousDynamicResolutionAdjustedScreenPosition(float2 screenPosition)
+ {
+ 	float2 screenPositionDR = DynamicResolutionParams1.zw * screenPosition;
+@@ -99,3 +115,21 @@ float2 ViewToUV(float3 x, bool is_position = true, uint a_eyeIndex = 0)
+ 	float4 uv = mul(CameraProj[a_eyeIndex], newPosition);
+ 	return (uv.xy / uv.w) * float2(0.5f, -0.5f) + 0.5f;
+ }
++
++/**
++ * @brief Checks if the UV coordinates are outside the frame, considering dynamic resolution if specified.
++ *
++ * This function is used to determine whether the provided UV coordinates lie outside the valid range of [0,1].
++ * If dynamic resolution is enabled, it adjusts the range according to dynamic resolution parameters.
++ *
++ * @param[in] uv The UV coordinates to check.
++ * @param[in] dynamicres Optional flag indicating whether dynamic resolution is applied. Default is false.
++ * @return True if the UV coordinates are outside the frame, false otherwise.
++ */
++bool isOutsideFrame(float2 uv, bool dynamicres = false)
++{
++	float2 max = dynamicres ? DynamicResolutionParams1.xy : float2(1, 1);
++	return any(uv < float2(0, 0) || uv > max.xy);
++}
++
++#endif  //__FRAMEBUFFER_DEPENDENCY_HLSL__
+\ No newline at end of file"
+doodlum/skyrim-community-shaders,502,18087801c383f25fc6546955b1d44ff331a6032c,package/Shaders/Common/VR.hlsli,modified,221,1,222,"@@ -1,6 +1,10 @@
+ #ifndef __VR_DEPENDENCY_HLSL__
+ #define __VR_DEPENDENCY_HLSL__
+ #ifdef VR
++#	ifndef COMPUTESHADER
++#		include ""Common\Constants.hlsli""
++#		include ""Common\FrameBuffer.hlsli""
++#	endif
+ cbuffer VRValues : register(b13)
+ {
+ 	float AlphaTestRefRS : packoffset(c0);
+@@ -25,13 +29,26 @@ float2 ConvertToStereoUV(float2 uv, uint a_eyeIndex, uint a_invertY = 0)
+ {
+ #ifdef VR
+ 	// convert [0,1] to eye specific [0,.5] and [.5, 1] dependent on a_eyeIndex
++	uv.x = saturate(uv.x);
+ 	uv.x = (uv.x + (float)a_eyeIndex) / 2;
+ 	if (a_invertY)
+ 		uv.y = 1 - uv.y;
+ #endif
+ 	return uv;
+ }
+ 
++float3 ConvertToStereoUV(float3 uv, uint a_eyeIndex, uint a_invertY = 0)
++{
++	uv.xy = ConvertToStereoUV(uv.xy, a_eyeIndex, a_invertY);
++	return uv;
++}
++
++float4 ConvertToStereoUV(float4 uv, uint a_eyeIndex, uint a_invertY = 0)
++{
++	uv.xy = ConvertToStereoUV(uv.xy, a_eyeIndex, a_invertY);
++	return uv;
++}
++
+ /**
+ Converts from eye specific uv to general uv [0,1].
+ In VR, texture buffers include the left and right eye in the same buffer. 
+@@ -53,6 +70,18 @@ float2 ConvertFromStereoUV(float2 uv, uint a_eyeIndex, uint a_invertY = 0)
+ 	return uv;
+ }
+ 
++float3 ConvertFromStereoUV(float3 uv, uint a_eyeIndex, uint a_invertY = 0)
++{
++	uv.xy = ConvertFromStereoUV(uv.xy, a_eyeIndex, a_invertY);
++	return uv;
++}
++
++float4 ConvertFromStereoUV(float4 uv, uint a_eyeIndex, uint a_invertY = 0)
++{
++	uv.xy = ConvertFromStereoUV(uv.xy, a_eyeIndex, a_invertY);
++	return uv;
++}
++
+ /**
+ Converts to the eye specific screenposition [0,Resolution].
+ In VR, texture buffers include the left and right eye in the same buffer. Flat only has a single camera for the entire width.
+@@ -66,7 +95,22 @@ This returns the adjusted value
+ float2 ConvertToStereoSP(float2 screenPosition, uint a_eyeIndex, float2 a_resolution)
+ {
+ 	screenPosition.x /= a_resolution.x;
+-	return ConvertToStereoUV(screenPosition, a_eyeIndex) * a_resolution;
++	float2 stereoUV = ConvertToStereoUV(screenPosition, a_eyeIndex);
++	return stereoUV * a_resolution;
++}
++
++float3 ConvertToStereoSP(float3 screenPosition, uint a_eyeIndex, float2 a_resolution)
++{
++	float2 xy = screenPosition.xy / a_resolution;
++	xy = ConvertToStereoUV(xy, a_eyeIndex);
++	return float3(xy * a_resolution, screenPosition.z);
++}
++
++float4 ConvertToStereoSP(float4 screenPosition, uint a_eyeIndex, float2 a_resolution)
++{
++	float2 xy = screenPosition.xy / a_resolution;
++	xy = ConvertToStereoUV(xy, a_eyeIndex);
++	return float4(xy * a_resolution, screenPosition.zw);
+ }
+ 
+ #ifdef PSHADER
+@@ -102,6 +146,182 @@ uint GetEyeIndexFromTexCoord(float2 texCoord)
+ 	return 0;
+ }
+ 
++/**
++ * @brief Converts mono UV coordinates from one eye to the corresponding mono UV coordinates of the other eye.
++ *
++ * This function is used to transition UV coordinates from one eye's perspective to the other eye in a stereo rendering setup.
++ * It works by converting the mono UV to clip space, transforming it into view space, and then reprojecting it into the other eye's
++ * clip space before converting back to UV coordinates. It also supports dynamic resolution.
++ *
++ * @param[in] monoUV The UV coordinates and depth value (Z component) for the current eye, in the range [0,1].
++ * @param[in] eyeIndex Index of the source/current eye (0 or 1).
++ * @param[in] dynamicres Optional flag indicating whether dynamic resolution is applied. Default is false.
++ * @return UV coordinates adjusted to the other eye, with depth.
++ */
++float3 ConvertMonoUVToOtherEye(float3 monoUV, uint eyeIndex, bool dynamicres = false)
++{
++	// Convert from dynamic res to true UV space
++	if (dynamicres)
++		monoUV.xy *= DynamicResolutionParams2.xy;
++
++	// Step 1: Convert UV to Clip Space
++	float4 clipPos = float4(monoUV.xy * float2(2, -2) - float2(1, -1), monoUV.z, 1);
++
++	// Step 2: Convert Clip Space to View Space for the current eye
++	float4 viewPosCurrentEye = mul(CameraProjInverse[eyeIndex], clipPos);
++	viewPosCurrentEye /= viewPosCurrentEye.w;
++
++	// Step 3: Convert View Space to Clip Space for the other eye
++	float4 clipPosOtherEye = mul(CameraProj[1 - eyeIndex], viewPosCurrentEye);
++	clipPosOtherEye /= clipPosOtherEye.w;
++
++	// Step 4: Convert Clip Space to UV
++	float3 monoUVOtherEye = float3((clipPosOtherEye.xy * 0.5f) + 0.5f, clipPosOtherEye.z);
++
++	// Convert back to dynamic res space if necessary
++	if (dynamicres)
++		monoUVOtherEye.xy *= DynamicResolutionParams1.xy;
++
++	return monoUVOtherEye;
++}
++
++/**
++ * @brief Adjusts UV coordinates for VR stereo rendering when transitioning between eyes or handling boundary conditions.
++ *
++ * This function is used in raymarching to check the next UV coordinate. It checks if the current UV coordinates are outside
++ * the frame. If so, it transitions the UV coordinates to the other eye and adjusts them if they are within the frame of the other eye.
++ * If the UV coordinates are outside the frame of both eyes, it returns the adjusted UV coordinates for the current eye.
++ *
++ * The function ensures that the UV coordinates are correctly adjusted for stereo rendering, taking into account boundary conditions
++ * and preserving accurate reflections.  
++ * Based on concepts from https://cuteloong.github.io/publications/scssr24/
++ * Wu, X., Xu, Y., & Wang, L. (2024). Stereo-consistent Screen Space Reflection. Computer Graphics Forum, 43(4).
++ *
++ * We do not have a backface depth so we may be ray marching even though the ray is in an object.
++ 
++ * @param[in] monoUV Current UV coordinates with depth information, [0-1]. Must not be dynamic resolution adjusted.
++ * @param[in] eyeIndex Index of the current eye (0 or 1).
++ * @param[out] fromOtherEye Boolean indicating if the result UV coordinates are from the other eye.
++ *
++ * @return Adjusted UV coordinates for stereo rendering, [0-1]. Must be dynamic resolution adjusted later.
++ */
++float3 ConvertStereoRayMarchUV(float3 monoUV, uint eyeIndex, out bool fromOtherEye)
++{
++	fromOtherEye = false;
++	float3 resultUV = monoUV;
++#ifdef VR
++	// Check if the UV coordinates are outside the frame
++	if (isOutsideFrame(resultUV.xy, false)) {
++		// Transition to the other eye
++		float3 otherEyeUV = ConvertMonoUVToOtherEye(resultUV, eyeIndex);
++
++		// Check if the other eye's UV coordinates are within the frame
++		if (!isOutsideFrame(otherEyeUV.xy, false)) {
++			resultUV = ConvertToStereoUV(otherEyeUV, 1 - eyeIndex);
++			fromOtherEye = true;  // Indicate that the result is from the other eye
++		}
++	} else {
++		resultUV = ConvertToStereoUV(resultUV, eyeIndex);
++	}
++#endif
++	return resultUV;
++}
++
++/**
++ * @brief Converts stereo UV coordinates from one eye to the corresponding stereo UV coordinates of the other eye.
++ *
++ * This function is used to transition UV coordinates from one eye's perspective to the other eye in a stereo rendering setup.
++ * It works by converting the stereo UV to mono UV, then to clip space, transforming it into view space, and then reprojecting it into the other eye's
++ * clip space before converting back to stereo UV coordinates. It also supports dynamic resolution.
++ *
++ * @param[in] stereoUV The UV coordinates and depth value (Z component) for the current eye, in the range [0,1].
++ * @param[in] eyeIndex Index of the current eye (0 or 1).
++ * @param[in] dynamicres Optional flag indicating whether dynamic resolution is applied. Default is false.
++ * @return UV coordinates adjusted to the other eye, with depth.
++ */
++float3 ConvertStereoUVToOtherEyeStereoUV(float3 stereoUV, uint eyeIndex, bool dynamicres = false)
++{
++	// Convert from dynamic res to true UV space
++	if (dynamicres)
++		stereoUV.xy *= DynamicResolutionParams2.xy;
++
++	stereoUV.xy = ConvertFromStereoUV(stereoUV.xy, eyeIndex, true);  // for some reason, the uv.y needs to be inverted before conversion?
++	// Swap eyes
++	stereoUV.xyz = ConvertMonoUVToOtherEye(stereoUV.xyz, eyeIndex);
++
++	stereoUV.xy = ConvertToStereoUV(stereoUV.xy, 1 - eyeIndex, false);
++
++	// Convert back to dynamic res space if necessary
++	if (dynamicres)
++		stereoUV.xy *= DynamicResolutionParams1.xy;
++	return stereoUV;
++}
++
++/**
++ * @brief Checks if the color is non zero by testing if the color is greater than 0 by epsilon.
++ *
++ * This function check is a color is non black. It uses a small epsilon value to allow for 
++ * floating point imprecision.
++ *
++ * For screen-space reflection (SSR), this acts as a mask and checks for an invalid reflection by
++ * checking if the reflection color is essentially black (close to zero). 
++ *
++ * @param[in] ssrColor The color to check.
++ * @param[in] epsilon Small tolerance value used to determine if the color is close to zero.
++ * @return True if color is non zero, otherwise false.
++ */
++bool IsNonZeroColor(float4 ssrColor, float epsilon = 0.001)
++{
++	return dot(ssrColor.xyz, ssrColor.xyz) > epsilon * epsilon;
++}
++
++/**
++ * @brief Blends color data from two eyes based on their UV coordinates and validity.
++ *
++ * This function checks the validity of the colors based on their UV coordinates and
++ * alpha values. It blends the colors while ensuring proper handling of transparency.
++ *
++ * @param uv1 UV coordinates for the first eye.
++ * @param color1 Color from the first eye.
++ * @param uv2 UV coordinates for the second eye.
++ * @param color2 Color from the second eye.
++ * @param dynamicres Whether the uvs have dynamic resolution applied
++ * @return Blended color, including the maximum alpha from both inputs.
++ */
++float4 BlendEyeColors(
++	float3 uv1,
++	float4 color1,
++	float3 uv2,
++	float4 color2,
++	bool dynamicres = false)
++{
++	// Check validity for color1
++	bool validColor1 = IsNonZeroColor(color1) && !isOutsideFrame(uv1.xy, dynamicres);
++	// Check validity for color2
++	bool validColor2 = IsNonZeroColor(color2) && !isOutsideFrame(uv2.xy, dynamicres);
++
++	// Calculate alpha values
++	float alpha1 = validColor1 ? color1.a : 0.0f;
++	float alpha2 = validColor2 ? color2.a : 0.0f;
++
++	// Total alpha
++	float totalAlpha = alpha1 + alpha2;
++
++	// Blend based on higher alpha
++	float4 blendedColor = (validColor1 ? color1 * (alpha1 / max(totalAlpha, 1e-5)) : float4(0, 0, 0, 0)) +
++	                      (validColor2 ? color2 * (alpha2 / max(totalAlpha, 1e-5)) : float4(0, 0, 0, 0));
++
++	// Final alpha determination
++	blendedColor.a = max(color1.a, color2.a);
++
++	return blendedColor;
++}
++
++float4 BlendEyeColors(float2 uv1, float4 color1, float2 uv2, float4 color2, bool dynamicres = false)
++{
++	return BlendEyeColors(float3(uv1, 0), color1, float3(uv2, 0), color2, dynamicres);
++}
++
+ struct VR_OUTPUT
+ {
+ 	float4 VRPosition;"
+doodlum/skyrim-community-shaders,502,18087801c383f25fc6546955b1d44ff331a6032c,package/Shaders/ISReflectionsRayTracing.hlsl,modified,210,16,226,"@@ -1,5 +1,7 @@
++#include ""Common/Constants.hlsli""
+ #include ""Common/DummyVSTexCoord.hlsl""
+ #include ""Common/FrameBuffer.hlsli""
++#include ""Common/VR.hlsli""
+ 
+ typedef VS_OUTPUT PS_INPUT;
+ 
+@@ -48,18 +50,38 @@ float3 ViewToUVDepth(float3 view)
+ 	return float3(0.5 * view.x + 0.5, 0.5 - 0.5 * view.y, view.z);
+ }
+ 
++// Simple hash function for generating a pseudo-random float
++float hash(float2 p)
++{
++	p = frac(p * float2(0.1031, 0.1030));      // Random values for perturbation
++	p *= dot(p, p.xy + float2(33.33, 33.33));  // Mix values
++	return frac(p.x * p.y * float2(0.5, 0.5).x);
++}
++
+ PS_OUTPUT main(PS_INPUT input)
+ {
+ 	PS_OUTPUT psout;
+ 	psout.Color = 0;
+ 
++#	ifndef ENABLESSR
++	// Disable SSR raymarch
++	return psout;
++#	endif
++	uint eyeIndex = GetEyeIndexFromTexCoord(input.TexCoord);
+ 	float2 uvStart = input.TexCoord;
+ 	float2 uvStartDR = GetDynamicResolutionAdjustedScreenPosition(uvStart);
+ 
+ 	float4 srcNormal = NormalTex.Sample(NormalSampler, uvStartDR);
+ 
+ 	float depthStart = DepthTex.SampleLevel(DepthSampler, uvStartDR, 0).x;
+ 
++#	ifdef VR
++	[branch] if (depthStart == 0.0f)  // in VR mask
++	{
++		return psout;
++	}
++#	endif
++
+ 	bool isDefaultNormal = srcNormal.z >= 1e-5;
+ 	float ssrPower = max(srcNormal.z >= 1e-5, srcNormal.w);
+ 	bool isSsrDisabled = ssrPower < 1e-5;
+@@ -78,14 +100,18 @@ PS_OUTPUT main(PS_INPUT input)
+ 	float4 normal = float4(lerp(decodedNormal, DefaultNormal, isDefaultNormal), 0);
+ 
+ 	float3 uvDepthStart = float3(uvStart, depthStart);
++	uvDepthStart.xy = ConvertFromStereoUV(uvStart.xy, eyeIndex, 0);
+ 	float3 vsStart = UVDepthToView(uvDepthStart);
+ 
+-	float4 csStart = mul(CameraProjInverse[0], float4(vsStart, 1));
++	float4 csStart = mul(CameraProjInverse[eyeIndex], float4(vsStart, 1));
+ 	csStart /= csStart.w;
+ 	float4 viewDirection = float4(normalize(-csStart.xyz), 0);
+-	float4 reflectedDirection = reflect(-viewDirection, normal);
++	// Apply jitter to view direction
++	float2 jitter = hash(input.TexCoord) * SSRParams.xy;
++	float4 jitteredViewDirection = float4(normalize(viewDirection.xyz + float3(jitter, 0.0)), 0.0);
++	float4 reflectedDirection = normalize(reflect(-jitteredViewDirection, normal));
+ 	float4 csFinish = csStart + reflectedDirection;
+-	float4 vsFinish = mul(CameraProj[0], csFinish);
++	float4 vsFinish = mul(CameraProj[eyeIndex], csFinish);
+ 	vsFinish.xyz /= vsFinish.w;
+ 
+ 	float3 uvDepthFinish = ViewToUVDepth(vsFinish.xyz);
+@@ -94,46 +120,199 @@ PS_OUTPUT main(PS_INPUT input)
+ 	float3 uvDepthFinishDR = uvDepthStart + deltaUvDepth * (SSRParams.x * rcp(length(deltaUvDepth.xy)));
+ 	uvDepthFinishDR.xy = GetDynamicResolutionAdjustedScreenPosition(uvDepthFinishDR.xy);
+ 
++#		ifdef VR
++	uvStartDR.xy = GetDynamicResolutionAdjustedScreenPosition(uvDepthStart.xy);
++#		endif
++
+ 	float3 uvDepthStartDR = float3(uvStartDR, vsStart.z);
+ 	float3 deltaUvDepthDR = uvDepthFinishDR - uvDepthStartDR;
+ 
+ 	float3 uvDepthPreResultDR = uvDepthStartDR;
+ 	float3 uvDepthResultDR = float3(uvDepthStartDR.xy, depthStart);
+ 
+-	float iterationIndex = 1;
+-	for (; iterationIndex < 16; iterationIndex += 1) {
+-		float3 iterationUvDepthDR = uvDepthStartDR + (iterationIndex / 16) * deltaUvDepthDR;
+-		float iterationDepth = DepthTex.SampleLevel(DepthSampler, iterationUvDepthDR.xy, 0).x;
++	int iterationIndex = 1;
++#		ifdef VR
++	bool fromOtherEye = false;
++#		endif
++	const int maxIterations =
++#		ifdef MAX_ITERATIONS
++		MAX_ITERATIONS
++#		else
++		16
++#		endif
++		;  // Adjust based on performance/quality tradeoff
++
++	for (; iterationIndex < maxIterations; iterationIndex++) {
++		float3 iterationUvDepthDR = uvDepthStartDR + (iterationIndex / (float)maxIterations) * deltaUvDepthDR;
++		float3 iterationUvDepthSampleDR =
++#		ifdef VR
++			// Apply dynamic resolution adjustments and stereo UV conversions
++			GetDynamicResolutionAdjustedScreenPosition(
++				ConvertStereoRayMarchUV(
++					GetDynamicResolutionUnadjustedScreenPosition(iterationUvDepthDR),
++					eyeIndex,
++					fromOtherEye));
++#		else
++			// No VR adjustments, just use the raw UV coordinates
++			iterationUvDepthDR;
++#		endif
++		float iterationDepth = DepthTex.SampleLevel(DepthSampler, iterationUvDepthSampleDR.xy, 0).x;
+ 		uvDepthPreResultDR = uvDepthResultDR;
+ 		uvDepthResultDR = iterationUvDepthDR;
+-		if (iterationDepth < iterationUvDepthDR.z) {
++		if (isOutsideFrame(iterationUvDepthDR.xy, true)
++#		ifdef VR
++				// In VR, it could be coming from the other eye
++				&& !fromOtherEye ||
++			(fromOtherEye && isOutsideFrame(ConvertMonoUVToOtherEye(iterationUvDepthDR, eyeIndex, true).xy, true))
++#		endif
++		) {
++			// out of screen, no ray ssr possible
++			return psout;
++		}
++		if (iterationDepth < iterationUvDepthDR.z) {  // ray intersection detected
+ 			break;
+ 		}
+ 	}
+ 
++#		ifdef DEBUG_SSR_RAYMARCH_ITERATIONS
++	// Visualize the number of raymarch iterations used for each pixel. This is for the initial
++	// attempt to find the intersection using linear search.
++	// Blue = 0, Red = max, should move through purple
++	float iterationColor = float(iterationIndex) / float(maxIterations);
++	psout.Color = float4(iterationColor, 0, 1 - iterationColor, 1);
++	return psout;
++#		endif
++
++#		ifdef DEBUG_SSR_RAYMARCH_FIRST_HIT
++	// Visualize the position of the first hit for each pixel during raymarching.
++	// This shows where the initial intersection was found in the linear search.
++	// Red intensity represents the depth of the hit:
++	// Dark red = hit close to the camera (small number of iterations)
++	// Bright red = hit far from the camera (large number of iterations)
++	// Black = no hit found within max iterations
++	float hitDepth = (float)iterationIndex / (float)maxIterations;
++	psout.Color = float4(hitDepth, 0, 0, 1);
++	return psout;
++#		endif
++
++#		ifdef DEBUG_SSR_RAYMARCH_DETAILED
++	// Visualize the start and end positions of the reflection ray
++	// Red channel: start position X
++	// Green channel: start position Y
++	// Blue channel: end position X
++	// Alpha channel: end position Y
++
++	// Color interpretation:
++	// - Start position dominant (yellow/greenish-yellow): shorter ray or less travel
++	// - End position dominant (blue/purple): longer ray or more travel
++	// - Equal mix (brown/gray): medium-length ray
++	// - Brighter colors: stronger reflection or more direct hit
++	// - Darker colors: weaker reflection or more glancing hit
++
++	psout.Color = float4(uvDepthStartDR.xy, uvDepthFinishDR.xy);
++	return psout;
++#		endif
++
++	// Handling the final result
+ 	float3 uvDepthFinalDR = uvDepthResultDR;
+ 
+-	if (iterationIndex < 16) {
++	if (iterationIndex < maxIterations) {
++		// refine the hit by searching between the start and hit boundary
+ 		iterationIndex = 0;
+ 		uvDepthFinalDR = uvDepthPreResultDR;
+-		[unroll] for (; iterationIndex < 16; iterationIndex += 1)
+-		{
+-			uvDepthFinalDR = lerp(uvDepthPreResultDR, uvDepthResultDR, iterationIndex / 16);
+-			float subIterationDepth = DepthTex.SampleLevel(DepthSampler, uvDepthFinalDR.xy, 0).x;
++		for (; iterationIndex < maxIterations; iterationIndex++) {
++			uvDepthFinalDR = (uvDepthPreResultDR + uvDepthResultDR) * 0.5;
++			float3 uvDepthFinalSampleDR =
++#		ifdef VR
++				// Apply dynamic resolution adjustments and stereo UV conversions
++				GetDynamicResolutionAdjustedScreenPosition(
++					ConvertStereoRayMarchUV(
++						GetDynamicResolutionUnadjustedScreenPosition(uvDepthFinalDR),
++						eyeIndex,
++						fromOtherEye));
++#		else
++				// No VR adjustments, just use the raw UV coordinates
++				uvDepthFinalDR;
++#		endif
++			float subIterationDepth = DepthTex.SampleLevel(DepthSampler, uvDepthFinalSampleDR.xy, 0).x;
+ 			if (subIterationDepth < uvDepthFinalDR.z && uvDepthFinalDR.z < subIterationDepth + SSRParams.y) {
+ 				break;
+ 			}
++			if (subIterationDepth < uvDepthFinalDR.z) {
++				// If intersection is closer, move towards uvDepthPreResultDR (lower half)
++				uvDepthResultDR = uvDepthFinalDR;
++			} else {
++				// Otherwise, move towards uvDepthResultDR (uppser half)
++				uvDepthPreResultDR = uvDepthFinalDR;
++			}
+ 		}
+ 	}
+ 
+ 	float2 uvFinal = GetDynamicResolutionUnadjustedScreenPosition(uvDepthFinalDR.xy);
+-
++	uvFinal = ConvertToStereoUV(uvFinal, eyeIndex);
+ 	float2 previousUvFinalDR = GetPreviousDynamicResolutionAdjustedScreenPosition(uvFinal);
+ 	float3 alpha = AlphaTex.Sample(AlphaSampler, previousUvFinalDR).xyz;
+ 
+ 	float2 uvFinalDR = GetDynamicResolutionAdjustedScreenPosition(uvFinal);
++
++#		ifdef DEBUG_SSR_UV
++	// This helps identify whether the UV coordinates are being properly transformed, and whether they
++	// are behaving as expected across the screen when the camera pitch changes.
++	// When you run this, you should see a gradient across the screen, with colors changing smoothly from
++	// one corner of the screen to the other.
++	// Look for areas where the UVs become incorrect or discontinuous, especially as you tilt the camera
++	// downwards. If the UVs start to distort or shift, this can explain why reflections are moving in
++	// unexpected ways.
++	psout.Color = float4(uvFinalDR, 0, 1);
++	return psout;
++#		endif
++
++#		ifdef DEBUG_SSR_DEPTH
++	// Sample depth at the current UV and return it as a grayscale value
++	// Helps determine if the depth values are sampled correctly at each UV position.
++	// You should see smooth gradients of depth across the screen. If the depth values
++	// suddenly shift, it could explain why reflections are appearing in the wrong places.
++	float depth = DepthTex.Sample(DepthSampler, uvFinalDR).x;
++
++	// Output the depth as a grayscale color (depth values are expected to be between 0 and 1)
++	psout.Color = float4(depth, depth, depth, 1);
++	return psout;
++#		endif
++
++#		ifdef DEBUG_SSR_REFINE_ITERATIONS
++	// Visualize the number of iterations used for each pixel in the refinement step
++	// This is the second for loop using binary search
++	// Blue = 0, Red = max, should move through purple
++	float iterationColor = float(iterationIndex) / float(maxIterations);
++	psout.Color = float4(iterationColor, 0, 1 - iterationColor, 1);
++	return psout;
++#		endif
++
++#		ifdef DEBUG_SSR_REFINE_FIRST_HIT
++	// Visualize the position of the first hit for each pixel during refinement.
++	// This shows where the initial intersection was found in the binary search.
++	// Red intensity represents the depth of the hit:
++	// Dark red = hit close to the camera (small number of iterations)
++	// Bright red = hit far from the camera (large number of iterations)
++	// Black = no hit found within max iterations
++	float hitDepth = (float)iterationIndex / (float)maxIterations;
++	psout.Color = float4(hitDepth, 0, 0, 1);
++	return psout;
++#		endif
++
+ 	float3 color = ColorTex.Sample(ColorSampler, uvFinalDR).xyz;
+ 
++#		ifdef VR
++	const bool useAlpha = false;
++	// Because alpha is based on the prior frame, there will be a lag for showing clouds.
++	// This is very obvious in VR. Hide clouds for now.
++	alpha = useAlpha ? alpha : float3(0, 0, 0);
++
++	// for fade calculation from eye center, need to adjust to monoUV
++	uvFinal = ConvertFromStereoUV(uvFinal, eyeIndex);
++	uvStart = ConvertFromStereoUV(uvStart, eyeIndex);
++#		endif
++
+ 	float3 ssrColor = SSRParams.z * alpha + color;
+ 
+ 	[branch] if (isSsrDisabled)
+@@ -152,20 +331,35 @@ PS_OUTPUT main(PS_INPUT input)
+ 		return psout;
+ 	}
+ 
+-	[branch] if (iterationIndex == 16)
++	[branch] if (iterationIndex == maxIterations)
+ 	{
+ 		return psout;
+ 	}
++	else
++	{
++		psout.Color.rgb = ssrColor;
++	}
+ 
+-	psout.Color.rgb = ssrColor;
++	// Fade Calculations
+ 
++	// SSR Marching Radius Fade Factor (based on ray distance)
+ 	float2 deltaUv = uvFinal - uvStart;
+ 	float ssrMarchingRadiusFadeFactor = 1 - length(deltaUv) * SSRParams.w;
+ 
++	// Screen Center Distance Fade Factor
+ 	float2 uvResultScreenCenterOffset = uvFinal - 0.5;
+ 	float centerDistance = min(1, 2 * length(uvResultScreenCenterOffset));
++
++#		ifdef VR
++	// Make VR fades consistent by taking the closer of the two eyes
++	// Based on concepts from https://cuteloong.github.io/publications/scssr24/
++	float2 otherEyeUvResultScreenCenterOffset = ConvertMonoUVToOtherEye(GetDynamicResolutionUnadjustedScreenPosition(uvDepthFinalDR), eyeIndex).xy - 0.5;
++	centerDistance = min(centerDistance, 2 * length(otherEyeUvResultScreenCenterOffset));
++#		endif
++
+ 	float centerDistanceFadeFactor = 1 - centerDistance * centerDistance;
+ 
++	// Final alpha calculation
+ 	psout.Color.a = ssrPower * ssrMarchingRadiusFadeFactor * centerDistanceFadeFactor;
+ #	endif
+ "
+doodlum/skyrim-community-shaders,502,18087801c383f25fc6546955b1d44ff331a6032c,package/Shaders/ISSAOComposite.hlsl,modified,0,2,2,"@@ -134,7 +134,6 @@ PS_OUTPUT main(PS_INPUT input)
+ 
+ 	float4 composedColor = sourceColor;
+ 
+-#	if !defined(VR)
+ 	if (0.5 < SSRParams.z) {
+ 		float2 ssrMask = NormalsSSRMaskTex.SampleLevel(NormalsSSRMaskSampler, screenPosition, 0).zw;
+ 		float4 ssr = SSRSourceTex.Sample(SSRSourceSampler, screenPosition);
+@@ -145,7 +144,6 @@ PS_OUTPUT main(PS_INPUT input)
+ 		}
+ 		composedColor.xyz += ssrInput;
+ 	}
+-#	endif
+ 
+ 	float snowMask = 0;
+ #	if !defined(VR)"
+doodlum/skyrim-community-shaders,502,18087801c383f25fc6546955b1d44ff331a6032c,package/Shaders/ISWaterBlend.hlsl,modified,1,1,2,"@@ -32,7 +32,7 @@ cbuffer PerGeometry : register(b2)
+ PS_OUTPUT main(PS_INPUT input)
+ {
+ 	PS_OUTPUT psout;
+-	uint eyeIndex = GetEyeIndexPS(float4(input.TexCoord, 0, 0));
++	uint eyeIndex = GetEyeIndexFromTexCoord(input.TexCoord);
+ 	float2 adjustedScreenPosition = GetDynamicResolutionAdjustedScreenPosition(input.TexCoord);
+ 	float waterMask = waterMaskTex.Sample(waterMaskSampler, adjustedScreenPosition).z;
+ 	if (waterMask < 1e-4) {"
+doodlum/skyrim-community-shaders,502,18087801c383f25fc6546955b1d44ff331a6032c,package/Shaders/Water.hlsl,modified,26,8,34,"@@ -597,15 +597,33 @@ float3 GetWaterSpecularColor(PS_INPUT input, float3 normal, float3 viewDirection
+ 			reflectionColor = ReflectionTex.SampleLevel(ReflectionSampler, reflectionNormal.xy / reflectionNormal.ww, 0).xyz;
+ 		}
+ 
+-#			if !defined(LOD) && NUM_SPECULAR_LIGHTS == 0 && !defined(VR)
++#			if !defined(LOD) && NUM_SPECULAR_LIGHTS == 0
+ 		if (PixelShaderDescriptor & _Cubemap) {
+-			float2 ssrReflectionUv = GetDynamicResolutionAdjustedScreenPosition((DynamicResolutionParams2.xy * input.HPosition.xy) * SSRParams.zw + SSRParams2.x * normal.xy);
+-			float4 ssrReflectionColor1 = SSRReflectionTex.Sample(SSRReflectionSampler, ssrReflectionUv);
+-			float4 ssrReflectionColor2 = RawSSRReflectionTex.Sample(RawSSRReflectionSampler, ssrReflectionUv);
+-			float4 ssrReflectionColor = lerp(ssrReflectionColor2, ssrReflectionColor1, SSRParams.y);
+-
+-			finalSsrReflectionColor = max(0, ssrReflectionColor.xyz);
+-			ssrFraction = saturate(ssrReflectionColor.w * SSRParams.x * distanceFactor);
++			float2 ssrReflectionUv = (DynamicResolutionParams2.xy * input.HPosition.xy) * SSRParams.zw + SSRParams2.x * normal.xy;
++			float2 ssrReflectionUvDR = GetDynamicResolutionAdjustedScreenPosition(ssrReflectionUv);
++			float4 ssrReflectionColorBlurred = SSRReflectionTex.Sample(SSRReflectionSampler, ssrReflectionUvDR);
++			float4 ssrReflectionColorRaw = RawSSRReflectionTex.Sample(RawSSRReflectionSampler, ssrReflectionUvDR);
++
++			// calculate fog on reflection
++			float depth = DepthTex.Load(int3(ssrReflectionUvDR * BufferDim.xy, 0));
++			float fogDensity = depth == 0 ? 0.f : pow(saturate((-depth * FogParam.z + FogParam.z) / FogParam.w), FogNearColor.w);
++			float3 fogColor = lerp(FogNearColor.xyz, FogFarColor.xyz, fogDensity);
++
++			bool validSSRMask = IsNonZeroColor(ssrReflectionColorRaw);
++
++			if (validSSRMask) {
++				// calculate blur on reflection
++				float effectiveBlurFactor = saturate(SSRParams.y * (1.0 + fogDensity));
++				float4 ssrReflectionColor = lerp(ssrReflectionColorRaw, ssrReflectionColorBlurred, effectiveBlurFactor);
++
++				finalSsrReflectionColor = max(0, ssrReflectionColor.xyz);
++				ssrFraction = saturate(ssrReflectionColor.w * SSRParams.x * distanceFactor);
++			} else {
++				// Use reflectionColor info only
++				finalSsrReflectionColor = reflectionColor.xyz;
++				ssrFraction = 1.f;
++			}
++			finalSsrReflectionColor = lerp(finalSsrReflectionColor, fogColor, fogDensity);
+ 		}
+ #			endif
+ "
+doodlum/skyrim-community-shaders,502,18087801c383f25fc6546955b1d44ff331a6032c,src/Features/DynamicCubemaps.cpp,modified,103,2,105,"@@ -1,4 +1,5 @@
+ #include ""DynamicCubemaps.h""
++#include ""ShaderCache.h""
+ 
+ #include ""State.h""
+ #include ""Util.h""
+@@ -8,13 +9,57 @@
+ 
+ constexpr auto MIPLEVELS = 8;
+ 
++NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(
++	DynamicCubemaps::Settings,
++	EnabledSSR,
++	EnabledCreator,
++	MaxIterations);
++
++std::vector<std::pair<std::string_view, std::string_view>> DynamicCubemaps::GetShaderDefineOptions()
++{
++	std::vector<std::pair<std::string_view, std::string_view>> result;
++	maxIterationsString = std::to_string(settings.MaxIterations);
++	if (settings.EnabledSSR) {
++		result.push_back({ ""ENABLESSR"", """" });
++	}
++
++	result.push_back({ ""MAX_ITERATIONS"", maxIterationsString });
++
++	return result;
++}
++
+ void DynamicCubemaps::DrawSettings()
+ {
+ 	if (ImGui::TreeNodeEx(""Settings"", ImGuiTreeNodeFlags_DefaultOpen)) {
++		if (ImGui::TreeNodeEx(""Screen Space Reflections"", ImGuiTreeNodeFlags_DefaultOpen)) {
++			recompileFlag |= ImGui::Checkbox(""Enable Screen Space Reflections"", reinterpret_cast<bool*>(&settings.EnabledSSR));
++			if (auto _tt = Util::HoverTooltipWrapper()) {
++				ImGui::Text(""Enable Screen Space Reflections on Water"");
++				if (REL::Module::IsVR() && !enabledAtBoot) {
++					ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.0f, 0.0f, 1.0f));
++					ImGui::Text(
++						""A restart is required to enable in VR. ""
++						""Save Settings after enabling and restart the game."");
++					ImGui::PopStyleColor();
++				}
++			}
++			if (settings.EnabledSSR) {
++				recompileFlag |= ImGui::SliderInt(""Max Iterations"", reinterpret_cast<int*>(&settings.MaxIterations), 1, 128);
++				if (auto _tt = Util::HoverTooltipWrapper()) {
++					ImGui::Text(
++						""The maximum iterations to ray march. ""
++						""Higher values result in better quality but lower performance."");
++				}
++				RenderImGuiSettingsTree(SSRSettings, ""Skyrim SSR"");
++				ImGui::TreePop();
++			}
++			ImGui::TreePop();
++		}
++
+ 		if (ImGui::TreeNodeEx(""Dynamic Cubemap Creator"", ImGuiTreeNodeFlags_DefaultOpen)) {
+ 			ImGui::Text(""You must enable creator mode by adding the shader define CREATOR"");
+-			ImGui::Checkbox(""Enable Creator"", reinterpret_cast<bool*>(&settings.Enabled));
+-			if (settings.Enabled) {
++			ImGui::Checkbox(""Enable Creator"", reinterpret_cast<bool*>(&settings.EnabledCreator));
++			if (settings.EnabledCreator) {
+ 				ImGui::ColorEdit3(""Color"", reinterpret_cast<float*>(&settings.CubemapColor));
+ 				ImGui::SliderFloat(""Roughness"", &settings.CubemapColor.w, 0.0f, 1.0f, ""%.2f"");
+ 				if (ImGui::Button(""Export"")) {
+@@ -105,6 +150,36 @@ void DynamicCubemaps::DrawSettings()
+ 	}
+ }
+ 
++void DynamicCubemaps::LoadSettings(json& o_json)
++{
++	settings = o_json;
++	LoadGameSettings(SSRSettings);
++	if (REL::Module::IsVR()) {
++		LoadGameSettings(iniVRCubeMapSettings);
++	}
++	recompileFlag = true;
++}
++
++void DynamicCubemaps::SaveSettings(json& o_json)
++{
++	o_json = settings;
++	SaveGameSettings(SSRSettings);
++	if (REL::Module::IsVR()) {
++		SaveGameSettings(iniVRCubeMapSettings);
++	}
++}
++
++void DynamicCubemaps::RestoreDefaultSettings()
++{
++	settings = {};
++	ResetGameSettingsToDefaults(SSRSettings);
++	if (REL::Module::IsVR()) {
++		ResetGameSettingsToDefaults(iniVRCubeMapSettings);
++		ResetGameSettingsToDefaults(hiddenVRCubeMapSettings);
++	}
++	recompileFlag = true;
++}
++
+ void DynamicCubemaps::DataLoaded()
+ {
+ 	if (REL::Module::IsVR()) {
+@@ -115,6 +190,25 @@ void DynamicCubemaps::DataLoaded()
+ 	MenuOpenCloseEventHandler::Register();
+ }
+ 
++void DynamicCubemaps::PostPostLoad()
++{
++	if (REL::Module::IsVR() && settings.EnabledSSR) {
++		std::map<std::string, uintptr_t> earlyhiddenVRCubeMapSettings{
++			{ ""bScreenSpaceReflectionEnabled:Display"", 0x1ED5BC0 },
++		};
++		for (const auto& settingPair : earlyhiddenVRCubeMapSettings) {
++			const auto& settingName = settingPair.first;
++			const auto address = REL::Offset{ settingPair.second }.address();
++			bool* setting = reinterpret_cast<bool*>(address);
++			if (!*setting) {
++				logger::info(""[PostPostLoad] Changing {} from {} to {} to support Dynamic Cubemaps"", settingName, *setting, true);
++				*setting = true;
++			}
++		}
++		enabledAtBoot = true;
++	}
++}
++
+ RE::BSEventNotifyControl MenuOpenCloseEventHandler::ProcessEvent(const RE::MenuOpenCloseEvent* a_event, RE::BSTEventSource<RE::MenuOpenCloseEvent>*)
+ {
+ 	// When entering a new cell, reset the capture
+@@ -349,6 +443,13 @@ void DynamicCubemaps::Irradiance(bool a_reflections)
+ void DynamicCubemaps::UpdateCubemap()
+ {
+ 	TracyD3D11Zone(State::GetSingleton()->tracyCtx, ""Cubemap Update"");
++	if (recompileFlag) {
++		auto& shaderCache = SIE::ShaderCache::Instance();
++		if (!shaderCache.Clear(""Data//Shaders//ISReflectionsRayTracing.hlsl""))
++			// if can't find specific hlsl file cache, clear all image space files
++			shaderCache.Clear(RE::BSShader::Types::ImageSpace);
++		recompileFlag = false;
++	}
+ 
+ 	switch (nextTask) {
+ 	case NextTask::kInferrence:"
+doodlum/skyrim-community-shaders,502,18087801c383f25fc6546955b1d44ff331a6032c,src/Features/DynamicCubemaps.h,modified,20,3,23,"@@ -61,6 +61,7 @@ struct DynamicCubemaps : Feature
+ 
+ 	bool activeReflections = false;
+ 	bool resetCapture = true;
++	bool recompileFlag = false;
+ 
+ 	enum class NextTask
+ 	{
+@@ -77,27 +78,43 @@ struct DynamicCubemaps : Feature
+ 
+ 	struct Settings
+ 	{
+-		uint Enabled = false;
+-		uint pad0[3]{};
++		uint EnabledCreator = false;
++		uint EnabledSSR = true;
++		uint MaxIterations = static_cast<uint>(REL::Relocate(16, 16, 48));
++		uint pad0{};
+ 		float4 CubemapColor{ 1.0f, 1.0f, 1.0f, 0.0f };
+ 	};
+ 
+ 	Settings settings;
+-
++	std::string maxIterationsString = """";  // required to avoid string going out of scope for defines
++	bool enabledAtBoot = false;
+ 	void UpdateCubemap();
+ 
+ 	void PostDeferred();
+ 
+ 	virtual inline std::string GetName() override { return ""Dynamic Cubemaps""; }
+ 	virtual inline std::string GetShortName() override { return ""DynamicCubemaps""; }
+ 	virtual inline std::string_view GetShaderDefineName() override { return ""DYNAMIC_CUBEMAPS""; }
++	virtual inline std::vector<std::pair<std::string_view, std::string_view>> GetShaderDefineOptions() override;
++
+ 	bool HasShaderDefine(RE::BSShader::Type) override { return true; };
+ 
+ 	virtual void SetupResources() override;
+ 	virtual void Reset() override;
+ 
++	virtual void SaveSettings(json&) override;
++	virtual void LoadSettings(json&) override;
++	virtual void RestoreDefaultSettings() override;
+ 	virtual void DrawSettings() override;
+ 	virtual void DataLoaded() override;
++	virtual void PostPostLoad() override;
++
++	std::map<std::string, gameSetting> SSRSettings{
++		{ ""fWaterSSRNormalPerturbationScale:Display"", { ""Water Normal Perturbation Scale"", ""Controls the scale of normal perturbations for Screen Space Reflections (SSR) on water surfaces."", 0, 0.05f, 0.f, 1.f } },
++		{ ""fWaterSSRBlurAmount:Display"", { ""Water SSR Blur Amount"", ""Defines the amount of blur applied to Screen Space Reflections on water surfaces."", 0, 0.3f, 0.f, 1.f } },
++		{ ""fWaterSSRIntensity:Display"", { ""Water SSR Intensity"", ""Adjusts the intensity or strength of Screen Space Reflections on water."", 0, 1.3f, 0.f, 5.f } },
++		{ ""bDownSampleNormalSSR:Display"", { ""Down Sample Normal SSR"", ""Enables or disables downsampling of normals for SSR to improve performance."", 0, true, false, true } }
++	};
+ 
+ 	std::map<std::string, gameSetting> iniVRCubeMapSettings{
+ 		{ ""bAutoWaterSilhouetteReflections:Water"", { ""Auto Water Silhouette Reflections"", ""Automatically reflects silhouettes on water surfaces."", 0, true, false, true } },"
+doodlum/skyrim-community-shaders,502,18087801c383f25fc6546955b1d44ff331a6032c,src/ShaderCache.cpp,modified,2,0,2,"@@ -1308,6 +1308,8 @@ namespace SIE
+ 			std::string::size_type pos = a_key.find(':');
+ 			if (pos != std::string::npos)
+ 				type = a_key.substr(0, pos);
++			if (type.starts_with(""IS"") || type == ""ReflectionsRayTracing"")
++				type = ""ImageSpace"";  // fix type for image space shaders
+ 			return type;
+ 		}
+ "

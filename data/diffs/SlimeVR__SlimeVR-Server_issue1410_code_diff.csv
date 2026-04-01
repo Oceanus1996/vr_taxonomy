@@ -1,0 +1,207 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+SlimeVR/SlimeVR-Server,1410,d786161,gui/src/components/commons/icon/WifiIcon.tsx,modified,3,3,6,"@@ -5,20 +5,20 @@ export function WifiIcon({
+   value,
+   disabled = false,
+ }: {
+-  value: number;
++  value: number | null;
+   disabled?: boolean;
+ }) {
+   const percent = useMemo(
+     () =>
+-      value
++      value != null
+         ? Math.max(
+             Math.min(((value - -95) * (100 - 0)) / (-40 - -95) + 0, 100)
+           ) / 100
+         : 0,
+     [value]
+   );
+ 
+-  const y = useMemo(() => (percent ? (1 - percent) * 13 : 0), [percent]);
++  const y = useMemo(() => (1 - percent) * 13, [percent]);
+ 
+   const col = useMemo(() => {
+     const colorsMap: { [key: number]: string } = {"
+SlimeVR/SlimeVR-Server,1410,d786161,gui/src/components/firmware-update/FirmwareUpdate.tsx,modified,2,2,4,"@@ -55,8 +55,8 @@ export function checkForUpdate(
+ 
+   if (
+     canUpdate &&
+-    device.hardwareStatus?.batteryPctEstimate &&
+-    device.hardwareStatus?.batteryPctEstimate < 50
++    device.hardwareStatus?.batteryPctEstimate != null &&
++    device.hardwareStatus.batteryPctEstimate < 50
+   ) {
+     return 'low-battery';
+   }"
+SlimeVR/SlimeVR-Server,1410,d786161,gui/src/components/tracker/TrackerBattery.tsx,modified,22,15,37,"@@ -27,25 +27,32 @@ export function TrackerBattery({
+     minimumFractionDigits: 2,
+   });
+ 
++  const charging = (voltage || 0) > 4.3;
++  const showVoltage = voltage && config?.debug;
++
+   return (
+     <div className=""flex gap-2"">
+       <div className=""flex flex-col justify-around"">
+-        <BatteryIcon
+-          value={value}
+-          disabled={disabled}
+-          charging={(voltage || 0) > 4.3}
+-        />
+-      </div>
+-      <div className=""w-10"">
+-        <Typography color={textColor}>
+-          {percentFormatter.format(value)}
+-        </Typography>
+-        {voltage && config?.debug && (
+-          <Typography color={textColor}>
+-            {voltageFormatter.format(voltage)}V
+-          </Typography>
+-        )}
++        <BatteryIcon value={value} disabled={disabled} charging={charging} />
+       </div>
++      {((!charging || showVoltage) && (
++        <div className=""w-10"">
++          {!charging && (
++            <Typography color={textColor}>
++              {percentFormatter.format(value)}
++            </Typography>
++          )}
++          {showVoltage && (
++            <Typography color={textColor}>
++              {voltageFormatter.format(voltage)}V
++            </Typography>
++          )}
++        </div>
++      )) || (
++        <div className=""flex flex-col justify-center w-10"">
++          <div className=""w-5 h-1 bg-background-30 rounded-full""></div>
++        </div>
++      )}
+     </div>
+   );
+ }"
+SlimeVR/SlimeVR-Server,1410,d786161,gui/src/components/tracker/TrackerCard.tsx,modified,11,7,18,"@@ -1,3 +1,4 @@
++import { useConfig } from '@/hooks/config';
+ import { MouseEventHandler } from 'react';
+ import {
+   DeviceDataT,
+@@ -69,6 +70,8 @@ function TrackerBig({
+   tracker: TrackerDataT;
+   device?: DeviceDataT;
+ }) {
++  const { config } = useConfig();
++
+   const { useName } = useTracker(tracker);
+ 
+   const trackerName = useName();
+@@ -86,10 +89,10 @@ function TrackerBig({
+       <div className=""flex justify-center"">
+         <TrackerStatus status={tracker.status}></TrackerStatus>
+       </div>
+-      <div className=""flex text-default justify-center gap-5 flex-wrap"">
++      <div className=""min-h-9 flex text-default justify-center gap-5 flex-wrap items-center"">
+         {device && device.hardwareStatus && (
+           <>
+-            {device.hardwareStatus.batteryPctEstimate && (
++            {device.hardwareStatus.batteryPctEstimate != null && (
+               <TrackerBattery
+                 voltage={device.hardwareStatus.batteryVoltage}
+                 value={device.hardwareStatus.batteryPctEstimate / 100}
+@@ -100,8 +103,9 @@ function TrackerBig({
+               {(device.hardwareStatus.rssi != null ||
+                 device.hardwareStatus.ping != null) && (
+                 <TrackerWifi
+-                  rssi={device.hardwareStatus.rssi || 0}
+-                  ping={device.hardwareStatus.ping || 0}
++                  rssi={device.hardwareStatus.rssi}
++                  rssiShowNumeric={config?.debug}
++                  ping={device.hardwareStatus.ping}
+                   disabled={tracker.status === TrackerStatusEnum.DISCONNECTED}
+                 ></TrackerWifi>
+               )}
+@@ -138,7 +142,7 @@ function TrackerSmol({
+       {device && device.hardwareStatus && (
+         <>
+           <div className=""flex flex-col justify-center items-center"">
+-            {device.hardwareStatus.batteryPctEstimate && (
++            {device.hardwareStatus.batteryPctEstimate != null && (
+               <TrackerBattery
+                 voltage={device.hardwareStatus.batteryVoltage}
+                 value={device.hardwareStatus.batteryPctEstimate / 100}
+@@ -150,8 +154,8 @@ function TrackerSmol({
+             {(device.hardwareStatus.rssi != null ||
+               device.hardwareStatus.ping != null) && (
+               <TrackerWifi
+-                rssi={device.hardwareStatus.rssi || 0}
+-                ping={device.hardwareStatus.ping || 0}
++                rssi={device.hardwareStatus.rssi}
++                ping={device.hardwareStatus.ping}
+                 disabled={tracker.status === TrackerStatusEnum.DISCONNECTED}
+               ></TrackerWifi>
+             )}"
+SlimeVR/SlimeVR-Server,1410,d786161,gui/src/components/tracker/TrackerWifi.tsx,modified,10,9,19,"@@ -8,8 +8,8 @@ export function TrackerWifi({
+   disabled,
+   textColor = 'secondary',
+ }: {
+-  rssi: number;
+-  ping: number;
++  rssi: number | null;
++  ping: number | null;
+   rssiShowNumeric?: boolean;
+   disabled?: boolean;
+   textColor?: string;
+@@ -19,19 +19,20 @@ export function TrackerWifi({
+       <div className=""flex flex-col justify-around"">
+         <WifiIcon value={rssi} disabled={disabled} />
+       </div>
+-      {!disabled && (
++      {(!disabled && (ping != null || (rssiShowNumeric && rssi != null)) && (
+         <div className=""w-12"">
+-          <Typography color={textColor} whitespace=""whitespace-nowrap"">
+-            {ping} ms
+-          </Typography>
+-          {rssiShowNumeric && (
++          {ping != null && (
++            <Typography color={textColor} whitespace=""whitespace-nowrap"">
++              {ping} ms
++            </Typography>
++          )}
++          {rssiShowNumeric && rssi != null && (
+             <Typography color={textColor} whitespace=""whitespace-nowrap"">
+               {rssi} dBm
+             </Typography>
+           )}
+         </div>
+-      )}
+-      {disabled && (
++      )) || (
+         <div className=""flex flex-col justify-center w-12"">
+           <div className=""w-7 h-1 bg-background-30 rounded-full""></div>
+         </div>"
+SlimeVR/SlimeVR-Server,1410,d786161,gui/src/components/tracker/TrackersTable.tsx,modified,4,4,8,"@@ -273,10 +273,10 @@ export function TrackersTable({
+         id: DisplayColumn.BATTERY,
+         label: l10n.getString('tracker-table-column-battery'),
+         row: ({ device, tracker }) =>
+-          device?.hardwareStatus?.batteryPctEstimate && (
++          device?.hardwareStatus?.batteryPctEstimate != null && (
+             <TrackerBattery
+               value={device.hardwareStatus.batteryPctEstimate / 100}
+-              voltage={device.hardwareStatus?.batteryVoltage}
++              voltage={device.hardwareStatus.batteryVoltage}
+               disabled={tracker.status === TrackerStatusEnum.DISCONNECTED}
+               textColor={fontColor}
+             />
+@@ -290,9 +290,9 @@ export function TrackersTable({
+           (device?.hardwareStatus?.rssi != null ||
+             device?.hardwareStatus?.ping != null) && (
+             <TrackerWifi
+-              rssi={device?.hardwareStatus?.rssi || 0}
++              rssi={device?.hardwareStatus?.rssi}
+               rssiShowNumeric
+-              ping={device?.hardwareStatus?.ping || 0}
++              ping={device?.hardwareStatus?.ping}
+               disabled={tracker.status === TrackerStatusEnum.DISCONNECTED}
+               textColor={fontColor}
+             ></TrackerWifi>"

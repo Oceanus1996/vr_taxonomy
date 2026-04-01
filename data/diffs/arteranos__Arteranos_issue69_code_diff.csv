@@ -1,0 +1,878 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+arteranos/Arteranos,69,80769a6,Assets/Arteranos/Prefabs/Core/_SceneEssentials.prefab,modified,20,4,24,"@@ -467,7 +467,6 @@ MonoBehaviour:
+   m_Name: 
+   m_EditorClassIdentifier: 
+   VRRig: {fileID: 6826848587015489432, guid: db551c4eeae27cd4990850962a0520c1, type: 3}
+-  NoVRRig: {fileID: 7141498048079031363, guid: f377d58bd7dad7d40ad2d131fe5d1cc7, type: 3}
+ --- !u!114 &8579259303771053379
+ MonoBehaviour:
+   m_ObjectHideFlags: 0
+@@ -541,7 +540,6 @@ MonoBehaviour:
+   m_Name: 
+   m_EditorClassIdentifier: 
+   ServerPortPublic: 0
+-  VoicePortPublic: 0
+   MetadataPortPublic: 0
+ --- !u!114 &3248231206936911695
+ MonoBehaviour:
+@@ -567,8 +565,8 @@ MonoBehaviour:
+   m_Script: {fileID: 11500000, guid: 7c4e98886e2fe1d4fb7f78a081f2dd37, type: 3}
+   m_Name: 
+   m_EditorClassIdentifier: 
+-  VelocityMax: 1
+-  TweenSpeed: 4
++  VelocityMax: 2
++  BlinderDuration: 0.25
+ --- !u!1 &7448129529993753624
+ GameObject:
+   m_ObjectHideFlags: 0
+@@ -579,6 +577,7 @@ GameObject:
+   m_Component:
+   - component: {fileID: 7901005600927052135}
+   - component: {fileID: 2080942963606435369}
++  - component: {fileID: 1521499745215199519}
+   m_Layer: 0
+   m_Name: Global Volume
+   m_TagString: Untagged
+@@ -618,3 +617,20 @@ MonoBehaviour:
+   blendDistance: 0
+   weight: 0
+   sharedProfile: {fileID: 11400000, guid: a6560a915ef98420e9faacc1c7438823, type: 2}
++--- !u!114 &1521499745215199519
++MonoBehaviour:
++  m_ObjectHideFlags: 0
++  m_CorrespondingSourceObject: {fileID: 0}
++  m_PrefabInstance: {fileID: 0}
++  m_PrefabAsset: {fileID: 0}
++  m_GameObject: {fileID: 7448129529993753624}
++  m_Enabled: 1
++  m_EditorHideFlags: 0
++  m_Script: {fileID: 11500000, guid: 172515602e62fb746b5d573b38a5fe58, type: 3}
++  m_Name: 
++  m_EditorClassIdentifier: 
++  m_IsGlobal: 1
++  priority: 0
++  blendDistance: 0
++  weight: 0
++  sharedProfile: {fileID: 11400000, guid: b3d01f440f8364b47833e744df141d52, type: 2}"
+arteranos/Arteranos,69,80769a6,Assets/Arteranos/Scripts/Core/Base/Utils.cs,modified,19,0,19,"@@ -145,6 +145,25 @@ public static string GetUIDFPEncoding(UIDRepresentation fpmodeSet)
+             };
+         }
+ 
++        /// <summary>
++        /// Advances the tweened value towards the target value with the given timespan
++        /// </summary>
++        /// <param name=""current"">The current value, normalized</param>
++        /// <param name=""target"">The targeet value, normalized</param>
++        /// <param name=""duration"">How many seconds to take it across the whole scale</param>
++        public static void Tween(ref float current, float target, float duration)
++        {
++            if (duration == 0) // That would not be tweening, but rather setting the value.
++            {
++                current = target;
++                return;
++            }
++
++            if (target > current) current += Time.deltaTime / duration;
++            if (target < current) current -= Time.deltaTime / duration;
++            current = Mathf.Clamp01(current);
++        }
++
+         /// <summary>
+         /// Determine if you are able to do the action in the question (to the targeted user)
+         /// </summary>"
+arteranos/Arteranos,69,80769a6,Assets/Arteranos/Scripts/XR/XRVisualConfigurator.cs,modified,15,12,27,"@@ -14,22 +14,27 @@ namespace Arteranos.XR
+ {
+     public class XRVisualConfigurator : MonoBehaviour
+     {
+-        // The required speed (1m/s) to fully close the shutters (or rather to fully use the effects)
+-        [SerializeField] private float VelocityMax = 1.0f;
++        // The required speed (2m/s) to fully close the shutters (or rather to fully use the effects)
++        [SerializeField] private float VelocityMax = 2.0f;
+ 
+         // 1/4th of a second to close/open the shutters
+-        [SerializeField] private float TweenSpeed = 4.0f;
++        [SerializeField] private float BlinderDuration = 0.25f;
+ 
+         private Vector3 pos = Vector3.zero;
+         private float BlindersMaxValue = 0.0f;
++        private float BlinderStrength = 0.0f;
++        private Volume BlinderVolume;
+ 
+-        private float TweenedD = 0.0f;
+-
+-        private Volume vol;
++        private float FadeTargetStrength = 0.0f;
++        private float FadeDuration = 0.0f;
++        private float FadeStrength = 0.0f;
++        private Volume FaderVolume;
+ 
+         void Start()
+         {
+-            vol = GetComponentInChildren<Volume>();
++            Volume[] volumes = GetComponentsInChildren<Volume>();
++            BlinderVolume = volumes[0];
++            FaderVolume = volumes[1];
+ 
+             SettingsManager.Client.OnXRControllerChanged += DownloadControlSettings;
+             SettingsManager.Client.PingXRControllersChanged();
+@@ -47,15 +52,13 @@ void Update()
+             d = Mathf.Clamp01(d / VelocityMax);
+             pos = t.position;
+ 
+-            if(d > TweenedD) TweenedD += TweenSpeed * Time.deltaTime;
+-            if(d < TweenedD) TweenedD -= TweenSpeed * Time.deltaTime;
+-            TweenedD = Mathf.Clamp01(TweenedD);
++            Utils.Tween(ref BlinderStrength, d, BlinderDuration);
+ 
+             // Too much hassle to pick out the vignette. Just use the whole global volume.
+-            if(vol != null) vol.weight = TweenedD * BlindersMaxValue;
++            if(BlinderVolume != null) BlinderVolume.weight = BlinderStrength * BlindersMaxValue;
+         }
+ 
+-        private void OnDestroy() => SettingsManager.Client.OnXRControllerChanged += DownloadControlSettings;
++        private void OnDestroy() => SettingsManager.Client.OnXRControllerChanged -= DownloadControlSettings;
+ 
+         private void DownloadControlSettings(ControlSettingsJSON ccs, MovementSettingsJSON mcs)
+         {"
+arteranos/Arteranos,69,80769a6,Assets/Arteranos/Settings/BlindersSceneProfile.asset,added,44,0,44,"@@ -0,0 +1,44 @@
++%YAML 1.1
++%TAG !u! tag:unity3d.com,2011:
++--- !u!114 &-7011558710299706105
++MonoBehaviour:
++  m_ObjectHideFlags: 3
++  m_CorrespondingSourceObject: {fileID: 0}
++  m_PrefabInstance: {fileID: 0}
++  m_PrefabAsset: {fileID: 0}
++  m_GameObject: {fileID: 0}
++  m_Enabled: 1
++  m_EditorHideFlags: 0
++  m_Script: {fileID: 11500000, guid: 899c54efeace73346a0a16faa3afe726, type: 3}
++  m_Name: Vignette
++  m_EditorClassIdentifier: 
++  active: 1
++  color:
++    m_OverrideState: 0
++    m_Value: {r: 0, g: 0, b: 0, a: 1}
++  center:
++    m_OverrideState: 0
++    m_Value: {x: 0.5, y: 0.5}
++  intensity:
++    m_OverrideState: 1
++    m_Value: 1
++  smoothness:
++    m_OverrideState: 1
++    m_Value: 1
++  rounded:
++    m_OverrideState: 1
++    m_Value: 1
++--- !u!114 &11400000
++MonoBehaviour:
++  m_ObjectHideFlags: 0
++  m_CorrespondingSourceObject: {fileID: 0}
++  m_PrefabInstance: {fileID: 0}
++  m_PrefabAsset: {fileID: 0}
++  m_GameObject: {fileID: 0}
++  m_Enabled: 1
++  m_EditorHideFlags: 0
++  m_Script: {fileID: 11500000, guid: d7fd9488000d3734a9e00ee676215985, type: 3}
++  m_Name: BlindersSceneProfile
++  m_EditorClassIdentifier: 
++  components:
++  - {fileID: -7011558710299706105}"
+arteranos/Arteranos,69,80769a6,Assets/Arteranos/Settings/BlindersSceneProfile.asset.meta,renamed,0,0,0,
+arteranos/Arteranos,69,80769a6,Assets/Arteranos/Settings/FaderSceneProfile.asset,added,44,0,44,"@@ -0,0 +1,44 @@
++%YAML 1.1
++%TAG !u! tag:unity3d.com,2011:
++--- !u!114 &11400000
++MonoBehaviour:
++  m_ObjectHideFlags: 0
++  m_CorrespondingSourceObject: {fileID: 0}
++  m_PrefabInstance: {fileID: 0}
++  m_PrefabAsset: {fileID: 0}
++  m_GameObject: {fileID: 0}
++  m_Enabled: 1
++  m_EditorHideFlags: 0
++  m_Script: {fileID: 11500000, guid: d7fd9488000d3734a9e00ee676215985, type: 3}
++  m_Name: FaderSceneProfile
++  m_EditorClassIdentifier: 
++  components:
++  - {fileID: 947402647647805138}
++--- !u!114 &947402647647805138
++MonoBehaviour:
++  m_ObjectHideFlags: 3
++  m_CorrespondingSourceObject: {fileID: 0}
++  m_PrefabInstance: {fileID: 0}
++  m_PrefabAsset: {fileID: 0}
++  m_GameObject: {fileID: 0}
++  m_Enabled: 1
++  m_EditorHideFlags: 0
++  m_Script: {fileID: 11500000, guid: 66f335fb1ffd8684294ad653bf1c7564, type: 3}
++  m_Name: ColorAdjustments
++  m_EditorClassIdentifier: 
++  active: 1
++  postExposure:
++    m_OverrideState: 0
++    m_Value: 0
++  contrast:
++    m_OverrideState: 0
++    m_Value: 0
++  colorFilter:
++    m_OverrideState: 1
++    m_Value: {r: 0, g: 0, b: 0, a: 1}
++  hueShift:
++    m_OverrideState: 0
++    m_Value: 0
++  saturation:
++    m_OverrideState: 0
++    m_Value: 0"
+arteranos/Arteranos,69,80769a6,Assets/Arteranos/Settings/FaderSceneProfile.asset.meta,added,8,0,8,"@@ -0,0 +1,8 @@
++fileFormatVersion: 2
++guid: b3d01f440f8364b47833e744df141d52
++NativeFormatImporter:
++  externalObjects: {}
++  mainObjectFileID: 11400000
++  userData: 
++  assetBundleName: 
++  assetBundleVariant: "
+arteranos/Arteranos,69,80769a6,Assets/Arteranos/Settings/SampleSceneProfile.asset,removed,0,103,103,"@@ -1,103 +0,0 @@
+-%YAML 1.1
+-%TAG !u! tag:unity3d.com,2011:
+---- !u!114 &-7893295128165547882
+-MonoBehaviour:
+-  m_ObjectHideFlags: 3
+-  m_CorrespondingSourceObject: {fileID: 0}
+-  m_PrefabInstance: {fileID: 0}
+-  m_PrefabAsset: {fileID: 0}
+-  m_GameObject: {fileID: 0}
+-  m_Enabled: 1
+-  m_EditorHideFlags: 0
+-  m_Script: {fileID: 11500000, guid: 0b2db86121404754db890f4c8dfe81b2, type: 3}
+-  m_Name: Bloom
+-  m_EditorClassIdentifier: 
+-  active: 0
+-  threshold:
+-    m_OverrideState: 1
+-    m_Value: 1
+-  intensity:
+-    m_OverrideState: 1
+-    m_Value: 1
+-  scatter:
+-    m_OverrideState: 0
+-    m_Value: 0.7
+-  clamp:
+-    m_OverrideState: 0
+-    m_Value: 65472
+-  tint:
+-    m_OverrideState: 0
+-    m_Value: {r: 1, g: 1, b: 1, a: 1}
+-  highQualityFiltering:
+-    m_OverrideState: 0
+-    m_Value: 0
+-  skipIterations:
+-    m_OverrideState: 0
+-    m_Value: 1
+-  dirtTexture:
+-    m_OverrideState: 0
+-    m_Value: {fileID: 0}
+-    dimension: 1
+-  dirtIntensity:
+-    m_OverrideState: 0
+-    m_Value: 0
+---- !u!114 &-7011558710299706105
+-MonoBehaviour:
+-  m_ObjectHideFlags: 3
+-  m_CorrespondingSourceObject: {fileID: 0}
+-  m_PrefabInstance: {fileID: 0}
+-  m_PrefabAsset: {fileID: 0}
+-  m_GameObject: {fileID: 0}
+-  m_Enabled: 1
+-  m_EditorHideFlags: 0
+-  m_Script: {fileID: 11500000, guid: 899c54efeace73346a0a16faa3afe726, type: 3}
+-  m_Name: Vignette
+-  m_EditorClassIdentifier: 
+-  active: 1
+-  color:
+-    m_OverrideState: 0
+-    m_Value: {r: 0, g: 0, b: 0, a: 1}
+-  center:
+-    m_OverrideState: 0
+-    m_Value: {x: 0.5, y: 0.5}
+-  intensity:
+-    m_OverrideState: 1
+-    m_Value: 1
+-  smoothness:
+-    m_OverrideState: 1
+-    m_Value: 1
+-  rounded:
+-    m_OverrideState: 1
+-    m_Value: 1
+---- !u!114 &11400000
+-MonoBehaviour:
+-  m_ObjectHideFlags: 0
+-  m_CorrespondingSourceObject: {fileID: 0}
+-  m_PrefabInstance: {fileID: 0}
+-  m_PrefabAsset: {fileID: 0}
+-  m_GameObject: {fileID: 0}
+-  m_Enabled: 1
+-  m_EditorHideFlags: 0
+-  m_Script: {fileID: 11500000, guid: d7fd9488000d3734a9e00ee676215985, type: 3}
+-  m_Name: SampleSceneProfile
+-  m_EditorClassIdentifier: 
+-  components:
+-  - {fileID: 849379129802519247}
+-  - {fileID: -7893295128165547882}
+-  - {fileID: -7011558710299706105}
+---- !u!114 &849379129802519247
+-MonoBehaviour:
+-  m_ObjectHideFlags: 3
+-  m_CorrespondingSourceObject: {fileID: 0}
+-  m_PrefabInstance: {fileID: 0}
+-  m_PrefabAsset: {fileID: 0}
+-  m_GameObject: {fileID: 0}
+-  m_Enabled: 1
+-  m_EditorHideFlags: 0
+-  m_Script: {fileID: 11500000, guid: 97c23e3b12dc18c42a140437e53d3951, type: 3}
+-  m_Name: Tonemapping
+-  m_EditorClassIdentifier: 
+-  active: 0
+-  mode:
+-    m_OverrideState: 1
+-    m_Value: 1"
+arteranos/Arteranos,69,f10b969,Assets/Arteranos/Prefabs/Core/_ScreenFader.prefab,removed,0,188,188,"@@ -1,188 +0,0 @@
+-%YAML 1.1
+-%TAG !u! tag:unity3d.com,2011:
+---- !u!1 &8215810771943107311
+-GameObject:
+-  m_ObjectHideFlags: 0
+-  m_CorrespondingSourceObject: {fileID: 0}
+-  m_PrefabInstance: {fileID: 0}
+-  m_PrefabAsset: {fileID: 0}
+-  serializedVersion: 6
+-  m_Component:
+-  - component: {fileID: 8215810771943107310}
+-  - component: {fileID: 8215810771943107308}
+-  - component: {fileID: 8215810771943107309}
+-  m_Layer: 5
+-  m_Name: Image
+-  m_TagString: Untagged
+-  m_Icon: {fileID: 0}
+-  m_NavMeshLayer: 0
+-  m_StaticEditorFlags: 0
+-  m_IsActive: 1
+---- !u!224 &8215810771943107310
+-RectTransform:
+-  m_ObjectHideFlags: 0
+-  m_CorrespondingSourceObject: {fileID: 0}
+-  m_PrefabInstance: {fileID: 0}
+-  m_PrefabAsset: {fileID: 0}
+-  m_GameObject: {fileID: 8215810771943107311}
+-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+-  m_LocalPosition: {x: 0, y: 0, z: 0}
+-  m_LocalScale: {x: 1, y: 1, z: 1}
+-  m_ConstrainProportionsScale: 0
+-  m_Children: []
+-  m_Father: {fileID: 8215810773308470417}
+-  m_RootOrder: 0
+-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+-  m_AnchorMin: {x: 0, y: 0}
+-  m_AnchorMax: {x: 1, y: 1}
+-  m_AnchoredPosition: {x: 0, y: 0}
+-  m_SizeDelta: {x: 0, y: 0}
+-  m_Pivot: {x: 0.5, y: 0.5}
+---- !u!222 &8215810771943107308
+-CanvasRenderer:
+-  m_ObjectHideFlags: 0
+-  m_CorrespondingSourceObject: {fileID: 0}
+-  m_PrefabInstance: {fileID: 0}
+-  m_PrefabAsset: {fileID: 0}
+-  m_GameObject: {fileID: 8215810771943107311}
+-  m_CullTransparentMesh: 1
+---- !u!114 &8215810771943107309
+-MonoBehaviour:
+-  m_ObjectHideFlags: 0
+-  m_CorrespondingSourceObject: {fileID: 0}
+-  m_PrefabInstance: {fileID: 0}
+-  m_PrefabAsset: {fileID: 0}
+-  m_GameObject: {fileID: 8215810771943107311}
+-  m_Enabled: 1
+-  m_EditorHideFlags: 0
+-  m_Script: {fileID: 11500000, guid: fe87c0e1cc204ed48ad3b37840f39efc, type: 3}
+-  m_Name: 
+-  m_EditorClassIdentifier: 
+-  m_Material: {fileID: 0}
+-  m_Color: {r: 0, g: 0, b: 0, a: 1}
+-  m_RaycastTarget: 1
+-  m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
+-  m_Maskable: 1
+-  m_OnCullStateChanged:
+-    m_PersistentCalls:
+-      m_Calls: []
+-  m_Sprite: {fileID: 0}
+-  m_Type: 0
+-  m_PreserveAspect: 0
+-  m_FillCenter: 1
+-  m_FillMethod: 4
+-  m_FillAmount: 1
+-  m_FillClockwise: 1
+-  m_FillOrigin: 0
+-  m_UseSpriteMesh: 0
+-  m_PixelsPerUnitMultiplier: 1
+---- !u!1 &8215810773308470421
+-GameObject:
+-  m_ObjectHideFlags: 0
+-  m_CorrespondingSourceObject: {fileID: 0}
+-  m_PrefabInstance: {fileID: 0}
+-  m_PrefabAsset: {fileID: 0}
+-  serializedVersion: 6
+-  m_Component:
+-  - component: {fileID: 8215810773308470417}
+-  - component: {fileID: 8215810773308470418}
+-  - component: {fileID: 8215810773308470419}
+-  - component: {fileID: 8215810773308470416}
+-  - component: {fileID: 8215810773308470431}
+-  m_Layer: 5
+-  m_Name: _ScreenFader
+-  m_TagString: Untagged
+-  m_Icon: {fileID: 0}
+-  m_NavMeshLayer: 0
+-  m_StaticEditorFlags: 0
+-  m_IsActive: 1
+---- !u!224 &8215810773308470417
+-RectTransform:
+-  m_ObjectHideFlags: 0
+-  m_CorrespondingSourceObject: {fileID: 0}
+-  m_PrefabInstance: {fileID: 0}
+-  m_PrefabAsset: {fileID: 0}
+-  m_GameObject: {fileID: 8215810773308470421}
+-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+-  m_LocalPosition: {x: 0, y: 0, z: 0}
+-  m_LocalScale: {x: 0, y: 0, z: 0}
+-  m_ConstrainProportionsScale: 0
+-  m_Children:
+-  - {fileID: 8215810771943107310}
+-  m_Father: {fileID: 0}
+-  m_RootOrder: 0
+-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+-  m_AnchorMin: {x: 0, y: 0}
+-  m_AnchorMax: {x: 0, y: 0}
+-  m_AnchoredPosition: {x: 0, y: 0}
+-  m_SizeDelta: {x: 0, y: 0}
+-  m_Pivot: {x: 0, y: 0}
+---- !u!223 &8215810773308470418
+-Canvas:
+-  m_ObjectHideFlags: 0
+-  m_CorrespondingSourceObject: {fileID: 0}
+-  m_PrefabInstance: {fileID: 0}
+-  m_PrefabAsset: {fileID: 0}
+-  m_GameObject: {fileID: 8215810773308470421}
+-  m_Enabled: 1
+-  serializedVersion: 3
+-  m_RenderMode: 0
+-  m_Camera: {fileID: 0}
+-  m_PlaneDistance: 100
+-  m_PixelPerfect: 0
+-  m_ReceivesEvents: 1
+-  m_OverrideSorting: 0
+-  m_OverridePixelPerfect: 0
+-  m_SortingBucketNormalizedSize: 0
+-  m_AdditionalShaderChannelsFlag: 0
+-  m_SortingLayerID: 0
+-  m_SortingOrder: 0
+-  m_TargetDisplay: 0
+---- !u!114 &8215810773308470419
+-MonoBehaviour:
+-  m_ObjectHideFlags: 0
+-  m_CorrespondingSourceObject: {fileID: 0}
+-  m_PrefabInstance: {fileID: 0}
+-  m_PrefabAsset: {fileID: 0}
+-  m_GameObject: {fileID: 8215810773308470421}
+-  m_Enabled: 1
+-  m_EditorHideFlags: 0
+-  m_Script: {fileID: 11500000, guid: 0cd44c1031e13a943bb63640046fad76, type: 3}
+-  m_Name: 
+-  m_EditorClassIdentifier: 
+-  m_UiScaleMode: 1
+-  m_ReferencePixelsPerUnit: 100
+-  m_ScaleFactor: 1
+-  m_ReferenceResolution: {x: 1920, y: 1080}
+-  m_ScreenMatchMode: 0
+-  m_MatchWidthOrHeight: 0
+-  m_PhysicalUnit: 3
+-  m_FallbackScreenDPI: 96
+-  m_DefaultSpriteDPI: 96
+-  m_DynamicPixelsPerUnit: 1
+-  m_PresetInfoIsWorld: 0
+---- !u!114 &8215810773308470416
+-MonoBehaviour:
+-  m_ObjectHideFlags: 0
+-  m_CorrespondingSourceObject: {fileID: 0}
+-  m_PrefabInstance: {fileID: 0}
+-  m_PrefabAsset: {fileID: 0}
+-  m_GameObject: {fileID: 8215810773308470421}
+-  m_Enabled: 1
+-  m_EditorHideFlags: 0
+-  m_Script: {fileID: 11500000, guid: 504c971a29732eb4eb888fcb0f455b49, type: 3}
+-  m_Name: 
+-  m_EditorClassIdentifier: 
+---- !u!114 &8215810773308470431
+-MonoBehaviour:
+-  m_ObjectHideFlags: 0
+-  m_CorrespondingSourceObject: {fileID: 0}
+-  m_PrefabInstance: {fileID: 0}
+-  m_PrefabAsset: {fileID: 0}
+-  m_GameObject: {fileID: 8215810773308470421}
+-  m_Enabled: 1
+-  m_EditorHideFlags: 0
+-  m_Script: {fileID: 11500000, guid: 6fcd9f4d05a87e84ca83b209e68c9606, type: 3}
+-  m_Name: 
+-  m_EditorClassIdentifier: 
+-  faderImage: {fileID: 8215810771943107309}"
+arteranos/Arteranos,69,f10b969,Assets/Arteranos/Prefabs/Core/_ScreenFader.prefab.meta,removed,0,7,7,"@@ -1,7 +0,0 @@
+-fileFormatVersion: 2
+-guid: ae8bacc42fbc8894aa444001ac59d796
+-PrefabImporter:
+-  externalObjects: {}
+-  userData: 
+-  assetBundleName: 
+-  assetBundleVariant: "
+arteranos/Arteranos,69,f10b969,Assets/Arteranos/Scenes/_Startup.unity,modified,1,120,121,"@@ -378,7 +378,7 @@ PrefabInstance:
+     - target: {fileID: 7320566017384123869, guid: d4474b3215e621b4bbc707cb0c3e8d45,
+         type: 3}
+       propertyPath: m_RootOrder
+-      value: 4
++      value: 3
+       objectReference: {fileID: 0}
+     - target: {fileID: 7320566017384123869, guid: d4474b3215e621b4bbc707cb0c3e8d45,
+         type: 3}
+@@ -817,122 +817,3 @@ PrefabInstance:
+       objectReference: {fileID: 0}
+     m_RemovedComponents: []
+   m_SourcePrefab: {fileID: 100100000, guid: 0978e76d1115c6d4e81143659b9959b4, type: 3}
+---- !u!1001 &8215810771803660711
+-PrefabInstance:
+-  m_ObjectHideFlags: 0
+-  serializedVersion: 2
+-  m_Modification:
+-    m_TransformParent: {fileID: 0}
+-    m_Modifications:
+-    - target: {fileID: 8215810773308470417, guid: ae8bacc42fbc8894aa444001ac59d796,
+-        type: 3}
+-      propertyPath: m_Pivot.x
+-      value: 0
+-      objectReference: {fileID: 0}
+-    - target: {fileID: 8215810773308470417, guid: ae8bacc42fbc8894aa444001ac59d796,
+-        type: 3}
+-      propertyPath: m_Pivot.y
+-      value: 0
+-      objectReference: {fileID: 0}
+-    - target: {fileID: 8215810773308470417, guid: ae8bacc42fbc8894aa444001ac59d796,
+-        type: 3}
+-      propertyPath: m_RootOrder
+-      value: 3
+-      objectReference: {fileID: 0}
+-    - target: {fileID: 8215810773308470417, guid: ae8bacc42fbc8894aa444001ac59d796,
+-        type: 3}
+-      propertyPath: m_AnchorMax.x
+-      value: 0
+-      objectReference: {fileID: 0}
+-    - target: {fileID: 8215810773308470417, guid: ae8bacc42fbc8894aa444001ac59d796,
+-        type: 3}
+-      propertyPath: m_AnchorMax.y
+-      value: 0
+-      objectReference: {fileID: 0}
+-    - target: {fileID: 8215810773308470417, guid: ae8bacc42fbc8894aa444001ac59d796,
+-        type: 3}
+-      propertyPath: m_AnchorMin.x
+-      value: 0
+-      objectReference: {fileID: 0}
+-    - target: {fileID: 8215810773308470417, guid: ae8bacc42fbc8894aa444001ac59d796,
+-        type: 3}
+-      propertyPath: m_AnchorMin.y
+-      value: 0
+-      objectReference: {fileID: 0}
+-    - target: {fileID: 8215810773308470417, guid: ae8bacc42fbc8894aa444001ac59d796,
+-        type: 3}
+-      propertyPath: m_SizeDelta.x
+-      value: 0
+-      objectReference: {fileID: 0}
+-    - target: {fileID: 8215810773308470417, guid: ae8bacc42fbc8894aa444001ac59d796,
+-        type: 3}
+-      propertyPath: m_SizeDelta.y
+-      value: 0
+-      objectReference: {fileID: 0}
+-    - target: {fileID: 8215810773308470417, guid: ae8bacc42fbc8894aa444001ac59d796,
+-        type: 3}
+-      propertyPath: m_LocalPosition.x
+-      value: 0
+-      objectReference: {fileID: 0}
+-    - target: {fileID: 8215810773308470417, guid: ae8bacc42fbc8894aa444001ac59d796,
+-        type: 3}
+-      propertyPath: m_LocalPosition.y
+-      value: 0
+-      objectReference: {fileID: 0}
+-    - target: {fileID: 8215810773308470417, guid: ae8bacc42fbc8894aa444001ac59d796,
+-        type: 3}
+-      propertyPath: m_LocalPosition.z
+-      value: 0
+-      objectReference: {fileID: 0}
+-    - target: {fileID: 8215810773308470417, guid: ae8bacc42fbc8894aa444001ac59d796,
+-        type: 3}
+-      propertyPath: m_LocalRotation.w
+-      value: 1
+-      objectReference: {fileID: 0}
+-    - target: {fileID: 8215810773308470417, guid: ae8bacc42fbc8894aa444001ac59d796,
+-        type: 3}
+-      propertyPath: m_LocalRotation.x
+-      value: 0
+-      objectReference: {fileID: 0}
+-    - target: {fileID: 8215810773308470417, guid: ae8bacc42fbc8894aa444001ac59d796,
+-        type: 3}
+-      propertyPath: m_LocalRotation.y
+-      value: 0
+-      objectReference: {fileID: 0}
+-    - target: {fileID: 8215810773308470417, guid: ae8bacc42fbc8894aa444001ac59d796,
+-        type: 3}
+-      propertyPath: m_LocalRotation.z
+-      value: 0
+-      objectReference: {fileID: 0}
+-    - target: {fileID: 8215810773308470417, guid: ae8bacc42fbc8894aa444001ac59d796,
+-        type: 3}
+-      propertyPath: m_AnchoredPosition.x
+-      value: 0
+-      objectReference: {fileID: 0}
+-    - target: {fileID: 8215810773308470417, guid: ae8bacc42fbc8894aa444001ac59d796,
+-        type: 3}
+-      propertyPath: m_AnchoredPosition.y
+-      value: 0
+-      objectReference: {fileID: 0}
+-    - target: {fileID: 8215810773308470417, guid: ae8bacc42fbc8894aa444001ac59d796,
+-        type: 3}
+-      propertyPath: m_LocalEulerAnglesHint.x
+-      value: 0
+-      objectReference: {fileID: 0}
+-    - target: {fileID: 8215810773308470417, guid: ae8bacc42fbc8894aa444001ac59d796,
+-        type: 3}
+-      propertyPath: m_LocalEulerAnglesHint.y
+-      value: 0
+-      objectReference: {fileID: 0}
+-    - target: {fileID: 8215810773308470417, guid: ae8bacc42fbc8894aa444001ac59d796,
+-        type: 3}
+-      propertyPath: m_LocalEulerAnglesHint.z
+-      value: 0
+-      objectReference: {fileID: 0}
+-    - target: {fileID: 8215810773308470421, guid: ae8bacc42fbc8894aa444001ac59d796,
+-        type: 3}
+-      propertyPath: m_Name
+-      value: _ScreenFader
+-      objectReference: {fileID: 0}
+-    m_RemovedComponents: []
+-  m_SourcePrefab: {fileID: 100100000, guid: ae8bacc42fbc8894aa444001ac59d796, type: 3}"
+arteranos/Arteranos,69,f10b969,Assets/Arteranos/Scripts/Core/Base/Helpers.cs,modified,8,0,8,"@@ -393,6 +393,14 @@ public static IAvatarBrain Me
+             set => Instance.Me = value;
+         }
+     }
++
++    public static class ScreenFader
++    {
++        public static IXRVisualConfigurator Instance { get; set; }
++
++        public static void StartFading(float opacity, float duration = 0.5f)
++            => Instance?.StartFading(opacity, duration);
++    }
+     #endregion
+     // -------------------------------------------------------------------
+ }"
+arteranos/Arteranos,69,f10b969,Assets/Arteranos/Scripts/Core/Interfaces/IXRVisualConfigurator.cs,added,14,0,14,"@@ -0,0 +1,14 @@
++﻿/*
++ * Copyright (c) 2023, willneedit
++ * 
++ * Licensed by the Mozilla Public License 2.0,
++ * residing in the LICENSE.md file in the project's root directory.
++ */
++
++namespace Arteranos.XR
++{
++    public interface IXRVisualConfigurator
++    {
++        void StartFading(float opacity, float duration = 0.5F);
++    }
++}"
+arteranos/Arteranos,69,f10b969,Assets/Arteranos/Scripts/Core/Interfaces/IXRVisualConfigurator.cs.meta,renamed,1,1,2,"@@ -1,5 +1,5 @@
+ fileFormatVersion: 2
+-guid: 6fcd9f4d05a87e84ca83b209e68c9606
++guid: 2aeed169fb06f5247bfcfc50add84771
+ MonoImporter:
+   externalObjects: {}
+   serializedVersion: 2"
+arteranos/Arteranos,69,f10b969,Assets/Arteranos/Scripts/Core/ScreenFader.cs,removed,0,52,52,"@@ -1,52 +0,0 @@
+-/*
+- * Copyright (c) 2023, willneedit
+- * 
+- * Licensed by the Mozilla Public License 2.0,
+- * residing in the LICENSE.md file in the project's root directory.
+- */
+-
+-using System.Collections;
+-using System.Collections.Generic;
+-using UnityEngine;
+-using UnityEngine.UI;
+-
+-namespace Arteranos
+-{
+-    public class ScreenFader : MonoBehaviour
+-    {
+-
+-        [SerializeField] private Image faderImage = null;
+-
+-        private float elapsed = 0.0f;
+-        private float currentOpacity = 0.0f;
+-        private float targetOpacity = 0.0f;
+-        private float duration = 0.0f;
+-
+-        void Update()
+-        {
+-            if(elapsed >= duration) return;
+-
+-            elapsed += Time.deltaTime;
+-
+-            float normalizedProgress = elapsed / duration;
+-
+-            float alpha = Mathf.Lerp(currentOpacity, targetOpacity, normalizedProgress);
+-
+-            faderImage.color = new Color(faderImage.color.r, faderImage.color.g, faderImage.color.b, alpha);
+-
+-            // Completely switch off the image to save an interference of the transparency
+-            GetComponent<Canvas>().enabled = alpha > 0.0f;
+-        }
+-
+-        public static void StartFading(float opacity, float duration = 0.5f)
+-        {
+-            ScreenFader sf = FindObjectOfType<ScreenFader>();
+-
+-            sf.elapsed = 0.0f;
+-            sf.duration= duration;
+-            sf.targetOpacity= opacity;
+-
+-            sf.currentOpacity = sf.faderImage.color.a;
+-        }
+-    }
+-}"
+arteranos/Arteranos,69,f10b969,Assets/Arteranos/Scripts/Services/NetworkStatusImpl.cs,modified,1,1,2,"@@ -245,7 +245,7 @@ private IEnumerator StopHostCoroutine(bool loadOfflineScene)
+         {
+             if(loadOfflineScene)
+             {
+-                ScreenFader.StartFading(1.0f);
++                XR.ScreenFader.StartFading(1.0f);
+ 
+                 yield return new WaitForSeconds(0.5f);
+                 AsyncOperation ao = SceneManager.LoadSceneAsync(""OfflineScene"");"
+arteranos/Arteranos,69,f10b969,Assets/Arteranos/Scripts/Services/StartupManager.cs,modified,1,1,2,"@@ -60,7 +60,7 @@ IEnumerator StartupCoroutine()
+             enabled = false;
+ 
+             if(string.IsNullOrEmpty(DesiredWorld))
+-                ScreenFader.StartFading(0.0f, 1.0f);
++                XR.ScreenFader.StartFading(0.0f, 1.0f);
+         }
+ 
+         protected void Update()"
+arteranos/Arteranos,69,f10b969,Assets/Arteranos/Scripts/Web/SceneLoader.cs,modified,2,2,4,"@@ -131,7 +131,7 @@ public IEnumerator LoadScene(string name)
+             yield return null;
+ 
+             // Fade to black...
+-            ScreenFader.StartFading(1.0f);
++            XR.ScreenFader.StartFading(1.0f);
+             yield return new WaitForSeconds(0.5f);
+ 
+             AssetBundle loadedAB = AssetBundle.LoadFromFile(name);
+@@ -220,7 +220,7 @@ public IEnumerator LoadScene(string name)
+ 
+             // We could have a MoveToDownloadedWorld() in the event listener,
+             // but just to be sure in the case if we could be stuck in the black.
+-            ScreenFader.StartFading(0.0f);
++            XR.ScreenFader.StartFading(0.0f);
+ 
+             SceneManager.UnloadSceneAsync(prev);
+ "
+arteranos/Arteranos,69,f10b969,Assets/Arteranos/Scripts/XR/CTeleProvider.cs,modified,1,0,1,"@@ -1,5 +1,6 @@
+ using Arteranos;
+ using Arteranos.Core;
++using Arteranos.XR;
+ using System.Collections;
+ using Unity.XR.CoreUtils;
+ using UnityEngine.Assertions;"
+arteranos/Arteranos,69,f10b969,Assets/Arteranos/Scripts/XR/XRVisualConfigurator.cs,modified,19,4,23,"@@ -12,7 +12,8 @@
+ 
+ namespace Arteranos.XR
+ {
+-    public class XRVisualConfigurator : MonoBehaviour
++
++    public class XRVisualConfigurator : MonoBehaviour, IXRVisualConfigurator
+     {
+         // The required speed (2m/s) to fully close the shutters (or rather to fully use the effects)
+         [SerializeField] private float VelocityMax = 2.0f;
+@@ -30,6 +31,14 @@ public class XRVisualConfigurator : MonoBehaviour
+         private float FadeStrength = 0.0f;
+         private Volume FaderVolume;
+ 
++        private void Awake() => ScreenFader.Instance = this;
++
++        private void OnDestroy()
++        {
++            SettingsManager.Client.OnXRControllerChanged -= DownloadControlSettings;
++            ScreenFader.Instance = null;
++        }
++
+         void Start()
+         {
+             Volume[] volumes = GetComponentsInChildren<Volume>();
+@@ -53,13 +62,13 @@ void Update()
+             pos = t.position;
+ 
+             Utils.Tween(ref BlinderStrength, d, BlinderDuration);
++            Utils.Tween(ref FadeStrength, FadeTargetStrength, FadeDuration);
+ 
+             // Too much hassle to pick out the vignette. Just use the whole global volume.
+-            if(BlinderVolume != null) BlinderVolume.weight = BlinderStrength * BlindersMaxValue;
++            if (BlinderVolume != null) BlinderVolume.weight = BlinderStrength * BlindersMaxValue;
++            if (FaderVolume != null) FaderVolume.weight = FadeStrength;
+         }
+ 
+-        private void OnDestroy() => SettingsManager.Client.OnXRControllerChanged -= DownloadControlSettings;
+-
+         private void DownloadControlSettings(ControlSettingsJSON ccs, MovementSettingsJSON mcs)
+         {
+             if(mcs == null) return;
+@@ -80,5 +89,11 @@ private void DownloadControlSettings(ControlSettingsJSON ccs, MovementSettingsJS
+                     break;
+             }
+         }
++
++        public void StartFading(float opacity, float duration = 0.5f)
++        {
++            FadeTargetStrength = opacity;
++            FadeDuration = duration;
++        }
+     }
+ }"
+arteranos/Arteranos,69,02baa2e,Assets/Arteranos/Scripts/Services/StartupManager.cs,modified,5,1,6,"@@ -59,8 +59,9 @@ IEnumerator StartupCoroutine()
+             // Finish the startup...
+             enabled = false;
+ 
++            // ... and raise the curtains. Though, keep waiting if we have to load the world.
+             if(string.IsNullOrEmpty(DesiredWorld))
+-                XR.ScreenFader.StartFading(0.0f, 1.0f);
++                XR.ScreenFader.StartFading(0.0f, 2.0f);
+         }
+ 
+         protected void Update()
+@@ -69,6 +70,9 @@ protected void Update()
+ 
+             initialized = true;
+ 
++            // Initialize with the black screen
++            XR.ScreenFader.StartFading(1.0f, 0.0f);
++
+             StartCoroutine(StartupCoroutine());
+         }
+     }"

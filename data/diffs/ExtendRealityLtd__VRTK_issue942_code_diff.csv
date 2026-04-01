@@ -1,0 +1,105 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+ExtendRealityLtd/VRTK,942,cdbd463,Assets/VRTK/Scripts/Pointers/PointerRenderers/VRTK_BasePointerRenderer.cs,modified,10,1,11,"@@ -99,11 +99,20 @@ public virtual void Toggle(bool pointerState, bool actualState)
+                 controllingPointer.ResetActivationTimer();
+                 PointerExit(destinationHit);
+             }
+-            ToggleObjectInteraction(pointerState);
++            ToggleInteraction(pointerState);
+             TogglePlayArea(pointerState, actualState);
+             ToggleRenderer(pointerState, actualState);
+         }
+ 
++        /// <summary>
++        /// The ToggleInteraction method is used to enable or disable the controller extension interactions.
++        /// </summary>
++        /// <param name=""state"">If true then the object interactor will be enabled.</param>
++        public virtual void ToggleInteraction(bool state)
++        {
++            ToggleObjectInteraction(state);
++        }
++
+         /// <summary>
+         /// The UpdateRenderer method is used to run an Update routine on the pointer.
+         /// </summary>"
+ExtendRealityLtd/VRTK,942,cdbd463,Assets/VRTK/Scripts/Pointers/PointerRenderers/VRTK_BezierPointerRenderer.cs,modified,11,1,12,"@@ -67,7 +67,7 @@ public class VRTK_BezierPointerRenderer : VRTK_BasePointerRenderer
+         /// </summary>
+         public override void UpdateRenderer()
+         {
+-            if ((controllingPointer && controllingPointer.IsPointerActive()) || tracerVisible || cursorVisible)
++            if ((controllingPointer && controllingPointer.IsPointerActive()) || IsTracerVisible() || IsCursorVisible())
+             {
+                 Vector3 jointPosition = ProjectForwardBeam();
+                 Vector3 downPosition = ProjectDownBeam(jointPosition);
+@@ -135,6 +135,16 @@ protected override void ChangeMaterial(Color givenColor)
+             ChangeMaterialColor(actualCursor, givenColor);
+         }
+ 
++        protected virtual bool IsTracerVisible()
++        {
++            return (tracerVisibility == VisibilityStates.AlwaysOn || tracerVisible);
++        }
++
++        protected virtual bool IsCursorVisible()
++        {
++            return (cursorVisibility == VisibilityStates.AlwaysOn || cursorVisible);
++        }
++
+         protected virtual void CreateTracer()
+         {
+             actualTracer = actualContainer.gameObject.AddComponent<VRTK_CurveGenerator>();"
+ExtendRealityLtd/VRTK,942,cdbd463,Assets/VRTK/Scripts/Pointers/PointerRenderers/VRTK_StraightPointerRenderer.cs,modified,11,1,12,"@@ -47,7 +47,7 @@ public class VRTK_StraightPointerRenderer : VRTK_BasePointerRenderer
+         /// </summary>
+         public override void UpdateRenderer()
+         {
+-            if ((controllingPointer && controllingPointer.IsPointerActive()) || tracerVisible || cursorVisible)
++            if ((controllingPointer && controllingPointer.IsPointerActive()) || IsTracerVisible() || IsCursorVisible())
+             {
+                 float tracerLength = CastRayForward();
+                 SetPointerAppearance(tracerLength);
+@@ -102,6 +102,16 @@ protected override void UpdateObjectInteractor()
+             }
+         }
+ 
++        protected virtual bool IsTracerVisible()
++        {
++            return (tracerVisibility == VisibilityStates.AlwaysOn || tracerVisible);
++        }
++
++        protected virtual bool IsCursorVisible()
++        {
++            return (cursorVisibility == VisibilityStates.AlwaysOn || cursorVisible);
++        }
++
+         protected virtual void CreateTracer()
+         {
+             if (customTracer)"
+ExtendRealityLtd/VRTK,942,cdbd463,Assets/VRTK/Scripts/Pointers/VRTK_Pointer.cs,modified,5,0,5,"@@ -173,6 +173,11 @@ protected virtual void Update()
+             {
+                 pointerRenderer.InitalizePointer(this, invalidListPolicy, navMeshCheckDistance, headsetPositionCompensation);
+                 pointerRenderer.UpdateRenderer();
++                if (!IsPointerActive())
++                {
++                    bool interactionState = (pointerRenderer.tracerVisibility == VRTK_BasePointerRenderer.VisibilityStates.AlwaysOn || pointerRenderer.cursorVisibility == VRTK_BasePointerRenderer.VisibilityStates.AlwaysOn);
++                    pointerRenderer.ToggleInteraction(interactionState);
++                }
+             }
+         }
+ "
+ExtendRealityLtd/VRTK,942,cdbd463,DOCUMENTATION.md,modified,11,0,11,"@@ -905,6 +905,17 @@ The InitalizePointer method is used to set up the state of the pointer renderer.
+ 
+ The Toggle Method is used to enable or disable the pointer renderer.
+ 
++#### ToggleInteraction/1
++
++  > `public virtual void ToggleInteraction(bool state)`
++
++  * Parameters
++   * `bool state` - If true then the object interactor will be enabled.
++  * Returns
++   * _none_
++
++The ToggleInteraction method is used to enable or disable the controller extension interactions.
++
+ #### UpdateRenderer/0
+ 
+   > `public virtual void UpdateRenderer()`"

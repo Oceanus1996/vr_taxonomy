@@ -1,0 +1,706 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+OpenKneeboard/OpenKneeboard,258,13ff3d8,src/app/app-common/FlatConfig.cpp,modified,31,17,48,"@@ -23,28 +23,42 @@
+ 
+ namespace OpenKneeboard {
+ 
+-NLOHMANN_JSON_SERIALIZE_ENUM(
+-  FlatConfig::HorizontalAlignment,
+-  {
+-    {FlatConfig::HorizontalAlignment::Left, ""Left""},
+-    {FlatConfig::HorizontalAlignment::Center, ""Center""},
+-    {FlatConfig::HorizontalAlignment::Right, ""Right""},
+-  });
+-
+-NLOHMANN_JSON_SERIALIZE_ENUM(
+-  FlatConfig::VerticalAlignment,
+-  {
+-    {FlatConfig::VerticalAlignment::Top, ""Top""},
+-    {FlatConfig::VerticalAlignment::Middle, ""Middle""},
+-    {FlatConfig::VerticalAlignment::Bottom, ""Bottom""},
+-  });
+-
+ OPENKNEEBOARD_DEFINE_SPARSE_JSON(
+-  FlatConfig,
++  NonVRConstrainedPosition,
+   mHeightPercent,
+   mPaddingPixels,
+   mOpacity,
+   mHorizontalAlignment,
+   mVerticalAlignment)
+ 
++void to_json(nlohmann::json& j, const NonVRAbsolutePosition& p) {
++  const auto& r = p.mRect;
++  j[""Origin""] = {
++    {""Left"", r.mOrigin.mX},
++    {""Top"", r.mOrigin.mY},
++  };
++  j[""Size""] = {
++    {""Width"", r.mSize.mWidth},
++    {""Height"", r.mSize.mHeight},
++  };
++  j[""Alignment""] = {
++    {""Horizontal"", p.mHorizontalAlignment},
++    {""Vertical"", p.mVerticalAlignment},
++  };
++}// namespace OpenKneeboard
++
++void from_json(const nlohmann::json& j, NonVRAbsolutePosition& p) {
++  const auto origin = j.at(""Origin"");
++  const auto size = j.at(""Size"");
++  const auto alignment = j.at(""Alignment"");
++
++  auto& r = p.mRect;
++  r.mOrigin.mX = origin.at(""Left"");
++  r.mOrigin.mY = origin.at(""Top"");
++  r.mSize.mWidth = size.at(""Width"");
++  r.mSize.mHeight = size.at(""Height"");
++  p.mHorizontalAlignment = alignment.at(""Horizontal"");
++  p.mVerticalAlignment = alignment.at(""Vertical"");
++}
++
+ }// namespace OpenKneeboard"
+OpenKneeboard/OpenKneeboard,258,13ff3d8,src/app/app-common/KneeboardState.cpp,modified,1,1,2,"@@ -503,7 +503,7 @@ std::vector<std::shared_ptr<UserInputDevice>> KneeboardState::GetInputDevices()
+   return devices;
+ }
+ 
+-void KneeboardState::SetNonVRSettings(const FlatConfig& value) {
++void KneeboardState::SetNonVRSettings(const NonVRConstrainedPosition& value) {
+   const EventDelay delay;// lock must be released first
+   const std::unique_lock lock(*this);
+ "
+OpenKneeboard/OpenKneeboard,258,13ff3d8,src/app/app-common/KneeboardView.cpp,modified,3,3,6,"@@ -283,15 +283,15 @@ D2D1_SIZE_U KneeboardView::GetCanvasSize() const {
+     const auto& size = consumers.mNonVRPixelSize;
+     if (
+       (now - consumers.NotVR()) < std::chrono::milliseconds(500)
+-      && (now - consumers.AnyVR()) > std::chrono::seconds(1) && size.width
+-      && size.height) {
++      && (now - consumers.AnyVR()) > std::chrono::seconds(1) && size.mWidth
++      && size.mHeight) {
+       const auto ret = mKneeboard->GetNonVRSettings()
+                          .Layout(
+                            size,
+                            {static_cast<uint32_t>(idealSize.width),
+                             static_cast<uint32_t>(idealSize.height)})
+                          .mSize;
+-      return {ret.width, ret.height};
++      return {ret.mWidth, ret.mHeight};
+     }
+   }
+ "
+OpenKneeboard/OpenKneeboard,258,13ff3d8,src/app/app-common/VRConfig.cpp,modified,1,1,2,"@@ -24,7 +24,7 @@
+ namespace OpenKneeboard {
+ 
+ OPENKNEEBOARD_DEFINE_SPARSE_JSON(
+-  VRLayerConfig,
++  VRAbsolutePosition,
+   mX,
+   mEyeY,
+   mZ,"
+OpenKneeboard/OpenKneeboard,258,13ff3d8,src/app/app-common/include/OpenKneeboard/KneeboardState.h,modified,1,1,2,"@@ -54,7 +54,7 @@ class GameEventServer;
+ 
+ struct ViewRenderInfo {
+   std::shared_ptr<IKneeboardView> mView;
+-  VRLayerConfig mVR;
++  VRAbsolutePosition mVR;
+   bool mIsActiveForInput = false;
+ };
+ "
+OpenKneeboard/OpenKneeboard,258,13ff3d8,src/app/app-common/include/OpenKneeboard/OverlaysConfig.h,added,75,0,75,"@@ -0,0 +1,75 @@
++/*
++ * OpenKneeboard
++ *
++ * Copyright (C) 2022 Fred Emmott <fred@fredemmott.com>
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; version 2.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301,
++ * USA.
++ */
++
++#pragma once
++
++#include <OpenKneeboard/FlatConfig.h>
++#include <OpenKneeboard/VRConfig.h>
++
++#include <shims/winrt/base.h>
++
++namespace OpenKneeboard {
++
++struct OverlayVRPosition {
++  enum class Type {
++    Absolute,
++    HorizontalMirror,
++    VerticalMirror,
++  };
++
++  Type mType;
++  union {
++    winrt::guid mMirrorOf;
++    VRAbsolutePosition mAbsolutePosition;
++  };
++};
++
++struct OverlayNonVRPosition {
++  enum class Type {
++    Absolute,
++    Constrained,
++    HorizontalMirror,
++    VerticalMirror,
++  };
++
++  Type mType;
++  union {
++    winrt::guid mMirrorOf;
++    NonVRAbsolutePosition mAbsolutePosition;
++    NonVRConstrainedPosition mConstrainedPosition;
++  };
++};
++
++struct OverlayConfig {
++  winrt::guid mGuid;
++  std::string mName;
++
++  bool mVR {true};
++  OverlayVRPosition mVRPosition;
++
++  bool mNonVR {true};
++  OverlayNonVRPosition mNonVRPosition;
++};
++
++struct OverlaysConfig {
++  std::vector<OverlayConfig> mOverlays;
++};
++
++};// namespace OpenKneeboard
+\ No newline at end of file"
+OpenKneeboard/OpenKneeboard,258,13ff3d8,src/app/app-common/include/OpenKneeboard/Settings.h,modified,1,1,2,"@@ -35,7 +35,7 @@ namespace OpenKneeboard {
+   IT(DirectInputSettings, DirectInput) \
+   IT(DoodleSettings, Doodles) \
+   IT(nlohmann::json, Games) \
+-  IT(FlatConfig, NonVR) \
++  IT(NonVRConstrainedPosition, NonVR) \
+   IT(TabletSettings, TabletInput) \
+   IT(nlohmann::json, Tabs) \
+   IT(VRConfig, VR)"
+OpenKneeboard/OpenKneeboard,258,13ff3d8,src/app/app-winui3/HelpPage.xaml.cpp,modified,2,2,4,"@@ -494,8 +494,8 @@ std::string HelpPage::GetActiveConsumers() noexcept {
+ 
+   ret += std::format(
+     ""\nNon-VR canvas: {}x{}\n"",
+-    consumers.mNonVRPixelSize.width,
+-    consumers.mNonVRPixelSize.height);
++    consumers.mNonVRPixelSize.mWidth,
++    consumers.mNonVRPixelSize.mHeight);
+ 
+   return ret;
+ }"
+OpenKneeboard/OpenKneeboard,258,13ff3d8,src/app/app-winui3/NonVRSettingsPage.xaml.cpp,modified,5,5,10,"@@ -23,10 +23,11 @@
+ #include ""NonVRSettingsPage.g.cpp""
+ // clang-format on
+ 
++#include ""Globals.h""
++
+ #include <OpenKneeboard/KneeboardState.h>
+-#include <OpenKneeboard/utf8.h>
+ 
+-#include ""Globals.h""
++#include <OpenKneeboard/utf8.h>
+ 
+ using namespace OpenKneeboard;
+ using namespace winrt::Microsoft::UI::Xaml::Controls;
+@@ -104,8 +105,7 @@ uint8_t NonVRSettingsPage::KneeboardHorizontalPlacement() {
+ 
+ void NonVRSettingsPage::KneeboardHorizontalPlacement(uint8_t value) {
+   auto config = gKneeboard->GetNonVRSettings();
+-  config.mHorizontalAlignment
+-    = static_cast<FlatConfig::HorizontalAlignment>(value);
++  config.mHorizontalAlignment = static_cast<Alignment::Horizontal>(value);
+   gKneeboard->SetNonVRSettings(config);
+ }
+ 
+@@ -116,7 +116,7 @@ uint8_t NonVRSettingsPage::KneeboardVerticalPlacement() {
+ 
+ void NonVRSettingsPage::KneeboardVerticalPlacement(uint8_t value) {
+   auto config = gKneeboard->GetNonVRSettings();
+-  config.mVerticalAlignment = static_cast<FlatConfig::VerticalAlignment>(value);
++  config.mVerticalAlignment = static_cast<Alignment::Vertical>(value);
+   gKneeboard->SetNonVRSettings(config);
+ }
+ "
+OpenKneeboard/OpenKneeboard,258,13ff3d8,src/injectables/NonVRD3D11Kneeboard.cpp,modified,4,4,8,"@@ -82,10 +82,10 @@ HRESULT NonVRD3D11Kneeboard::OnIDXGISwapChain_Present(
+     {scDesc.BufferDesc.Width, scDesc.BufferDesc.Height},
+     {layerConfig.mImageWidth, layerConfig.mImageHeight});
+   RECT destRect {
+-    static_cast<LONG>(dest.mOrigin.x),
+-    static_cast<LONG>(dest.mOrigin.y),
+-    static_cast<LONG>(dest.mOrigin.x + dest.mSize.width),
+-    static_cast<LONG>(dest.mOrigin.y + dest.mSize.height),
++    static_cast<LONG>(dest.mOrigin.mX),
++    static_cast<LONG>(dest.mOrigin.mY),
++    static_cast<LONG>(dest.mOrigin.mX + dest.mSize.mWidth),
++    static_cast<LONG>(dest.mOrigin.mY + dest.mSize.mHeight),
+   };
+ 
+   RECT sourceRect {"
+OpenKneeboard/OpenKneeboard,258,13ff3d8,src/lib/FlatConfig.cpp,modified,19,14,33,"@@ -21,33 +21,38 @@
+ 
+ namespace OpenKneeboard {
+ 
+-PixelRect FlatConfig::Layout(PixelSize canvasSize, PixelSize imageSize) const {
++PixelRect NonVRConstrainedPosition::Layout(
++  PixelSize canvasSize,
++  PixelSize imageSize) const {
+   const auto aspectRatio
+-    = static_cast<float>(imageSize.width) / imageSize.height;
+-  const auto renderHeight = (canvasSize.height * mHeightPercent) / 100;
++    = static_cast<float>(imageSize.mWidth) / imageSize.mHeight;
++  const auto renderHeight = (canvasSize.mHeight * mHeightPercent) / 100;
+   const auto renderWidth = static_cast<uint32_t>(renderHeight * aspectRatio);
+ 
++  using Alignment::Horizontal;
++  using Alignment::Vertical;
++
+   uint32_t left = mPaddingPixels;
+   switch (mHorizontalAlignment) {
+-    case HorizontalAlignment::Left:
++    case Horizontal::Left:
+       break;
+-    case HorizontalAlignment::Center:
+-      left = (canvasSize.width - renderWidth) / 2;
++    case Horizontal::Center:
++      left = (canvasSize.mWidth - renderWidth) / 2;
+       break;
+-    case HorizontalAlignment::Right:
+-      left = canvasSize.width - (renderWidth + mPaddingPixels);
++    case Horizontal::Right:
++      left = canvasSize.mWidth - (renderWidth + mPaddingPixels);
+       break;
+   }
+ 
+   uint32_t top = mPaddingPixels;
+   switch (mVerticalAlignment) {
+-    case VerticalAlignment::Top:
++    case Vertical::Top:
+       break;
+-    case VerticalAlignment::Middle:
+-      top = (canvasSize.height - renderHeight) / 2;
++    case Vertical::Middle:
++      top = (canvasSize.mHeight - renderHeight) / 2;
+       break;
+-    case VerticalAlignment::Bottom:
+-      top = canvasSize.height - (renderHeight + mPaddingPixels);
++    case Vertical::Bottom:
++      top = canvasSize.mHeight - (renderHeight + mPaddingPixels);
+       break;
+   }
+ 
+@@ -57,4 +62,4 @@ PixelRect FlatConfig::Layout(PixelSize canvasSize, PixelSize imageSize) const {
+   };
+ }
+ 
+-}
+\ No newline at end of file
++}// namespace OpenKneeboard
+\ No newline at end of file"
+OpenKneeboard/OpenKneeboard,258,13ff3d8,src/lib/include/OpenKneeboard/Alignment.h,added,57,0,57,"@@ -0,0 +1,57 @@
++/*
++ * OpenKneeboard
++ *
++ * Copyright (C) 2022 Fred Emmott <fred@fredemmott.com>
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; version 2.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301,
++ * USA.
++ */
++#pragma once
++
++#include <cstdint>
++#ifdef OPENKNEEBOARD_JSON_SERIALIZE
++#include <OpenKneeboard/json.h>
++#endif
++
++namespace OpenKneeboard::Alignment {
++
++enum class Horizontal : uint8_t {
++  Left,
++  Center,
++  Right,
++};
++enum class Vertical : uint8_t {
++  Top,
++  Middle,
++  Bottom,
++};
++
++#ifdef OPENKNEEBOARD_JSON_SERIALIZE
++NLOHMANN_JSON_SERIALIZE_ENUM(
++  Horizontal,
++  {
++    {Horizontal::Left, ""Left""},
++    {Horizontal::Center, ""Center""},
++    {Horizontal::Right, ""Right""},
++  });
++
++NLOHMANN_JSON_SERIALIZE_ENUM(
++  Vertical,
++  {
++    {Vertical::Top, ""Top""},
++    {Vertical::Middle, ""Middle""},
++    {Vertical::Bottom, ""Bottom""},
++  });
++#endif
++}// namespace OpenKneeboard::Alignment"
+OpenKneeboard/OpenKneeboard,258,13ff3d8,src/lib/include/OpenKneeboard/FlatConfig.h,modified,15,16,31,"@@ -24,6 +24,7 @@
+ #include <OpenKneeboard/json_fwd.h>
+ #endif
+ 
++#include <OpenKneeboard/Alignment.h>
+ #include <OpenKneeboard/Pixels.h>
+ 
+ #include <compare>
+@@ -32,34 +33,32 @@
+ 
+ namespace OpenKneeboard {
+ 
+-struct FlatConfig {
+-  enum class HorizontalAlignment : uint8_t {
+-    Left,
+-    Center,
+-    Right,
+-  };
+-  enum class VerticalAlignment : uint8_t {
+-    Top,
+-    Middle,
+-    Bottom,
+-  };
++struct NonVRAbsolutePosition {
++  PixelRect mRect {};
++  Alignment::Horizontal mHorizontalAlignment {Alignment::Horizontal::Right};
++  Alignment::Vertical mVerticalAlignment {Alignment::Vertical::Middle};
++};
++static_assert(std::is_standard_layout_v<NonVRAbsolutePosition>);
+ 
++struct NonVRConstrainedPosition {
+   uint8_t mHeightPercent = 60;
+   uint32_t mPaddingPixels = 10;
+   // In case it covers up menus etc
+   float mOpacity = 0.8f;
+ 
+-  HorizontalAlignment mHorizontalAlignment = HorizontalAlignment::Right;
+-  VerticalAlignment mVerticalAlignment = VerticalAlignment::Middle;
++  Alignment::Horizontal mHorizontalAlignment = Alignment::Horizontal::Right;
++  Alignment::Vertical mVerticalAlignment = Alignment::Vertical::Middle;
+ 
+   PixelRect Layout(PixelSize canvasSize, PixelSize imageSize) const;
+ 
+-  constexpr auto operator<=>(const FlatConfig&) const = default;
++  constexpr auto operator<=>(const NonVRConstrainedPosition&) const = default;
+ };
+-static_assert(std::is_standard_layout_v<FlatConfig>);
++static_assert(std::is_standard_layout_v<NonVRConstrainedPosition>);
+ 
+ #ifdef OPENKNEEBOARD_JSON_SERIALIZE
+-OPENKNEEBOARD_DECLARE_SPARSE_JSON(FlatConfig);
++void to_json(nlohmann::json& j, const NonVRAbsolutePosition&);
++void from_json(const nlohmann::json& j, NonVRAbsolutePosition&);
++OPENKNEEBOARD_DECLARE_SPARSE_JSON(NonVRConstrainedPosition);
+ #endif
+ 
+ }// namespace OpenKneeboard"
+OpenKneeboard/OpenKneeboard,258,13ff3d8,src/lib/include/OpenKneeboard/Pixels.h,modified,4,4,8,"@@ -24,15 +24,15 @@
+ 
+ namespace OpenKneeboard {
+ struct PixelSize {
+-  uint32_t width {};
+-  uint32_t height {};
++  uint32_t mWidth {};
++  uint32_t mHeight {};
+ 
+   constexpr auto operator<=>(const PixelSize&) const noexcept = default;
+ };
+ 
+ struct PixelPoint {
+-  uint32_t x {};
+-  uint32_t y {};
++  uint32_t mX {};
++  uint32_t mY {};
+ 
+   constexpr auto operator<=>(const PixelPoint&) const noexcept = default;
+ };"
+OpenKneeboard/OpenKneeboard,258,13ff3d8,src/lib/include/OpenKneeboard/SHM.h,modified,2,2,4,"@@ -93,14 +93,14 @@ class ConsumerPattern final {
+ struct Config final {
+   uint64_t mGlobalInputLayerID {};
+   VRRenderConfig mVR {};
+-  FlatConfig mFlat {};
++  NonVRConstrainedPosition mFlat {};
+   ConsumerPattern mTarget {};
+ };
+ static_assert(std::is_standard_layout_v<Config>);
+ struct LayerConfig final {
+   uint64_t mLayerID;
+   uint16_t mImageWidth, mImageHeight;// Pixels
+-  VRLayerConfig mVR;
++  VRAbsolutePosition mVR;
+ 
+   bool IsValid() const;
+ };"
+OpenKneeboard/OpenKneeboard,258,13ff3d8,src/lib/include/OpenKneeboard/VRConfig.h,modified,4,3,7,"@@ -30,15 +30,16 @@
+ 
+ namespace OpenKneeboard {
+ 
+-struct VRLayerConfig {
++struct VRAbsolutePosition {
+   // Distances in meters, rotations in radians
+   float mX = 0.15f, mEyeY = -0.7f, mZ = -0.4f;
+   float mRX = -2 * std::numbers::pi_v<float> / 5,
+         mRY = -std::numbers::pi_v<float> / 32, mRZ = 0.0f;
+   float mWidth = 0.25f;
+   float mHeight = 0.25f;
+ 
+-  constexpr auto operator<=>(const VRLayerConfig&) const noexcept = default;
++  constexpr auto operator<=>(const VRAbsolutePosition&) const noexcept
++    = default;
+ };
+ 
+ struct VRRenderConfig {
+@@ -80,7 +81,7 @@ static_assert(std::is_standard_layout_v<VRRenderConfig>);
+ 
+ struct VRConfig : public VRRenderConfig {
+   bool mEnableSteamVR = true;
+-  VRLayerConfig mPrimaryLayer {};
++  VRAbsolutePosition mPrimaryLayer {};
+   float mMaxWidth = 0.15f;
+   float mMaxHeight = 0.25f;
+ "
+OpenKneeboard/OpenKneeboard,258,13ff3d8,src/lib/include/OpenKneeboard/json_fwd.h,modified,11,0,11,"@@ -19,6 +19,8 @@
+  */
+ #pragma once
+ 
++#include <shims/winrt/base.h>
++
+ #include <nlohmann/json_fwd.hpp>
+ 
+ namespace OpenKneeboard {
+@@ -38,3 +40,12 @@ void to_json_with_default(nlohmann::json& j, const T& parent_v, const T& v);
+ #define OPENKNEEBOARD_DECLARE_JSON(T) \
+   void from_json(const nlohmann::json& nlohmann_json_j, T& nlohmann_json_v); \
+   void to_json(nlohmann::json& nlohmann_json_j, const T& nlohmann_json_v);
++
++namespace nlohmann {
++template <>
++struct adl_serializer<winrt::guid> {
++  static void to_json(json&, const winrt::guid&);
++  static void from_json(const json&, winrt::guid&);
++};
++
++}// namespace nlohmann
+\ No newline at end of file"
+OpenKneeboard/OpenKneeboard,258,13ff3d8,src/lib/json.cpp,modified,10,1,11,"@@ -33,4 +33,13 @@ static void StaticTests() {
+     == std::string_view {""fooBar""});
+ }
+ 
+-};// namespace OpenKneeboard
++}// namespace OpenKneeboard
++
++namespace nlohmann {
++void adl_serializer<winrt::guid>::to_json(json& j, const winrt::guid& v) {
++  j = winrt::to_string(winrt::to_hstring(v));
++}
++void adl_serializer<winrt::guid>::from_json(const json& j, winrt::guid& v) {
++  v = winrt::guid {j.get<std::string>()};
++}
++}// namespace nlohmann"
+OpenKneeboard/OpenKneeboard,258,9e9a671,src/app/app-common/OverlaysConfig.cpp,added,106,0,106,"@@ -0,0 +1,106 @@
++/*
++ * OpenKneeboard
++ *
++ * Copyright (C) 2022 Fred Emmott <fred@fredemmott.com>
++ *
++ * This program is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU General Public License
++ * as published by the Free Software Foundation; version 2.
++ *
++ * This program is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, write to the Free Software
++ * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301,
++ * USA.
++ */
++#include <OpenKneeboard/OverlaysConfig.h>
++
++#include <OpenKneeboard/utf8.h>
++
++#include <Windows.h>
++
++#include <algorithm>
++
++static winrt::guid CreateGUID() {
++  winrt::guid ret;
++  winrt::check_hresult(CoCreateGuid(reinterpret_cast<GUID*>(&ret)));
++  return ret;
++}
++
++namespace OpenKneeboard {
++
++std::optional<SHM::VRPosition> OverlayVRPosition::Resolve(
++  const std::vector<OverlayConfig>& others) const {
++  if (mType == Type::Absolute) {
++    return mAbsolutePosition;
++  }
++
++  winrt::check_bool(mType == Type::HorizontalMirror);
++
++  const auto it = std::ranges::find_if(
++    others, [this](const auto& other) { return other.mGuid == mMirrorOf; });
++  if (it == others.end()) {
++    return {};
++  }
++
++  const auto other = it->mVRPosition.Resolve(others);
++  if (!other) {
++    return {};
++  }
++
++  auto ret = *other;
++  ret.mX = -ret.mX;
++  // Yaw
++  ret.mRY = -ret.mRY;
++  // Roll
++  ret.mRZ = -ret.mRZ;
++
++  return ret;
++}
++
++OverlayConfig OverlayConfig::CreateDefaultFirstOverlay() {
++  return OverlayConfig::CreateRightKnee();
++}
++
++OverlayConfig OverlayConfig::CreateRightKnee() {
++  return OverlayConfig {
++    .mGuid = CreateGUID(),
++    .mName = _(""Right Kneeboard""),
++    .mVRPosition = OverlayVRPosition {
++        .mType = OverlayVRPosition::Type::Absolute,
++        .mAbsolutePosition = VRAbsolutePosition {},
++    },
++    .mNonVRPosition = OverlayNonVRPosition {
++        .mType = OverlayNonVRPosition::Type::Constrained,
++        .mConstrainedPosition = NonVRConstrainedPosition {},
++    },
++  };
++}
++
++OverlayConfig OverlayConfig::CreateDefaultSecondOverlay(
++  const OverlayConfig& first) {
++  return CreateMirroredOverlay(_(""Left Kneeboard""), first);
++}
++
++OverlayConfig OverlayConfig::CreateMirroredOverlay(
++  std::string_view name,
++  const OverlayConfig& other) {
++  return OverlayConfig {
++        .mGuid = CreateGUID(),
++        .mName = std::string { name },
++        .mVRPosition = OverlayVRPosition {
++            .mType = OverlayVRPosition::Type::HorizontalMirror,
++            .mMirrorOf = other.mGuid,
++        },
++        .mNonVRPosition = OverlayNonVRPosition {
++            .mType = OverlayNonVRPosition::Type::HorizontalMirror,
++            .mMirrorOf = other.mGuid,
++        },
++    };
++}
++
++};// namespace OpenKneeboard
+\ No newline at end of file"
+OpenKneeboard/OpenKneeboard,258,9e9a671,src/app/app-common/include/OpenKneeboard/OverlaysConfig.h,modified,20,2,22,"@@ -17,28 +17,35 @@
+  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301,
+  * USA.
+  */
+-
+ #pragma once
+ 
+ #include <OpenKneeboard/FlatConfig.h>
++#include <OpenKneeboard/SHM.h>
+ #include <OpenKneeboard/VRConfig.h>
+ 
++#include <OpenKneeboard/json_fwd.h>
++
+ #include <shims/winrt/base.h>
+ 
+ namespace OpenKneeboard {
+ 
++struct OverlayConfig;
++
+ struct OverlayVRPosition {
+   enum class Type {
+     Absolute,
++    // Mirrored in the x = 0 plane, i.e. x => -x
+     HorizontalMirror,
+-    VerticalMirror,
+   };
+ 
+   Type mType;
+   union {
+     winrt::guid mMirrorOf;
+     VRAbsolutePosition mAbsolutePosition;
+   };
++
++  std::optional<SHM::VRPosition> Resolve(
++    const std::vector<OverlayConfig>& others) const;
+ };
+ 
+ struct OverlayNonVRPosition {
+@@ -66,9 +73,20 @@ struct OverlayConfig {
+ 
+   bool mNonVR {true};
+   OverlayNonVRPosition mNonVRPosition;
++
++  static OverlayConfig CreateDefaultFirstOverlay();
++  static OverlayConfig CreateDefaultSecondOverlay(const OverlayConfig& first);
++
++  static OverlayConfig CreateRightKnee();
++  static OverlayConfig CreateMirroredOverlay(
++    std::string_view name,
++    const OverlayConfig& other);
+ };
+ 
+ struct OverlaysConfig {
++  OverlaysConfig();
++  OverlaysConfig(const nlohmann::json&);
++
+   std::vector<OverlayConfig> mOverlays;
+ };
+ "
+OpenKneeboard/OpenKneeboard,258,9e9a671,src/lib/include/OpenKneeboard/SHM.h,modified,2,0,2,"@@ -41,6 +41,8 @@
+ 
+ namespace OpenKneeboard::SHM {
+ 
++using VRPosition = VRAbsolutePosition;
++
+ struct FrameMetadata;
+ 
+ static constexpr DXGI_FORMAT SHARED_TEXTURE_PIXEL_FORMAT"

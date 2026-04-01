@@ -1,0 +1,169 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe-inspector,251,c4b69a0a9c0d00ab50dc1533d5d831fd1b33a1c1,src/components/Main.js,modified,6,4,10,"@@ -75,14 +75,16 @@ export default class Main extends React.Component {
+     return (
+       <div>
+         {editButton}
+-        <div id='inspector' className={this.state.inspectorEnabled ? '' : 'hidden'}>
++        <div id='aframe-inspector-panels' className={this.state.inspectorEnabled ? '' : 'hidden'}>
+           <ModalTextures ref='modaltextures' isOpen={textureDialogOpened}
+             onClose={this.onModalTextureOnClose}/>
+-          <ToolBar/>
+-          <div id='sidebar-left'>
++          <div id='left-sidebar'>
+             <SceneGraph scene={scene} selectedEntity={this.state.entity}/>
+           </div>
+-          <ComponentsSidebar entity={this.state.entity}/>
++          <div id='right-panels'>
++            <ToolBar/>
++            <ComponentsSidebar entity={this.state.entity}/>
++          </div>
+         </div>
+       </div>
+     );"
+aframevr/aframe-inspector,251,c4b69a0a9c0d00ab50dc1533d5d831fd1b33a1c1,src/components/components/Sidebar.js,modified,13,13,26,"@@ -51,24 +51,24 @@ export default class Sidebar extends React.Component {
+ 
+   render () {
+     const entity = this.state.entity;
+-    let entityButtons = '';
+-    let entityName = '';
+     if (entity) {
+-      entityButtons = <div>
++      const entityButtons = <div>
+         <a href='#' title='Copy entity HTML to clipboard' data-action='copy-entity-to-clipboard'
+           className='button fa fa-clipboard' onClick={event => event.stopPropagation()}></a>
+       </div>;
+-      entityName = '<' + entity.tagName.toLowerCase() + '>';
+-    }
++      const entityName = '<' + entity.tagName.toLowerCase() + '>';
+ 
+-    return (
+-      <div id='sidebar'>
+-        <div className='sidebar-title'>
+-          <code>{entityName}</code>
+-          {entityButtons}
++      return (
++        <div id='sidebar'>
++          <div className='sidebar-title'>
++            <code>{entityName}</code>
++            {entityButtons}
++          </div>
++          <ComponentsContainer entity={this.state.entity}/>
+         </div>
+-        <ComponentsContainer entity={this.state.entity}/>
+-      </div>
+-    );
++      );
++    } else {
++      return <div/>;
++    }
+   }
+ }"
+aframevr/aframe-inspector,251,c4b69a0a9c0d00ab50dc1533d5d831fd1b33a1c1,src/css/main.css,modified,25,11,36,"@@ -36,7 +36,7 @@ textarea.fail {
+ textarea, input { outline: none; } /* osx */
+ 
+ #sidebar,
+-#sidebar-left,
++#left-sidebar,
+ .panel {
+   cursor: default;
+   user-select: none;
+@@ -292,7 +292,7 @@ input.number:focus {
+       margin: 0 !important;
+     }
+ 
+-#sidebar-left {
++#left-sidebar {
+   position: absolute;
+   left: 0;
+   top: 0;
+@@ -306,13 +306,8 @@ input.number:focus {
+ }
+ 
+ #sidebar {
+-  position: absolute;
+-  right: 0;
+-  top: 0;
+-  bottom: 0;
+   width: 330px;
+   background: #2b2b2b;
+-  overflow: auto;
+ }
+ 
+   #sidebar * {
+@@ -425,6 +420,10 @@ body.editor-opened {
+ .components {
+   background-color: #323232;
+   color: #bcbcbc;
++  width: 330px;
++  position: fixed;
++  height: 100%;
++  overflow: auto;
+ }
+ 
+ #app {
+@@ -885,16 +884,14 @@ code, pre {
+   font-size: 12px;
+ 	display: flex;
+ 	justify-content: space-between;
+-
++  position: relative;
+ }
+ 
+ .toolbar {
+-  position: absolute;
+-  right: 330px;
+-  top: 0;
+   height: 32px;
+   background-color: #262626;
+   color: #333;
++  position: relative;
+ }
+ 
+ .toolbar * {
+@@ -1005,3 +1002,20 @@ a.help-link {
+ a.help-link:hover {
+   opacity: 1.0;
+ }
++
++#right-panels {
++  display: flex;
++  justify-content: flex-end;
++  align-items: stretch;
++}
++
++#aframe-inspector-panels {
++  display: flex;
++  justify-content: space-between;
++}
++
++/* This is a temporaly hack, we should style the editor instead of overwriting
++   the a-scene to fix the ""display: block"" issue. */
++a-scene {
++  display: inline !important;
++}"
+aframevr/aframe-inspector,251,c4b69a0a9c0d00ab50dc1533d5d831fd1b33a1c1,src/lib/inspector.js,modified,9,9,18,"@@ -177,16 +177,16 @@ Inspector.prototype = {
+       this.createNewEntity(definition);
+     }.bind(this));
+ 
+-    Events.on('domModified', (mutations) => {
++    Events.on('domModified', mutations => {
+       var self = this;
+-      mutations.forEach((mutation) => {
+-        if (mutation.type === 'childList') {
+-          Array.prototype.slice.call(mutation.removedNodes).forEach(function (removedNode) {
+-            if (self.selectedEntity === removedNode) {
+-              self.selectEntity(null);
+-            }
+-          });
+-        }
++      if (!mutations) { return; }
++      mutations.forEach(mutation => {
++        if (mutation.type !== 'childList') { return; }
++        Array.prototype.slice.call(mutation.removedNodes).forEach(removedNode => {
++          if (this.selectedEntity === removedNode) {
++            this.selectEntity(null);
++          }
++        });
+       });
+     });
+   },"

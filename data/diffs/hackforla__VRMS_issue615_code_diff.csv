@@ -1,0 +1,238 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+hackforla/VRMS,615,377de8fd4fffd0baef87de7a2c6df966db96636c,client/src/components/Footer.js,modified,2,2,4,"@@ -6,7 +6,7 @@ import useAuth from '../hooks/useAuth';
+ import '../sass/Footer.scss';
+ 
+ const Footer = () => {
+-    const auth = useAuth();
++    const [auth] = useAuth();
+ 
+     const handleLogout = (e) => {
+         e.preventDefault();
+@@ -20,7 +20,7 @@ const Footer = () => {
+             <footer className=""footer"" aria-label=""footer"">
+                 <p className=""footer-text"">v{pkg.version} ""Alpha""</p>
+ 
+-                {auth.user ? (
++                {auth?.user ? (
+                     <div className=""footer-greeting"">
+                         <p className=""footer-text"">{`Hi ${auth.user.name.firstName}`}</p>
+                         <button className=""logout-button"" onClick={handleLogout}>{`(LOGOUT)`}</button>"
+hackforla/VRMS,615,377de8fd4fffd0baef87de7a2c6df966db96636c,client/src/components/Navbar.js,modified,2,2,4,"@@ -9,9 +9,9 @@ import ""../sass/Navbar.scss"";
+ const Navbar = (props) => {
+ 
+     // check user accessLevel and adjust link accordingly
+-    const auth = useAuth();
++    const [auth] = useAuth();
+     let loginRedirect = '/admin'; 
+-    if (auth.user) {
++    if (auth?.user) {
+       loginRedirect = authLevelRedirect(auth.user);
+     }
+ "
+hackforla/VRMS,615,377de8fd4fffd0baef87de7a2c6df966db96636c,client/src/components/admin/dashboard/index.js,modified,1,1,2,"@@ -12,7 +12,7 @@ import ""../../../sass/Dashboard.scss"";
+ import ""./index.scss"";
+ 
+ const AdminDashboard = () => {
+-  const auth = useAuth();
++  const [auth] = useAuth();
+   const defaultChartType = ""All Events"";
+   const eventsArr = [];
+   const headerToSend = process.env.REACT_APP_CUSTOM_REQUEST_HEADER;"
+hackforla/VRMS,615,377de8fd4fffd0baef87de7a2c6df966db96636c,client/src/components/auth/Auth.js,modified,3,3,6,"@@ -17,7 +17,7 @@ const Auth = () => {
+   const pattern = /\b[a-z0-9._]+@[a-z0-9.-]+\.[a-z]{2,4}\b/i;
+ 
+   const history = useHistory();
+-  const auth = useAuth();
++  const [auth] = useAuth();
+ 
+   const [email, setEmail] = useState('');
+   const [isDisabled, setIsDisabled] = useState(true);
+@@ -85,11 +85,11 @@ const Auth = () => {
+ 
+   // This allows users who are not admin, but are allowed to manage projects, to login 
+   let loginRedirect = ''; 
+-  if (auth.user) {
++  if (auth?.user) {
+     loginRedirect = authLevelRedirect(auth.user);
+   }
+ 
+-  return auth.user ? (
++  return auth?.user ? (
+     <Redirect to={loginRedirect} />
+   ) : (
+     <div className=""flex-container"">"
+hackforla/VRMS,615,377de8fd4fffd0baef87de7a2c6df966db96636c,client/src/components/auth/HandleAuth.js,modified,39,10,49,"@@ -7,26 +7,55 @@ import '../../sass/MagicLink.scss';
+ import useAuth from '../../hooks/useAuth';
+ 
+ const HandleAuth = (props) => {
+-  const auth = useAuth();
++  const [auth, refreshAuth] = useAuth();
+   const [isMagicLinkValid, setMagicLink] = useState(null);
++  const [isLoaded, setIsLoaded] = useState(false);
+ 
++  // Step 1: Validate token from query string
+   useEffect(() => {
+     const search = props.location.search;
+     const params = new URLSearchParams(search);
+     const api_token = params.get('token');
+-    const isValid = isValidToken(api_token);
+-    setMagicLink(isValid);
++
++    if(!api_token) return;
++    isValidToken(api_token).then((isValid) => {
++      setMagicLink(isValid)
++    });
+   }, []);
+ 
+-  // check user accessLevel and redirect to the appropriate page
+-  let loginRedirect = ''; 
+-  if (auth.user) {
+-    loginRedirect = authLevelRedirect(auth.user);
++  // Step 2: Refresh user auth (requires valid Magic Link)
++  useEffect(() => {
++    if(!isMagicLinkValid) return;
++    if(!auth?.isError) return;
++
++    refreshAuth();
++  },[isMagicLinkValid, refreshAuth])
++
++  // Step 3: Set IsLoaded value to render Component
++  useEffect(() => {
++    if(!isMagicLinkValid) {
++      setIsLoaded(true);
++      return;
++    };
++
++    if(!auth || auth.isError) return;
++    
++    setIsLoaded(true);
++    },[isMagicLinkValid, auth?.isError, setIsLoaded])
++
++  if(!isLoaded) 
++    return (
++      <div>Loading...</div>
++    );
++
++  if (auth?.user) {
++    const loginRedirect = authLevelRedirect(auth.user);
++    return (
++      <Redirect to={loginRedirect} />
++    );
+   }
+ 
+-  return auth.user && isMagicLinkValid ? ( 
+-    <Redirect to={loginRedirect} />
+-  ) : (
++  return (
+     <div className=""flex-container"">
+       <div>Sorry, the link is not valid anymore.</div>
+     </div>"
+hackforla/VRMS,615,377de8fd4fffd0baef87de7a2c6df966db96636c,client/src/context/authContext.js,modified,38,7,45,"@@ -1,15 +1,46 @@
+-import React, { createContext } from 'react';
+-
+-import useProvideAuth from '../hooks/useProvideAuth';
+-
++import React, { createContext, useState, useEffect } from 'react';
+ export const AuthContext = createContext();
+ 
+ export const AuthProvider = ({ children }) => {
+-    const auth = useProvideAuth();
++    const [auth, setAuth] = useState();
+ 
++    useEffect(() => {
++      refreshAuth();
++    }, []);
++
++    const refreshAuth = async () => {
++      const userAuth = await fetchAuth();
++      setAuth(userAuth)
++    }
++    
+     return (
+-        <AuthContext.Provider value={auth}>
++        <AuthContext.Provider value={[auth, refreshAuth]}>
+             { children }
+         </AuthContext.Provider>
+     );
+-};
+\ No newline at end of file
++};
++
++const fetchAuth = async () => {
++  const headerToSend = process.env.REACT_APP_CUSTOM_REQUEST_HEADER;
++
++  const request = {
++    method: ""POST"",
++    headers: {
++      ""Content-Type"": ""application/json"",
++      ""x-customrequired-header"": headerToSend
++    },
++  };
++
++  try{
++    const response = await fetch(""/api/auth/me"", request);
++    if(response.status !== 200)
++      return {user: null, isAdmin: false, isError: true };
++
++    const user = await response.json();  
++    return { user, isAdmin: user.accessLevel === 'admin', isError: false };
++  }
++  catch (error) {
++    // this should never be hit...
++    console.error(""fetchAuth - error"", error);
++  }
++}"
+hackforla/VRMS,615,377de8fd4fffd0baef87de7a2c6df966db96636c,client/src/hooks/useProvideAuth.js,removed,0,30,30,"@@ -1,30 +0,0 @@
+-import { useState, useEffect } from ""react"";
+-
+-export default function useProvideAuth() {
+-  const [isAdmin, setIsAdmin] = useState(null);
+-  const [user, setUser] = useState();
+-  const headerToSend = process.env.REACT_APP_CUSTOM_REQUEST_HEADER;
+-
+-  async function checkUser() {
+-    try {
+-      const response = await fetch(""/api/auth/me"", {
+-        method: ""POST"",
+-        headers: {
+-          ""Content-Type"": ""application/json"",
+-          ""x-customrequired-header"": headerToSend
+-        },
+-      });
+-      const user = await response.json();
+-      setUser(user);
+-      setIsAdmin(user.accessLevel === 'admin');
+-    } catch (err) {
+-      console.log(err);
+-    }
+-  }
+-
+-  useEffect(() => {
+-    checkUser();
+-  }, []);
+-
+-  return { user, isAdmin };
+-}"
+hackforla/VRMS,615,377de8fd4fffd0baef87de7a2c6df966db96636c,client/src/pages/AddNew.js,modified,1,1,2,"@@ -13,7 +13,7 @@ const AddNew = (props) => {
+ 	const [error, setError] = useState(null);
+ 	const headerToSend = process.env.REACT_APP_CUSTOM_REQUEST_HEADER;
+ 
+-	const auth = useAuth();
++	const [auth] = useAuth();
+ 
+ 	useEffect(() => {
+ 		const getProjects = async () => {"
+hackforla/VRMS,615,377de8fd4fffd0baef87de7a2c6df966db96636c,client/src/pages/ManageProjects.js,modified,2,1,3,"@@ -10,11 +10,12 @@ const ManageProjects = () => {
+ 
+   const headerToSend = process.env.REACT_APP_CUSTOM_REQUEST_HEADER;
+ 
+-  const { user } = useAuth();
++  const [auth] = useAuth();
+   const [projects, setProjects] = useState([]);
+   const [projectToEdit, setProjectToEdit] = useState([]);
+   const [recurringEvents, setRecurringEvents] = useState([]);
+   const [componentToDisplay, setComponentToDisplay] = useState (''); // displayProjectInfo, editMeetingTime or editProjectInfor 
++  const user = auth?.user;
+ 
+   // Fetch projects from db
+   async function fetchProjects() {"

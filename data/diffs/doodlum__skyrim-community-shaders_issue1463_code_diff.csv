@@ -1,0 +1,34 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+doodlum/skyrim-community-shaders,1463,bfafeffb8cf6489e29a52027e151f5f2d11e6ac4,src/Menu/HomePageRenderer.cpp,modified,12,1,13,"@@ -87,7 +87,18 @@ void HomePageRenderer::RenderWelcomeSection()
+ 	}
+ 
+ 	if (discordIconAvailable) {
+-		ImVec2 iconSize = ImVec2(menu->uiIcons.discord.size.x, menu->uiIcons.discord.size.y);
++		// Calculate scaled icon size based on window width, with min/max constraints
++		ImVec2 originalSize = ImVec2(menu->uiIcons.discord.size.x, menu->uiIcons.discord.size.y);
++
++		// Compute width based on window size with constraints and padding (handles very small windows)
++		float ratioWidth = windowSize.x * DISCORD_BANNER_TARGET_WIDTH_RATIO;
++		float aspectRatio = originalSize.y / originalSize.x;
++		float maxAllowed = std::max(1.0f, windowSize.x - DISCORD_BANNER_PADDING_MARGIN);
++		float upperBound = std::min(DISCORD_BANNER_MAX_WIDTH, maxAllowed);
++		float lowerBound = std::min(DISCORD_BANNER_MIN_WIDTH, upperBound);
++		float targetWidth = std::clamp(ratioWidth, lowerBound, upperBound);
++
++		ImVec2 iconSize = ImVec2(targetWidth, targetWidth * aspectRatio);
+ 		ImGui::SetCursorPosX((windowSize.x - iconSize.x) * 0.5f);
+ 
+ 		// Push style to remove border"
+doodlum/skyrim-community-shaders,1463,bfafeffb8cf6489e29a52027e151f5f2d11e6ac4,src/Menu/HomePageRenderer.h,modified,6,0,6,"@@ -11,6 +11,12 @@ class HomePageRenderer
+ 	static constexpr float QUICK_LINKS_BUTTON_WIDTH = 180.0f;
+ 	static constexpr float LOGO_WATERMARK_HEIGHT = 260.0f;
+ 
++	// Discord banner scaling constants
++	static constexpr float DISCORD_BANNER_TARGET_WIDTH_RATIO = 0.85f;  // 25% of window width
++	static constexpr float DISCORD_BANNER_MIN_WIDTH = 150.0f;
++	static constexpr float DISCORD_BANNER_MAX_WIDTH = 1200.0f;
++	static constexpr float DISCORD_BANNER_PADDING_MARGIN = 40.0f;
++
+ 	static void RenderHomePage();
+ 
+ 	// First-time setup management"

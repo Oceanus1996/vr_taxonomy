@@ -1,0 +1,169 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+Chainsawkitten/Deathcap,741,ded5121,src/Editor/Editor.cpp,modified,4,0,4,"@@ -429,6 +429,10 @@ void Editor::ShowMainMenuBar(bool& play) {
+             static bool physics = EditorSettings::GetInstance().GetBool(""Physics Volumes"");
+             ImGui::MenuItem(""Physics"", """", &physics);
+             EditorSettings::GetInstance().SetBool(""Physics Volumes"", physics);
++            
++            static bool lighting = EditorSettings::GetInstance().GetBool(""Lighting"");
++            ImGui::MenuItem(""Lighting"", """", &lighting);
++            EditorSettings::GetInstance().SetBool(""Lighting"", lighting);
+ 
+             ImGui::EndMenu();
+         }"
+Chainsawkitten/Deathcap,741,ded5121,src/Editor/Util/EditorSettings.cpp,modified,1,0,1,"@@ -18,6 +18,7 @@ EditorSettings::EditorSettings() {
+     AddBoolSetting(""Light Source Icons"", ""View"", ""Light Source Icons"", true);
+     AddBoolSetting(""Camera Icons"", ""View"", ""Camera Icons"", true);
+     AddBoolSetting(""Physics Volumes"", ""View"", ""Physics Volumes"", true);
++    AddBoolSetting(""Lighting"", ""View"", ""Lighting"", true);
+     
+     AddStringSetting(""Text Editor"", ""Script"", ""Text Editor"", """");
+     "
+Chainsawkitten/Deathcap,741,ded5121,src/Editor/Util/EditorSettings.hpp,modified,1,0,1,"@@ -17,6 +17,7 @@
+  * Light Source Icons     | Show light source icons.         | bool   | true
+  * Camera Icons           | Show camera icons.               | bool   | true
+  * Physics Volumes        | Show physics volumes.            | bool   | true
++ * Lighting               | Light the scene.                 | bool   | true
+  * Text Editor            | Path to text editor for scripts. | string | 
+  * Grid Settings          | Whether to show grid settings.   | bool   | false
+  * Grid Size              | Size of the grid.                | long   | 100"
+Chainsawkitten/Deathcap,741,ded5121,src/Editor/main.cpp,modified,7,1,8,"@@ -90,7 +90,13 @@ int main() {
+                 Managers().particleManager->Update(Hymn().world, deltaTime, true);
+ 
+                 Managers().debugDrawingManager->Update(deltaTime);
+-                Hymn().Render(editor->GetCamera(), EditorSettings::GetInstance().GetBool(""Sound Source Icons""), EditorSettings::GetInstance().GetBool(""Particle Emitter Icons""), EditorSettings::GetInstance().GetBool(""Light Source Icons""), EditorSettings::GetInstance().GetBool(""Camera Icons""), EditorSettings::GetInstance().GetBool(""Physics Volumes""));
++                Hymn().Render(editor->GetCamera(),
++                              EditorSettings::GetInstance().GetBool(""Sound Source Icons""),
++                              EditorSettings::GetInstance().GetBool(""Particle Emitter Icons""),
++                              EditorSettings::GetInstance().GetBool(""Light Source Icons""),
++                              EditorSettings::GetInstance().GetBool(""Camera Icons""),
++                              EditorSettings::GetInstance().GetBool(""Physics Volumes""),
++                              EditorSettings::GetInstance().GetBool(""Lighting""));
+ 
+                 if (window->ShouldClose())
+                     editor->Close();"
+Chainsawkitten/Deathcap,741,ded5121,src/Engine/Hymn.cpp,modified,2,2,4,"@@ -206,10 +206,10 @@ void ActiveHymn::Update(float deltaTime) {
+     }
+ }
+ 
+-void ActiveHymn::Render(Entity* camera, bool soundSources, bool particleEmitters, bool lightSources, bool cameras, bool physics) {
++void ActiveHymn::Render(Entity* camera, bool soundSources, bool particleEmitters, bool lightSources, bool cameras, bool physics, bool lighting) {
+     { PROFILE(""Render world"");
+     { GPUPROFILE(""Render world"", Video::Query::Type::TIME_ELAPSED);
+-        Managers().renderManager->Render(world, soundSources, particleEmitters, lightSources, cameras, physics, camera);
++        Managers().renderManager->Render(world, soundSources, particleEmitters, lightSources, cameras, physics, camera, lighting);
+     }
+     }
+ }"
+Chainsawkitten/Deathcap,741,ded5121,src/Engine/Hymn.hpp,modified,2,1,3,"@@ -70,8 +70,9 @@ class ActiveHymn {
+          * @param lightSources Whether to show light sources.
+          * @param cameras Whether to show cameras.
+          * @param physics Whether to show physics volumes.
++         * @param lighting Whether to light the world (otherwise full ambient is used).
+          */
+-        ENGINE_API void Render(Entity* camera = nullptr, bool soundSources = false, bool particleEmitters = false, bool lightSources = false, bool cameras = false, bool physics = false);
++        ENGINE_API void Render(Entity* camera = nullptr, bool soundSources = false, bool particleEmitters = false, bool lightSources = false, bool cameras = false, bool physics = false, bool lighting = true);
+         
+         /// Scene to start when playing the hymn.
+         std::string startupScene;"
+Chainsawkitten/Deathcap,741,ded5121,src/Engine/Manager/RenderManager.cpp,modified,29,6,35,"@@ -82,7 +82,7 @@ RenderManager::~RenderManager() {
+     delete renderer;
+ }
+ 
+-void RenderManager::Render(World& world, bool soundSources, bool particleEmitters, bool lightSources, bool cameras, bool physics, Entity* camera) {
++void RenderManager::Render(World& world, bool soundSources, bool particleEmitters, bool lightSources, bool cameras, bool physics, Entity* camera, bool lighting) {
+     // Find camera entity.
+     if (camera == nullptr) {
+         for (Lens* lens : lenses.GetAll())
+@@ -112,7 +112,7 @@ void RenderManager::Render(World& world, bool soundSources, bool particleEmitter
+ 
+                 { PROFILE(""Render world entities"");
+                 { GPUPROFILE(""Render world entities"", Video::Query::Type::TIME_ELAPSED);
+-                    RenderWorldEntities(world, viewMatrix, projectionMatrix, mainWindowRenderSurface);
++                    RenderWorldEntities(world, viewMatrix, projectionMatrix, mainWindowRenderSurface, lighting);
+                 }
+                 }
+ 
+@@ -178,7 +178,7 @@ void RenderManager::Render(World& world, bool soundSources, bool particleEmitter
+ 
+                     { PROFILE(""Render world entities"");
+                     { GPUPROFILE(""Render world entities"", Video::Query::Type::TIME_ELAPSED);
+-                        RenderWorldEntities(world, eyeViewMatrix, projectionMatrix, hmdRenderSurface);
++                        RenderWorldEntities(world, eyeViewMatrix, projectionMatrix, hmdRenderSurface, lighting);
+                     }
+                     }
+ 
+@@ -235,7 +235,7 @@ void RenderManager::UpdateBufferSize() {
+     mainWindowRenderSurface = new Video::RenderSurface(MainWindow::GetInstance()->GetSize());
+ }
+ 
+-void RenderManager::RenderWorldEntities(World& world, const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix, Video::RenderSurface* renderSurface) {
++void RenderManager::RenderWorldEntities(World& world, const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix, Video::RenderSurface* renderSurface, bool lighting) {
+     // Render from camera.
+     renderer->StartRendering(renderSurface);
+     glm::mat4 lightViewMatrix;
+@@ -314,8 +314,14 @@ void RenderManager::RenderWorldEntities(World& world, const glm::mat4& viewMatri
+             {
+                 GPUPROFILE(""Render static meshes"", Video::Query::Type::SAMPLES_PASSED);
+ 
+-                // Cull lights and update light list.
+-                LightWorld(world, viewMatrix, projectionMatrix, viewProjectionMatrix);
++                if (lighting) {
++                    // Cull lights and update light list.
++                    LightWorld(world, viewMatrix, projectionMatrix, viewProjectionMatrix);
++                } else {
++                    // Use full ambient light and ignore lights in the scene.
++                    LightAmbient();
++                }
++                    
+ 
+                 // Push matricies and light buffer to the GPU.
+                 renderer->PrepareStaticMeshRendering(viewMatrix, projectionMatrix);
+@@ -745,6 +751,23 @@ void RenderManager::LightWorld(World& world, const glm::mat4& viewMatrix, const
+     renderer->SetLights(lights);
+ }
+ 
++void RenderManager::LightAmbient() {
++    std::vector<Video::Light> lights;
++    
++    Video::Light light;
++    light.position = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
++    light.intensities = glm::vec3(0.0f, 0.0f, 0.0f);
++    light.attenuation = 1.f;
++    light.ambientCoefficient = 1.0f;
++    light.coneAngle = 0.f;
++    light.direction = glm::vec3(0.f, 0.f, 0.f);
++    light.shadow = 0.f;
++    lights.push_back(light);
++    
++    // Update light buffer.
++    renderer->SetLights(lights);
++}
++
+ void RenderManager::LoadTexture(TextureAsset*& texture, const std::string& name) {
+     if (!name.empty())
+         texture = Managers().resourceManager->CreateTextureAsset(name);"
+Chainsawkitten/Deathcap,741,ded5121,src/Engine/Manager/RenderManager.hpp,modified,4,2,6,"@@ -41,8 +41,9 @@ class RenderManager {
+          * @param cameras Whether to show cameras.
+          * @param physics Whether to show physics volumes.
+          * @param camera Camera through which to render (or first camera in the world if nullptr).
++         * @param lighting Whether to light the scene (otherwise full ambient is used).
+          */
+-        ENGINE_API void Render(World& world, bool soundSources = true, bool particleEmitters = true, bool lightSources = true, bool cameras = true, bool physics = true, Entity* camera = nullptr);
++        ENGINE_API void Render(World& world, bool soundSources = true, bool particleEmitters = true, bool lightSources = true, bool cameras = true, bool physics = true, Entity* camera = nullptr, bool lighting = true);
+         
+         /// Update all the animations in the scene.
+         /**
+@@ -285,11 +286,12 @@ class RenderManager {
+         RenderManager(RenderManager const&) = delete;
+         void operator=(RenderManager const&) = delete;
+ 
+-        void RenderWorldEntities(World& world, const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix, Video::RenderSurface* renderSurface);
++        void RenderWorldEntities(World& world, const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix, Video::RenderSurface* renderSurface, bool lighting);
+ 
+         void RenderEditorEntities(World& world, bool soundSources, bool particleEmitters, bool lightSources, bool cameras, bool physics, const glm::vec3& position, const glm::vec3& up, const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix, Video::RenderSurface* renderSurface);
+ 
+         void LightWorld(World& world, const glm::mat4& viewMatrix, const glm::mat4& projectionMatrix, const glm::mat4& viewProjectionMatrix);
++        void LightAmbient();
+ 
+         void LoadTexture(TextureAsset*& texture, const std::string& name);
+ "

@@ -1,0 +1,673 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vizorvr/patches,219,15a57c6,browser/plugins/annotation.plugin.js,modified,66,53,119,"@@ -1,58 +1,71 @@
+ (function(){
+-	var Annotation = E2.plugins.annotation = function() {
+-		Plugin.apply(this, arguments)
+-		this.desc = 'Add textual hints to the graph.';
+-		
+-		this.input_slots = [];
+-		
+-		this.output_slots = [];
+-		
+-		this.state = { text: '', width: 0, height: 0 };
+-	};
+-	Annotation.prototype = Object.create(Plugin.prototype)
+ 
+-	Annotation.prototype.create_ui = function() {
+-		var that = this
+-		var inp = $('<textarea placeholder=""Type text here"" />');
+-		
+-		inp.css({
+-			'font-size': '8pt',
+-			'border': '1px solid #999',
+-			'margin': '0px',
+-			'margin-top': '2px',
+-			'padding': '2px',
+-			'resize': true
+-		});
+-		
+-		inp.on('change', function() {
+-			that.undoableSetState('text', inp.val(), that.state.text)
+-		})
+-		
+-		// Chrome doesn't handle resize properly for anything but the window object,
+-		// so we store the potentially altered size of the textarea on mouseup.
+-		inp.mouseup(function() {
+-			var ta = $(this);
+-
+-			that.state.width = ta.width();
+-			that.state.height = ta.height();
+-		})
+-		
+-		return inp;
+-	}
++var Annotation = E2.plugins.annotation = function() {
++	Plugin.apply(this, arguments)
++	this.desc = 'Add textual hints to the graph.'
++	
++	this.input_slots = []
++	
++	this.output_slots = []
++	
++	this.state = { text: '', width: 0, height: 0 }
++}
++
++Annotation.prototype = Object.create(Plugin.prototype)
+ 
+-	Annotation.prototype.state_changed = function(ui) {
+-		var s = this.state;
++Annotation.prototype.create_ui = function() {
++	var that = this
++	var inp = $('<textarea placeholder=""Type text here"" />')
++	
++	inp.css({
++		'font-size': '8pt',
++		'border': '1px solid #999',
++		'margin': '0px',
++		'margin-top': '2px',
++		'padding': '2px',
++		'resize': true
++	})
++	
++	inp.on('change', function() {
++		that.undoableSetState('text', inp.val(), that.state.text)
++	})
++	
++	// Chrome doesn't handle resize properly for anything but the window object,
++	// so we store the potentially altered size of the textarea on mouseup.
++	inp.mouseup(function() {
++		var ta = $(this)
++
++		that.state.width = ta.width()
++		that.state.height = ta.height()
++	})
++
++	this.node.on('pluginStateChanged', this.updateUi.bind(this))
++	
++	this.ui = inp
++
++	return this.ui
++}
++
++Annotation.prototype.state_changed = function() {
++	this.updateUi()
++}
++
++Annotation.prototype.updateUi = function() {
++	if (!this.ui)
++		return
++
++	var s = this.state
++	
++	if(!s.text)
++		return
++
++	this.ui.val(s.text)
++		
++	if(s.width > 0)
++		this.ui.css('width', s.width)
+ 		
+-		if(ui && s.text !== '')
+-		{
+-			ui.val(s.text);
+-			
+-			if(s.width > 0)
+-				ui.css('width', s.width);
+-			
+-			if(s.height > 0)
+-				ui.css('height', s.height);
+-		}
+-	}
+-})();
++	if(s.height > 0)
++		this.ui.css('height', s.height)
++}
+ 
++})()"
+vizorvr/patches,219,15a57c6,browser/plugins/color_picker.plugin.js,modified,0,1,1,"@@ -30,7 +30,6 @@ ColorPicker.prototype.create_ui = function()
+ 	function onMouseDown() {
+ 		E2.app.undoManager.begin('Pick color')
+ 		that._mouseDownValue = { hue: that.state.hue, sat: that.state.sat, lum: that.state.lum }
+-		console.log('mdv', that._mouseDownValue)
+ 	}
+ 
+ 	function onMouseUp() {"
+vizorvr/patches,219,15a57c6,browser/plugins/const_float_generator.plugin.js,modified,16,5,21,"@@ -39,17 +39,28 @@ Const.prototype.create_ui = function() {
+ 
+ 	this.etf = new ExpandableTextfield(this.node, inp, 7)
+ 
+-	return inp;
++	this.ui = inp
++
++	this.node.on('pluginStateChanged', this.updateUi.bind(this))
++
++	return this.ui
+ }
+ 
+-Const.prototype.update_output = function(slot) {
++Const.prototype.update_output = function() {
+ 	return this.state.val
+ }
+ 
+ Const.prototype.state_changed = function(ui) {
+-	if (ui) {
+-		ui.val('' + this.state.val)
+-	}
++	if (ui)
++		this.updateUi()
++}
++
++Const.prototype.updateUi = function() {
++	if (!this.ui)
++		return;
++
++	this.ui.val('' + this.state.val)
+ }
+ 
++
+ })()
+\ No newline at end of file"
+vizorvr/patches,219,15a57c6,browser/plugins/const_text_generator.plugin.js,modified,48,38,86,"@@ -1,69 +1,79 @@
+ (function(){
++
+ var Text = E2.plugins.const_text_generator = function(core, node) {
+ 	Plugin.apply(this, arguments)
+-	this.desc = 'Enter a constant text string.';
++	this.desc = 'Enter a constant text string.'
+ 	
+-	this.input_slots = [];
++	this.input_slots = []
+ 	this.output_slots = [
+ 		{ name: 'text', dt: core.datatypes.TEXT, desc: 'The currently entered text.', def: 'Empty string' }
+-	];
++	]
+ 	
+-	this.state = { text: '', width: 0, height: 0 };
+-};
++	this.state = { text: '', width: 0, height: 0 }
++}
++
+ Text.prototype = Object.create(Plugin.prototype)
+ 
+-Text.prototype.reset = function()
+-{
+-	this.updated = true;
+-};
++Text.prototype.reset = function() {
++	this.updated = true
++}
+ 
+ Text.prototype.create_ui = function() {
+ 	var that = this
+-	var inp = $('<textarea placeholder=""Type text here"" />');
++	var inp = $('<textarea placeholder=""Type text here"" />')
+ 	
+ 	inp.css({
+ 		'font-size': '8pt',
+ 		'border': '1px solid #999',
+ 		'margin': '0px',
+ 		'margin-top': '2px',
+ 		'padding': '2px'
+-	});
++	})
+ 	
+ 	inp.on('change', function() {
+ 		that.undoableSetState('text', inp.val(), that.state.text)
+ 	})
+ 	
+ 	// Chrome doesn't handle resize properly for anything but the window object,
+ 	// so we store the potentially altered size of the textarea on mouseup.
+-	inp.mouseup(function(self) { return function()
+-	{
+-		var ta = $(this);
++	inp.mouseup(function() {
++		var ta = $(this)
+ 		
+-		self.state.width = ta.width();
+-		self.state.height = ta.height();
+-	}}(this));
++		that.state.width = ta.width()
++		that.state.height = ta.height()
++	})
+ 	
+-	return inp;
+-};
++	this.node.on('pluginStateChanged', this.updateUi.bind(this))
++	
++	this.ui = inp
++
++	return this.ui
++}
++
++Text.prototype.update_output = function() {
++	return this.state.text
++}
+ 
+-Text.prototype.update_output = function(slot)
+-{
+-	return this.state.text;
+-};
++Text.prototype.state_changed = function() {
++	this.updateUi()
++}
+ 
+-Text.prototype.state_changed = function(ui)
+-{
+-	var s = this.state;
++Text.prototype.updateUi = function() {
++	if (!this.ui)
++		return
++
++	var s = this.state
+ 	
+-	if(ui && s.text !== '')
+-	{
+-		ui.val(s.text);
+-		
+-		if(s.width > 0)
+-			ui.css('width', s.width);
+-		
+-		if(s.height > 0)
+-			ui.css('height', s.height);
+-	}
+-};
+-})()
+\ No newline at end of file
++	if (!s.text)
++		return 
++
++	this.ui.val(s.text)
++	
++	if (s.width > 0)
++		this.ui.css('width', s.width)
++	
++	if (s.height > 0)
++		this.ui.css('height', s.height)
++}
++
++})()"
+vizorvr/patches,219,15a57c6,browser/plugins/knob_float_generator.plugin.js,modified,60,61,121,"@@ -2,118 +2,117 @@
+ var Knob = E2.plugins.knob_float_generator = function(core, node) {
+ 	Plugin.apply(this, arguments)
+ 
+-	this.desc = 'Emits a user controllable float value between 0 and 1.';
++	this.desc = 'Emits a user controllable float value between 0 and 1.'
+ 	
+-	this.input_slots = [];
++	this.input_slots = []
+ 	
+ 	this.output_slots = [
+ 		{ name: 'value', dt: core.datatypes.FLOAT, desc: 'Emits the current value when the knob is adjusted.', lo: 0, hi: 1, def: 0 }
+-	];
++	]
+ 
+-	this.state = { val: 0.0 };
+-	this.knob = null;
+-};
++	this.state = { val: 0.0 }
++	this.knob = null
++}
+ 
+ Knob.prototype = Object.create(Plugin.prototype)
+ 
+-Knob.prototype.reset = function()
+-{
+-};
++Knob.prototype.reset = function() {}
+ 
+-Knob.prototype.set_rotation = function()
+-{
+-	var rot = 'rotate(' + Math.floor(this.state.val * 270.0) + 'deg)';
++Knob.prototype.set_rotation = function() {
++	var rot = 'rotate(' + Math.floor(this.state.val * 270.0) + 'deg)'
+ 	
+ 	this.knob.css({
+ 		'transform': rot,
+ 		'-moz-transform': rot,
+ 		'-webkit-transform': rot
+-	});
+-};
++	})
++}
+ 
+-Knob.prototype.create_ui = function()
+-{
++Knob.prototype.create_ui = function() {
+ 	var that = this
+-	var shadow = make('div');
++	var shadow = make('div')
+ 	
+-	this.knob = make('div');
++	this.knob = make('div')
+ 	
+ 	var knob_mouseup = function(data) { return function(e)
+ 	{
+-		document.removeEventListener('mouseup', data.mouseup);
+-		document.removeEventListener('mousemove', data.mousemove);
++		document.removeEventListener('mouseup', data.mouseup)
++		document.removeEventListener('mousemove', data.mousemove)
+ 
+ 		that.undoableSetState('val', that.state.val, that._mouseDownValue)
+ 
+-		if(e.stopPropagation) e.stopPropagation();
+-		if(e.preventDefault) e.preventDefault();
+-		return false;
+-	}};
++		if(e.stopPropagation) e.stopPropagation()
++		if(e.preventDefault) e.preventDefault()
++		return false
++	}}
+ 
+ 	var knob_mousemove = function(self, data) { return function(e)
+ 	{
+-		var y_delta = e.pageY - data.last_y;
+-		var old_val = self.state.val;
++		var y_delta = e.pageY - data.last_y
++		var old_val = self.state.val
+ 		
+-		data.last_y = e.pageY;
+-		self.state.val -= y_delta * 0.01;
+-		self.state.val = self.state.val < 0.0 ? 0.0 : self.state.val > 1.0 ? 1.0 : self.state.val;
++		data.last_y = e.pageY
++		self.state.val -= y_delta * 0.01
++		self.state.val = self.state.val < 0.0 ? 0.0 : self.state.val > 1.0 ? 1.0 : self.state.val
+ 		
+ 		if(self.state.val !== old_val)
+ 		{
+-			self.set_rotation();
+-			self.updated = true;
++			self.set_rotation()
++			self.updated = true
+ 		}
+ 
+-		if(e.stopPropagation) e.stopPropagation();
+-		if(e.preventDefault) e.preventDefault();
+-		return false;				
+-	}};
++		if(e.stopPropagation) e.stopPropagation()
++		if(e.preventDefault) e.preventDefault()
++		return false				
++	}}
+ 	
+ 	var knob_mousedown = function(self) { return function(e)
+ 	{
+ 		self._mouseDownValue = self.state.val
+-		var data = { last_y: e.pageY };
++		var data = { last_y: e.pageY }
+ 		
+ 		// Defer registration of event listeners until needed.
+-		data.mouseup = knob_mouseup(data);
+-		data.mousemove = knob_mousemove(self, data);
+-		document.addEventListener('mouseup', data.mouseup);
+-		document.addEventListener('mousemove', data.mousemove);
++		data.mouseup = knob_mouseup(data)
++		data.mousemove = knob_mousemove(self, data)
++		document.addEventListener('mouseup', data.mouseup)
++		document.addEventListener('mousemove', data.mousemove)
+ 		
+-		if(e.stopPropagation) e.stopPropagation();
+-		if(e.preventDefault) e.preventDefault();
+-		return false;
+-	}};
++		if(e.stopPropagation) e.stopPropagation()
++		if(e.preventDefault) e.preventDefault()
++		return false
++	}}
+ 		
+ 	shadow.css({
+ 		'width': '32px',
+ 		'height': '32px',
+ 		'z-index': '3000',
+ 		'background': 'url(\'/images/knob/shadow.png\')'
+-	});
++	})
+ 	
+ 	this.knob.css({
+ 		'width': '32px',
+ 		'height': '32px',
+ 		'z-index': '3001',
+ 		'background': 'url(\'/images/knob/knob.png\')'
+-	});
++	})
+ 
+-	shadow.append(this.knob);
+-	this.knob[0].addEventListener('mousedown', knob_mousedown(this));
++	shadow.append(this.knob)
++	this.knob[0].addEventListener('mousedown', knob_mousedown(this))
+ 	
+-	return shadow;
+-};
+-
+-Knob.prototype.update_output = function(slot)
+-{
+-	return this.state.val;
+-};
+-
+-Knob.prototype.state_changed = function(ui)
+-{
+-	if(ui)
+-		this.set_rotation();
+-};
++	this.ui = this.knob
++
++	this.node.on('pluginStateChanged', this.updateUi.bind(this))
++
++	return shadow
++}
++
++Knob.prototype.update_output = function() {
++	return this.state.val
++}
++
++Knob.prototype.updateUi = function() {
++	if (this.ui)
++		this.set_rotation()
++}
++
+ })()
+\ No newline at end of file"
+vizorvr/patches,219,15a57c6,browser/plugins/slider_float_generator.plugin.js,modified,27,15,42,"@@ -156,7 +156,11 @@ Slider.prototype.create_ui = function() {
+ 	this.slider = slider
+ 	this.handle = handle
+ 
+-	return table
++	this.node.on('pluginStateChanged', this.updateUi.bind(this))
++
++	this.ui = table
++
++	return this.ui
+ }
+ 
+ Slider.prototype.update_output = function() {
+@@ -189,21 +193,29 @@ Slider.prototype.update_value = function() {
+ }
+ 
+ Slider.prototype.state_changed = function(ui) {
+-	if(ui) {
+-		this.update_value(this.state.val)
++	if(ui)
++		this.updateUi()
++}
+ 
+-		ui.find('.lo').val(this.state.min)
+-		ui.find('.hi').val(this.state.max)
+-		
+-		var m = Math.min(this.state.min, this.state.max)
+-		var p = (this.state.val - m) / Math.abs(this.state.max - this.state.min)
+-		
+-		if(this.state.min > this.state.max)
+-			p = 1.0 - p
+-		
+-		this.pos = p * 60.0
+-		this.handle[0].style.left = '' + this.pos + 'px'
+-	}
++Slider.prototype.updateUi = function() {
++	if (!this.ui)
++		return
++
++	var ui = this.ui
++
++	this.update_value(this.state.val)
++
++	ui.find('.lo').val(this.state.min)
++	ui.find('.hi').val(this.state.max)
++	
++	var m = Math.min(this.state.min, this.state.max)
++	var p = (this.state.val - m) / Math.abs(this.state.max - this.state.min)
++	
++	if(this.state.min > this.state.max)
++		p = 1.0 - p
++	
++	this.pos = p * 60.0
++	this.handle[0].style.left = '' + this.pos + 'px'
+ }
+ 
+ })();"
+vizorvr/patches,219,15a57c6,browser/plugins/toggle_button.plugin.js,modified,44,40,84,"@@ -1,57 +1,61 @@
+ (function(){
+-Toggle = E2.plugins.toggle_button = function(core, node)
+-{
++
++var Toggle = E2.plugins.toggle_button = function(core, node) {
+ 	Plugin.apply(this, arguments)
+ 	this.desc = 'Toggle button that emits true and false as it is clicked.';
+ 	
+-	this.input_slots = [];
++	this.input_slots = []
+ 	
+ 	this.output_slots = [
+ 		{ name: 'bool', dt: core.datatypes.BOOL, desc: 'True or false is emitted on the next update after the buttons has been clicked.', def: 'False' }
+-	];
++	]
+ 	
+-	this.state = { enabled: false };
+-	this.core = core;
+-	this.node = node;
+-};
++	this.state = { enabled: false }
++	this.core = core
++	this.node = node
++}
++
+ Toggle.prototype = Object.create(Plugin.prototype)
+ 
+-Toggle.prototype.reset = function()
+-{
+-};
++Toggle.prototype.reset = function() {}
+ 
+-Toggle.prototype.create_ui = function()
+-{
++Toggle.prototype.create_ui = function() {
+ 	var that = this
+-	var inp = makeButton('Off');
++	var inp = this.ui = makeButton('Off')
+ 	
+-	inp.click(function(e) {
++	inp.click(function() {
+ 		that.undoableSetState('enabled', !that.state.enabled, that.state.enabled)
+ 	})
++
++	this.node.on('pluginStateChanged', this.updateUi.bind(this))
++
++	return inp
++}
++
++Toggle.prototype.update_output = function() {
++	return this.state.enabled
++}
++
++Toggle.prototype.updateUi = function() {
++	if (!this.ui)
++		return 
++
++	var ui = this.ui
++
++	ui.html(this.state.enabled ? 'On' : 'Off')
++	ui.addClass('toggle_btn')
+ 	
+-	return inp;
+-};
+-
+-Toggle.prototype.update_output = function(slot)
+-{
+-	return this.state.enabled;
+-};
+-
+-Toggle.prototype.state_changed = function(ui)
+-{
+-	if(ui)
+-	{
+-		this.core.add_aux_style('toggle-button/style.css');
+-
+-		ui.html(this.state.enabled ? 'On' : 'Off');
+-		ui.addClass('toggle_btn');
+-		
+-		if(!this.state.enabled)
+-			ui.addClass('toggle_btn_off');
+-		else
+-			ui.removeClass('toggle_btn_off');
+-			
+-		// this.node.update_connections();
++	if(!this.state.enabled)
++		ui.addClass('toggle_btn_off')
++	else
++		ui.removeClass('toggle_btn_off')
++}
++
++Toggle.prototype.state_changed = function(ui) {
++	if (ui) {
++		this.core.add_aux_style('toggle-button/style.css')
++		this.updateUi()
+ 	}
+-};
+-})()
+\ No newline at end of file
++}
++
++})()"
+vizorvr/patches,219,15a57c6,browser/plugins/url_texture_generator.plugin.js,modified,10,6,16,"@@ -77,6 +77,8 @@ UrlTexture.prototype.create_ui = function() {
+ 	container.append(this.thumbnail)
+ 	container.append(inp)
+ 
++	this.node.on('pluginStateChanged', this.updateUi.bind(this))
++
+ 	return container
+ }
+ 
+@@ -100,13 +102,15 @@ UrlTexture.prototype.update_output = function() {
+ }
+ 
+ UrlTexture.prototype.state_changed = function() {
+-	if (this.state.url !== '') {
+-		this.dirty = true
++	if (!this.state.url)
++		return
+ 
+-		if (this.thumbnail) {
+-			this.thumbnail.css({ 'background-image': 'url(\'' + this.state.url + '\')' })
+-		}
+-	}
++	this.dirty = true
++}
++
++UrlTexture.prototype.updateUi = function() {
++	if (this.thumbnail)
++		this.thumbnail.css({ 'background-image': 'url(\'' + this.state.url + '\')' })
+ }
+ 
+ })()
+\ No newline at end of file"
+vizorvr/patches,219,15a57c6,browser/scripts/plugin.js,modified,6,0,6,"@@ -1,6 +1,12 @@
+ function Plugin(core, node) {
++	var that = this
+ 	this.core = core
+ 	this.node = node
++
++	this.node.on('pluginStateChanged', function() {
++		if (that.state_changed && that.node.ui && that.node.ui.plugin_ui)
++			that.state_changed(that.node.ui.plugin_ui)
++	})
+ }
+ 
+ Plugin.prototype.undoableSetState = function(key, newValue, oldValue) {"

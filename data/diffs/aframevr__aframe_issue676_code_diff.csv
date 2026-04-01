@@ -1,0 +1,50 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe,676,19d62d873cac2a7ec5dc7d4bca8aba301c92f2aa,src/core/a-scene.js,modified,18,0,18,"@@ -255,6 +255,24 @@ var AScene = module.exports = registerElement('a-scene', {
+         this.render();
+         this.renderLoopStarted = true;
+         this.load();
++        this.checkUrlParameters();
++      }
++    },
++
++    /**
++     * Enters VR when ?mode=vr is specified in the querystring.
++     */
++    checkUrlParameters: {
++      value: function () {
++        var mode = utils.getUrlParameter('mode');
++        if (mode === 'vr') {
++          this.enterVR();
++        }
++
++        var ui = utils.getUrlParameter('ui');
++        if (ui === 'false') {
++          this.hideUI();
++        }
+       }
+     },
+ "
+aframevr/aframe,676,19d62d873cac2a7ec5dc7d4bca8aba301c92f2aa,src/utils/index.js,modified,13,1,14,"@@ -1,4 +1,4 @@
+-/* global CustomEvent */
++/* global CustomEvent, location */
+ /* Centralized place to reference utilities since utils is exposed to the user. */
+ var objectAssign = require('object-assign');
+ 
+@@ -168,5 +168,17 @@ module.exports.getElData = function (el, defaults) {
+   return data;
+ };
+ 
++/**
++ * Retrieves querystring value.
++ * @param  {String} name Name of querystring key.
++ * @return {String}      Value
++ */
++module.exports.getUrlParameter = function (name) {
++  name = name.replace(/[\[]/, '\\[').replace(/[\]]/, '\\]');
++  var regex = new RegExp('[\\?&]' + name + '=([^&#]*)');
++  var results = regex.exec(location.search);
++  return results === null ? '' : decodeURIComponent(results[1].replace(/\+/g, ' '));
++};
++
+ // Must be at bottom to avoid circular dependency.
+ module.exports.srcLoader = require('./src-loader');"

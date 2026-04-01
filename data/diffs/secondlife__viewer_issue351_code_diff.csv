@@ -1,0 +1,121 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+secondlife/viewer,351,031032f,indra/llui/llsearcheditor.cpp,modified,4,0,4,"@@ -178,6 +178,10 @@ void LLSearchEditor::setFocus( BOOL b )
+ void LLSearchEditor::onClearButtonClick(const LLSD& data)
+ {
+ 	setText(LLStringUtil::null);
++	if (mTextChangedCallback)
++	{
++		mTextChangedCallback(this, getValue());
++	}
+ 	mSearchEditor->onCommit(); // force keystroke callback
+ }
+ "
+secondlife/viewer,351,031032f,indra/newview/llfloateremojipicker.cpp,modified,5,5,10,"@@ -31,9 +31,9 @@
+ #include ""llbutton.h""
+ #include ""llcombobox.h""
+ #include ""llemojidictionary.h""
++#include ""llfiltereditor.h""
+ #include ""llfloaterreg.h""
+ #include ""llkeyboard.h""
+-#include ""lllineeditor.h""
+ #include ""llscrollcontainer.h""
+ #include ""llscrollingpanellist.h""
+ #include ""llscrolllistctrl.h""
+@@ -294,9 +294,9 @@ BOOL LLFloaterEmojiPicker::postBuild()
+     mGroups = getChild<LLPanel>(""Groups"");
+     mBadge = getChild<LLPanel>(""Badge"");
+ 
+-    mFilter = getChild<LLLineEditor>(""Filter"");
+-    mFilter->setKeystrokeCallback([this](LLLineEditor*, void*) { onSearchKeystroke(); }, NULL);
+-    mFilter->setFont(LLViewerChat::getChatFont());
++    mFilter = getChild<LLFilterEditor>(""Filter"");
++    mFilter->setKeystrokeCallback([this](LLUICtrl*, const LLSD&) { onFilterChanged(); });
++    mFilter->setTextChangedCallback([this](LLUICtrl*, const LLSD&) { onFilterChanged(); });
+     mFilter->setText(sFilterPattern);
+ 
+     mEmojiScroll = getChild<LLScrollContainer>(""EmojiGridContainer"");
+@@ -588,7 +588,7 @@ void LLFloaterEmojiPicker::onGroupButtonClick(LLUICtrl* ctrl)
+     }
+ }
+ 
+-void LLFloaterEmojiPicker::onSearchKeystroke()
++void LLFloaterEmojiPicker::onFilterChanged()
+ {
+     sFilterPattern = mFilter->getText();
+     fillEmojis();"
+secondlife/viewer,351,031032f,indra/newview/llfloateremojipicker.h,modified,2,2,4,"@@ -60,7 +60,7 @@ class LLFloaterEmojiPicker : public LLFloater
+     void fillEmojis(bool fromResize = false);
+ 
+     void onGroupButtonClick(LLUICtrl* ctrl);
+-    void onSearchKeystroke();
++    void onFilterChanged();
+     void onGridMouseEnter();
+     void onGridMouseLeave();
+     void onGroupButtonMouseEnter(LLUICtrl* ctrl);
+@@ -81,7 +81,7 @@ class LLFloaterEmojiPicker : public LLFloater
+ 
+     class LLPanel* mGroups { nullptr };
+     class LLPanel* mBadge { nullptr };
+-    class LLLineEditor* mFilter { nullptr };
++    class LLFilterEditor* mFilter { nullptr };
+     class LLScrollContainer* mEmojiScroll { nullptr };
+     class LLScrollingPanelList* mEmojiGrid { nullptr };
+     class LLEmojiPreviewPanel* mPreview { nullptr };"
+secondlife/viewer,351,031032f,indra/newview/skins/default/xui/en/floater_emoji_picker.xml,modified,2,7,9,"@@ -12,19 +12,14 @@
+     width=""250"">
+   <floater.string name=""title_for_recently_used"" value=""Recently used""/>
+   <floater.string name=""title_for_frequently_used"" value=""Frequently used""/>
+-  <line_editor
++  <filter_editor
+       name=""Filter""
+       label=""Start typing to filter""
+       layout=""bottomleft""
+       follows=""bottom|left|right""
+-      text_tentative_color=""TextFgTentativeColor""
+-      show_label_focused=""true""
+-      max_length_bytes=""63""
+-      text_pad_right=""5""
+-      text_pad_left=""5""
+       bottom=""14""
+       left=""10""
+-      height=""29""
++      height=""23""
+       width=""230"" />
+   <scroll_container
+       name=""EmojiGridContainer"""
+secondlife/viewer,351,6fc138d,indra/newview/app_settings/settings.xml,modified,1,1,2,"@@ -7863,7 +7863,7 @@
+   <key>RenderMaxOpenGLVersion</key>
+   <map>
+     <key>Comment</key>
+-    <string>Maximum OpenGL version to attempt use (minimum 3.1 maximum 4.6).  Requires restart.</string>
++    <string>Maximum OpenGL version to attempt use (minimum 3.1 maximum 4.6).  Requires restart. Windows only.</string>
+     <key>Persist</key>
+     <integer>1</integer>
+     <key>Type</key>"
+secondlife/viewer,351,6fc138d,indra/newview/llviewerwindow.cpp,modified,1,1,2,"@@ -1922,7 +1922,7 @@ LLViewerWindow::LLViewerWindow(const Params& p)
+         p.ignore_pixel_depth,
+         0,
+         max_core_count,
+-        max_gl_version); //don't use window level anti-aliasing
++        max_gl_version); //don't use window level anti-aliasing, windows only
+ 
+     if (NULL == mWindow)
+     {"
+secondlife/viewer,351,4e5d9f3,indra/newview/app_settings/settings.xml,modified,1,1,2,"@@ -7863,7 +7863,7 @@
+   <key>RenderMaxOpenGLVersion</key>
+   <map>
+     <key>Comment</key>
+-    <string>Maximum OpenGL version to attempt use (minimum 3.1 maximum 4.6).  Requires restart.</string>
++    <string>Maximum OpenGL version to attempt use (minimum 3.1 maximum 4.6).  Requires restart. Windows only.</string>
+     <key>Persist</key>
+     <integer>1</integer>
+     <key>Type</key>"
+secondlife/viewer,351,4e5d9f3,indra/newview/llviewerwindow.cpp,modified,1,1,2,"@@ -1922,7 +1922,7 @@ LLViewerWindow::LLViewerWindow(const Params& p)
+         p.ignore_pixel_depth,
+         0,
+         max_core_count,
+-        max_gl_version); //don't use window level anti-aliasing
++        max_gl_version); //don't use window level anti-aliasing, windows only
+ 
+     if (NULL == mWindow)
+     {"

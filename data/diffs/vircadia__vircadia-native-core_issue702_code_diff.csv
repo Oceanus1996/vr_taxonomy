@@ -1,0 +1,253 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vircadia/vircadia-native-core,702,5467396,libraries/script-engine/src/ScriptManager.h,modified,10,0,10,"@@ -439,6 +439,16 @@ class ScriptManager : public QObject, public EntitiesScriptEngineProvider, publi
+ 
+     QList<EntityItemID> getListOfEntityScriptIDs();
+ 
++    /**
++     * @brief Whether the ScriptManager is stopped and unable to run scripts
++     *
++     * This is always false for NETWORKLESS_TEST_SCRIPT scripts.
++     *
++     * Otherwise, it checks whether scriptEngines is set and is not stopped.
++     *
++     * @return true
++     * @return false
++     */
+     bool isStopped() const;
+ 
+ "
+vircadia/vircadia-native-core,702,5467396,tests/script-engine/CMakeLists.txt,modified,12,0,12,"@@ -8,6 +8,18 @@ macro (setup_testcase_dependencies)
+   link_hifi_libraries(shared test-utils script-engine networking octree avatars entities model-networking material-networking model-serializers graphics gpu ktx shaders hfm image procedural)
+ 
+   package_libraries_for_deployment()
++
++  # The test system is a bit unusual in how it works, and generates targets on its own.
++  # This macro will be called for each of them, so we want to add stuff only to the
++  # right targets.
++  if(""${TARGET_NAME}"" STREQUAL ""script-engine-ScriptEngineNetworkedTests"")
++    file(COPY ""${CMAKE_CURRENT_SOURCE_DIR}/src/tests"" DESTINATION  ""${CMAKE_CURRENT_BINARY_DIR}/"")
++#    add_custom_command(TARGET ""${TARGET_NAME}"" POST_BUILD
++#      COMMAND ${CMAKE_COMMAND} -E copy
++#        ""${CMAKE_CURRENT_SOURCE_DIR}/src/tests""
++#        ""${CMAKE_CURRENT_BINARY_DIR}/tests""
++#    )
++  endif()
+ endmacro ()
+ 
+ setup_hifi_testcase(Network)"
+vircadia/vircadia-native-core,702,5467396,tests/script-engine/src/ScriptEngineNetworkedTests.cpp,added,157,0,157,"@@ -0,0 +1,157 @@
++//
++//  Copyright 2023 Overte e.V.
++//
++//  Distributed under the Apache License, Version 2.0.
++//  See the accompanying file LICENSE or http://www.apache.org/licenses/LICENSE-2.0.html
++//  SPDX-License-Identifier: Apache-2.0
++//
++
++#include <QSignalSpy>
++#include <QDebug>
++#include <QFile>
++#include <QTextStream>
++
++
++#include ""ScriptEngineNetworkedTests.h""
++#include ""DependencyManager.h""
++
++#include ""ScriptEngines.h""
++#include ""ScriptEngine.h""
++#include ""ScriptCache.h""
++#include ""ScriptManager.h""
++#include ""ScriptEngines.h""
++#include ""AddressManager.h""
++#include ""AccountManager.h""
++#include ""DomainAccountManager.h""
++#include ""ResourceManager.h""
++#include ""ResourceRequestObserver.h""
++#include ""StatTracker.h""
++#include ""MessagesClient.h""
++#include ""ResourceScriptingInterface.h""
++#include ""UserActivityLogger.h""
++#include ""UserActivityLoggerScriptingInterface.h""
++#include ""EntityScriptingInterface.h""
++#include ""ResourceManager.h""
++#include ""NodeList.h""
++#include ""../../../libraries/entities/src/EntityScriptingInterface.h""
++
++QTEST_MAIN(ScriptEngineNetworkedTests)
++
++
++
++void ScriptEngineNetworkedTests::initTestCase() {
++    // AudioClient starts networking, but for the purposes of the tests here we don't care,
++    // so just got to use some port.
++    int listenPort = 10000;
++
++    DependencyManager::registerInheritance<LimitedNodeList, NodeList>();
++
++    DependencyManager::set<AccountManager>(true); // use the default user agent getter
++    DependencyManager::set<DomainAccountManager>();
++    DependencyManager::set<AddressManager>();
++    DependencyManager::set<NodeList>(NodeType::Agent, listenPort);
++
++    DependencyManager::set<ScriptEngines>(ScriptManager::CLIENT_SCRIPT, QUrl(""""));
++    DependencyManager::set<ScriptCache>();
++   // DependencyManager::set<ResourceManager>();
++   // DependencyManager::set<ResourceRequestObserver>();
++    DependencyManager::set<StatTracker>();
++    DependencyManager::set<ScriptInitializers>();
++   // DependencyManager::set<EntityScriptingInterface>(true);
++
++    DependencyManager::set<MessagesClient>();
++    DependencyManager::set<ResourceScriptingInterface>();
++    DependencyManager::set<UserActivityLoggerScriptingInterface>();
++    DependencyManager::set<EntityScriptingInterface>(true);
++    DependencyManager::set<ResourceManager>();
++    DependencyManager::set<ResourceRequestObserver>();
++
++
++    auto nodeList = DependencyManager::get<NodeList>();
++    nodeList->startThread();
++    nodeList->setFlagTimeForConnectionStep(true);
++
++}
++
++ScriptManagerPointer ScriptEngineNetworkedTests::makeManager(const QString &scriptSource, const QString &scriptFilename) {
++    ScriptManagerPointer sm = scriptManagerFactory(ScriptManager::CLIENT_SCRIPT, scriptSource, scriptFilename);
++
++
++    sm->setAbortOnUncaughtException(true);
++
++    connect(sm.get(), &ScriptManager::scriptLoaded, [](const QString& filename){
++        qWarning() << ""Loaded script"" << filename;
++    });
++
++
++    connect(sm.get(), &ScriptManager::errorLoadingScript, [](const QString& filename){
++        qWarning() << ""Failed to load script"" << filename;
++    });
++
++    connect(sm.get(), &ScriptManager::printedMessage, [](const QString& message, const QString& engineName){
++        qDebug() << ""Printed message from engine"" << engineName << "": "" << message;
++    });
++
++    connect(sm.get(), &ScriptManager::infoMessage, [](const QString& message, const QString& engineName){
++        qInfo() << ""Info message from engine"" << engineName << "": "" << message;
++    });
++
++    connect(sm.get(), &ScriptManager::warningMessage, [](const QString& message, const QString& engineName){
++        qWarning() << ""Warning from engine"" << engineName << "": "" << message;
++    });
++
++    connect(sm.get(), &ScriptManager::errorMessage, [](const QString& message, const QString& engineName){
++        qCritical() << ""Error from engine"" << engineName << "": "" << message;
++    });
++
++    connect(sm.get(), &ScriptManager::finished, [](const QString& fileNameString, ScriptManagerPointer smp){
++        qInfo() << ""Finished running script"" << fileNameString;
++    });
++
++    connect(sm.get(), &ScriptManager::runningStateChanged, [sm](){
++        qInfo() << ""Running state changed. Running = "" << sm->isRunning() << ""; Stopped = "" << sm->isStopped() << ""; Finished = "" << sm->isFinished();
++    });
++
++    connect(sm.get(), &ScriptManager::unhandledException, [](std::shared_ptr<ScriptException> exception){
++        qWarning() << ""Exception from engine: "" << exception;
++    });
++
++
++    return sm;
++}
++
++void ScriptEngineNetworkedTests::testRequire() {
++    auto sm = makeManager(
++        ""print(\""Starting\"");""
++        ""Script.require('./tests/c.js');""
++        ""print(\""Done\"");""
++        ""Script.stop(true);"", ""testRequire.js"");
++    QStringList printed;
++    QStringList expected {""Starting"", ""Value from A: 6"", ""Value from B: 6"", ""Done""};
++
++
++    QVERIFY(!sm->isRunning());
++    QVERIFY(!sm->isStopped());
++    QVERIFY(!sm->isFinished());
++
++    connect(sm.get(), &ScriptManager::printedMessage, [&printed](const QString& message, const QString& engineName){
++        printed.append(message);
++    });
++
++
++    qInfo() << ""About to run script"";
++    sm->run();
++
++    QVERIFY(!sm->isRunning());
++    QVERIFY(!sm->isStopped());
++    QVERIFY(sm->isFinished());
++
++    QVERIFY(printed.length() == expected.length());
++    for(int i=0;i<printed.length();i++) {
++        QString nomatch = QString(""Result '%1' didn't match expected '%2'"").arg(printed[i]).arg(expected[i]);
++        QVERIFY2(printed[i] == expected[i], qPrintable(nomatch));
++    }
++}
++
++
++"
+vircadia/vircadia-native-core,702,5467396,tests/script-engine/src/ScriptEngineNetworkedTests.h,added,37,0,37,"@@ -0,0 +1,37 @@
++//
++//  SciptEngineTests.h
++//  tests/script-engine/src
++//
++//  Created by Dale Glass
++//  Copyright 2023 Overte e.V.
++//
++//  Distributed under the Apache License, Version 2.0.
++//  See the accompanying file LICENSE or http://www.apache.org/licenses/LICENSE-2.0.html
++//  SPDX-License-Identifier: Apache-2.0
++//
++
++#ifndef overte_ScriptingEngineTests_h
++#define overte_ScriptingEngineTests_h
++
++#include <QtTest/QtTest>
++#include ""ScriptManager.h""
++#include ""ScriptEngine.h""
++
++using ScriptManagerPointer = std::shared_ptr<ScriptManager>;
++
++
++
++
++class ScriptEngineNetworkedTests : public QObject {
++    Q_OBJECT
++private slots:
++    void initTestCase();
++    void testRequire();
++
++
++private:
++    ScriptManagerPointer makeManager(const QString &source, const QString &filename);
++
++};
++
++#endif // overte_ScriptingEngineTests_h"
+vircadia/vircadia-native-core,702,5467396,tests/script-engine/src/tests/a.js,added,3,0,3,"@@ -0,0 +1,3 @@
++// a.js
++module.exports = { value: 5 };
++"
+vircadia/vircadia-native-core,702,5467396,tests/script-engine/src/tests/b.js,added,6,0,6,"@@ -0,0 +1,6 @@
++
++// b.js
++var a = Script.require('./a.js');
++a.value += 1;
++console.log('message from b');
++module.exports = a.value;
+\ No newline at end of file"
+vircadia/vircadia-native-core,702,5467396,tests/script-engine/src/tests/c.js,added,6,0,6,"@@ -0,0 +1,6 @@
++
++// c.js
++var a = Script.require('./a.js');
++var b = Script.require('./b.js');
++print(""Value from A: "" + a.value);
++print(""Value from B: "" + b);
+\ No newline at end of file"

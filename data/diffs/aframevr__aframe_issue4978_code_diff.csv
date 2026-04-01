@@ -1,0 +1,45 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe,4978,981cb8105cf0d59a28b3a7ec3943cfad45dc2964,docs/components/raycaster.md,modified,1,0,1,"@@ -83,6 +83,7 @@ The raycaster component is useful because of the events it emits on entities. It
+ | raycaster-intersected-cleared  | Emitted on the intersected entity. Entity is no longer intersecting with a raycaster. Event detail will contain `el`, the raycasting entity. |
+ | raycaster-intersection         | Emitted on the raycasting entity. Raycaster is intersecting with one or more entities. Event detail will contain `els`, an array with the newly intersected entities, and `intersections`, and `.getIntersection (el)` function which can be used to obtain current intersection data.  For access to a complete list of intersections (existing & new), see [Members intersectedEls][intersectedEls]. |
+ | raycaster-intersection-cleared | Emitted on the raycasting entity. Raycaster is no longer intersecting with one or more entities. Event detail will contain `clearedEls`, an array with the formerly intersected entities. |
++| raycaster-closest-entity-changed | The closest intersected entity has changed  |
+ 
+ ### Intersection Object
+ "
+aframevr/aframe,4978,981cb8105cf0d59a28b3a7ec3943cfad45dc2964,src/components/cursor.js,modified,2,0,2,"@@ -134,6 +134,8 @@ module.exports.Component = registerComponent('cursor', {
+       el.addEventListener(upEvent, self.onCursorUp);
+     });
+     el.addEventListener('raycaster-intersection', this.onIntersection);
++    el.addEventListener('raycaster-closest-entity-changed', this.onIntersection);
++
+     el.addEventListener('raycaster-intersection-cleared', this.onIntersectionCleared);
+ 
+     el.sceneEl.addEventListener('rendererresize', this.updateCanvasBounds);"
+aframevr/aframe,4978,981cb8105cf0d59a28b3a7ec3943cfad45dc2964,src/components/raycaster.js,modified,12,1,13,"@@ -24,7 +24,8 @@ var EVENTS = {
+   INTERSECT: 'raycaster-intersected',
+   INTERSECTION: 'raycaster-intersection',
+   INTERSECT_CLEAR: 'raycaster-intersected-cleared',
+-  INTERSECTION_CLEAR: 'raycaster-intersection-cleared'
++  INTERSECTION_CLEAR: 'raycaster-intersection-cleared',
++  INTERSECTION_CLOSEST_ENTITY_CHANGED: 'raycaster-closest-entity-changed'
+ };
+ 
+ /**
+@@ -276,6 +277,16 @@ module.exports.Component = registerComponent('raycaster', {
+       el.emit(EVENTS.INTERSECTION, this.intersectionDetail);
+     }
+ 
++    // Emit event when the closest intersected entity has changed.
++    if (prevIntersectedEls.length === 0 && intersections.length > 0 ||
++        prevIntersectedEls.length > 0 && intersections.length === 0 ||
++        (prevIntersectedEls.length && intersections.length &&
++        prevIntersectedEls[0] !== intersections[0].object.el)) {
++      this.intersectionDetail.els = this.intersectedEls;
++      this.intersectionDetail.intersections = intersections;
++      el.emit(EVENTS.INTERSECTION_CLOSEST_ENTITY_CHANGED, this.intersectionDetail);
++    }
++
+     // Update line length.
+     if (data.showLine) { setTimeout(this.updateLine); }
+   },"

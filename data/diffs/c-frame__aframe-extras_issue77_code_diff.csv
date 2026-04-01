@@ -1,0 +1,89 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+c-frame/aframe-extras,77,3df802673c543a7b33acf191afc449815df26c85,examples/monument/index.html,modified,1,1,2,"@@ -46,7 +46,7 @@
+                 universal-controls
+                 kinematic-body=""enableSlopes: false""
+                 position=""15 2.764 10""
+-                jump-ability=""enableDoubleJump: true;"">
++                jump-ability=""maxJumps: 2;"">
+       </a-entity>
+ 
+       <a-entity id=""scene"""
+c-frame/aframe-extras,77,3df802673c543a7b33acf191afc449815df26c85,examples/platforms/index.html,modified,1,1,2,"@@ -14,7 +14,7 @@
+                 universal-controls
+                 kinematic-body
+                 position=""15 1.764 10""
+-                jump-ability=""enableDoubleJump: true;
++                jump-ability=""maxJumps: 3;
+                               distance: 10;"">
+       </a-entity>
+ "
+c-frame/aframe-extras,77,3df802673c543a7b33acf191afc449815df26c85,src/misc/jump-ability.js,modified,4,5,9,"@@ -13,15 +13,14 @@ module.exports = {
+   schema: {
+     on: { default: 'keydown:Space gamepadbuttondown:0' },
+     playerHeight: { default: 1.764 },
+-    enableDoubleJump: { default: false },
++    maxJumps: { default: 1 },
+     distance: { default: 5 },
+     soundJump: { default: '' },
+     soundLand: { default: '' },
+     debug: { default: false }
+   },
+ 
+   init: function () {
+-    this.isOnObject = true;
+     this.velocity = 0;
+     this.numJumps = 0;
+ 
+@@ -48,16 +47,16 @@ module.exports = {
+   },
+ 
+   beginJump: function () {
+-    if (this.isOnObject || this.data.enableDoubleJump) {
++    if (this.numJumps < this.data.maxJumps) {
+       var data = this.data,
+           initialVelocity = Math.sqrt(-2 * data.distance * (ACCEL_G + EASING)),
+           v = this.el.getAttribute('velocity');
+       this.el.setAttribute('velocity', {x: v.x, y: initialVelocity, z: v.z});
+-      this.isOnObject = false;
++      this.numJumps++;
+     }
+   },
+ 
+   onCollide: function () {
+-    this.isOnObject = true;
++    this.numJumps = 0;
+   }
+ };"
+c-frame/aframe-extras,77,a5a166b8760fabdbbca066fdffdc7530fd45ffa9,src/misc/jump-ability.js,modified,10,2,12,"@@ -32,6 +32,8 @@ module.exports = {
+       this.bindings[events[i]] = beginJump;
+       this.el.addEventListener(events[i], beginJump);
+     }
++    this.bindings.collide = this.onCollide.bind(this);
++    this.el.addEventListener('collide', this.bindings.collide);
+   },
+ 
+   remove: function () {
+@@ -41,15 +43,21 @@ module.exports = {
+         delete this.bindings[event];
+       }
+     }
++    this.el.removeEventListener('collide', this.bindings.collide);
++    delete this.bindings.collide;
+   },
+ 
+   beginJump: function () {
+-    if (this.isOnObject || this.data.enableDoubleJump && this.numJumps === 1) {
++    if (this.isOnObject || this.data.enableDoubleJump) {
+       var data = this.data,
+           initialVelocity = Math.sqrt(-2 * data.distance * (ACCEL_G + EASING)),
+           v = this.el.getAttribute('velocity');
+       this.el.setAttribute('velocity', {x: v.x, y: initialVelocity, z: v.z});
+-      this.numJumps++;
++      this.isOnObject = false;
+     }
++  },
++
++  onCollide: function () {
++    this.isOnObject = true;
+   }
+ };"

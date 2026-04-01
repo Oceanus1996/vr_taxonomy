@@ -1,0 +1,873 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+Dominux/DGS,40,e9f93b4926479b54c3e6c93057cdf9b3274fe230,frontend/src/constants.ts,modified,2,0,2,"@@ -13,3 +13,5 @@ export const SPHERE_RADIUS = 0.5
+ export const REGULAR_FIELD_PADDING_TO_CELL_FRACTION = 0.5
+ export const ACCENT_COLOR = '#e3f2fd'
+ export const ALERT_COLOR = '#fa9393'
++
++export const FIELD_Y = 1"
+Dominux/DGS,40,e9f93b4926479b54c3e6c93057cdf9b3274fe230,frontend/src/logic/fields/grid_sphere.ts,modified,1,1,2,"@@ -233,7 +233,7 @@ export default class GridSphere implements Field {
+ 
+ 		const stoneSchema = {
+ 			id: this.activePointID,
+-			position: this.activePoint,
++			position: position,
+ 			color,
+ 			rotation: this.getStoneRotation(position),
+ 		}"
+Dominux/DGS,40,e9f93b4926479b54c3e6c93057cdf9b3274fe230,frontend/src/logic/stone_manager.ts,modified,8,2,10,"@@ -1,4 +1,5 @@
+ import * as BABYLON from 'babylonjs'
++import { FIELD_Y } from '../constants'
+ 
+ export type CreateStoneScheme = {
+ 	id: number
+@@ -16,9 +17,11 @@ export default class StoneManager {
+ 	protected stones: Array<Stone> = []
+ 	readonly stoneSize = 1.6
+ 	readonly height: number
++	readonly multiplier: number
+ 
+ 	constructor(readonly scene: BABYLON.Scene, gridSize: number, k: number) {
+ 		this.height = (0.2 * this.stoneSize * k) / gridSize
++		this.multiplier = 1 + this.height / 2 - this.height * 0.025
+ 	}
+ 
+ 	create(stoneSchema: CreateStoneScheme) {
+@@ -34,8 +37,11 @@ export default class StoneManager {
+ 		})
+ 
+ 		// Setting right position
+-		const multiplier = 1 + this.height / 2 - this.height * 0.025
+-		stone.position = stoneSchema.position.scale(multiplier)
++		console.log(this.multiplier)
++
++		stoneSchema.position.y -= FIELD_Y
++		stone.position = stoneSchema.position.scale(this.multiplier)
++		stone.position.y += FIELD_Y
+ 
+ 		// Creating stone's material
+ 		const material = new BABYLON.PBRMetallicRoughnessMaterial('stone')"
+Dominux/DGS,40,02c883e909db8f8a0267af1c42a2fee8173a6f25,frontend/src/gui/game_creation_form.ts,modified,21,5,26,"@@ -18,8 +18,10 @@ const ODD_RANGE_STR = [MIN_GRIDSIZE, MIN_GRIDSIZE + 2, MIN_GRIDSIZE + 4].join(
+ export default class GameCreationFormGUI {
+ 	protected fieldTypeSelect: GUIComponent<SelectComponent>
+ 	protected gridSizeInput: GUIComponent<GUI.InputText>
++	protected virtualKeyboard: GUIComponent<GUI.VirtualKeyboard>
+ 	protected gridSizeHint: GUIComponent<TextComponent>
+ 	protected startButton: GUIComponent<GUI.Button>
++	protected stackMesh: BABYLON.Mesh
+ 
+ 	protected _isValid: boolean = true
+ 
+@@ -63,6 +65,7 @@ export default class GameCreationFormGUI {
+ 		}
+ 
+ 		const stack = this.createStackPanel()
++		this.stackMesh = stack.advancedTextureMesh
+ 
+ 		this.fieldTypeSelect = this.createFieldTypeSelect(stack, defaultFieldType)
+ 		this.fieldTypeSelect.component.onSelectRegister(innerOnChangeFieldType)
+@@ -73,6 +76,10 @@ export default class GameCreationFormGUI {
+ 			onChangeGridSize
+ 		)
+ 		this.gridSizeHint = this.createGridSizeHint(stack)
++		this.virtualKeyboard = this.createVirtualKeyBoard(
++			stack,
++			this.gridSizeInput.component
++		)
+ 
+ 		this.startButton = this.createStartButton(stack, onSumbit)
+ 
+@@ -184,8 +191,19 @@ export default class GameCreationFormGUI {
+ 		return true
+ 	}
+ 
+-	connectVirtualKeyboard(keyboard: GUI.VirtualKeyboard) {
+-		keyboard.connect(this.gridSizeInput.component)
++	createVirtualKeyBoard(
++		stack: GUIComponent<GUI.StackPanel>,
++		gridSizeInput: GUI.InputText
++	): GUIComponent<GUI.VirtualKeyboard> {
++		const keyboard = GUI.VirtualKeyboard.CreateDefaultLayout()
++		keyboard.verticalAlignment = GUI.Control.VERTICAL_ALIGNMENT_TOP
++		keyboard.fontSize = 24
++
++		keyboard.connect(gridSizeInput)
++
++		stack.component.addControl(keyboard)
++
++		return new GUIComponent(keyboard, stack.advancedTextureMesh)
+ 	}
+ 
+ 	createStartButton(
+@@ -213,8 +231,6 @@ export default class GameCreationFormGUI {
+ 	}
+ 
+ 	delete() {
+-		this.fieldTypeSelect.delete()
+-		this.gridSizeInput.delete()
+-		this.startButton.delete()
++		this.stackMesh.dispose()
+ 	}
+ }"
+Dominux/DGS,40,02c883e909db8f8a0267af1c42a2fee8173a6f25,frontend/src/gui/gui_components.ts,modified,0,4,4,"@@ -15,8 +15,4 @@ export default class GUIComponent<Type> {
+ 			this.component.container ? this.component.container : this.component
+ 		)
+ 	}
+-
+-	delete() {
+-		this.advancedTextureMesh.dispose()
+-	}
+ }"
+Dominux/DGS,40,02c883e909db8f8a0267af1c42a2fee8173a6f25,frontend/src/gui/index.ts,modified,0,20,20,"@@ -10,7 +10,6 @@ export default class GameGUI {
+ 	protected gameCreationForm: GameCreationFormGUI
+ 	protected playerBar: PlayerBarGUI
+ 	protected globalTexture: GUI.AdvancedDynamicTexture
+-	protected virtualKeyboard: GUIComponent<GUI.VirtualKeyboard>
+ 
+ 	protected alert: AlertComponent
+ 
+@@ -29,8 +28,6 @@ export default class GameGUI {
+ 	) {
+ 		this.globalTexture = GUI.AdvancedDynamicTexture.CreateFullscreenUI('gui')
+ 
+-		this.virtualKeyboard = this.createVirtualKeyBoard()
+-
+ 		this.gameCreationForm = new GameCreationFormGUI(
+ 			camera,
+ 			onChangeFieldType,
+@@ -39,29 +36,12 @@ export default class GameGUI {
+ 			defaultGridSize,
+ 			onSubmit
+ 		)
+-		this.gameCreationForm.connectVirtualKeyboard(this.virtualKeyboard.component)
+ 
+ 		this.playerBar = new PlayerBarGUI(this.camera, onUndo)
+ 
+ 		this.alert = new AlertComponent(this.globalTexture)
+ 	}
+ 
+-	createVirtualKeyBoard(): GUIComponent<GUI.VirtualKeyboard> {
+-		const keyboard = GUI.VirtualKeyboard.CreateDefaultLayout()
+-		keyboard.verticalAlignment = GUI.Control.VERTICAL_ALIGNMENT_TOP
+-
+-		const plane = BABYLON.MeshBuilder.CreatePlane('start-button-plane')
+-		// plane.parent = this.camera
+-		plane.position.z = -0.12
+-		plane.position.y = 0.4
+-		plane.position.x = 0.8
+-
+-		const advancedTexture = GUI.AdvancedDynamicTexture.CreateForMesh(plane)
+-		advancedTexture.addControl(keyboard)
+-
+-		return new GUIComponent(keyboard, plane)
+-	}
+-
+ 	onStart() {
+ 		this.playerBar.initialize()
+ 	}"
+Dominux/DGS,40,02c883e909db8f8a0267af1c42a2fee8173a6f25,frontend/src/gui/player_bar.ts,modified,33,20,53,"@@ -4,31 +4,51 @@ import GUIComponent from './gui_components'
+ import TextComponent from './text'
+ 
+ export default class PlayerBarGUI {
++	protected stack: GUIComponent<GUI.StackPanel>
+ 	protected blackScore: GUIComponent<TextComponent>
+ 	protected whiteScore: GUIComponent<TextComponent>
+ 	protected undoButton: GUIComponent<GUI.Button>
+ 
+ 	set isUndoButtonHidden(newVal: boolean) {
+-		this.undoButton.advancedTextureMesh.isVisible = !newVal
++		this.undoButton.component.isVisible = !newVal
+ 	}
+ 
+ 	constructor(readonly camera: BABYLON.Camera, onUndo: Function) {
++		this.stack = this.createStackPanel()
+ 		this.blackScore = this.createScoreComponent('black', 1.5)
+ 		this.whiteScore = this.createScoreComponent('white', 1.4)
+ 		this.undoButton = this.createUndoButton(onUndo)
+ 	}
+ 
++	createStackPanel() {
++		const stack = new GUI.StackPanel('player-bar')
++		stack.spacing = 10
++		stack.isHitTestVisible = false
++
++		const plane = BABYLON.MeshBuilder.CreatePlane('stack-plane', {
++			size: 1,
++		})
++		// plane.parent = this.camera
++		plane.position.z = -0.1
++		plane.position.y = 1.3
++		plane.position.x = 0.8
++		plane.isVisible = false
++
++		const advancedTexture = GUI.AdvancedDynamicTexture.CreateForMesh(plane)
++		advancedTexture.addControl(stack)
++
++		return new GUIComponent(stack, plane)
++	}
++
+ 	createScoreComponent(color: string, y: number): GUIComponent<TextComponent> {
+ 		const background = color
+ 		color = color === 'black' ? 'white' : 'black'
+ 		const scoreBlock = new TextComponent('80px', '360px', color, background, 46)
++		scoreBlock.container.isVisible = false
+ 
+-		const plane = BABYLON.MeshBuilder.CreatePlane(null)
+-		plane.position.y = y
+-		plane.position.x = 0.8
+-		plane.isVisible = false
++		this.stack.component.addControl(scoreBlock.container)
+ 
+-		return new GUIComponent(scoreBlock, plane)
++		return new GUIComponent(scoreBlock, this.stack.advancedTextureMesh)
+ 	}
+ 
+ 	createUndoButton(onUndo: Function): GUIComponent<GUI.Button> {
+@@ -37,23 +57,22 @@ export default class PlayerBarGUI {
+ 		button.height = '60px'
+ 		button.width = '160px'
+ 		button.fontSize = 24
++		button.isVisible = false
+ 
+ 		button.onPointerClickObservable.add(() => {
+ 			onUndo()
+ 		})
+ 
+-		const plane = BABYLON.MeshBuilder.CreatePlane(null)
+-		plane.position.y = 1.3
+-		plane.position.x = 0.8
+-		plane.isVisible = false
++		this.stack.component.addControl(button)
+ 
+-		return new GUIComponent(button, plane)
++		return new GUIComponent(button, this.stack.advancedTextureMesh)
+ 	}
+ 
+ 	initialize() {
+-		this.blackScore.initialize()
+-		this.whiteScore.initialize()
+-		this.undoButton.initialize()
++		this.stack.advancedTextureMesh.isVisible = true
++		this.blackScore.component.container.isVisible = true
++		this.whiteScore.component.container.isVisible = true
++		this.undoButton.component.isVisible = true
+ 		this.isUndoButtonHidden = true
+ 	}
+ 
+@@ -64,10 +83,4 @@ export default class PlayerBarGUI {
+ 	setWhiteScore(value: number) {
+ 		this.whiteScore.component.text = String(value)
+ 	}
+-
+-	delete() {
+-		this.blackScore.delete()
+-		this.whiteScore.delete()
+-		this.undoButton.delete()
+-	}
+ }"
+Dominux/DGS,40,02c883e909db8f8a0267af1c42a2fee8173a6f25,frontend/src/logic/fields/grid_sphere.ts,modified,2,1,3,"@@ -254,7 +254,8 @@ export default class GridSphere implements Field {
+ 	}
+ 
+ 	getCreateStoneSchema(id: number, color: BABYLON.Color3): CreateStoneScheme {
+-		const position = this.points[id]
++		const position = this.points[id].clone()
++		position.y += 1
+ 		const rotation = this.getStoneRotation(position)
+ 		return {
+ 			id,"
+Dominux/DGS,40,02c883e909db8f8a0267af1c42a2fee8173a6f25,frontend/src/logic/scene.ts,modified,2,4,6,"@@ -18,10 +18,8 @@ export default class Scene {
+ 			height: 30,
+ 			width: 30,
+ 		})
+-		// this._ground.position.y = -1
+-		this._ground.material = new BABYLON.PBRMetallicRoughnessMaterial('ground')
+-		// TEMPORAL
+-		// this._ground.setEnabled(false)
++		// this._ground.material = new BABYLON.PBRMetallicRoughnessMaterial('ground')
++		this._ground.setEnabled(false)
+ 
+ 		// Loading environment
+ 		this.loadEnv()"
+Dominux/DGS,40,eac1f510013bbf9bc5d41e4821fa4a715f34460b,frontend/src/gui/game_creation_form.ts,modified,44,53,97,"@@ -43,9 +43,9 @@ export default class GameCreationFormGUI {
+ 	protected set errorMessage(newVal: string) {
+ 		if (newVal) {
+ 			this.gridSizeHint.component.text = newVal
+-			this.gridSizeHint.advancedTextureMesh.isVisible = true
++			this.gridSizeHint.component.container.isVisible = true
+ 		} else {
+-			this.gridSizeHint.advancedTextureMesh.isVisible = false
++			this.gridSizeHint.component.container.isVisible = false
+ 		}
+ 	}
+ 
+@@ -62,21 +62,44 @@ export default class GameCreationFormGUI {
+ 			onChangeFieldType(selectedValue)
+ 		}
+ 
+-		this.fieldTypeSelect = this.createFieldTypeSelect(defaultFieldType)
++		const stack = this.createStackPanel()
++
++		this.fieldTypeSelect = this.createFieldTypeSelect(stack, defaultFieldType)
+ 		this.fieldTypeSelect.component.onSelectRegister(innerOnChangeFieldType)
+ 
+ 		this.gridSizeInput = this.createGridSizeInput(
+ 			defaultGridSize,
++			stack,
+ 			onChangeGridSize
+ 		)
+-		this.gridSizeHint = this.createGridSizeHint()
++		this.gridSizeHint = this.createGridSizeHint(stack)
+ 
+-		this.startButton = this.createStartButton(onSumbit)
++		this.startButton = this.createStartButton(stack, onSumbit)
+ 
+ 		this.validateGridSize(parseInt(this.gridSizeInput.component.text))
+ 	}
+ 
++	createStackPanel() {
++		const stack = new GUI.StackPanel('game-creation-form')
++		stack.spacing = 10
++		stack.isHitTestVisible = false
++
++		const plane = BABYLON.MeshBuilder.CreatePlane('field-type-plane', {
++			size: 1,
++		})
++		// plane.parent = this.camera
++		plane.position.z = -0.1
++		plane.position.y = 1.2
++		plane.position.x = 0.8
++
++		const advancedTexture = GUI.AdvancedDynamicTexture.CreateForMesh(plane)
++		advancedTexture.addControl(stack)
++
++		return new GUIComponent(stack, plane)
++	}
++
+ 	createFieldTypeSelect(
++		stack: GUIComponent<GUI.StackPanel>,
+ 		defaultFieldType?: FieldType
+ 	): GUIComponent<SelectComponent> {
+ 		const fieldTypeSelect = new SelectComponent(
+@@ -92,22 +115,14 @@ export default class GameCreationFormGUI {
+ 			fieldTypeSelect.addOption(fieldType, fieldType)
+ 		)
+ 
+-		const plane = BABYLON.MeshBuilder.CreatePlane('field-type-plane', {
+-			size: 1.2,
+-		})
+-		// plane.parent = this.camera
+-		plane.position.z = -0.1
+-		plane.position.y = 0.9
+-		plane.position.x = 0.8
+-
+-		const advancedTexture = GUI.AdvancedDynamicTexture.CreateForMesh(plane)
+-		advancedTexture.addControl(fieldTypeSelect.container)
++		stack.component.addControl(fieldTypeSelect.container)
+ 
+-		return new GUIComponent(fieldTypeSelect, plane)
++		return new GUIComponent(fieldTypeSelect, stack.advancedTextureMesh)
+ 	}
+ 
+ 	createGridSizeInput(
+ 		defaultGridSize: number = 0,
++		stack: GUIComponent<GUI.StackPanel>,
+ 		onChangeGridSize: Function
+ 	): GUIComponent<GUI.InputText> {
+ 		const input = new GUI.InputText('grid-size', String(defaultGridSize))
+@@ -133,36 +148,18 @@ export default class GameCreationFormGUI {
+ 			this.validateGridSize(value)
+ 		})
+ 
+-		const plane = BABYLON.MeshBuilder.CreatePlane('grid-size-plane', {
+-			size: 1,
+-		})
+-		// plane.parent = this.camera
+-		plane.position.z = -0.1
+-		plane.position.y = 1.1
+-		plane.position.x = 0.8
+-
+-		const advancedTexture = GUI.AdvancedDynamicTexture.CreateForMesh(plane)
+-		advancedTexture.addControl(input)
++		stack.component.addControl(input)
+ 
+-		return new GUIComponent(input, plane)
++		return new GUIComponent(input, stack.advancedTextureMesh)
+ 	}
+ 
+-	createGridSizeHint() {
++	createGridSizeHint(stack: GUIComponent<GUI.StackPanel>) {
+ 		// Container
+ 		const text = new TextComponent('50px', '500px', 'white', ALERT_COLOR, 34)
+ 
+-		const plane = BABYLON.MeshBuilder.CreatePlane('grid-size-plane', {
+-			size: 1,
+-		})
+-		// plane.parent = this.camera
+-		plane.position.z = -0.1
+-		plane.position.y = 1.035
+-		plane.position.x = 0.8
++		stack.component.addControl(text.container)
+ 
+-		const advancedTexture = GUI.AdvancedDynamicTexture.CreateForMesh(plane)
+-		advancedTexture.addControl(text.container)
+-
+-		return new GUIComponent(text, plane)
++		return new GUIComponent(text, stack.advancedTextureMesh)
+ 	}
+ 
+ 	validateGridSize(value: number): boolean {
+@@ -191,13 +188,16 @@ export default class GameCreationFormGUI {
+ 		keyboard.connect(this.gridSizeInput.component)
+ 	}
+ 
+-	createStartButton(onSumbit: Function): GUIComponent<GUI.Button> {
++	createStartButton(
++		stack: GUIComponent<GUI.StackPanel>,
++		onSumbit: Function
++	): GUIComponent<GUI.Button> {
+ 		const button = GUI.Button.CreateSimpleButton(
+ 			'start-button',
+ 			'   Start game   '
+ 		)
+-		button.height = '100px'
+-		button.width = '400px'
++		button.height = '80px'
++		button.width = '360px'
+ 		button.fontSize = 44
+ 		button.background = ACCENT_COLOR
+ 
+@@ -207,18 +207,9 @@ export default class GameCreationFormGUI {
+ 			onSumbit()
+ 		})
+ 
+-		const plane = BABYLON.MeshBuilder.CreatePlane('start-button-plane', {
+-			size: 1,
+-		})
+-		// plane.parent = this.camera
+-		plane.position.z = -0.1
+-		plane.position.y = 0.96
+-		plane.position.x = 0.8
+-
+-		const advancedTexture = GUI.AdvancedDynamicTexture.CreateForMesh(plane)
+-		advancedTexture.addControl(button)
++		stack.component.addControl(button)
+ 
+-		return new GUIComponent(button, plane)
++		return new GUIComponent(button, stack.advancedTextureMesh)
+ 	}
+ 
+ 	delete() {"
+Dominux/DGS,40,eac1f510013bbf9bc5d41e4821fa4a715f34460b,frontend/src/gui/select_menu.ts,modified,20,0,20,"@@ -9,6 +9,7 @@ export default class SelectComponent {
+ 	readonly button: GUI.Button
+ 	public selected?
+ 	public selectedValue?
++	protected stackSize = 0
+ 	protected onSelect?: Function
+ 
+ 	constructor(
+@@ -22,6 +23,7 @@ export default class SelectComponent {
+ 	) {
+ 		// Container
+ 		this.container = new GUI.Container()
++		this.container.height = this.height
+ 		this.container.width = this.width
+ 		this.container.verticalAlignment = GUI.Control.VERTICAL_ALIGNMENT_TOP
+ 		this.container.isHitTestVisible = false
+@@ -46,6 +48,9 @@ export default class SelectComponent {
+ 
+ 		this.button.onPointerUpObservable.add(() => {
+ 			this.options.isVisible = !this.options.isVisible
++
++			// Adjusting container size
++			this.options.isVisible ? this.onOpenMenu() : this.onCloseMenu()
+ 		})
+ 
+ 		// add controls
+@@ -72,16 +77,31 @@ export default class SelectComponent {
+ 			this.selected = button
+ 			this.selectedValue = value
+ 
++			this.onCloseMenu()
++
+ 			if (this.onSelect !== undefined) this.onSelect(this.selectedValue)
+ 		})
+ 
++		this.stackSize += parseFloat(this.height)
++
+ 		this.options.addControl(button)
+ 	}
+ 
+ 	onSelectRegister(func: Function) {
+ 		this.onSelect = func
+ 	}
+ 
++	onOpenMenu() {
++		this.container.height = `${
++			parseFloat(this.container.height) + this.stackSize
++		}px`
++	}
++	onCloseMenu() {
++		this.container.height = `${
++			parseFloat(this.container.height) - this.stackSize
++		}px`
++	}
++
+ 	/////////////////////////////////////////
+ 	////  Descriptors
+ 	/////////////////////////////////////////"
+Dominux/DGS,40,eac1f510013bbf9bc5d41e4821fa4a715f34460b,frontend/src/logic/fields/grid_sphere.ts,modified,6,2,8,"@@ -227,11 +227,15 @@ export default class GridSphere implements Field {
+ 			throw error
+ 		}
+ 
++		// Adjusting position a bit
++		const position = this.activePoint
++		position.y += 1
++
+ 		const stoneSchema = {
+ 			id: this.activePointID,
+ 			position: this.activePoint,
+ 			color,
+-			rotation: this.getStoneRotation(this.activePoint),
++			rotation: this.getStoneRotation(position),
+ 		}
+ 
+ 		this.stoneManager.create(stoneSchema)
+@@ -261,7 +265,7 @@ export default class GridSphere implements Field {
+ 	}
+ 
+ 	protected getStoneRotation(position: BABYLON.Vector3): BABYLON.Vector3 {
+-		const path = new BABYLON.Path3D([new BABYLON.Vector3(0, 0, 0), position])
++		const path = new BABYLON.Path3D([new BABYLON.Vector3(0, 1, 0), position])
+ 		return BABYLON.Vector3.RotationFromAxis(
+ 			path.getBinormalAt(0),
+ 			path.getTangentAt(0),"
+Dominux/DGS,40,eac1f510013bbf9bc5d41e4821fa4a715f34460b,frontend/src/logic/fields/regular.ts,modified,1,3,4,"@@ -98,9 +98,7 @@ export default class RegularField implements Field {
+ 		this.stoneManager = new StoneManager(scene, gridSize, 1)
+ 
+ 		this.stoneY =
+-			this._field.position.y +
+-			(this.fieldSize * this.fieldHeight) / 2 +
+-			this.stoneManager.height / 2
++			this._field.position.y + (this.fieldSize * this.fieldHeight) / 2
+ 
+ 		// Getting points
+ 		const subtrehand = 0.5"
+Dominux/DGS,40,b8d78b81b0222557c900b7d2a8572056919fe5c2,frontend/src/gui/game_creation_form.ts,modified,4,4,8,"@@ -196,9 +196,9 @@ export default class GameCreationFormGUI {
+ 			'start-button',
+ 			'   Start game   '
+ 		)
+-		button.height = '80px'
+-		button.width = '360px'
+-		button.fontSize = 36
++		button.height = '100px'
++		button.width = '400px'
++		button.fontSize = 44
+ 		button.background = ACCENT_COLOR
+ 
+ 		button.onPointerUpObservable.add(() => {
+@@ -212,7 +212,7 @@ export default class GameCreationFormGUI {
+ 		})
+ 		// plane.parent = this.camera
+ 		plane.position.z = -0.1
+-		plane.position.y = 0.9
++		plane.position.y = 0.96
+ 		plane.position.x = 0.8
+ 
+ 		const advancedTexture = GUI.AdvancedDynamicTexture.CreateForMesh(plane)"
+Dominux/DGS,40,b8d78b81b0222557c900b7d2a8572056919fe5c2,frontend/src/gui/index.ts,modified,2,2,4,"@@ -52,8 +52,8 @@ export default class GameGUI {
+ 
+ 		const plane = BABYLON.MeshBuilder.CreatePlane('start-button-plane')
+ 		// plane.parent = this.camera
+-		plane.position.z = -0.2
+-		plane.position.y = 0.5
++		plane.position.z = -0.12
++		plane.position.y = 0.4
+ 		plane.position.x = 0.8
+ 
+ 		const advancedTexture = GUI.AdvancedDynamicTexture.CreateForMesh(plane)"
+Dominux/DGS,40,be141faec5ed5ca9562e3aac0c0b8f246af8131d,frontend/src/constants.ts,modified,1,0,1,"@@ -5,6 +5,7 @@ export const GRID_MATERIAL =
+ 
+ export const MIN_GRIDSIZE = 5
+ export const MAX_GRIDSIZE = 255
++export const INPUTFIELD_LENGTH_IN_SYMBOLS = 12
+ 
+ export const ERROR_MSG_TIMEOUT = 3
+ "
+Dominux/DGS,40,be141faec5ed5ca9562e3aac0c0b8f246af8131d,frontend/src/gui/game_creation_form.ts,modified,8,5,13,"@@ -96,7 +96,7 @@ export default class GameCreationFormGUI {
+ 			size: 1.2,
+ 		})
+ 		// plane.parent = this.camera
+-		plane.position.z = 0.2
++		plane.position.z = -0.1
+ 		plane.position.y = 0.9
+ 		plane.position.x = 0.8
+ 
+@@ -137,7 +137,7 @@ export default class GameCreationFormGUI {
+ 			size: 1,
+ 		})
+ 		// plane.parent = this.camera
+-		plane.position.z = 0.2
++		plane.position.z = -0.1
+ 		plane.position.y = 1.1
+ 		plane.position.x = 0.8
+ 
+@@ -155,7 +155,7 @@ export default class GameCreationFormGUI {
+ 			size: 1,
+ 		})
+ 		// plane.parent = this.camera
+-		plane.position.z = 0.2
++		plane.position.z = -0.1
+ 		plane.position.y = 1.035
+ 		plane.position.x = 0.8
+ 
+@@ -192,7 +192,10 @@ export default class GameCreationFormGUI {
+ 	}
+ 
+ 	createStartButton(onSumbit: Function): GUIComponent<GUI.Button> {
+-		const button = GUI.Button.CreateSimpleButton('start-button', 'Start')
++		const button = GUI.Button.CreateSimpleButton(
++			'start-button',
++			'   Start game   '
++		)
+ 		button.height = '80px'
+ 		button.width = '360px'
+ 		button.fontSize = 36
+@@ -208,7 +211,7 @@ export default class GameCreationFormGUI {
+ 			size: 1,
+ 		})
+ 		// plane.parent = this.camera
+-		plane.position.z = 0.2
++		plane.position.z = -0.1
+ 		plane.position.y = 0.9
+ 		plane.position.x = 0.8
+ "
+Dominux/DGS,40,be141faec5ed5ca9562e3aac0c0b8f246af8131d,frontend/src/gui/index.ts,modified,16,14,30,"@@ -3,13 +3,14 @@ import * as GUI from 'babylonjs-gui'
+ import FieldType from '../logic/fields/enum'
+ import AlertComponent from './alert'
+ import GameCreationFormGUI from './game_creation_form'
++import GUIComponent from './gui_components'
+ import PlayerBarGUI from './player_bar'
+ 
+ export default class GameGUI {
+ 	protected gameCreationForm: GameCreationFormGUI
+ 	protected playerBar: PlayerBarGUI
+ 	protected globalTexture: GUI.AdvancedDynamicTexture
+-	protected virtualKeyboard: GUI.VirtualKeyboard
++	protected virtualKeyboard: GUIComponent<GUI.VirtualKeyboard>
+ 
+ 	protected alert: AlertComponent
+ 
+@@ -28,6 +29,8 @@ export default class GameGUI {
+ 	) {
+ 		this.globalTexture = GUI.AdvancedDynamicTexture.CreateFullscreenUI('gui')
+ 
++		this.virtualKeyboard = this.createVirtualKeyBoard()
++
+ 		this.gameCreationForm = new GameCreationFormGUI(
+ 			camera,
+ 			onChangeFieldType,
+@@ -36,28 +39,27 @@ export default class GameGUI {
+ 			defaultGridSize,
+ 			onSubmit
+ 		)
++		this.gameCreationForm.connectVirtualKeyboard(this.virtualKeyboard.component)
++
+ 		this.playerBar = new PlayerBarGUI(this.camera, onUndo)
+ 
+ 		this.alert = new AlertComponent(this.globalTexture)
+-
+-		this.virtualKeyboard = this.createVirtualKeyBoard(
+-			this.globalTexture,
+-			this.gameCreationForm
+-		)
+ 	}
+ 
+-	createVirtualKeyBoard(
+-		advancedTexture: GUI.AdvancedDynamicTexture,
+-		gameCreationForm: GameCreationFormGUI
+-	): GUI.VirtualKeyboard {
++	createVirtualKeyBoard(): GUIComponent<GUI.VirtualKeyboard> {
+ 		const keyboard = GUI.VirtualKeyboard.CreateDefaultLayout()
+-		keyboard.verticalAlignment = GUI.Control.VERTICAL_ALIGNMENT_BOTTOM
++		keyboard.verticalAlignment = GUI.Control.VERTICAL_ALIGNMENT_TOP
+ 
+-		advancedTexture.addControl(keyboard)
++		const plane = BABYLON.MeshBuilder.CreatePlane('start-button-plane')
++		// plane.parent = this.camera
++		plane.position.z = -0.2
++		plane.position.y = 0.5
++		plane.position.x = 0.8
+ 
+-		gameCreationForm.connectVirtualKeyboard(keyboard)
++		const advancedTexture = GUI.AdvancedDynamicTexture.CreateForMesh(plane)
++		advancedTexture.addControl(keyboard)
+ 
+-		return keyboard
++		return new GUIComponent(keyboard, plane)
+ 	}
+ 
+ 	onStart() {"
+Dominux/DGS,40,0287945e7791155f48633912c6799b757be3b67e,frontend/src/gui/game_creation_form.ts,modified,4,4,8,"@@ -97,7 +97,7 @@ export default class GameCreationFormGUI {
+ 		})
+ 		// plane.parent = this.camera
+ 		plane.position.z = 0.2
+-		plane.position.y = -0.1
++		plane.position.y = 0.9
+ 		plane.position.x = 0.8
+ 
+ 		const advancedTexture = GUI.AdvancedDynamicTexture.CreateForMesh(plane)
+@@ -138,7 +138,7 @@ export default class GameCreationFormGUI {
+ 		})
+ 		// plane.parent = this.camera
+ 		plane.position.z = 0.2
+-		plane.position.y = 0.1
++		plane.position.y = 1.1
+ 		plane.position.x = 0.8
+ 
+ 		const advancedTexture = GUI.AdvancedDynamicTexture.CreateForMesh(plane)
+@@ -156,7 +156,7 @@ export default class GameCreationFormGUI {
+ 		})
+ 		// plane.parent = this.camera
+ 		plane.position.z = 0.2
+-		plane.position.y = 0.035
++		plane.position.y = 1.035
+ 		plane.position.x = 0.8
+ 
+ 		const advancedTexture = GUI.AdvancedDynamicTexture.CreateForMesh(plane)
+@@ -209,7 +209,7 @@ export default class GameCreationFormGUI {
+ 		})
+ 		// plane.parent = this.camera
+ 		plane.position.z = 0.2
+-		plane.position.y = -0.1
++		plane.position.y = 0.9
+ 		plane.position.x = 0.8
+ 
+ 		const advancedTexture = GUI.AdvancedDynamicTexture.CreateForMesh(plane)"
+Dominux/DGS,40,0287945e7791155f48633912c6799b757be3b67e,frontend/src/gui/player_bar.ts,modified,3,3,6,"@@ -13,8 +13,8 @@ export default class PlayerBarGUI {
+ 	}
+ 
+ 	constructor(readonly camera: BABYLON.Camera, onUndo: Function) {
+-		this.blackScore = this.createScoreComponent('black', 0.5)
+-		this.whiteScore = this.createScoreComponent('white', 0.4)
++		this.blackScore = this.createScoreComponent('black', 1.5)
++		this.whiteScore = this.createScoreComponent('white', 1.4)
+ 		this.undoButton = this.createUndoButton(onUndo)
+ 	}
+ 
+@@ -43,7 +43,7 @@ export default class PlayerBarGUI {
+ 		})
+ 
+ 		const plane = BABYLON.MeshBuilder.CreatePlane(null)
+-		plane.position.y = 0.3
++		plane.position.y = 1.3
+ 		plane.position.x = 0.8
+ 		plane.isVisible = false
+ "
+Dominux/DGS,40,0287945e7791155f48633912c6799b757be3b67e,frontend/src/logic/fields/grid_sphere.ts,modified,1,0,1,"@@ -32,6 +32,7 @@ export default class GridSphere implements Field {
+ 			{ diameter: this.sphereRadius * 2, segments: 32 },
+ 			scene
+ 		)
++		this._sphere.position.y = 1
+ 
+ 		this.stoneManager = new StoneManager(scene, gridSize, this.sphereRadius)
+ "
+Dominux/DGS,40,0287945e7791155f48633912c6799b757be3b67e,frontend/src/logic/fields/regular.ts,modified,1,1,2,"@@ -92,7 +92,7 @@ export default class RegularField implements Field {
+ 			depth: this.fieldSize,
+ 			faceUV: faceUV,
+ 		})
+-		this._field.position.y = this.fieldHeight
++		this._field.position.y = this.fieldHeight + 1
+ 		this._field.material = mat
+ 
+ 		this.stoneManager = new StoneManager(scene, gridSize, 1)"
+Dominux/DGS,40,0287945e7791155f48633912c6799b757be3b67e,frontend/src/logic/scene.ts,modified,3,2,5,"@@ -18,7 +18,8 @@ export default class Scene {
+ 			height: 30,
+ 			width: 30,
+ 		})
+-		this._ground.position.y = -1
++		// this._ground.position.y = -1
++		this._ground.material = new BABYLON.PBRMetallicRoughnessMaterial('ground')
+ 		// TEMPORAL
+ 		// this._ground.setEnabled(false)
+ 
+@@ -30,7 +31,7 @@ export default class Scene {
+ 			-Math.PI / 2,
+ 			Math.PI / 2,
+ 			sphereRadius * 4,
+-			new BABYLON.Vector3(0, 0, 0),
++			new BABYLON.Vector3(0, 1, 0),
+ 			this._scene
+ 		)
+ 		this._camera.attachControl(canvas, true)"
+Dominux/DGS,40,65a51f6826df58d2f5a2d8e98e42450504544d48,frontend/src/gui/game_creation_form.ts,modified,1,0,1,"@@ -117,6 +117,7 @@ export default class GameCreationFormGUI {
+ 		input.color = 'black'
+ 		input.background = 'white'
+ 		input.focusedBackground = ACCENT_COLOR
++		input.disableMobilePrompt = true
+ 
+ 		// Enabling only digits
+ 		input.onBeforeKeyAddObservable.add((input) => {"
+Dominux/DGS,40,65a51f6826df58d2f5a2d8e98e42450504544d48,frontend/src/logic/scene.ts,modified,3,2,5,"@@ -18,8 +18,9 @@ export default class Scene {
+ 			height: 30,
+ 			width: 30,
+ 		})
+-		this._ground.position.y = -0.5
+-		this._ground.setEnabled(false)
++		this._ground.position.y = -1
++		// TEMPORAL
++		// this._ground.setEnabled(false)
+ 
+ 		// Loading environment
+ 		this.loadEnv()"
+Dominux/DGS,40,d0f496d7d2d7cb673343dfeda9501f5682e3f65d,frontend/src/gui/game_creation_form.ts,modified,4,0,4,"@@ -186,6 +186,10 @@ export default class GameCreationFormGUI {
+ 		return true
+ 	}
+ 
++	connectVirtualKeyboard(keyboard: GUI.VirtualKeyboard) {
++		keyboard.connect(this.gridSizeInput.component)
++	}
++
+ 	createStartButton(onSumbit: Function): GUIComponent<GUI.Button> {
+ 		const button = GUI.Button.CreateSimpleButton('start-button', 'Start')
+ 		button.height = '80px'"
+Dominux/DGS,40,d0f496d7d2d7cb673343dfeda9501f5682e3f65d,frontend/src/gui/index.ts,modified,20,0,20,"@@ -9,6 +9,7 @@ export default class GameGUI {
+ 	protected gameCreationForm: GameCreationFormGUI
+ 	protected playerBar: PlayerBarGUI
+ 	protected globalTexture: GUI.AdvancedDynamicTexture
++	protected virtualKeyboard: GUI.VirtualKeyboard
+ 
+ 	protected alert: AlertComponent
+ 
+@@ -38,6 +39,25 @@ export default class GameGUI {
+ 		this.playerBar = new PlayerBarGUI(this.camera, onUndo)
+ 
+ 		this.alert = new AlertComponent(this.globalTexture)
++
++		this.virtualKeyboard = this.createVirtualKeyBoard(
++			this.globalTexture,
++			this.gameCreationForm
++		)
++	}
++
++	createVirtualKeyBoard(
++		advancedTexture: GUI.AdvancedDynamicTexture,
++		gameCreationForm: GameCreationFormGUI
++	): GUI.VirtualKeyboard {
++		const keyboard = GUI.VirtualKeyboard.CreateDefaultLayout()
++		keyboard.verticalAlignment = GUI.Control.VERTICAL_ALIGNMENT_BOTTOM
++
++		advancedTexture.addControl(keyboard)
++
++		gameCreationForm.connectVirtualKeyboard(keyboard)
++
++		return keyboard
+ 	}
+ 
+ 	onStart() {"
+Dominux/DGS,40,d0f496d7d2d7cb673343dfeda9501f5682e3f65d,frontend/src/logic/scene.ts,modified,1,0,1,"@@ -18,6 +18,7 @@ export default class Scene {
+ 			height: 30,
+ 			width: 30,
+ 		})
++		this._ground.position.y = -0.5
+ 		this._ground.setEnabled(false)
+ 
+ 		// Loading environment"

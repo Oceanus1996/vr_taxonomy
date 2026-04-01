@@ -1,0 +1,165 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch,gpt_bug_detection
+doodlum/skyrim-community-shaders,1501,1cd2640fccbffcbcb5265c93d7c346ed9e8e2599,src/Menu.cpp,modified,1,0,1,"@@ -112,6 +112,7 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(
+ 	SkipCompilationKey,
+ 	EffectToggleKey,
+ 	OverlayToggleKey,
++	FirstTimeSetupCompleted,
+ 	Theme)
+ 
+ bool IsEnabled = false;","{""has_bug"": true, ""bugs"": [{""line_start"": 180, ""line_end"": 180, ""description"": ""Potential null reference issue if settings.Theme is not initialized before accessing FontSize."", ""buggy_code"": ""float fontSize = settings.Theme.FontSize;""}, {""line_start"": 202, ""line_end"": 202, ""description"": ""Possible resource leak if ImGui_ImplDX11_Init fails and does not clean up resources."", ""buggy_code"": ""ImGui_ImplDX11_Init(globals::d3d::device, globals::d3d::context);""}, {""line_start"": 220, ""line_end"": 220, ""description"": ""Incorrect condition check; should ensure VR is initialized before calling EnsureOverlayInitialized."", ""buggy_code"": ""if (globals::features::vr.IsOpenVRCompatible()) {""}, {""line_start"": 246, ""line_end"": 246, ""description"": ""Off-by-one error; NULL should be replaced with nullptr for better type safety in C++."", ""buggy_code"": ""ImGui::DockSpaceOverViewport(NULL, ImGuiDockNodeFlags_PassthruCentralNode);""}]}"
+doodlum/skyrim-community-shaders,1501,1cd2640fccbffcbcb5265c93d7c346ed9e8e2599,src/Menu.h,modified,1,0,1,"@@ -208,6 +208,7 @@ class Menu
+ 		uint32_t SkipCompilationKey = VK_ESCAPE;
+ 		uint32_t EffectToggleKey = VK_MULTIPLY;  // toggle all effects
+ 		uint32_t OverlayToggleKey = VK_F10;      // Global overlay toggle key for all overlays
++		bool FirstTimeSetupCompleted = false;    // Track if first-time setup has been completed
+ 		ThemeSettings Theme;
+ 	};
+ 	const ThemeSettings& GetTheme() const { return settings.Theme; }                // Provide read-only access to the Theme.","{""has_bug"": true, ""bugs"": [{""line_start"": 27, ""line_end"": 27, ""description"": ""Potential race condition with unprotected access to 'initialized' and 'IsEnabled' flags."", ""buggy_code"": ""bool initialized = false;""}, {""line_start"": 70, ""line_end"": 70, ""description"": ""Resource leak if 'Release' is not called before the object is destroyed."", ""buggy_code"": ""void Release()""}, {""line_start"": 214, ""line_end"": 214, ""description"": ""Accessing 'settings' without ensuring it is initialized could lead to undefined behavior."", ""buggy_code"": ""const ThemeSettings& GetTheme() const { return settings.Theme; }""}, {""line_start"": 215, ""line_end"": 215, ""description"": ""Accessing 'settings' without ensuring it is initialized could lead to undefined behavior."", ""buggy_code"": ""Settings& GetSettings() { return settings; }""}]}"
+doodlum/skyrim-community-shaders,1501,1cd2640fccbffcbcb5265c93d7c346ed9e8e2599,src/Menu/HomePageRenderer.cpp,modified,10,70,80,"@@ -1,25 +1,15 @@
+ #include ""HomePageRenderer.h""
+ #include ""PCH.h""
+ 
+-#include <filesystem>
+-#include <format>
+-#include <fstream>
+ #include <imgui.h>
+-#include <nlohmann/json.hpp>
+-#include <ranges>
+-#include <sstream>
+ 
+-#include ""Feature.h""
+ #include ""Globals.h""
+ #include ""Menu.h""
+ #include ""Menu/ThemeManager.h""
+ #include ""Plugin.h""
+-#include ""SettingsOverrideManager.h""
+ #include ""State.h""
+ #include ""Util.h""
+ 
+-using json = nlohmann::json;
+-
+ // Static member definitions
+ bool HomePageRenderer::isFirstTimeSetupShown = false;
+ 
+@@ -427,8 +417,8 @@ void HomePageRenderer::RenderFirstTimeSetupDialog()
+ 	bool shouldClose = ImGui::IsKeyPressed(ImGuiKey_Enter) || ImGui::IsKeyPressed(ImGuiKey_Escape);
+ 
+ 	if (ImGui::Button(""Continue"", ImVec2(continueButtonWidth, 30)) || shouldClose) {
+-		// No need to apply any hotkey - user has already set it or it defaults to VK_END
+ 		MarkFirstTimeSetupComplete();
++		// Note: Settings are automatically saved to ensure welcome screen won't show again
+ 	}
+ 
+ 	// Center the help text
+@@ -453,70 +443,20 @@ bool HomePageRenderer::ShouldShowFirstTimeSetup()
+ 		return false;
+ 	}
+ 
+-	// Check if first-time setup has been completed by looking at SettingsUser.json
+-	std::filesystem::path userSettingsPath = Util::PathHelpers::GetUserSettingsPath();
+-
+-	// If SettingsUser.json doesn't exist at all, this is definitely a first-time launch
+-	if (!std::filesystem::exists(userSettingsPath)) {
+-		return true;
+-	}
+-
+-	// If SettingsUser.json exists, check if FirstTimeSetupCompleted flag is set
+-	try {
+-		std::ifstream file(userSettingsPath);
+-		if (!file.is_open()) {
+-			return true;  // If we can't read the file, assume first time
+-		}
+-
+-		nlohmann::json settings;
+-		file >> settings;
+-		file.close();
+-
+-		// Check if FirstTimeSetupCompleted exists and is true
+-		if (settings.contains(""FirstTimeSetupCompleted"") &&
+-			settings[""FirstTimeSetupCompleted""].is_boolean() &&
+-			settings[""FirstTimeSetupCompleted""] == true) {
+-			return false;  // Setup already completed
+-		}
+-
+-		return true;  // Field doesn't exist or is false, show setup
+-
+-	} catch (const std::exception&) {
+-		// If there's any error reading the file, assume first time
+-		return true;
+-	}
++	// Check if first-time setup has been completed using the Menu settings
++	auto menu = Menu::GetSingleton();
++	return !menu->GetSettings().FirstTimeSetupCompleted;
+ }
+ 
+ void HomePageRenderer::MarkFirstTimeSetupComplete()
+ {
+-	std::filesystem::path userSettingsPath = Util::PathHelpers::GetUserSettingsPath();
+-
+-	try {
+-		nlohmann::json settings;
+-
+-		// Read existing settings if file exists
+-		if (std::filesystem::exists(userSettingsPath)) {
+-			std::ifstream file(userSettingsPath);
+-			if (file.is_open()) {
+-				file >> settings;
+-				file.close();
+-			}
+-		}
+-
+-		// Set the FirstTimeSetupCompleted flag
+-		settings[""FirstTimeSetupCompleted""] = true;
+-
+-		// Write back to file
+-		std::filesystem::create_directories(userSettingsPath.parent_path());
+-		std::ofstream outFile(userSettingsPath);
+-		if (outFile.is_open()) {
+-			outFile << settings.dump(2);
+-			outFile.close();
+-		}
++	// Set the flag in the Menu settings
++	auto menu = Menu::GetSingleton();
++	menu->GetSettings().FirstTimeSetupCompleted = true;
+ 
+-	} catch (const std::exception&) {
+-		// If we can't write the file, just mark as shown this session to avoid repeated popups
+-	}
++	// Immediately save settings to ensure the flag is persisted
++	// This prevents the welcome screen from showing again even if user doesn't manually save
++	globals::state->Save();
+ 
+ 	isFirstTimeSetupShown = true;  // Mark as shown this session
+ }","{""has_bug"": true, ""bugs"": [{""line_start"": 202, ""line_end"": 202, ""description"": ""Incomplete function implementation leading to potential undefined behavior."", ""buggy_code"": ""if (ImGui::CollapsingHeader(\""How do I im""}]}"
+doodlum/skyrim-community-shaders,1501,1cd2640fccbffcbcb5265c93d7c346ed9e8e2599,src/Menu/HomePageRenderer.h,modified,0,1,1,"@@ -1,6 +1,5 @@
+ #pragma once
+ 
+-#include <functional>
+ #include <string>
+ 
+ class HomePageRenderer","{""has_bug"": false, ""bugs"": []}"
+doodlum/skyrim-community-shaders,1501,1cd2640fccbffcbcb5265c93d7c346ed9e8e2599,src/Utils/FileSystem.cpp,modified,0,5,5,"@@ -38,11 +38,6 @@ namespace Util
+ 			return GetDataPath() / ""SKSE"" / ""Plugins"" / ""CommunityShaders_ImGui.ini"";
+ 		}
+ 
+-		std::filesystem::path GetUserSettingsPath()
+-		{
+-			return GetCommunityShaderPath() / ""SettingsUser.json"";
+-		}
+-
+ 		std::filesystem::path GetInterfacePath()
+ 		{
+ 			return GetDataPath() / ""Interface"" / ""CommunityShaders"";","{""has_bug"": true, ""bugs"": [{""line_start"": 182, ""line_end"": 182, ""description"": ""Potential null reference issue if userPath or testPath does not exist, leading to undefined behavior later in the code."", ""buggy_code"": ""if (!std::filesystem::exists(userPath) || !std::filesystem::exists(testPath))""}, {""line_start"": 189, ""line_end"": 189, ""description"": ""If the files cannot be opened, the function returns an empty vector, which may not be the intended behavior if further processing is expected."", ""buggy_code"": ""if (!userFile.is_open() || !testFile.is_open())""}, {""line_start"": 205, ""line_end"": 205, ""description"": ""Using json_pointer with a path that does not exist in userJson could throw an exception, leading to potential crashes."", ""buggy_code"": ""aVal = userJson.at(nlohmann::json::json_pointer(path)).dump();""}, {""line_start"": 206, ""line_end"": 206, ""description"": ""Using json_pointer with a path that does not exist in testJson could throw an exception, leading to potential crashes."", ""buggy_code"": ""bVal = testJson.at(nlohmann::json::json_pointer(path)).dump();""}, {""line_start"": 211, ""line_end"": 211, ""description"": ""Using json_pointer with a path that does not exist in userJson could throw an exception, leading to potential crashes."", ""buggy_code"": ""aVal = userJson.at(nlohmann::json::json_pointer(path)).dump();""}]}"
+doodlum/skyrim-community-shaders,1501,1cd2640fccbffcbcb5265c93d7c346ed9e8e2599,src/Utils/FileSystem.h,modified,0,6,6,"@@ -44,12 +44,6 @@ namespace Util
+ 		 */
+ 		std::filesystem::path GetImGuiIniPath();
+ 
+-		/**
+-		 * Gets the SettingsUser.json file path
+-		 * @return CommunityShaderPath / ""SettingsUser.json""
+-		 */
+-		std::filesystem::path GetUserSettingsPath();
+-
+ 		/**
+ 		 * Gets the CommunityShaders Interface directory path
+ 		 * @return Data / ""Interface"" / ""CommunityShaders""","{""has_bug"": true, ""bugs"": [{""line_start"": 185, ""line_end"": 185, ""description"": ""Potential type mismatch: The extension check is using a wide string literal (L\"".dll\"") instead of a regular string. This may cause issues on platforms where std::filesystem::path uses narrow strings."", ""buggy_code"": ""if (entry.is_regular_file() && entry.path().extension() == L\"".dll\"")""}, {""line_start"": 187, ""line_end"": 187, ""description"": ""Possible null reference issue: The function Util::GetDllVersion(path.c_str()) may return a null pointer, which is not checked before dereferencing it in the next line."", ""buggy_code"": ""auto version = Util::GetDllVersion(path.c_str());""}]}"

@@ -1,0 +1,99 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+knah/VRCMods,155,e41162b81f3421b43ebdbe09bbdec9bdb387e000,IKTweaks/CalibrationManager.cs,modified,10,2,12,"@@ -188,11 +188,11 @@ private static async Task ApplyStoredCalibration(GameObject avatarRoot, string a
+ 
+                 if (bestTracker == null)
+                 {
+-                    MelonLogger.Msg($""Null target for tracker {data.TrackerSerial}"");
++                    MelonDebug.Msg($""Null target for tracker {data.TrackerSerial}"");
+                     return null;
+                 }
+ 
+-                MelonLogger.Msg($""Found tracker with serial {data.TrackerSerial} for point {point}"");
++                MelonDebug.Msg($""Found tracker with serial {data.TrackerSerial} for point {point}"");
+ 
+                 var result = bestTracker;
+ 
+@@ -244,6 +244,9 @@ Transform MakeHandTarget(Quaternion localRotation, Transform parent, bool isLeft
+             vrik.solver.leftLeg.target = leftFoot;
+             vrik.solver.rightLeg.target = rightFoot;
+ 
++            // reset ForwardDirection to where it belongs - VRC loves to set it to something weird
++            avatarRoot.transform.parent.localPosition = Vector3.zero;
++
+             MelonLogger.Msg(""Applied stored calibration"");
+         }
+ 
+@@ -325,6 +328,8 @@ private static async Task CalibrateCore(GameObject avatarRoot)
+             var avatarId = avatarRoot.GetComponent<PipelineManager>().blueprintId;
+             if (IkTweaksSettings.CalibrateStorePerAvatar.Value && HasSavedCalibration(avatarId))
+             {
++                // wait same three frames as universal calibration would - this *should* let VRC do whatever avatar root move logic that it does without IK interfering
++                for (var i = 0; i < 3; i++) await IKTweaksMod.AwaitVeryLateUpdate();
+                 await ApplyStoredCalibration(avatarRoot, avatarId);
+                 return;
+             }
+@@ -348,6 +353,8 @@ internal static void ModifyStoredHandAnglesAndApply(Vector3 oldAngleOffset, Vect
+             var rightHandOffset = Quaternion.Euler(newAngleOffset) * Quaternion.Inverse(Quaternion.Euler(oldAngleOffset));
+             oldAngleOffset.y *= -1;
+             newAngleOffset.y *= -1;
++            oldAngleOffset.z *= -1;
++            newAngleOffset.z *= -1;
+             var leftHandOffset = Quaternion.Euler(newAngleOffset) * Quaternion.Inverse(Quaternion.Euler(oldAngleOffset));
+             
+             foreach (var keyValuePair in SavedAvatars)
+@@ -666,6 +673,7 @@ void StoreBendGoal(CalibrationPoint point, (Transform tracker, Transform bone)?
+             var handAngleOffset = IkTweaksSettings.HandAngleOffset.Value;
+             var leftHandOffset = handAngleOffset;
+             leftHandOffset.y *= -1;
++            leftHandOffset.z *= -1;
+             
+             StoreHand(leftHandOffset, HumanBodyBones.LeftHand, CalibrationPoint.LeftHand);
+             StoreHand(handAngleOffset, HumanBodyBones.RightHand, CalibrationPoint.RightHand);"
+knah/VRCMods,155,e41162b81f3421b43ebdbe09bbdec9bdb387e000,IKTweaks/IKTweaks.csproj,modified,1,1,2,"@@ -4,7 +4,7 @@
+     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+     <LangVersion>latest</LangVersion>
+     <VrcReferences>true</VrcReferences>
+-    <AssemblyVersion>1.0.18</AssemblyVersion>
++    <AssemblyVersion>1.0.19</AssemblyVersion>
+   </PropertyGroup>
+   <ItemGroup>
+     <None Remove=""iktweaks"" />"
+knah/VRCMods,155,e41162b81f3421b43ebdbe09bbdec9bdb387e000,IKTweaks/IKTweaksMod.cs,modified,2,2,4,"@@ -19,7 +19,7 @@
+ using Delegate = Il2CppSystem.Delegate;
+ using Object = UnityEngine.Object;
+ 
+-[assembly:MelonInfo(typeof(IKTweaksMod), ""IKTweaks"", ""1.0.18"", ""knah"", ""https://github.com/knah/VRCMods"")]
++[assembly:MelonInfo(typeof(IKTweaksMod), ""IKTweaks"", ""1.0.19"", ""knah"", ""https://github.com/knah/VRCMods"")]
+ [assembly:MelonGame(""VRChat"", ""VRChat"")]
+ [assembly:MelonOptionalDependencies(""UIExpansionKit"")]
+ 
+@@ -244,7 +244,7 @@ public void OnUiManagerInit()
+                     if (IkTweaksSettings.CalibrateUseUniversal.Value)
+                         CalibrationManager.Clear();
+                     else
+-                        CalibrationManager.Clear(VRCPlayer.field_Internal_Static_VRCPlayer_0.prop_VRCAvatarManager_0.field_Private_ApiAvatar_1.id);
++                        CalibrationManager.Clear(VRCPlayer.field_Internal_Static_VRCPlayer_0.prop_VRCAvatarManager_0.field_Private_ApiAvatar_0.id);
+                 }
+ 
+                 oldCalibrate.Invoke();"
+knah/VRCMods,155,e41162b81f3421b43ebdbe09bbdec9bdb387e000,IKTweaks/IkTweaksSettings.cs,modified,1,1,2,"@@ -9,7 +9,7 @@ public static class IkTweaksSettings
+     {
+         internal const string IkTweaksCategory = ""IkTweaks"";
+ 
+-        internal static Vector3 DefaultHandAngle = new(0, -115, 0);
++        internal static Vector3 DefaultHandAngle = new(0, -105, 0);
+         internal static Vector3 DefaultHandOffset = new(0.015f, -0.005f, 0);
+         
+ "
+knah/VRCMods,155,e41162b81f3421b43ebdbe09bbdec9bdb387e000,ReleaseChangelog.md,modified,5,0,5,"@@ -11,5 +11,10 @@ Changes:
+  * CameraMinus: allow zooming in further (up to 1 degree FoV on the camera, previously was 10 degrees)
+  * JoinNotifier: added an option to log joins/leaves to console (partially contributed by @Bluscream)
+  * Lag Free Screenshots: fixed MSAA not being applied to screenshots
++ * IKTweaks: fixed calibrate button doing nothing if universal calibration was not enabled
++ * IKTweaks: fixed hand rotation offset not being mirrored on Z axis
++ * IKTweaks: fixed floor level being wrong after re-applying stored calibration (this would usually affect dynamic bones with floor colliders)
++ * IKTweaks: changed default hand angle a bit more
++
+ 
+ **USE IT AT YOUR OWN RISK.** Modding the client is against VRChat ToS. I am not responsible for any bans or other punishments you may get by using these mods!
+\ No newline at end of file"

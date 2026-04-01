@@ -1,0 +1,194 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe,744,1dc345ceac96c95c43169d94819bc86adc311968,examples/test-panoexplorer/images/cubes.jpg,added,0,0,0,
+aframevr/aframe,744,1dc345ceac96c95c43169d94819bc86adc311968,examples/test-panoexplorer/index.html,modified,35,31,66,"@@ -7,41 +7,45 @@
+     <script src=""../../dist/aframe.js""></script>
+   </head>
+   <body>
+-    <a-asset>
+-      <a-mixin id=""link""
+-               geometry=""primitive: plane; width: 1.0; height: 1.0"">
+-      </a-mixin>
+-      <a-mixin id=""link-hovered"" geometry=""primitive: plane; width: 1.2;
+-                                           height: 1.2"">
+-      </a-mixin>
+-      <!-- Sound from http://www.freesound.org/people/NenadSimic/sounds/171697/ -->
+-      <a-mixin id=""link-selected"" geometry=""primitive: plane;
+-                                            width: 1.4; height: 1.4""
+-              sound=""src: ../_sounds/click.ogg"">
+-      </a-mixin>
+-      <a-mixin id=""cursor"" geometry=""primitive: ring; radiusOuter: 0.20; radiusInner: 0.14""
+-               material=""color: gray"" cursor></a-mixin>
+-      <a-mixin id=""cursor-hovering"" material=""color: springgreen""></a-mixin>
+-      <a-mixin id=""click-animation"" begin=""click"" easing=""ease-in"" attribute=""scale""
+-               fill=""backwards"" from=""0.1 0.1 0.1"" to=""1 1 1"" dur=""150""></a-animation>
+-      <a-mixin id=""fuse-animation"" begin=""fusing"" easing=""ease-in"" attribute=""scale""
+-               fill=""forwards"" from=""1 1 1"" to=""0.1 0.1 0.1"" dur=""1500""></a-mixin>
+-    </a-asset>
+     <a-scene stats=""true"">
++      <a-assets>
++        <img id=""city"" src=""images/city.jpg"">
++        <img id=""city-thumb"" src=""images/thumb-city.png"">
++        <img id=""cubes"" src=""images/cubes.jpg"">
++        <img id=""cubes-thumb"" src=""images/thumb-cubes.png"">
++        <img id=""sechelt"" src=""images/sechelt.jpg"">
++        <img id=""sechelt-thumb"" src=""images/thumb-sechelt.png"">
+ 
+-      <!-- Controls -->
++        <a-mixin id=""link"" geometry=""primitive: plane; width: 1.0; height: 1.0"">
++        </a-mixin>
++        <a-mixin id=""link-hovered"" geometry=""primitive: plane; width: 1.2; height: 1.2"">
++        </a-mixin>
++        <!-- Sound from http://www.freesound.org/people/NenadSimic/sounds/171697/ -->
++        <a-mixin id=""link-selected"" geometry=""primitive: plane; width: 1.4; height: 1.4""
++                 sound=""src: ../_sounds/click.ogg"">
++        </a-mixin>
++        <a-mixin id=""cursor"" geometry=""primitive: ring; radiusOuter: 0.20; radiusInner: 0.14""
++                 material=""color: gray"" cursor></a-mixin>
++        <a-mixin id=""cursor-hovering"" material=""color: springgreen""></a-mixin>
++        <a-mixin id=""click-animation"" begin=""click"" easing=""ease-in"" attribute=""scale""
++                 fill=""backwards"" from=""0.1 0.1 0.1"" to=""1 1 1"" dur=""150""></a-animation>
++        <a-mixin id=""fuse-animation"" begin=""fusing"" easing=""ease-in"" attribute=""scale""
++                 fill=""forwards"" from=""1 1 1"" to=""0.1 0.1 0.1"" dur=""1500""></a-mixin>
++      </a-assets>
++
++      <!-- Camera + Cursor. -->
+       <a-entity camera look-controls>
+         <a-entity mixin=""cursor"" position=""0 0 -3"">
+           <a-animation mixin=""click-animation""></a-animation>
+           <a-animation mixin=""fuse-animation""></a-animation>
+         </a-entity>
+       </a-entity>
+ 
+-      <!-- Pano -->
++      <!-- Pano. -->
+       <a-entity id=""holder"" geometry=""primitive: sphere; radius: 10;""
+                 material=""shader: flat"" scale=""1 1 -1""></a-entity>
+ 
+-      <!-- Links to panos -->
++      <!-- Pano links. -->
+       <a-entity id=""links"" position=""-1.5 -1 -4""></a-entity>
+     </a-scene>
+ 
+@@ -51,18 +55,18 @@
+         var panos = [
+           {
+             'title': 'Cubes',
+-            'thumb': 'images/thumb-cubes.png',
+-            'url': 'images/cubes.jpg'
++            'thumb': '#cubes-thumb',
++            'url': '#cubes'
+           },
+           {
+             'title': 'City',
+-            'thumb': 'images/thumb-city.png',
+-            'url': 'images/city.jpg'
++            'thumb': '#city-thumb',
++            'url': '#city'
+           },
+           {
+             'title': 'Sechelt',
+-            'thumb': 'images/thumb-sechelt.png',
+-            'url': 'images/sechelt.jpg'
++            'thumb': '#sechelt-thumb',
++            'url': '#sechelt'
+           }
+         ];
+ 
+@@ -82,7 +86,7 @@
+           el.dataset.id = idx;
+           el.setAttribute('position', {x: xPos});
+           el.setAttribute('mixin', 'link');
+-          el.setAttribute('material', {src: 'url(' + pano.thumb + ')'});
++          el.setAttribute('material', {src: pano.thumb});
+           panos[idx].el = el;
+ 
+           // When a link is clicked, change the displayed pano by changing the
+@@ -112,7 +116,7 @@
+           if (selectedLinkEl) { selectedLinkEl.removeState('selected'); }
+           holder.setAttribute('material', {
+             shader: 'flat',
+-            src: 'url(' + pano.url  + ')'
++            src: pano.url
+           });
+           selectedLinkEl = linkEL;
+           selectedLinkEl.addState('selected');"
+aframevr/aframe,744,05255a2af3dc8cf1be0fd14e7fdb6298b1e8934a,src/components/camera.js,modified,1,0,1,"@@ -15,6 +15,7 @@ module.exports.Component = registerComponent('camera', {
+   init: function () {
+     var camera = this.camera = new THREE.PerspectiveCamera();
+     var el = this.el;
++    camera.el = el;
+     el.object3D.add(camera);
+     el.sceneEl.registerCamera(el);
+   },"
+aframevr/aframe,744,05255a2af3dc8cf1be0fd14e7fdb6298b1e8934a,src/components/light.js,modified,16,15,31,"@@ -53,21 +53,10 @@ module.exports.Component = registerComponent('light', {
+   update: function (oldData) {
+     var data = this.data;
+     var diffData = diff(data, oldData || {});
+-    var el = this.el;
+     var light = this.light;
+ 
+     // Existing light.
+-    if (light) {
+-      // Light type has changed. Recreate light.
+-      if ('type' in diffData) {
+-        var newLight = getLight(data);
+-        if (newLight) {
+-          el.object3D.remove(light);
+-          el.object3D.add(newLight);
+-          this.light = newLight;
+-        }
+-        return;
+-      }
++    if (light && !('type' in diffData)) {
+       // Light type has not changed. Update light.
+       Object.keys(diffData).forEach(function (key) {
+         var value = data[key];
+@@ -79,9 +68,21 @@ module.exports.Component = registerComponent('light', {
+       return;
+     }
+ 
+-    // No light yet. Create and add light.
+-    this.light = getLight(data);
+-    if (this.light) {
++    // No light yet or light type has changed. Create and add light.
++    this.setLight(this.data);
++  },
++
++  setLight: function (data) {
++    var el = this.el;
++
++    var newLight = getLight(data);
++    if (newLight) {
++      if (this.light) {
++        el.object3D.remove(this.light);
++      }
++
++      this.light = newLight;
++      this.light.el = el;
+       el.object3D.add(this.light);
+     }
+   },"
+aframevr/aframe,744,05255a2af3dc8cf1be0fd14e7fdb6298b1e8934a,tests/components/light.test.js,modified,19,0,19,"@@ -86,4 +86,23 @@ suite('light', function () {
+       assert.equal(el.object3D.children.length, 0);
+     });
+   });
++
++  suite('setLight', function () {
++    test('set a light with incorrect data', function () {
++      var el = this.el;
++      var oldLight = this.el.components.light.light;
++
++      el.components.light.setLight({type: 'nonvalidtype'});
++      assert.equal(oldLight, el.components.light.light);
++    });
++
++    test('set a light with correct data', function () {
++      var el = this.el;
++      var oldLight = this.el.components.light.light;
++
++      el.components.light.setLight({type: 'spot'});
++      assert.notEqual(oldLight, el.components.light.light);
++      assert.equal(oldLight.parent, null);
++    });
++  });
+ });"

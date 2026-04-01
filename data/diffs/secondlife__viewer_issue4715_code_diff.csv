@@ -1,0 +1,333 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+secondlife/viewer,4715,45d95d7,indra/llui/lltextbase.cpp,modified,20,0,20,"@@ -185,6 +185,7 @@ LLTextBase::LLTextBase(const LLTextBase::Params &p)
+     mURLClickSignal(NULL),
+     mIsFriendSignal(NULL),
+     mIsObjectBlockedSignal(NULL),
++    mIsObjectReachableSignal(NULL),
+     mMaxTextByteLength( p.max_text_length ),
+     mFont(p.font),
+     mFontShadow(p.font_shadow),
+@@ -290,6 +291,7 @@ LLTextBase::~LLTextBase()
+     delete mURLClickSignal;
+     delete mIsFriendSignal;
+     delete mIsObjectBlockedSignal;
++    delete mIsObjectReachableSignal;
+ }
+ 
+ void LLTextBase::initFromParams(const LLTextBase::Params& p)
+@@ -2281,6 +2283,15 @@ void LLTextBase::createUrlContextMenu(S32 x, S32 y, const std::string &in_url)
+                 unblockButton->setVisible(is_blocked);
+             }
+         }
++
++        if (mIsObjectReachableSignal)
++        {
++            bool is_reachable = *(*mIsObjectReachableSignal)(LLUUID(LLUrlAction::getObjectId(url)));
++            if (LLView* zoom_btn = menu->getChild<LLView>(""zoom_in""))
++            {
++                zoom_btn->setEnabled(is_reachable);
++            }
++        }
+         menu->show(x, y);
+         LLMenuGL::showPopup(this, menu, x, y);
+     }
+@@ -3387,6 +3398,15 @@ boost::signals2::connection LLTextBase::setIsObjectBlockedCallback(const is_bloc
+     return mIsObjectBlockedSignal->connect(cb);
+ }
+ 
++boost::signals2::connection LLTextBase::setIsObjectReachableCallback(const is_obj_reachable_signal_t::slot_type& cb)
++{
++    if (!mIsObjectReachableSignal)
++    {
++        mIsObjectReachableSignal = new is_obj_reachable_signal_t();
++    }
++    return mIsObjectReachableSignal->connect(cb);
++}
++
+ //
+ // LLTextSegment
+ //"
+secondlife/viewer,4715,45d95d7,indra/llui/lltextbase.h,modified,3,0,3,"@@ -325,6 +325,7 @@ class LLTextBase
+ 
+     typedef boost::signals2::signal<bool (const LLUUID& user_id)> is_friend_signal_t;
+     typedef boost::signals2::signal<bool (const LLUUID& blocked_id, const std::string from)> is_blocked_signal_t;
++    typedef boost::signals2::signal<bool (const LLUUID& obj_id)> is_obj_reachable_signal_t;
+ 
+     struct LineSpacingParams : public LLInitParam::ChoiceBlock<LineSpacingParams>
+     {
+@@ -535,6 +536,7 @@ class LLTextBase
+     boost::signals2::connection setURLClickedCallback(const commit_signal_t::slot_type& cb);
+     boost::signals2::connection setIsFriendCallback(const is_friend_signal_t::slot_type& cb);
+     boost::signals2::connection setIsObjectBlockedCallback(const is_blocked_signal_t::slot_type& cb);
++    boost::signals2::connection setIsObjectReachableCallback(const is_obj_reachable_signal_t::slot_type& cb);
+ 
+     void                    setWordWrap(bool wrap);
+     LLScrollContainer*      getScrollContainer() const { return mScroller; }
+@@ -783,6 +785,7 @@ class LLTextBase
+     // Used to check if user with given ID is avatar's friend
+     is_friend_signal_t*         mIsFriendSignal;
+     is_blocked_signal_t*        mIsObjectBlockedSignal;
++    is_obj_reachable_signal_t*  mIsObjectReachableSignal;
+ 
+     LLUIString                  mLabel; // text label that is visible when no user text provided
+ };"
+secondlife/viewer,4715,45d95d7,indra/newview/llchathistory.cpp,modified,7,2,9,"@@ -215,7 +215,8 @@ class LLChatHistoryHeader: public LLPanel
+             LLUUID obj_id = mObjectData[""object_id""];
+             if (obj_id.notNull())
+             {
+-                return nullptr != gObjectList.findObject(mAvatarID);
++                LLViewerObject* object = gObjectList.findObject(obj_id);
++                return object && object->isReachable();
+             }
+             return false;
+         }
+@@ -1118,7 +1119,11 @@ LLChatHistory::LLChatHistory(const LLChatHistory::Params& p)
+     mEditor = LLUICtrlFactory::create<LLTextEditor>(editor_params, this);
+     mEditor->setIsFriendCallback(LLAvatarActions::isFriend);
+     mEditor->setIsObjectBlockedCallback(boost::bind(&LLMuteList::isMuted, LLMuteList::getInstance(), _1, _2, 0));
+-
++    mEditor->setIsObjectReachableCallback([](const LLUUID& obj_id)
++        {
++            LLViewerObject* object = gObjectList.findObject(obj_id);
++            return object && object->isReachable();
++        });
+ }
+ 
+ LLSD LLChatHistory::getValue() const"
+secondlife/viewer,4715,45d95d7,indra/newview/llviewermenu.cpp,modified,1,1,2,"@@ -6516,7 +6516,7 @@ bool handle_zoom_to_object(const LLUUID& object_id)
+ 
+     LLViewerObject* object = gObjectList.findObject(object_id);
+ 
+-    if (object)
++    if (object && object->isReachable())
+     {
+         gAgentCamera.setFocusOnAvatar(false, ANIMATE);
+ "
+secondlife/viewer,4715,45d95d7,indra/newview/llviewerobject.cpp,modified,45,0,45,"@@ -7717,6 +7717,51 @@ void LLViewerObject::clearTEWaterExclusion(const U8 te)
+     }
+ }
+ 
++bool LLViewerObject::isReachable()
++{
++    LLViewerRegion* agent_region = gAgent.getRegion();
++    LLViewerRegion* object_region = getRegion();
++
++    if (!agent_region || !object_region)
++    {
++        return false;
++    }
++    if (agent_region == object_region)
++    {
++        return true;
++    }
++
++    std::unordered_set<LLViewerRegion*> visited;
++    std::queue<LLViewerRegion*> pending;
++    visited.insert(agent_region);
++    pending.push(agent_region);
++
++    while (!pending.empty())
++    {
++        LLViewerRegion* current = pending.front();
++        pending.pop();
++
++        std::vector<LLViewerRegion*> neighbors;
++        current->getNeighboringRegions(neighbors);
++
++        for (LLViewerRegion* neighbor : neighbors)
++        {
++            if (!neighbor) continue;
++
++            if (neighbor == object_region)
++            {
++                return true;
++            }
++            // region's neighbors were not checked
++            if (visited.insert(neighbor).second)
++            {
++                pending.push(neighbor);
++            }
++        }
++    }
++    return false;
++}
++
+ class ObjectPhysicsProperties : public LLHTTPNode
+ {
+ public:"
+secondlife/viewer,4715,45d95d7,indra/newview/llviewerobject.h,modified,3,0,3,"@@ -249,6 +249,9 @@ class LLViewerObject
+     // Accessor functions
+     LLViewerRegion* getRegion() const               { return mRegionp; }
+ 
++    // Check if object is reachable from agent region by traversing loaded neighboring regions
++    bool isReachable();
++
+     bool isSelected() const                         { return mUserSelected; }
+     // Check whole linkset
+     bool isAnySelected() const;"
+secondlife/viewer,4715,d7bd769,indra/llui/lltextbase.cpp,modified,20,0,20,"@@ -185,6 +185,7 @@ LLTextBase::LLTextBase(const LLTextBase::Params &p)
+     mURLClickSignal(NULL),
+     mIsFriendSignal(NULL),
+     mIsObjectBlockedSignal(NULL),
++    mIsObjectReachableSignal(NULL),
+     mMaxTextByteLength( p.max_text_length ),
+     mFont(p.font),
+     mFontShadow(p.font_shadow),
+@@ -290,6 +291,7 @@ LLTextBase::~LLTextBase()
+     delete mURLClickSignal;
+     delete mIsFriendSignal;
+     delete mIsObjectBlockedSignal;
++    delete mIsObjectReachableSignal;
+ }
+ 
+ void LLTextBase::initFromParams(const LLTextBase::Params& p)
+@@ -2281,6 +2283,15 @@ void LLTextBase::createUrlContextMenu(S32 x, S32 y, const std::string &in_url)
+                 unblockButton->setVisible(is_blocked);
+             }
+         }
++
++        if (mIsObjectReachableSignal)
++        {
++            bool is_reachable = *(*mIsObjectReachableSignal)(LLUUID(LLUrlAction::getObjectId(url)));
++            if (LLView* zoom_btn = menu->getChild<LLView>(""zoom_in""))
++            {
++                zoom_btn->setEnabled(is_reachable);
++            }
++        }
+         menu->show(x, y);
+         LLMenuGL::showPopup(this, menu, x, y);
+     }
+@@ -3387,6 +3398,15 @@ boost::signals2::connection LLTextBase::setIsObjectBlockedCallback(const is_bloc
+     return mIsObjectBlockedSignal->connect(cb);
+ }
+ 
++boost::signals2::connection LLTextBase::setIsObjectReachableCallback(const is_obj_reachable_signal_t::slot_type& cb)
++{
++    if (!mIsObjectReachableSignal)
++    {
++        mIsObjectReachableSignal = new is_obj_reachable_signal_t();
++    }
++    return mIsObjectReachableSignal->connect(cb);
++}
++
+ //
+ // LLTextSegment
+ //"
+secondlife/viewer,4715,d7bd769,indra/llui/lltextbase.h,modified,3,0,3,"@@ -325,6 +325,7 @@ class LLTextBase
+ 
+     typedef boost::signals2::signal<bool (const LLUUID& user_id)> is_friend_signal_t;
+     typedef boost::signals2::signal<bool (const LLUUID& blocked_id, const std::string from)> is_blocked_signal_t;
++    typedef boost::signals2::signal<bool (const LLUUID& obj_id)> is_obj_reachable_signal_t;
+ 
+     struct LineSpacingParams : public LLInitParam::ChoiceBlock<LineSpacingParams>
+     {
+@@ -535,6 +536,7 @@ class LLTextBase
+     boost::signals2::connection setURLClickedCallback(const commit_signal_t::slot_type& cb);
+     boost::signals2::connection setIsFriendCallback(const is_friend_signal_t::slot_type& cb);
+     boost::signals2::connection setIsObjectBlockedCallback(const is_blocked_signal_t::slot_type& cb);
++    boost::signals2::connection setIsObjectReachableCallback(const is_obj_reachable_signal_t::slot_type& cb);
+ 
+     void                    setWordWrap(bool wrap);
+     LLScrollContainer*      getScrollContainer() const { return mScroller; }
+@@ -783,6 +785,7 @@ class LLTextBase
+     // Used to check if user with given ID is avatar's friend
+     is_friend_signal_t*         mIsFriendSignal;
+     is_blocked_signal_t*        mIsObjectBlockedSignal;
++    is_obj_reachable_signal_t*  mIsObjectReachableSignal;
+ 
+     LLUIString                  mLabel; // text label that is visible when no user text provided
+ };"
+secondlife/viewer,4715,d7bd769,indra/newview/llchathistory.cpp,modified,7,2,9,"@@ -215,7 +215,8 @@ class LLChatHistoryHeader: public LLPanel
+             LLUUID obj_id = mObjectData[""object_id""];
+             if (obj_id.notNull())
+             {
+-                return nullptr != gObjectList.findObject(mAvatarID);
++                LLViewerObject* object = gObjectList.findObject(obj_id);
++                return object && object->isReachable();
+             }
+             return false;
+         }
+@@ -1118,7 +1119,11 @@ LLChatHistory::LLChatHistory(const LLChatHistory::Params& p)
+     mEditor = LLUICtrlFactory::create<LLTextEditor>(editor_params, this);
+     mEditor->setIsFriendCallback(LLAvatarActions::isFriend);
+     mEditor->setIsObjectBlockedCallback(boost::bind(&LLMuteList::isMuted, LLMuteList::getInstance(), _1, _2, 0));
+-
++    mEditor->setIsObjectReachableCallback([](const LLUUID& obj_id)
++        {
++            LLViewerObject* object = gObjectList.findObject(obj_id);
++            return object && object->isReachable();
++        });
+ }
+ 
+ LLSD LLChatHistory::getValue() const"
+secondlife/viewer,4715,d7bd769,indra/newview/llviewermenu.cpp,modified,1,1,2,"@@ -6516,7 +6516,7 @@ bool handle_zoom_to_object(const LLUUID& object_id)
+ 
+     LLViewerObject* object = gObjectList.findObject(object_id);
+ 
+-    if (object)
++    if (object && object->isReachable())
+     {
+         gAgentCamera.setFocusOnAvatar(false, ANIMATE);
+ "
+secondlife/viewer,4715,d7bd769,indra/newview/llviewerobject.cpp,modified,45,0,45,"@@ -7717,6 +7717,51 @@ void LLViewerObject::clearTEWaterExclusion(const U8 te)
+     }
+ }
+ 
++bool LLViewerObject::isReachable()
++{
++    LLViewerRegion* agent_region = gAgent.getRegion();
++    LLViewerRegion* object_region = getRegion();
++
++    if (!agent_region || !object_region)
++    {
++        return false;
++    }
++    if (agent_region == object_region)
++    {
++        return true;
++    }
++
++    std::unordered_set<LLViewerRegion*> visited;
++    std::queue<LLViewerRegion*> pending;
++    visited.insert(agent_region);
++    pending.push(agent_region);
++
++    while (!pending.empty())
++    {
++        LLViewerRegion* current = pending.front();
++        pending.pop();
++
++        std::vector<LLViewerRegion*> neighbors;
++        current->getNeighboringRegions(neighbors);
++
++        for (LLViewerRegion* neighbor : neighbors)
++        {
++            if (!neighbor) continue;
++
++            if (neighbor == object_region)
++            {
++                return true;
++            }
++            // region's neighbors were not checked
++            if (visited.insert(neighbor).second)
++            {
++                pending.push(neighbor);
++            }
++        }
++    }
++    return false;
++}
++
+ class ObjectPhysicsProperties : public LLHTTPNode
+ {
+ public:"
+secondlife/viewer,4715,d7bd769,indra/newview/llviewerobject.h,modified,3,0,3,"@@ -249,6 +249,9 @@ class LLViewerObject
+     // Accessor functions
+     LLViewerRegion* getRegion() const               { return mRegionp; }
+ 
++    // Check if object is reachable from agent region by traversing loaded neighboring regions
++    bool isReachable();
++
+     bool isSelected() const                         { return mUserSelected; }
+     // Check whole linkset
+     bool isAnySelected() const;"

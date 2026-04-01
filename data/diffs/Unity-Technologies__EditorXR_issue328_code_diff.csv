@@ -1,0 +1,42 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+Unity-Technologies/EditorXR,328,058bebf35e576c507655f5cea261e3f6352d9ebc,Menus/ToolsMenu/ToolsMenu.cs,modified,1,1,2,"@@ -200,7 +200,7 @@ public void ProcessInput(ActionMapInput input, ConsumeControlDelegate consumeCon
+ 					m_ToolsMenuUI.HighlightSingleButtonWithoutMenu((int)(buttonCount * normalizedRepeatingPosition) + 1);
+ 				}
+ 			}
+-			else if (toolslMenuInput.show.wasJustReleased)
++			else if (spatialScrollData != null && !toolslMenuInput.show.isHeld && !toolslMenuInput.select.isHeld)
+ 			{
+ 				consumeControl(toolslMenuInput.show);
+ 				consumeControl(toolslMenuInput.select);"
+Unity-Technologies/EditorXR,328,058bebf35e576c507655f5cea261e3f6352d9ebc,Scripts/Modules/MultipleRayInputModule/MultipleRayInputModule.cs,modified,7,3,10,"@@ -141,24 +141,28 @@ public void ProcessInput(ActionMapInput input, ConsumeControlDelegate consumeCon
+ 				eventData.rayOrigin = rayOrigin;
+ 				eventData.pointerLength = this.GetPointerLength(eventData.rayOrigin);
+ 
++				var sourceAMI = source.actionMapInput;
++				var select = sourceAMI.select;
++
+ 				if (source.isValid != null && !source.isValid(source))
+ 				{
+ 					var currentRaycast = eventData.pointerCurrentRaycast;
+ 					currentRaycast.gameObject = null;
+ 					eventData.pointerCurrentRaycast = currentRaycast;
+ 					source.hoveredObject = null;
+ 					HandlePointerExitAndEnter(eventData, null, true); // Send only exit events
++
++					if (select.wasJustReleased)
++						OnSelectReleased(source);
+ 					continue;
+ 				}
+ 
+ 				HandlePointerExitAndEnter(eventData, hoveredObject); // Send enter and exit events
+ 
+ 				var hasObject = source.hasObject;
+ 				var hasScrollHandler = false;
+-				var sourceAMI = source.actionMapInput;
+-				sourceAMI.active = hasObject && ShouldActivateInput(eventData, source.currentObject, out hasScrollHandler);
+ 
+-				var select = sourceAMI.select;
++				sourceAMI.active = hasObject && ShouldActivateInput(eventData, source.currentObject, out hasScrollHandler);
+ 
+ 				// Proceed only if pointer is interacting with something
+ 				if (!sourceAMI.active)"

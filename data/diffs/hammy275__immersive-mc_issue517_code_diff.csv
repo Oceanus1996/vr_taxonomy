@@ -1,0 +1,44 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+hammy275/immersive-mc,517,c5f4ce57993d89132d548fc529e77aa247bff383,common/src/main/java/com/hammy275/immersivemc/client/immersive/SwapTracker.java,modified,1,0,1,"@@ -103,6 +103,7 @@ public <I extends ImmersiveInfo> void tick(@Nullable Immersive<I, ?> immersive,
+     }
+ 
+     public void setCooldown(int newCooldown) {
++        newCooldown = newCooldown == 0 ? 1 : 0; // A cooldown of 0 and 1 are functionally the same
+         this.rightClickCooldown = Math.max(newCooldown, rightClickCooldown);
+     }
+ "
+hammy275/immersive-mc,517,c5f4ce57993d89132d548fc529e77aa247bff383,common/src/main/java/com/hammy275/immersivemc/client/subscribe/ClientLogicSubscriber.java,modified,1,1,2,"@@ -548,7 +548,7 @@ private static <I extends ImmersiveInfo> Integer handleRightClickInfos(Immersive
+                 if (closest.isPresent()) {
+                     if (singleton.isInputHitbox(info, closest.get())) {
+                         SwapTracker.c0.tick(singleton, info, closest.get(), true);
+-                        return 1;
++                        return SwapTracker.c0.getCooldown();
+                     } else {
+                         SwapTracker.c0.tick(null, null, -1, inDragHitbox(singleton, info, start, end));
+                         if (SwapTracker.c0.getCooldown() <= 0) {"
+hammy275/immersive-mc,517,c5f4ce57993d89132d548fc529e77aa247bff383,common/src/main/java/com/hammy275/immersivemc/client/subscribe/ClientVRSubscriber.java,modified,3,1,4,"@@ -28,6 +28,7 @@ public class ClientVRSubscriber {
+     protected static int cooldown = 0;
+ 
+     public static void setCooldown(int cooldown) {
++        cooldown = cooldown == 0 ? 1 : 0; // A cooldown of 0 and 1 are functionally the same
+         ClientVRSubscriber.cooldown = Math.max(ClientVRSubscriber.cooldown, cooldown);
+     }
+ 
+@@ -88,6 +89,7 @@ protected static <I extends ImmersiveInfo> boolean handleInfos(Immersive<I, ?> s
+                         (Minecraft.getInstance().options.keyAttack.isDown() || !info.getAllHitboxes().get(hit.get()).isTriggerHitbox())) {
+                     if (singleton.isInputHitbox(info, hit.get())) {
+                         swapTracker.tick(singleton, info, hit.get(), true);
++                        return swapTracker.getCooldown() >= 0;
+                     } else {
+                         swapTracker.tick(singleton, info, -1, inDragHitbox(singleton, info, pos));
+                         if (cooldown <= 0) {
+@@ -97,8 +99,8 @@ protected static <I extends ImmersiveInfo> boolean handleInfos(Immersive<I, ?> s
+                             }
+                             setCooldown(cooldown);
+                         }
++                        return cooldown >= 0;
+                     }
+-                    return true;
+                 } else if (hit.isEmpty()) {
+                     if (inDragHitbox(singleton, info, pos)) {
+                         infoWithDragHitbox = info;"

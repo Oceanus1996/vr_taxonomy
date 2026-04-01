@@ -1,0 +1,414 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vircadia/vircadia-web,151,b6cbe37999bddc01642a5d1870d0da7478e990ad,src/components/MainScene.vue,modified,1,1,2,"@@ -236,7 +236,7 @@ export default defineComponent({
+             }
+         });
+         // NOTE: The scene must be loaded to register domain events before connecting to the domain.
+-        await scene.load(undefined, AvatarStoreInterface.getActiveModelData(""file"") as string);
++        await scene.load(undefined, AvatarStoreInterface.getActiveModelData(""file""));
+         await this.connect();
+ 
+         Renderer.startRenderLoop([scene]);"
+vircadia/vircadia-web,151,b6cbe37999bddc01642a5d1870d0da7478e990ad,src/components/overlays/avatar/Avatar.vue,modified,3,3,6,"@@ -526,15 +526,15 @@ export default defineComponent({
+         },
+         activeModelNameStore: {
+             get: function(): string {
+-                return AvatarStoreInterface.getActiveModelData(""name"") as string;
++                return AvatarStoreInterface.getActiveModelData(""name"");
+             },
+             set: function(pVal: string): void {
+                 AvatarStoreInterface.setActiveModelData(""name"", pVal);
+             }
+         },
+         activeModelFileStore: {
+             get: function(): string {
+-                return AvatarStoreInterface.getActiveModelData(""file"") as string;
++                return AvatarStoreInterface.getActiveModelData(""file"");
+             },
+             set: function(pVal: string): void {
+                 AvatarStoreInterface.setActiveModelData(""file"", pVal);
+@@ -575,7 +575,7 @@ export default defineComponent({
+                 this.loadingAvatar = true;
+                 AvatarStoreInterface.setActiveModel(modelId);
+                 const scene = Renderer.getScene();
+-                await scene.loadMyAvatar(AvatarStoreInterface.getModelData(modelId, ""file"") as string, reload);
++                await scene.loadMyAvatar(AvatarStoreInterface.getModelData(modelId, ""file""), reload);
+                 this.loadingAvatar = false;
+             }
+         },"
+vircadia/vircadia-web,151,b6cbe37999bddc01642a5d1870d0da7478e990ad,src/components/overlays/people/People.vue,modified,120,86,206,"@@ -9,30 +9,58 @@
+ -->
+ 
+ <style lang=""scss"" scoped>
+-    .slide-left-enter-active,
+-    .slide-left-leave-active {
+-        transition: all 0.25s ease-out;
+-    }
+-
+-    .slide-left-enter-active {
+-        margin-left: 0px;
+-    }
+-
+-    .slide-left-leave-active {
+-        position: absolute;
+-        // top: 18px;
+-        // left: 4.5rem;
+-    }
+-
+-    .slide-left-enter-from {
+-        opacity: 0;
+-        transform: translateX(30px);
+-    }
+-
+-    .slide-left-leave-to {
+-        opacity: 0;
+-        transform: translateX(-30px);
+-    }
++.volumeIcon {
++    --offset: 0.15em;
++    --volume: 0%;
++    position: relative;
++    display: inline-flex;
++    width: 1.5em;
++    height: 1.25em;
++    color: inherit;
++    background-color: currentColor;
++    clip-path: polygon(
++        100% 100%,
++        0% 100%,
++        100% 0%,
++        100% 100%,
++        calc(100% - var(--offset)) calc(100% - var(--offset)),
++        calc(100% - var(--offset)) calc(var(--offset) * 2.1),
++        calc((var(--offset) * 2.7) + (var(--volume) * 0.75 - var(--offset)))
++        calc(var(--offset) * 2.1 + (95% - var(--volume)) * 0.78),
++        calc((var(--offset) * 2.7) + (var(--volume) * 0.75 - var(--offset))) calc(100% - var(--offset)),
++        calc(100% - var(--offset)) calc(100% - var(--offset))
++    );
++    transform: translate(-5%, -5%);
++}
++.volumeSlider {
++    position: absolute;
++    z-index: 1;
++    width: calc(48px * 2.5);
++    margin-right: 50px;
++}
++.volumeSlider::before {
++    content: '';
++    position: absolute;
++    z-index: -2;
++    inset: 0 -12px;
++    background-color: $dark;
++    border: 1px solid #8882;
++    border-radius: 5px;
++}
++.volumeSlider::after {
++    content: '';
++    position: absolute;
++    z-index: -1;
++    top: 50%;
++    right: -12px;
++    width: 0.75em;
++    height: 0.75em;
++    background-color: $dark;
++    border: 1px solid #8882;
++    border-bottom: unset;
++    border-left: unset;
++    transform: translate(calc(50% - 1px), -50%) rotate(45deg);
++}
+ </style>
+ 
+ <template>
+@@ -41,7 +69,7 @@
+         :title=""`People (${Array.from($store.state.avatars.avatarsInfo.keys()).length})`""
+         :managerProps=""propsToPass""
+         :defaultHeight=""500""
+-        :defaultWidth=""350""
++        :defaultWidth=""400""
+         :defaultLeft=""300""
+         :hoverShowBar=""false""
+         :style=""{
+@@ -55,49 +83,36 @@
+         >
+             <q-scroll-area
+                 class=""col""
+-                style=""height: 100%""
++                style=""height: 100%;""
+             >
+                 <q-list v-if=""Array.from($store.state.avatars.avatarsInfo.keys()).length > 0"">
+                     <q-item
+                         v-for=""avaInfo in $store.state.avatars.avatarsInfo.values()""
+                         :key=""avaInfo.sessionId.stringify()""
+-                        class=""q-mb-none""
++                        class=""q-mb-none q-pa-sm""
+                         dense
+-                        clickable
+-                        v-ripple
+-                        @click=""
+-                            showMoreOptions[avaInfo.sessionId.stringify()] = !showMoreOptions[avaInfo.sessionId.stringify()]""
+                     >
+-                        <q-item-section avatar>
+-                            <q-avatar class=""q-mb-sm"" color=""primary"" >
++                        <q-item-section avatar class=""q-gutter-y-sm"">
++                            <q-avatar color=""primary"">
+                                 <img v-if=""getProfilePicture(avaInfo)"" :src=""getProfilePicture(avaInfo)"">
+                                 <span v-else style=""user-select: none;"">{{ getDisplayName(avaInfo).substring(0, 2) }}</span>
+                             </q-avatar>
++                            <q-item-label v-if=""avaInfo.isAdmin"" caption lines=""1"">Admin</q-item-label>
+                         </q-item-section>
+                         <q-item-section>
+-                            <div class=""col q-pt-none"">
+-                                <div class=""row"" style=""align-items: center;gap: 16px;"">
+-                                    <q-item-label>{{ getDisplayName(avaInfo) }}</q-item-label>
+-                                    <q-item-label v-if=""avaInfo.isAdmin"" caption lines=""1"">Admin</q-item-label>
+-                                    <q-btn
+-                                        flat
+-                                        round
+-                                        dense
+-                                        ripple
+-                                        icon=""more_horiz""
+-                                        :text-color=""$q.dark.isActive ? 'white' : 'dark'""
+-                                        title=""More options""
+-                                        style=""margin-left: auto;""
+-                                        @click.stop=""
+-                                            showMoreOptions[avaInfo.sessionId.stringify()] =
+-                                            !showMoreOptions[avaInfo.sessionId.stringify()]""
+-                                    />
+-                                </div>
+-                                <TransitionGroup name=""slide-left"">
++                            <div class=""row"" style=""justify-content: space-between;align-items: center;gap: 16px;"">
++                                <q-item-label>{{ getDisplayName(avaInfo) }}</q-item-label>
++                                <div
++                                    class=""row""
++                                    style=""position: relative;justify-content: flex-end;align-items: center;gap: 4px;""
++                                >
+                                     <div
+-                                        v-if=""showMoreOptions[avaInfo.sessionId.stringify()]""
+-                                        class=""row q-mb-none q-pt-xs""
+-                                        style=""align-items: center;gap: 4px;width: 100%;""
++                                        :style=""{
++                                            opacity: !showVolumeSlider[avaInfo.sessionId.stringify()] ? 1 : 0,
++                                            transition: !showVolumeSlider[avaInfo.sessionId.stringify()]
++                                                ? '0.25s ease opacity' : 'none',
++                                            pointerEvents: !showVolumeSlider[avaInfo.sessionId.stringify()] ? 'all' : 'none'
++                                        }""
+                                     >
+                                         <q-btn
+                                             icon=""place""
+@@ -108,84 +123,103 @@
+                                             ripple
+                                             :title=""`Teleport to ${avaInfo.displayName}`""
+                                             @click.stop=""teleportToAvatar(avaInfo)""
+-                                        ></q-btn>
++                                        />
+                                         <q-btn
+                                             icon=""person_add_alt_1""
+                                             text-color=""primary""
+                                             flat
+                                             round
+                                             dense
+                                             ripple
+-                                            title=""Add friend""
++                                            :title=""`Add ${avaInfo.displayName} as a friend`""
+                                             disable
+                                             @click.stop=""""
+-                                        ></q-btn>
++                                        />
+                                         <template v-if=""canKick"">
+                                             <!--Admin Controls-->
+                                             <q-btn
+-                                                icon=""volume_off""
++                                                icon=""logout""
+                                                 text-color=""negative""
+                                                 flat
+                                                 round
+                                                 dense
+                                                 ripple
+-                                                title=""Server mute""
++                                                :title=""`Kick ${avaInfo.displayName}`""
+                                                 :disable=""!canKick""
+-                                                @click.stop=""adminServerMute(avaInfo.sessionId)""
+-                                            ></q-btn>
++                                                @click.stop=""adminKick(avaInfo.sessionId)""
++                                            />
+                                             <q-btn
+                                                 icon=""remove_circle""
+                                                 text-color=""negative""
+                                                 flat
+                                                 round
+                                                 dense
+                                                 ripple
+-                                                title=""Kick player""
++                                                :title=""`IP Ban ${avaInfo.displayName}`""
+                                                 :disable=""!canKick""
+-                                                @click.stop=""adminKick(avaInfo.sessionId)""
+-                                            ></q-btn>
++                                                @click.stop=""adminKick(avaInfo.sessionId, banByIP())""
++                                            />
+                                             <q-btn
+-                                                icon=""remove_circle""
++                                                icon=""volume_off""
+                                                 text-color=""negative""
+                                                 flat
+                                                 round
+                                                 dense
+                                                 ripple
+-                                                title=""Kick player with IP""
++                                                :title=""`Server mute ${avaInfo.displayName}`""
+                                                 :disable=""!canKick""
+-                                                @click.stop=""adminKick(avaInfo.sessionId, banByIP())""
+-                                            ></q-btn>
++                                                @click.stop=""adminServerMute(avaInfo.sessionId)""
++                                            />
+                                         </template>
+                                     </div>
+-                                    <div
+-                                        v-else
+-                                        class=""row""
+-                                        style=""align-items: center;gap: 16px;min-width: 70%;""
+-                                    >
++                                    <div style=""all: inherit;position: relative;"">
+                                         <q-slider
+                                             :min=""0""
+                                             :max=""100""
+                                             :step=""5""
+                                             snap
++                                            dark
+                                             :color=""avaInfo.muted || avaInfo.volume === 0 ? 'red' : 'primary'""
+-                                            style=""width: calc(100% - 48px);""
++                                            :title=""`Volume: ${avaInfo.volume}%`""
++                                            class=""volumeSlider""
++                                            :style=""{
++                                                opacity: showVolumeSlider[avaInfo.sessionId.stringify()] ? 1 : 0,
++                                                transition: showVolumeSlider[avaInfo.sessionId.stringify()]
++                                                    ? '0.25s ease opacity' : 'none',
++                                                pointerEvents: showVolumeSlider[avaInfo.sessionId.stringify()] ? 'all' : 'none'
++                                            }""
+                                             :model-value=""avaInfo.volume""
+                                             @update:model-value=""(value) => setVolume(avaInfo.sessionId, value)""
+                                         />
+-                                        <q-icon
+-                                            role=""button""
+-                                            size=""sm""
++                                        <q-btn
++                                            :text-color=""avaInfo.muted || avaInfo.volume === 0 ? 'red' : 'primary'""
+                                             flat
+                                             round
++                                            dense
+                                             ripple
+-                                            :color=""avaInfo.muted || avaInfo.volume === 0 ? 'red' : 'primary'""
+-                                            :name=""avaInfo.muted || avaInfo.volume === 0 ? 'volume_off' : 'volume_up'""
+-                                            :title=""avaInfo.muted || avaInfo.volume === 0 ?
+-                                                `Unmute ${avaInfo.displayName}` : `Mute ${avaInfo.displayName}`""
+-                                            @click.stop=""complementMuted(avaInfo)""
+-                                        />
++                                            :title=""`Adjust ${
++                                                avaInfo.displayName[avaInfo.displayName.length - 1]?.toLowerCase() === 's'
++                                                ? avaInfo.displayName + '\''
++                                                : avaInfo.displayName + '\'s'
++                                            } volume`""
++                                            @click.stop=""showVolumeSlider[avaInfo.sessionId.stringify()] =
++                                                !showVolumeSlider[avaInfo.sessionId.stringify()]""
++                                        >
++                                            <span class=""volumeIcon"" :style=""`--volume: ${avaInfo.volume}%;`""></span>
++                                        </q-btn>
+                                     </div>
+-                                </TransitionGroup>
++                                    <q-btn
++                                        :icon=""avaInfo.muted || avaInfo.volume === 0 ? 'volume_off' : 'volume_up'""
++                                        :text-color=""avaInfo.muted || avaInfo.volume === 0 ? 'red' : 'primary'""
++                                        flat
++                                        round
++                                        dense
++                                        ripple
++                                        :title=""avaInfo.muted || avaInfo.volume === 0
++                                            ? `Unmute ${avaInfo.displayName}` : `Mute ${avaInfo.displayName}`""
++                                        @click.stop=""complementMuted(avaInfo)""
++                                    />
++                                </div>
+                             </div>
+                         </q-item-section>
+                     </q-item>
+@@ -228,7 +262,7 @@ export default defineComponent({
+     },
+ 
+     data: () => ({
+-        showMoreOptions: {} as { [key: string]: boolean },
++        showVolumeSlider: {} as { [key: string]: boolean },
+         canKick: false
+     }),
+ "
+vircadia/vircadia-web,151,b6cbe37999bddc01642a5d1870d0da7478e990ad,src/modules/avatar/StoreInterface.ts,modified,24,15,39,"@@ -26,7 +26,6 @@ export interface AvatarEntryMap {
+ }
+ 
+ function generateID(): string {
+-    // eslint-disable-next-line max-len
+     const chars = ""ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"";
+     const idLength = 8;
+     let ID = """";
+@@ -36,19 +35,30 @@ function generateID(): string {
+     return ID;
+ }
+ 
++function getModelData(modelId: string | number): AvatarEntry;
++function getModelData<T extends keyof AvatarEntry>(modelId: string | number, key: T): AvatarEntry[T];
++function getModelData<T extends keyof AvatarEntry>(modelId: string | number, key?: T): AvatarEntry | AvatarEntry[T] {
++    const models = Store.state.avatar.models as { [key: string]: AvatarEntry };
++    if (key && key in (models[modelId] || fallbackAvatar())) {
++        return models[modelId][key];
++    }
++    return models[modelId] || fallbackAvatar();
++}
++
++function getActiveModelData(): AvatarEntry;
++function getActiveModelData<T extends keyof AvatarEntry>(key: T): AvatarEntry[T];
++function getActiveModelData<T extends keyof AvatarEntry>(key?: T): AvatarEntry | AvatarEntry[T] {
++    const activeModel = Store.state.avatar.activeModel;
++    if (key) {
++        return getModelData(activeModel, key);
++    }
++    return getModelData(activeModel);
++}
++
+ export const AvatarStoreInterface = {
+-    getModelData(modelId: string | number, key?: keyof AvatarEntry): AvatarEntry | string | number | boolean {
+-        const models = Store.state.avatar.models as { [key: string]: AvatarEntry };
+-        if (key && key in (models[modelId] || fallbackAvatar())) {
+-            return models[modelId][key];
+-        }
+-        return models[modelId] || fallbackAvatar();
+-    },
++    getModelData,
+ 
+-    getActiveModelData(key?: keyof AvatarEntry): AvatarEntry | string | number | boolean {
+-        const activeModel = Store.state.avatar.activeModel;
+-        return this.getModelData(activeModel, key);
+-    },
++    getActiveModelData,
+ 
+     getAllModelsJSON(): string {
+         return JSON.stringify(Store.state.avatar.models);
+@@ -119,13 +129,12 @@ export const AvatarStoreInterface = {
+         }
+         try {
+             const scene = Renderer.getScene();
+-            scene.loadMyAvatar(AvatarStoreInterface.getModelData(modelId, ""file"") as string)
++            scene.loadMyAvatar(AvatarStoreInterface.getModelData(modelId, ""file""))
+                 // .catch is a syntax error!?
+                 // eslint-disable-next-line @typescript-eslint/dot-notation
+                 .catch((err) => console.warn(""Failed to load avatar:"", err));
+         } catch (error) {
+-            console.warn(error);
+-            console.warn(""Cannot render active avatar model before the scene has been loaded."");
++            console.warn(""Cannot render active avatar model before the scene has been loaded."", error);
+         }
+     }
+ };"
+vircadia/vircadia-web,151,b6cbe37999bddc01642a5d1870d0da7478e990ad,src/modules/scene/vscene.ts,modified,1,1,2,"@@ -54,7 +54,7 @@ export class VScene {
+     _preScene: Nullable<Scene> = null;
+     private _css3DRenderer: Nullable<CSS3DRenderer> = null;
+     _myAvatar: Nullable<GameObject> = null;
+-    _myAvatarModelURL = AvatarStoreInterface.getActiveModelData(""file"") as string;
++    _myAvatarModelURL = AvatarStoreInterface.getActiveModelData(""file"");
+ 
+     _avatarList : Map<string, GameObject>;
+     _avatarIsLoading = false;"

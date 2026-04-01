@@ -1,0 +1,27 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vrm-c/UniVRM,1826,93671a6898b6a1773e598dfe0ae65c223d0a98e4,Assets/VRM10/Runtime/IO/Material/Vrm10MToonMaterialExporter.cs,modified,5,1,6,"@@ -152,7 +152,11 @@ public static bool TryExportMaterialAsMToon(Material src, ITextureExporter textu
+                 const float invertY = -1f;
+                 mtoon.UvAnimationScrollYSpeedFactor = context.UvAnimationScrollYSpeedFactor * invertY;
+             }
+-            mtoon.UvAnimationRotationSpeedFactor = context.UvAnimationRotationSpeedFactor;
++            // Speed unit Conversion
++            const float rotationPerSecToRadianPerSec = Mathf.PI * 2f;
++            // Coords conversion
++            const float unityToGltfCoordsConversion = -1f;
++            mtoon.UvAnimationRotationSpeedFactor = context.UvAnimationRotationSpeedFactor * rotationPerSecToRadianPerSec * unityToGltfCoordsConversion;
+ 
+             // Texture Transforms
+             var scale = context.TextureScale;"
+vrm-c/UniVRM,1826,93671a6898b6a1773e598dfe0ae65c223d0a98e4,Assets/VRM10/Runtime/IO/Material/Vrm10MToonMaterialImporter.cs,modified,5,1,6,"@@ -224,7 +224,11 @@ public static bool TryCreateParam(GltfData data, int i, out MaterialDescriptor m
+             var uvAnimSpeedRotation = mToon?.UvAnimationRotationSpeedFactor;
+             if (uvAnimSpeedRotation.HasValue)
+             {
+-                yield return (MToon10Prop.UvAnimationRotationSpeedFactor.ToUnityShaderLabName(), uvAnimSpeedRotation.Value);
++                // Speed unit Conversion
++                const float radianPerSecToRotationPerSec = 1f / (Mathf.PI * 2f);
++                // Coords conversion
++                const float gltfToUnityCoordsConversion = -1f;
++                yield return (MToon10Prop.UvAnimationRotationSpeedFactor.ToUnityShaderLabName(), uvAnimSpeedRotation.Value * radianPerSecToRotationPerSec * gltfToUnityCoordsConversion);
+             }
+ 
+             // UI"

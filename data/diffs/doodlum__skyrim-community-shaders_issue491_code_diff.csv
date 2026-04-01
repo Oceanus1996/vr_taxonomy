@@ -1,0 +1,212 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+doodlum/skyrim-community-shaders,491,92a5eb0e99991ee636a096f1419c5cfca598aef4,features/Extended Materials/Shaders/ExtendedMaterials/ExtendedMaterials.hlsli,modified,43,21,64,"@@ -179,14 +179,14 @@ namespace ExtendedMaterials
+ #if defined(LANDSCAPE)
+ // When CPM flag is disabled, will use linear blending as before.
+ #	if defined(TRUE_PBR)
+-		float blendFactor = extendedMaterialSettings.EnableComplexMaterial ? sqrt(saturate(1 - nearBlendToFar)) : 0;
++		float blendFactor = extendedMaterialSettings.EnableHeightBlending ? sqrt(saturate(1 - nearBlendToFar)) : 0;
+ 		float4 w1 = lerp(input.LandBlendWeights1, smoothstep(0, 1, input.LandBlendWeights1), blendFactor);
+ 		float2 w2 = lerp(input.LandBlendWeights2.xy, smoothstep(0, 1, input.LandBlendWeights2.xy), blendFactor);
+ 		float scale = max(params[0].HeightScale * w1.x, max(params[1].HeightScale * w1.y, max(params[2].HeightScale * w1.z, max(params[3].HeightScale * w1.w, max(params[4].HeightScale * w2.x, params[5].HeightScale * w2.y)))));
+ 		float scalercp = rcp(scale);
+ 		float maxHeight = 0.1 * scale;
+ #	else
+-		float blendFactor = extendedMaterialSettings.EnableComplexMaterial ? saturate(1 - nearBlendToFar) : INV_HEIGHT_POWER;
++		float blendFactor = extendedMaterialSettings.EnableHeightBlending ? saturate(1 - nearBlendToFar) : INV_HEIGHT_POWER;
+ 		float scale = 1;
+ 		float maxHeight = 0.1 * scale;
+ #	endif
+@@ -311,45 +311,67 @@ namespace ExtendedMaterials
+ 		return coords;
+ 	}
+ 
+-	// https://advances.realtimerendering.com/s2006/Tatarchuk-POM.pdf
++#if defined(TRUE_PBR)
++	static const float shadowIntensity = 1.0;
++#else
++	static const float shadowIntensity = 2.0;
++#endif
+ 
++	// https://advances.realtimerendering.com/s2006/Tatarchuk-POM.pdf
+ 	// Cheap method of creating shadows using height for a given light source
+ 	float GetParallaxSoftShadowMultiplier(float2 coords, float mipLevel, float3 L, float sh0, Texture2D<float4> tex, SamplerState texSampler, uint channel, float quality, float noise, DisplacementParams params)
+ 	{
+-		[branch] if (quality > 0.0)
++		[branch] if (quality > 0.0 || extendedMaterialSettings.ExtendShadows)
+ 		{
+-			float2 rayDir = L.xy * 0.1;
+-			float4 multipliers = rcp((float4(4, 3, 2, 1) + noise));
++			float2 rayDir = L.xy * 0.1 * params.HeightScale;
++			float4 multipliers = rcp((float4(1, 2, 3, 4) + noise));
+ 			float4 sh;
+-			sh.x = AdjustDisplacementNormalized(tex.SampleLevel(texSampler, coords + rayDir * multipliers.x, mipLevel)[channel], params);
+-			sh.y = AdjustDisplacementNormalized(tex.SampleLevel(texSampler, coords + rayDir * multipliers.y, mipLevel)[channel], params);
+-			sh.z = AdjustDisplacementNormalized(tex.SampleLevel(texSampler, coords + rayDir * multipliers.z, mipLevel)[channel], params);
+-			sh.w = AdjustDisplacementNormalized(tex.SampleLevel(texSampler, coords + rayDir * multipliers.w, mipLevel)[channel], params);
+-			return 1.0 - saturate(dot(max(0, sh - sh0), 1.0) * params.HeightScale * 2.0) * quality;
++			sh = AdjustDisplacementNormalized(tex.SampleLevel(texSampler, coords + rayDir * multipliers.x, mipLevel)[channel], params);
++			if (quality > 0.25)
++				sh.y = AdjustDisplacementNormalized(tex.SampleLevel(texSampler, coords + rayDir * multipliers.y, mipLevel)[channel], params);
++			if (quality > 0.5)
++				sh.z = AdjustDisplacementNormalized(tex.SampleLevel(texSampler, coords + rayDir * multipliers.z, mipLevel)[channel], params);
++			if (quality > 0.75)
++				sh.w = AdjustDisplacementNormalized(tex.SampleLevel(texSampler, coords + rayDir * multipliers.w, mipLevel)[channel], params);
++			return 1.0 - saturate(dot(max(0, sh - sh0), 1.0) * shadowIntensity) * lerp(quality, 1.0, extendedMaterialSettings.ExtendShadows);
+ 		}
+ 		return 1.0;
+ 	}
+ 
+ #if defined(LANDSCAPE)
+ 	float GetParallaxSoftShadowMultiplierTerrain(PS_INPUT input, float2 coords, float mipLevel[6], float3 L, float sh0, float quality, float noise, DisplacementParams params[6])
+ 	{
++#	if defined(TRUE_PBR)
++		if (quality > 0.0 || extendedMaterialSettings.ExtendShadows) {
++#	else
+ 		if (quality > 0.0) {
++#	endif
+ 			float2 rayDir = L.xy * 0.1;
+-			float4 multipliers = rcp((float4(4, 3, 2, 1) + noise));
++			float4 multipliers = rcp((float4(1, 2, 3, 4) + noise));
+ 			float4 sh;
+ 			float heights[6] = { 0, 0, 0, 0, 0, 0 };
+ #	if defined(TRUE_PBR)
+-			sh.x = GetTerrainHeight(input, coords + rayDir * multipliers.x, mipLevel, params, quality, input.LandBlendWeights1, input.LandBlendWeights2, heights);
+-			sh.y = GetTerrainHeight(input, coords + rayDir * multipliers.y, mipLevel, params, quality, input.LandBlendWeights1, input.LandBlendWeights2, heights);
+-			sh.z = GetTerrainHeight(input, coords + rayDir * multipliers.z, mipLevel, params, quality, input.LandBlendWeights1, input.LandBlendWeights2, heights);
+-			sh.w = GetTerrainHeight(input, coords + rayDir * multipliers.w, mipLevel, params, quality, input.LandBlendWeights1, input.LandBlendWeights2, heights);
++			float scale = max(params[0].HeightScale * input.LandBlendWeights1.x, max(params[1].HeightScale * input.LandBlendWeights1.y, max(params[2].HeightScale * input.LandBlendWeights1.z,
++																																			max(params[3].HeightScale * input.LandBlendWeights1.w, max(params[4].HeightScale * input.LandBlendWeights2.x, params[5].HeightScale * input.LandBlendWeights2.y)))));
++			rayDir *= scale;
++			sh = GetTerrainHeight(input, coords + rayDir * multipliers.x, mipLevel, params, quality, input.LandBlendWeights1, input.LandBlendWeights2, heights);
++			if (quality > 0.25)
++				sh.y = GetTerrainHeight(input, coords + rayDir * multipliers.y, mipLevel, params, quality, input.LandBlendWeights1, input.LandBlendWeights2, heights);
++			if (quality > 0.5)
++				sh.z = GetTerrainHeight(input, coords + rayDir * multipliers.z, mipLevel, params, quality, input.LandBlendWeights1, input.LandBlendWeights2, heights);
++			if (quality > 0.75)
++				sh.w = GetTerrainHeight(input, coords + rayDir * multipliers.w, mipLevel, params, quality, input.LandBlendWeights1, input.LandBlendWeights2, heights);
++			return 1.0 - saturate(dot(max(0, sh - sh0), 1.0) * shadowIntensity) * lerp(quality, 1.0, extendedMaterialSettings.ExtendShadows);
+ #	else
+-			sh.x = GetTerrainHeight(input, coords + rayDir * multipliers.x, mipLevel, params, quality, heights);
+-			sh.y = GetTerrainHeight(input, coords + rayDir * multipliers.y, mipLevel, params, quality, heights);
+-			sh.z = GetTerrainHeight(input, coords + rayDir * multipliers.z, mipLevel, params, quality, heights);
+-			sh.w = GetTerrainHeight(input, coords + rayDir * multipliers.w, mipLevel, params, quality, heights);
++			sh = GetTerrainHeight(input, coords + rayDir * multipliers.x, mipLevel, params, quality, heights);
++			if (quality > 0.25)
++				sh.y = GetTerrainHeight(input, coords + rayDir * multipliers.y, mipLevel, params, quality, heights);
++			if (quality > 0.5)
++				sh.z = GetTerrainHeight(input, coords + rayDir * multipliers.z, mipLevel, params, quality, heights);
++			if (quality > 0.75)
++				sh.w = GetTerrainHeight(input, coords + rayDir * multipliers.w, mipLevel, params, quality, heights);
++			return 1.0 - saturate(dot(max(0, sh - sh0), 1.0) * shadowIntensity) * quality;
+ #	endif
+-			return 1.0 - saturate(dot(max(0, sh - sh0), 1.0) * 2.0) * quality;
+ 		}
+ 		return 1.0;
+ 	}"
+doodlum/skyrim-community-shaders,491,92a5eb0e99991ee636a096f1419c5cfca598aef4,package/Shaders/Common/SharedData.hlsli,modified,3,0,3,"@@ -36,7 +36,10 @@ struct CPMSettings
+ 	bool EnableComplexMaterial;
+ 	bool EnableParallax;
+ 	bool EnableTerrainParallax;
++	bool EnableHeightBlending;
+ 	bool EnableShadows;
++	bool ExtendShadows;
++	float2 pad0;
+ };
+ 
+ struct CubemapCreatorSettings"
+doodlum/skyrim-community-shaders,491,92a5eb0e99991ee636a096f1419c5cfca598aef4,package/Shaders/Lighting.hlsl,modified,5,5,10,"@@ -1099,7 +1099,7 @@ PS_OUTPUT main(PS_INPUT input, bool frontFace
+ 	if (extendedMaterialSettings.EnableParallax) {
+ 		mipLevel = ExtendedMaterials::GetMipLevel(uv, TexParallaxSampler);
+ 		uv = ExtendedMaterials::GetParallaxCoords(viewPosition.z, uv, mipLevel, viewDirection, tbnTr, screenNoise, TexParallaxSampler, SampParallaxSampler, 0, displacementParams, pixelOffset);
+-		if (extendedMaterialSettings.EnableShadows && parallaxShadowQuality > 0.0f)
++		if (extendedMaterialSettings.EnableShadows && (parallaxShadowQuality > 0.0f || extendedMaterialSettings.ExtendShadows))
+ 			sh0 = TexParallaxSampler.SampleLevel(SampParallaxSampler, uv, mipLevel).x;
+ 	}
+ #		endif  // PARALLAX
+@@ -1118,7 +1118,7 @@ PS_OUTPUT main(PS_INPUT input, bool frontFace
+ 				complexMaterialParallax = true;
+ 				mipLevel = ExtendedMaterials::GetMipLevel(uv, TexEnvMaskSampler);
+ 				uv = ExtendedMaterials::GetParallaxCoords(viewPosition.z, uv, mipLevel, viewDirection, tbnTr, screenNoise, TexEnvMaskSampler, SampTerrainParallaxSampler, 3, displacementParams, pixelOffset);
+-				if (extendedMaterialSettings.EnableShadows && parallaxShadowQuality > 0.0f)
++				if (extendedMaterialSettings.EnableShadows && (parallaxShadowQuality > 0.0f || extendedMaterialSettings.ExtendShadows))
+ 					sh0 = TexEnvMaskSampler.SampleLevel(SampEnvMaskSampler, uv, mipLevel).w;
+ 			}
+ 
+@@ -1153,7 +1153,7 @@ PS_OUTPUT main(PS_INPUT input, bool frontFace
+ 		}
+ 		mipLevel = ExtendedMaterials::GetMipLevel(uv, TexParallaxSampler);
+ 		uv = ExtendedMaterials::GetParallaxCoords(viewPosition.z, uv, mipLevel, refractedViewDirection, tbnTr, screenNoise, TexParallaxSampler, SampParallaxSampler, 0, displacementParams, pixelOffset);
+-		if (extendedMaterialSettings.EnableShadows && parallaxShadowQuality > 0.0f)
++		if (extendedMaterialSettings.EnableShadows && (parallaxShadowQuality > 0.0f || extendedMaterialSettings.ExtendShadows))
+ 			sh0 = TexParallaxSampler.SampleLevel(SampParallaxSampler, uv, mipLevel).x;
+ 	}
+ #		endif  // TRUE_PBR
+@@ -1217,15 +1217,15 @@ PS_OUTPUT main(PS_INPUT input, bool frontFace
+ 
+ 		float weights[6];
+ 		uv = ExtendedMaterials::GetParallaxCoords(input, viewPosition.z, uv, mipLevels, viewDirection, tbnTr, screenNoise, displacementParams, pixelOffset, weights);
+-		if (extendedMaterialSettings.EnableComplexMaterial) {
++		if (extendedMaterialSettings.EnableHeightBlending) {
+ 			input.LandBlendWeights1.x = weights[0];
+ 			input.LandBlendWeights1.y = weights[1];
+ 			input.LandBlendWeights1.z = weights[2];
+ 			input.LandBlendWeights1.w = weights[3];
+ 			input.LandBlendWeights2.x = weights[4];
+ 			input.LandBlendWeights2.y = weights[5];
+ 		}
+-		if (extendedMaterialSettings.EnableShadows && parallaxShadowQuality > 0.0f) {
++		if (extendedMaterialSettings.EnableShadows && (parallaxShadowQuality > 0.0f || extendedMaterialSettings.ExtendShadows)) {
+ #			if defined(TRUE_PBR)
+ 			sh0 = ExtendedMaterials::GetTerrainHeight(input, uv, mipLevels, displacementParams, parallaxShadowQuality, input.LandBlendWeights1, input.LandBlendWeights2, weights);
+ #			else"
+doodlum/skyrim-community-shaders,491,92a5eb0e99991ee636a096f1419c5cfca598aef4,src/Features/ExtendedMaterials.cpp,modified,13,2,15,"@@ -4,10 +4,12 @@
+ 
+ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE_WITH_DEFAULT(
+ 	ExtendedMaterials::Settings,
++	EnableComplexMaterial,
+ 	EnableParallax,
+ 	EnableTerrain,
+-	EnableComplexMaterial,
+-	EnableShadows)
++	EnableHeightBlending,
++	EnableShadows,
++	ExtendShadows)
+ 
+ void ExtendedMaterials::DataLoaded()
+ {
+@@ -53,6 +55,10 @@ void ExtendedMaterials::DrawSettings()
+ 				""Enables terrain parallax using the alpha channel of each landscape texture. ""
+ 				""Therefore, all landscape textures must support parallax for this effect to work properly. "");
+ 		}
++		ImGui::Checkbox(""Enable Terrain Height Blending"", (bool*)&settings.EnableHeightBlending);
++		if (auto _tt = Util::HoverTooltipWrapper()) {
++			ImGui::Text(""Enables landscape texture blending based on parallax. "");
++		}
+ 
+ 		ImGui::Spacing();
+ 		ImGui::Spacing();
+@@ -66,6 +72,11 @@ void ExtendedMaterials::DrawSettings()
+ 				""Enables cheap soft shadows when using parallax. ""
+ 				""This applies to all directional and point lights. "");
+ 		}
++		ImGui::Checkbox(""Extend Shadows"", (bool*)&settings.ExtendShadows);
++		if (auto _tt = Util::HoverTooltipWrapper()) {
++			ImGui::Text(
++				""Extends parallax shadows beyond the range of parallax. Small performance impact."");
++		}
+ 
+ 		ImGui::Spacing();
+ 		ImGui::Spacing();"
+doodlum/skyrim-community-shaders,491,92a5eb0e99991ee636a096f1419c5cfca598aef4,src/Features/ExtendedMaterials.h,modified,4,0,4,"@@ -22,8 +22,12 @@ struct ExtendedMaterials : Feature
+ 
+ 		uint EnableParallax = 1;
+ 		uint EnableTerrain = 0;
++		uint EnableHeightBlending = 1;
+ 
+ 		uint EnableShadows = 1;
++		uint ExtendShadows = 0;
++
++		float pad[2];
+ 	};
+ 
+ 	Settings settings;"

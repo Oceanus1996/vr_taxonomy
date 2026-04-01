@@ -1,0 +1,93 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe,5203,775c76418b39b9cab270b5da9bda6bb518f1e55a,src/core/a-node.js,modified,2,2,4,"@@ -140,8 +140,8 @@ class ANode extends HTMLElement {
+       });
+ 
+       self.hasLoaded = true;
+-      if (cb) { cb(); }
+       self.setupMutationObserver();
++      if (cb) { cb(); }
+       self.emit('loaded', undefined, false);
+     });
+   }
+@@ -151,7 +151,7 @@ class ANode extends HTMLElement {
+    * for attributes defined statically via observedAttributes.
+    * One can assign any arbitrary components to an A-Frame entity
+    * hence we can't know the list of attributes beforehand.
+-   * This function setup a mutation observer to keep track of the entiy attribute changes
++   * This function setup a mutation observer to keep track of the entity attribute changes
+    * in the DOM and update components accordingly.
+    */
+   setupMutationObserver () {"
+aframevr/aframe,5203,775c76418b39b9cab270b5da9bda6bb518f1e55a,tests/extras/primitives/primitives/a-torus.test.js,modified,62,0,62,"@@ -1,5 +1,6 @@
+ /* global assert, suite, test, setup */
+ var helpers = require('../../../helpers');
++var registerComponent = require('core/component').registerComponent;
+ 
+ suite('a-torus', function () {
+   setup(function (done) {
+@@ -37,4 +38,65 @@ suite('a-torus', function () {
+       done();
+     });
+   });
++
++  test('can set torus properties when creating in JavaScript', function (done) {
++    var scene = document.querySelector('a-scene');
++    var geometry;
++    var torusEl = document.createElement('a-torus');
++    torusEl.setAttribute('segments-tubular', '100');
++    torusEl.setAttribute('radius', '2');
++    torusEl.setAttribute('radius-tubular', '0.1');
++    scene.appendChild(torusEl);
++
++    process.nextTick(function () {
++      geometry = torusEl.getAttribute('geometry');
++      assert.equal(geometry.primitive, 'torus');
++      assert.equal(geometry.segmentsTubular, 100);
++      assert.equal(geometry.radius, 2);
++      assert.equal(geometry.radiusTubular, 0.1);
++      done();
++    });
++  });
++
++  test('can set torus properties after creation when creating in JavaScript', function (done) {
++    var scene = document.querySelector('a-scene');
++    var geometry;
++    var torusEl = document.createElement('a-torus');
++    scene.appendChild(torusEl);
++    torusEl.setAttribute('segments-tubular', '100');
++    torusEl.setAttribute('radius', '2');
++    torusEl.setAttribute('radius-tubular', '0.1');
++
++    process.nextTick(function () {
++      geometry = torusEl.getAttribute('geometry');
++      assert.equal(geometry.primitive, 'torus');
++      assert.equal(geometry.segmentsTubular, 100);
++      assert.equal(geometry.radius, 2);
++      assert.equal(geometry.radiusTubular, 0.1);
++      done();
++    });
++  });
++
++  test('can set torus properties via an additional component', function (done) {
++    var scene = document.querySelector('a-scene');
++    var geometry;
++    var torusEl = document.createElement('a-torus');
++    torusEl.setAttribute('test', '');
++    scene.appendChild(torusEl);
++    registerComponent('test', {
++      init () {
++        this.el.setAttribute('segments-tubular', '100');
++        this.el.setAttribute('radius', '2');
++        this.el.setAttribute('radius-tubular', '0.1');
++      }
++    });
++    process.nextTick(function () {
++      geometry = torusEl.getAttribute('geometry');
++      assert.equal(geometry.primitive, 'torus');
++      assert.equal(geometry.segmentsTubular, 100);
++      assert.equal(geometry.radius, 2);
++      assert.equal(geometry.radiusTubular, 0.1);
++      done();
++    });
++  });
+ });"

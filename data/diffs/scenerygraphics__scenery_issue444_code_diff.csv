@@ -1,0 +1,127 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+scenerygraphics/scenery,444,45d1006edbca31c79545877eef3c58fbe7d31dc8,src/main/kotlin/graphics/scenery/DetachedHeadCamera.kt,modified,1,1,2,"@@ -110,7 +110,7 @@ class DetachedHeadCamera(@Transient var tracker: TrackerInput? = null) : Camera(
+         return object: CameraSpatial(this) {
+             override var projection: Matrix4f = Matrix4f().identity()
+                 get() = if(tracker != null && tracker is Display && tracker?.initializedAndWorking() == true) {
+-                    (tracker as? Display)?.getEyeProjection(0) ?: super.projection
++                    (tracker as? Display)?.getEyeProjection(0, nearPlaneDistance, farPlaneDistance) ?: super.projection
+                 } else {
+                     super.projection
+                 }"
+scenerygraphics/scenery,444,45d1006edbca31c79545877eef3c58fbe7d31dc8,src/main/kotlin/graphics/scenery/attribute/renderable/HasCustomRenderable.kt,modified,4,0,4,"@@ -31,4 +31,8 @@ interface HasCustomRenderable<T: Renderable>: Node {
+     override fun renderableOrNull(): T {
+         return this.renderable()
+     }
++
++    fun close() {
++        this.renderable().close()
++    }
+ }"
+scenerygraphics/scenery,444,45d1006edbca31c79545877eef3c58fbe7d31dc8,src/main/kotlin/graphics/scenery/attribute/renderable/Renderable.kt,modified,4,0,4,"@@ -38,4 +38,8 @@ interface Renderable {
+     fun preDraw(): Boolean {
+         return true
+     }
++
++    fun close() {
++
++    }
+ }"
+scenerygraphics/scenery,444,45d1006edbca31c79545877eef3c58fbe7d31dc8,src/main/kotlin/graphics/scenery/backends/opengl/OpenGLRenderer.kt,modified,4,0,4,"@@ -872,6 +872,10 @@ open class OpenGLRenderer(hub: Hub,
+                 (node as? Node)?.let { destroyNode(it, onShutdown = true) }
+             }
+ 
++            hub?.elements?.values?.forEach {
++                (it as? Node)?.renderableOrNull()?.close()
++            }
++
+             scene.initialized = false
+ 
+             if(cglWindow != null) {"
+scenerygraphics/scenery,444,45d1006edbca31c79545877eef3c58fbe7d31dc8,src/main/kotlin/graphics/scenery/backends/vulkan/VulkanRenderer.kt,modified,4,4,8,"@@ -5,6 +5,7 @@ import graphics.scenery.backends.*
+ import graphics.scenery.attribute.renderable.Renderable
+ import graphics.scenery.attribute.material.Material
+ import graphics.scenery.attribute.renderable.DelegatesRenderable
++import graphics.scenery.attribute.renderable.HasCustomRenderable
+ import graphics.scenery.spirvcrossj.Loader
+ import graphics.scenery.spirvcrossj.libspirvcrossj
+ import graphics.scenery.textures.Texture
+@@ -2191,10 +2192,9 @@ open class VulkanRenderer(hub: Hub,
+             destroyNode(it, onShutdown = true)
+         }
+ 
+-        // The hub might contain elements that are both in the scene graph,
+-        // and in the hub, e.g. a VolumeManager. We clean them here as well.
+-        hub?.find { it is Node }?.forEach { (_, node) ->
+-            (node as? Node)?.let { destroyNode(it, onShutdown = true) }
++        hub?.elements?.values?.forEach { elem ->
++            (elem as? HasCustomRenderable<*>)?.close()
++            (elem as? Node)?.let { destroyNode(it, onShutdown = true) }
+         }
+ 
+         scene.metadata.remove(""DescriptorCache"")"
+scenerygraphics/scenery,444,45d1006edbca31c79545877eef3c58fbe7d31dc8,src/main/kotlin/graphics/scenery/volumes/VolumeManager.kt,modified,19,7,26,"@@ -140,7 +140,7 @@ class VolumeManager(
+         addGeometry {
+             this.geometryType = GeometryType.TRIANGLES
+         }
+-        logger.info(""Created new volume manager with compute=$useCompute, segments=$customSegments, bindings=$customBindings"")
++        logger.debug(""Created new volume manager with compute=$useCompute, segments=$customSegments, bindings=$customBindings"")
+ 
+         addMaterial()
+ 
+@@ -353,7 +353,7 @@ class VolumeManager(
+     protected fun updateBlocks(context: SceneryContext): Boolean {
+         val currentProg = progvol
+         if (currentProg == null) {
+-            logger.info(""Not updating blocks, no prog"")
++            logger.debug(""Not updating blocks, no prog"")
+             return false
+         }
+ 
+@@ -744,11 +744,8 @@ class VolumeManager(
+         needAtLeastNumVolumes(renderStacksStates.size)
+     }
+ 
+-    @Synchronized
+-    fun remove(node: Volume) {
+-        logger.debug(""Removing $node to OOC nodes"")
+-        nodes.remove(node)
+-
++    private fun replace() {
++        logger.debug(""Replacing volume manager with ${nodes.size} volumes managed"")
+         val volumes = nodes.toMutableList()
+         val current = hub?.get<VolumeManager>()
+         if(current != null) {
+@@ -762,11 +759,20 @@ class VolumeManager(
+         }
+         volumes.forEach {
+             vm.add(it)
++            it.volumeManager = vm
+         }
+ 
+         hub?.add(vm)
+     }
+ 
++    @Synchronized
++    fun remove(node: Volume) {
++        logger.debug(""Removing $node to OOC nodes"")
++        nodes.remove(node)
++
++        replace()
++    }
++
+     protected val updated = HashSet<Volume>()
+ 
+     /**
+@@ -812,6 +818,12 @@ class VolumeManager(
+         renderStateUpdated = true
+     }
+ 
++    override fun close() {
++        logger.debug(""Closing VolumeManager"")
++
++        replace()
++    }
++
+     /** Companion object for Volume */
+     companion object {
+         /** Static [ForkJoinPool] for fill task submission. */"

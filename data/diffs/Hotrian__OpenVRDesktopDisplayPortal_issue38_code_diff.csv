@@ -1,0 +1,301 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+Hotrian/OpenVRDesktopDisplayPortal,38,d4893b242936b74b1da7c1e60b97ee2569521d86,Assets/HOTK/Example Content/HOTK_DisplayMirror.unity,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,38,d4893b242936b74b1da7c1e60b97ee2569521d86,Assets/HOTK/Example Content/UI Scripts/DropdownSaveLoadController.cs,modified,15,0,15,"@@ -146,6 +146,12 @@ public void OnLoadPressed(bool startup = false) // Loads an existing save
+             settings.Backside = DesktopPortalController.BacksideTexture.Blue;
+             settings.SaveFileVersion = 3;
+         }
++        if (settings.SaveFileVersion == 3)
++        {
++            settings.GrabEnabled = true;
++            settings.ScaleEnabled = true;
++            settings.SaveFileVersion = 4;
++        }
+         DesktopPortalController.Instance.ScreenOffsetPerformed = settings.ScreenOffsetPerformed;
+ 
+         // Recenter XYZ Sliders
+@@ -198,6 +204,9 @@ public void OnLoadPressed(bool startup = false) // Loads an existing save
+ 
+         DesktopPortalController.Instance.CurrentBacksideTexture = settings.Backside;
+ 
++        DesktopPortalController.Instance.GrabEnabledToggle.isOn = settings.GrabEnabled;
++        DesktopPortalController.Instance.ScaleEnabledToggle.isOn = settings.ScaleEnabled;
++
+         ColorPicker.LoadButtonColors();
+     }
+ 
+@@ -295,6 +304,9 @@ public void OnSavePressed()
+ 
+             settings.Backside = DesktopPortalController.Instance.CurrentBacksideTexture;
+ 
++            settings.GrabEnabled = DesktopPortalController.Instance.GrabEnabledToggle.isOn;
++            settings.ScaleEnabled = DesktopPortalController.Instance.ScaleEnabledToggle.isOn;
++
+             PortalSettingsSaver.SaveProfiles();
+         }
+     }
+@@ -358,6 +370,9 @@ public void OnSaveNewPressed()
+             OutlineScalingA = DesktopPortalController.Instance.OutlineColorScaling.a,
+ 
+             Backside = DesktopPortalController.Instance.CurrentBacksideTexture,
++
++            GrabEnabled = DesktopPortalController.Instance.GrabEnabledToggle.isOn,
++            ScaleEnabled = DesktopPortalController.Instance.ScaleEnabledToggle.isOn,
+         };
+     }
+ "
+Hotrian/OpenVRDesktopDisplayPortal,38,d4893b242936b74b1da7c1e60b97ee2569521d86,Assets/HOTK/Portal/DesktopPortalController.cs,modified,72,17,89,"@@ -78,7 +78,10 @@ public class DesktopPortalController : MonoBehaviour
+     public Toggle WindowOnTopToggle;
+     public Toggle MoveDesktopCursorToggle;
+     public Toggle ShowDesktopCursorToggle;
++    public Toggle DesktopCursorWindowOnTopToggle;
+     public DropdownMatchEnumOptions BacksideDropdown;
++    public Toggle GrabEnabledToggle;
++    public Toggle ScaleEnabledToggle;
+     #endregion
+ 
+     #region Public Variables
+@@ -170,7 +173,9 @@ public BacksideTexture CurrentBacksideTexture
+             SetBacksideTexture(_currentBacksideTexture);
+         }
+     }
+-    public WindowSettings SelectedWindowSettings; // The WindowSettings of the current Target Application
++
++    public WindowSettings SelectedWindowSettings { get; set; } // The WindowSettings of the current Target Application
++
+     #endregion
+ 
+     #region Private Variables
+@@ -303,6 +308,7 @@ public void OnDisable()
+ 
+     private int _trueCursorRelativeX;
+     private int _trueCursorRelativeY;
++    private float _lastTrueCursorMoveTime;
+     public void Update()
+     {
+         if (_showFps)
+@@ -345,17 +351,28 @@ public void Update()
+                     {
+                         _trueCursorRelativeX = p.X;
+                         _trueCursorRelativeY = p.Y;
++                        _lastTrueCursorMoveTime = Time.time;
+                         if (_grabbingOverlay == null && _touchingOverlay == null && _aimingAtOverlay == null)
+                         {
+                             if (p.X >= 0 && p.X <= _currentWindowWidth && p.Y >= 0 && p.Y <= _currentWindowHeight)
+                             {
+                                 CursorGameObject.transform.localPosition = new Vector3(-(_currentWindowWidth / 2f) + p.X, (_currentWindowHeight / 2f) - p.Y, -0.5f);
++                                if (SelectedWindowSettings.clickDesktopCursorForceWindowOnTop)
++                                    Win32Stuff.SetForegroundWindow(_selectedWindow);
+                                 StartCoroutine(""GoToAimingColor"");
+                             }
+                             else StartCoroutine(""GoToDefaultColor"");
+                         }
+                     }
+-                }else if (_trueCursorRelativeX != -1 || _trueCursorRelativeY != -1)
++                    else if (Time.time - _lastTrueCursorMoveTime > 3.0f)
++                    {
++                        if (_grabbingOverlay == null && _touchingOverlay == null && _aimingAtOverlay == null)
++                        {
++                            StartCoroutine(""GoToDefaultColor"");
++                        }
++                    }
++                }
++                else if (_trueCursorRelativeX != -1 || _trueCursorRelativeY != -1)
+                 {
+                     _trueCursorRelativeX = -1;
+                     _trueCursorRelativeY = -1;
+@@ -440,10 +457,10 @@ private void AimAtApplication(HOTK_OverlayBase o, HOTK_TrackedDevice tracker, St
+             {
+                 _aimingAtOverlay = tracker;
+                 _didHitOverlay = true;
+-                if (SelectedWindowSettings.clickForceWindowOnTop)
++                if (WindowOnTopToggle.isOn)
+                     Win32Stuff.SetForegroundWindow(_selectedWindow);
+ 
+-                if (SelectedWindowSettings.clickMoveDesktopCursor)
++                if (MoveDesktopCursorToggle.isOn)
+                 {
+                     CursorInteraction.MoveOverWindow(_selectedWindow, new Point((int) v2.x, (int) v2.y));
+                 }else
+@@ -501,21 +518,27 @@ private void TriggerDown(HOTK_TrackedDevice tracker)
+         {
+             if (_grabbingOverlay == null)
+             {
+-                _grabbingOverlay = tracker;
+-                _lastOverlayParent = Overlay.gameObject.transform.parent;
+-                _grabbingOffset = Overlay.AnchorOffset - _grabbingOverlay.transform.position;
+-                OverlayOffsetTracker.transform.parent = _grabbingOverlay.transform;
+-                OverlayOffsetTracker.transform.localPosition = _grabbingOffset;
+-                OverlayOffsetTracker.transform.rotation = _grabbingOverlay.transform.rotation;
++                if (GrabEnabledToggle.isOn)
++                {
++                    _grabbingOverlay = tracker;
++                    _lastOverlayParent = Overlay.gameObject.transform.parent;
++                    _grabbingOffset = Overlay.AnchorOffset - _grabbingOverlay.transform.position;
++                    OverlayOffsetTracker.transform.parent = _grabbingOverlay.transform;
++                    OverlayOffsetTracker.transform.localPosition = _grabbingOffset;
++                    OverlayOffsetTracker.transform.rotation = _grabbingOverlay.transform.rotation;
++                }
+             }
+             else if (_scalingOverlay == null)
+             {
+-                _scalingOverlay = tracker;
+-                _scalingScale2 = Overlay.IsBeingGazed;
+-                Overlay.LockGaze(_scalingScale2); // Lock the Gaze Detection on the Overlay to it's current state
+-                _scalingBaseScale = _scalingScale2 ? Overlay.Scale2 : Overlay.Scale;
+-                _scalingBaseDistance = Vector3.Distance(_grabbingOverlay.transform.position, _scalingOverlay.transform.position);
+-                StartCoroutine(""GoToScalingColor"");
++                if (ScaleEnabledToggle.isOn)
++                {
++                    _scalingOverlay = tracker;
++                    _scalingScale2 = Overlay.IsBeingGazed;
++                    Overlay.LockGaze(_scalingScale2); // Lock the Gaze Detection on the Overlay to it's current state
++                    _scalingBaseScale = _scalingScale2 ? Overlay.Scale2 : Overlay.Scale;
++                    _scalingBaseDistance = Vector3.Distance(_grabbingOverlay.transform.position, _scalingOverlay.transform.position);
++                    StartCoroutine(""GoToScalingColor"");
++                }
+             }
+         }
+         else
+@@ -1245,7 +1268,7 @@ public WindowSettings LoadConfig(string configName)
+             Debug.Log(""Config ["" + configName + ""] not found."");
+             settings = new WindowSettings {SaveFileVersion = WindowSettings.CurrentSaveVersion};
+             SaveLoad.SavedSettings.Add(configName, settings);
+-        }
++        }else Debug.Log(""Config ["" + configName + ""] Loaded."");
+ 
+         if (settings.SaveFileVersion == 0)
+         {
+@@ -1365,33 +1388,45 @@ private void SetClickAPIInternal(WindowSettings settings)
+                 WindowOnTopToggle.interactable = false;
+                 MoveDesktopCursorToggle.interactable = false;
+                 ShowDesktopCursorToggle.interactable = _selectedWindow != IntPtr.Zero;
++                DesktopCursorWindowOnTopToggle.interactable = _selectedWindow != IntPtr.Zero && settings.clickShowDesktopCursor;
++
+                 WindowOnTopToggle.isOn = false;
+                 MoveDesktopCursorToggle.isOn = false;
+                 ShowDesktopCursorToggle.isOn = settings.clickShowDesktopCursor;
++                DesktopCursorWindowOnTopToggle.isOn = settings.clickDesktopCursorForceWindowOnTop;
+                 break;
+             case ClickAPI.SendInput:
+                 WindowOnTopToggle.interactable = false;
+                 MoveDesktopCursorToggle.interactable = false;
+                 ShowDesktopCursorToggle.interactable = true;
++                DesktopCursorWindowOnTopToggle.interactable = settings.clickShowDesktopCursor;
++
+                 WindowOnTopToggle.isOn = true;
+                 MoveDesktopCursorToggle.isOn = true;
+                 ShowDesktopCursorToggle.isOn = settings.clickShowDesktopCursor;
++                DesktopCursorWindowOnTopToggle.isOn = settings.clickDesktopCursorForceWindowOnTop;
+                 break;
+             case ClickAPI.SendMessage:
+                 WindowOnTopToggle.interactable = true;
+                 MoveDesktopCursorToggle.interactable = true;
+                 ShowDesktopCursorToggle.interactable = true;
++                DesktopCursorWindowOnTopToggle.interactable = settings.clickShowDesktopCursor;
++
+                 WindowOnTopToggle.isOn = settings.clickForceWindowOnTop;
+                 MoveDesktopCursorToggle.isOn = settings.clickMoveDesktopCursor;
+                 ShowDesktopCursorToggle.isOn = settings.clickShowDesktopCursor;
++                DesktopCursorWindowOnTopToggle.isOn = settings.clickDesktopCursorForceWindowOnTop;
+                 break;
+             case ClickAPI.SendNotifyMessage:
+                 WindowOnTopToggle.interactable = true;
+                 MoveDesktopCursorToggle.interactable = true;
+                 ShowDesktopCursorToggle.interactable = true;
++                DesktopCursorWindowOnTopToggle.interactable = settings.clickShowDesktopCursor;
++
+                 WindowOnTopToggle.isOn = settings.clickForceWindowOnTop;
+                 MoveDesktopCursorToggle.isOn = settings.clickMoveDesktopCursor;
+                 ShowDesktopCursorToggle.isOn = settings.clickShowDesktopCursor;
++                DesktopCursorWindowOnTopToggle.isOn = settings.clickDesktopCursorForceWindowOnTop;
+                 break;
+             default:
+                 throw new ArgumentOutOfRangeException(""api"", settings.clickAPI, null);
+@@ -1400,17 +1435,37 @@ private void SetClickAPIInternal(WindowSettings settings)
+ 
+     public void ToggleWindowOnTop()
+     {
++        if (!WindowOnTopToggle.IsInteractable()) return;
+         SelectedWindowSettings.clickForceWindowOnTop = WindowOnTopToggle.isOn;
+     }
+ 
+     public void ToggleMoveCursor()
+     {
++        if (!MoveDesktopCursorToggle.IsInteractable()) return;
+         SelectedWindowSettings.clickMoveDesktopCursor = MoveDesktopCursorToggle.isOn;
+     }
+ 
+     public void ToggleShowCursor()
+     {
++        if (!ShowDesktopCursorToggle.IsInteractable()) return;
+         SelectedWindowSettings.clickShowDesktopCursor = ShowDesktopCursorToggle.isOn;
++        DesktopCursorWindowOnTopToggle.interactable= ShowDesktopCursorToggle.isOn;
++    }
++
++    public void ToggleWindowOnTopWithDesktopCursor()
++    {
++        if (!DesktopCursorWindowOnTopToggle.IsInteractable()) return;
++        SelectedWindowSettings.clickDesktopCursorForceWindowOnTop = DesktopCursorWindowOnTopToggle.isOn;
++    }
++
++    public void ToggleGrabEnabled()
++    {
++        if (!GrabEnabledToggle.IsInteractable()) return;
++    }
++
++    public void ToggleScaleEnabled()
++    {
++        if (!ScaleEnabledToggle.IsInteractable()) return;
+     }
+ 
+     #endregion"
+Hotrian/OpenVRDesktopDisplayPortal,38,d4893b242936b74b1da7c1e60b97ee2569521d86,Assets/HOTK/Portal/PortalSettingsSaver.cs,modified,3,1,4,"@@ -16,7 +16,7 @@ public class ProgramSettings
+ [System.Serializable]
+ public class PortalSettings
+ {
+-    public const uint CurrentSaveVersion = 3;
++    public const uint CurrentSaveVersion = 4;
+ 
+     public uint SaveFileVersion;
+     
+@@ -49,6 +49,8 @@ public class PortalSettings
+     public float OutlineScalingA;
+ 
+     public DesktopPortalController.BacksideTexture Backside;
++    public bool GrabEnabled;
++    public bool ScaleEnabled;
+ }
+ 
+ public static class PortalSettingsSaver"
+Hotrian/OpenVRDesktopDisplayPortal,38,d4893b242936b74b1da7c1e60b97ee2569521d86,Assets/ScreenCapture/WindowSettings.cs,modified,1,0,1,"@@ -17,6 +17,7 @@ public class WindowSettings
+     public bool clickForceWindowOnTop = true;
+     public bool clickMoveDesktopCursor = true;
+     public bool clickShowDesktopCursor = false;
++    public bool clickDesktopCursorForceWindowOnTop = true;
+ 
+     public DesktopPortalController.BacksideTexture backsideTexture = DesktopPortalController.BacksideTexture.Purple;
+ "
+Hotrian/OpenVRDesktopDisplayPortal,38,d4893b242936b74b1da7c1e60b97ee2569521d86,Library/CurrentLayout.dwlt,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,38,d4893b242936b74b1da7c1e60b97ee2569521d86,Library/ScriptAssemblies/Assembly-CSharp-Editor.dll,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,38,d4893b242936b74b1da7c1e60b97ee2569521d86,Library/ScriptAssemblies/Assembly-CSharp-Editor.dll.mdb,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,38,d4893b242936b74b1da7c1e60b97ee2569521d86,Library/ScriptAssemblies/Assembly-CSharp-firstpass.dll,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,38,d4893b242936b74b1da7c1e60b97ee2569521d86,Library/ScriptAssemblies/Assembly-CSharp-firstpass.dll.mdb,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,38,d4893b242936b74b1da7c1e60b97ee2569521d86,Library/ScriptAssemblies/Assembly-CSharp.dll,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,38,d4893b242936b74b1da7c1e60b97ee2569521d86,Library/ScriptAssemblies/Assembly-CSharp.dll.mdb,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,38,d4893b242936b74b1da7c1e60b97ee2569521d86,Library/assetDatabase3,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,38,d4893b242936b74b1da7c1e60b97ee2569521d86,Library/expandedItems,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,38,d4893b242936b74b1da7c1e60b97ee2569521d86,Library/metadata/00/00000000000000004000000000000000,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,38,d4893b242936b74b1da7c1e60b97ee2569521d86,Library/metadata/00/00000000000000006100000000000000,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,38,d4893b242936b74b1da7c1e60b97ee2569521d86,Library/metadata/48/48b5bcc676d3b6b48aa4f2d01cb6b7e0,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,38,d4893b242936b74b1da7c1e60b97ee2569521d86,Library/metadata/7c/7c3fc6c1d4abf7948b2c42b19221d52b,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,38,d4893b242936b74b1da7c1e60b97ee2569521d86,Library/metadata/ae/ae39e63b45422554bb277cb9c86b536c,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,38,d4893b242936b74b1da7c1e60b97ee2569521d86,Library/metadata/d0/d06e6722c08b8c04bb397e32d3db40a0,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,38,d4893b242936b74b1da7c1e60b97ee2569521d86,Library/shadercompiler-UnityShaderCompiler.exe0.log,modified,0,6,6,"@@ -1,8 +1,2 @@
+ Base path: C:/Program Files/Unity 5.3.5f1/Editor/Data
+ Cmd: getPlatforms
+-Cmd: preprocess
+-  insize=615 outsize=269 ok=1
+-Cmd: preprocess
+-  insize=791 outsize=411 ok=1
+-Cmd: preprocess
+-  insize=417 outsize=247 ok=1"

@@ -1,0 +1,80 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+MephestoKhaan/HandPosing,25,aafe2083387b6dac3efe6c82dd75a9f6cd6be65e,HandPosing_Unity/Hand Posing/Assets/PoseAuthoring/Scripts/Grabbing/Grabber.cs,modified,1,4,5,"@@ -107,16 +107,13 @@ void Update()
+         {
+             _lastPos = transform.position;
+             _lastRot = transform.rotation;
+-
+             float prevFlex = _prevFlex;
+             _prevFlex = CurrentFlex();
+-
+             CheckForGrabOrRelease(prevFlex);
+-
+-            //change this in order to support other types of snapping.
+             MoveGrabbedObject(_lastPos, _lastRot);
+         }
+ 
++
+         public float CurrentFlex()
+         {
+             if (trackedHand && trackedHand.IsTracked)"
+MephestoKhaan/HandPosing,25,aafe2083387b6dac3efe6c82dd75a9f6cd6be65e,HandPosing_Unity/Hand Posing/Assets/PoseAuthoring/Scripts/HandPuppet.cs,modified,2,31,33,"@@ -52,8 +52,6 @@ public Transform Grip
+         private bool _restored;
+         private bool _puppettedHand;
+ 
+-        private bool _usingRig;
+-        private bool _updated;
+ 
+         private void Awake()
+         {
+@@ -63,17 +61,6 @@ private void Awake()
+             {
+                 this.enabled = false;
+             }
+-
+-            OVRCameraRig rig = transform.GetComponentInParent<OVRCameraRig>();
+-            if (rig != null)
+-            {
+-                rig.UpdatedAnchors += (r) => OnUpdatedAnchors();
+-                _usingRig = true;
+-            }
+-            else
+-            {
+-                _usingRig = false;
+-            }
+         }
+ 
+         private void Start()
+@@ -107,15 +94,6 @@ private void InitializeBones()
+ 
+         private void OnUpdatedAnchors()
+         {
+-            if(!_updated)
+-            {
+-                _updated = true;
+-            }
+-            else
+-            {
+-                return;
+-            }
+-
+             if (trackedHand != null
+                 && trackedHand.IsInitialized
+                 && trackedHand.IsDataValid)
+@@ -133,15 +111,8 @@ private void OnUpdatedAnchors()
+ 
+         private void LateUpdate()
+         {
+-            if(!_usingRig)
+-            {
+-                OnUpdatedAnchors();
+-            }
+-            if(_updated)
+-            {
+-                OnPostupdated?.Invoke();
+-                _updated = false;
+-            }
++            OnUpdatedAnchors();
++            OnPostupdated?.Invoke();
+         }
+ 
+         private void EnableHandTracked()"

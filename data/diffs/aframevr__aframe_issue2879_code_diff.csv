@@ -1,0 +1,970 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe,2879,20cd40a64e722d791e1f38f0c2e3c733f68c421c,src/components/daydream-controls.js,modified,2,0,2,"@@ -72,6 +72,7 @@ module.exports.Component = registerComponent('daydream-controls', {
+     el.addEventListener('touchend', this.onButtonTouchEnd);
+     el.addEventListener('model-loaded', this.onModelLoaded);
+     el.addEventListener('axismove', this.onAxisMoved);
++    this.controllerEventsActive = true;
+   },
+ 
+   removeEventListeners: function () {
+@@ -83,6 +84,7 @@ module.exports.Component = registerComponent('daydream-controls', {
+     el.removeEventListener('touchend', this.onButtonTouchEnd);
+     el.removeEventListener('model-loaded', this.onModelLoaded);
+     el.removeEventListener('axismove', this.onAxisMoved);
++    this.controllerEventsActive = false;
+   },
+ 
+   checkIfControllerPresent: function () {"
+aframevr/aframe,2879,20cd40a64e722d791e1f38f0c2e3c733f68c421c,src/components/gearvr-controls.js,modified,2,2,4,"@@ -73,7 +73,7 @@ module.exports.Component = registerComponent('gearvr-controls', {
+     el.addEventListener('touchend', this.onButtonTouchEnd);
+     el.addEventListener('model-loaded', this.onModelLoaded);
+     el.addEventListener('axismove', this.onAxisMoved);
+-
++    this.controllerEventsActive = true;
+     this.addControllersUpdateListener();
+   },
+ 
+@@ -86,7 +86,7 @@ module.exports.Component = registerComponent('gearvr-controls', {
+     el.removeEventListener('touchend', this.onButtonTouchEnd);
+     el.removeEventListener('model-loaded', this.onModelLoaded);
+     el.removeEventListener('axismove', this.onAxisMoved);
+-
++    this.controllerEventsActive = false;
+     this.removeControllersUpdateListener();
+   },
+ "
+aframevr/aframe,2879,20cd40a64e722d791e1f38f0c2e3c733f68c421c,src/components/oculus-touch-controls.js,modified,2,0,2,"@@ -82,6 +82,7 @@ module.exports.Component = registerComponent('oculus-touch-controls', {
+     el.addEventListener('touchend', this.onButtonTouchEnd);
+     el.addEventListener('axismove', this.onAxisMoved);
+     el.addEventListener('model-loaded', this.onModelLoaded);
++    this.controllerEventsActive = true;
+   },
+ 
+   removeEventListeners: function () {
+@@ -93,6 +94,7 @@ module.exports.Component = registerComponent('oculus-touch-controls', {
+     el.removeEventListener('touchend', this.onButtonTouchEnd);
+     el.removeEventListener('axismove', this.onAxisMoved);
+     el.removeEventListener('model-loaded', this.onModelLoaded);
++    this.controllerEventsActive = false;
+   },
+ 
+   checkIfControllerPresent: function () {"
+aframevr/aframe,2879,20cd40a64e722d791e1f38f0c2e3c733f68c421c,src/components/vive-controls.js,modified,2,0,2,"@@ -94,6 +94,7 @@ module.exports.Component = registerComponent('vive-controls', {
+     el.addEventListener('touchstart', this.onButtonTouchStart);
+     el.addEventListener('model-loaded', this.onModelLoaded);
+     el.addEventListener('axismove', this.onAxisMoved);
++    this.controlllerEventsActive = true;
+   },
+ 
+   removeEventListeners: function () {
+@@ -105,6 +106,7 @@ module.exports.Component = registerComponent('vive-controls', {
+     el.removeEventListener('touchstart', this.onButtonTouchStart);
+     el.removeEventListener('model-loaded', this.onModelLoaded);
+     el.removeEventListener('axismove', this.onAxisMoved);
++    this.controlllerEventsActive = false;
+   },
+ 
+   /**"
+aframevr/aframe,2879,20cd40a64e722d791e1f38f0c2e3c733f68c421c,src/utils/tracked-controls.js,modified,12,3,15,"@@ -25,9 +25,10 @@ module.exports.getGamepadsByPrefix = function (idPrefix) {
+ };
+ 
+ /**
+- * Check if the controller match the parameters and inject the tracked-controls component
+- * and add eventlistener, otherwise it will just remove the listener.
+- * It will also generate a controllerconnected or controllerdisconnected.
++ * Called on controller component `.play` handlers.
++ * Check if controller matches parameters and inject tracked-controls component.
++ * Handle event listeners.
++ * Generate controllerconnected or controllerdisconnected events.
+  *
+  * @param {object} component - the tracked controls component.
+  * @param {object} idPrefix - prefix to match in gamepad id, if any.
+@@ -37,8 +38,16 @@ module.exports.checkControllerPresentAndSetup = function (component, idPrefix, q
+   var el = component.el;
+   var isPresent = isControllerPresent(component, idPrefix, queryObject);
+ 
++  // If component was previously paused and now playing, re-add event listeners.
++  // Handle the event listeners here since this helper method is control of calling
++  // `.addEventListeners` and `.removeEventListeners`.
++  if (component.controllerPresent && !component.controllerEventsActive) {
++    component.addEventListeners();
++  }
++
+   // Nothing changed, no need to do anything.
+   if (isPresent === component.controllerPresent) { return isPresent; }
++
+   component.controllerPresent = isPresent;
+ 
+   // Update controller presence."
+aframevr/aframe,2879,20cd40a64e722d791e1f38f0c2e3c733f68c421c,tests/components/daydream-controls.test.js,modified,126,130,256,"@@ -1,14 +1,13 @@
+-/* global assert, process, setup, suite, test, CustomEvent, Event */
++/* global assert, process, setup, suite, test, Event */
+ var entityFactory = require('../helpers').entityFactory;
+-var controllerComponentName = 'daydream-controls';
+ 
+-suite(controllerComponentName, function () {
++suite('daydream-controls', function () {
+   setup(function (done) {
+     var el = this.el = entityFactory();
+-    el.setAttribute(controllerComponentName, 'hand: right'); // to ensure index = 0
++    el.setAttribute('daydream-controls', 'hand: right'); // to ensure index = 0
+     el.addEventListener('loaded', function () {
+-      var controllerComponent = el.components[controllerComponentName];
+-      controllerComponent.controllersWhenPresent = [{
++      var component = el.components['daydream-controls'];
++      component.controllersWhenPresent = [{
+         id: 'Daydream Controller',
+         index: 0,
+         hand: 'right',
+@@ -21,214 +20,211 @@ suite(controllerComponentName, function () {
+   });
+ 
+   suite('checkIfControllerPresent', function () {
+-    test('first-time, if no controllers, remember not present', function () {
++    test('returns not present if no controllers on the first call', function () {
+       var el = this.el;
+-      var controllerComponent = el.components[controllerComponentName];
+-      var addEventListenersSpy = this.sinon.spy(controllerComponent, 'addEventListeners');
+-      var injectTrackedControlsSpy = this.sinon.spy(controllerComponent, 'injectTrackedControls');
++      var component = el.components['daydream-controls'];
++      var addEventListenersSpy = this.sinon.spy(component, 'addEventListeners');
++      var injectTrackedControlsSpy = this.sinon.spy(component, 'injectTrackedControls');
+ 
+       el.sceneEl.systems['tracked-controls'].controllers = [];
+ 
+-      // reset so we don't think we've looked before
+-      controllerComponent.controllerPresent = false;
+-      // do the check
+-      controllerComponent.checkIfControllerPresent();
+-      // check assertions
++      component.controllerPresent = false;
++
++      component.checkIfControllerPresent();
++
+       assert.notOk(injectTrackedControlsSpy.called);
+       assert.notOk(addEventListenersSpy.called);
+-      assert.ok(controllerComponent.controllerPresent === false); // not undefined
++      assert.ok(component.controllerPresent === false);
+     });
+ 
+-    test('if no controllers again, do not remove event listeners', function () {
++    test('does not remove event listeners if no controllers', function () {
+       var el = this.el;
+-      var controllerComponent = el.components[controllerComponentName];
+-      var addEventListenersSpy = this.sinon.spy(controllerComponent, 'addEventListeners');
+-      var injectTrackedControlsSpy = this.sinon.spy(controllerComponent, 'injectTrackedControls');
+-      var removeEventListenersSpy = this.sinon.spy(controllerComponent, 'removeEventListeners');
++      var component = el.components['daydream-controls'];
++      var addEventListenersSpy = this.sinon.spy(component, 'addEventListeners');
++      var injectTrackedControlsSpy = this.sinon.spy(component, 'injectTrackedControls');
++      var removeEventListenersSpy = this.sinon.spy(component, 'removeEventListeners');
+ 
+       el.sceneEl.systems['tracked-controls'].controllers = [];
+ 
+-      // pretend we've looked before
+-      controllerComponent.controllerPresent = false;
+-      // do the check
+-      controllerComponent.checkIfControllerPresent();
+-      // check assertions
++      component.controllerPresent = false;
++
++      component.checkIfControllerPresent();
++
+       assert.notOk(injectTrackedControlsSpy.called);
+       assert.notOk(addEventListenersSpy.called);
+       assert.notOk(removeEventListenersSpy.called);
+-      assert.ok(controllerComponent.controllerPresent === false); // not undefined
++      assert.ok(component.controllerPresent === false); // not undefined
+     });
+ 
+-    test('attach events if controller is newly present', function () {
++    test('attaches events if controller is newly present', function () {
+       var el = this.el;
+-      var controllerComponent = el.components[controllerComponentName];
+-      var addEventListenersSpy = this.sinon.spy(controllerComponent, 'addEventListeners');
+-      var injectTrackedControlsSpy = this.sinon.spy(controllerComponent, 'injectTrackedControls');
+-      var removeEventListenersSpy = this.sinon.spy(controllerComponent, 'removeEventListeners');
+-
+-      el.sceneEl.systems['tracked-controls'].controllers = controllerComponent.controllersWhenPresent;
+-
+-      // reset so we don't think we've looked before
+-      controllerComponent.controllerPresent = false;
+-      // do the check
+-      controllerComponent.checkIfControllerPresent();
+-      // check assertions
++      var component = el.components['daydream-controls'];
++      var addEventListenersSpy = this.sinon.spy(component, 'addEventListeners');
++      var injectTrackedControlsSpy = this.sinon.spy(component, 'injectTrackedControls');
++      var removeEventListenersSpy = this.sinon.spy(component, 'removeEventListeners');
++
++      el.sceneEl.systems['tracked-controls'].controllers = component.controllersWhenPresent;
++
++      component.controllerPresent = false;
++
++      component.checkIfControllerPresent();
++
+       assert.ok(injectTrackedControlsSpy.called);
+       assert.ok(addEventListenersSpy.called);
+       assert.notOk(removeEventListenersSpy.called);
+-      assert.ok(controllerComponent.controllerPresent);
++      assert.ok(component.controllerPresent);
+     });
+ 
+-    test('do not inject or attach events again if controller is already present', function () {
++    test('does not inject/attach events again if controller already present', function () {
+       var el = this.el;
+-      var controllerComponent = el.components[controllerComponentName];
+-      var addEventListenersSpy = this.sinon.spy(controllerComponent, 'addEventListeners');
+-      var injectTrackedControlsSpy = this.sinon.spy(controllerComponent, 'injectTrackedControls');
+-      var removeEventListenersSpy = this.sinon.spy(controllerComponent, 'removeEventListeners');
+-
+-      el.sceneEl.systems['tracked-controls'].controllers = controllerComponent.controllersWhenPresent;
+-
+-      // pretend we've looked before
+-      controllerComponent.controllerPresent = true;
+-      // do the check
+-      controllerComponent.checkIfControllerPresent();
+-      // check assertions
++      var component = el.components['daydream-controls'];
++      var addEventListenersSpy = this.sinon.spy(component, 'addEventListeners');
++      var injectTrackedControlsSpy = this.sinon.spy(component, 'injectTrackedControls');
++      var removeEventListenersSpy = this.sinon.spy(component, 'removeEventListeners');
++
++      el.sceneEl.systems['tracked-controls'].controllers = component.controllersWhenPresent;
++
++      component.controllerEventsActive = true;
++      component.controllerPresent = true;
++
++      component.checkIfControllerPresent();
++
+       assert.notOk(injectTrackedControlsSpy.called);
+       assert.notOk(addEventListenersSpy.called);
+       assert.notOk(removeEventListenersSpy.called);
+-      assert.ok(controllerComponent.controllerPresent);
++      assert.ok(component.controllerPresent);
+     });
+ 
+-    test('if controller disappears, remove event listeners', function () {
++    test('removes event listeners if controller disappears', function () {
+       var el = this.el;
+-      var controllerComponent = el.components[controllerComponentName];
+-      var addEventListenersSpy = this.sinon.spy(controllerComponent, 'addEventListeners');
+-      var injectTrackedControlsSpy = this.sinon.spy(controllerComponent, 'injectTrackedControls');
+-      var removeEventListenersSpy = this.sinon.spy(controllerComponent, 'removeEventListeners');
++      var component = el.components['daydream-controls'];
++      var addEventListenersSpy = this.sinon.spy(component, 'addEventListeners');
++      var injectTrackedControlsSpy = this.sinon.spy(component, 'injectTrackedControls');
++      var removeEventListenersSpy = this.sinon.spy(component, 'removeEventListeners');
+ 
+       el.sceneEl.systems['tracked-controls'].controllers = [];
+ 
+-      // pretend we've looked before
+-      controllerComponent.controllerPresent = true;
+-      // do the check
+-      controllerComponent.checkIfControllerPresent();
+-      // check assertions
++      component.controllerPresent = true;
++      component.controllerEventsActive = true;
++
++      component.checkIfControllerPresent();
++
+       assert.notOk(injectTrackedControlsSpy.called);
+       assert.notOk(addEventListenersSpy.called);
+       assert.ok(removeEventListenersSpy.called);
+-      assert.notOk(controllerComponent.controllerPresent);
++      assert.notOk(component.controllerPresent);
+     });
+   });
+ 
+   suite('axismove', function () {
+-    var name = 'trackpad';
+-    test('if we get axismove, emit ' + name + 'moved', function (done) {
++    test('emits trackpadmoved on axismove', function (done) {
+       var el = this.el;
+-      var controllerComponent = el.components[controllerComponentName];
+-      var evt;
+-
+-      el.sceneEl.systems['tracked-controls'].controllers = controllerComponent.controllersWhenPresent;
+-      // do the check
+-      controllerComponent.checkIfControllerPresent();
+-      // install event handler listening for thumbstickmoved
+-      this.el.addEventListener(name + 'moved', function (evt) {
++      var component = el.components['daydream-controls'];
++
++      el.sceneEl.systems['tracked-controls'].controllers = component.controllersWhenPresent;
++      component.checkIfControllerPresent();
++
++      // Install event handler listening for thumbstickmoved.
++      this.el.addEventListener('trackpadmoved', function (evt) {
+         assert.equal(evt.detail.x, 0.1);
+         assert.equal(evt.detail.y, 0.2);
+         assert.ok(evt.detail);
+         done();
+       });
+-      // emit axismove
+-      evt = new CustomEvent('axismove', {'detail': {axis: [0.1, 0.2], changed: [true, false]}});
+-      this.el.dispatchEvent(evt);
++
++      // Emit axismove.
++      this.el.emit('axismove', {axis: [0.1, 0.2], changed: [true, false]});
+     });
+ 
+-    test('if we get axismove with no changes, do not emit ' + name + 'moved', function (done) {
++    test(' does not emit trackpadmove on axismove with no changes', function (done) {
+       var el = this.el;
+-      var controllerComponent = el.components[controllerComponentName];
+-      var evt;
+-
+-      el.sceneEl.systems['tracked-controls'].controllers = controllerComponent.controllersWhenPresent;
+-      // do the check
+-      controllerComponent.checkIfControllerPresent();
+-      // install event handler listening for thumbstickmoved
+-      this.el.addEventListener(name + 'moved', function (evt) {
+-        assert.notOk(evt.detail);
++      var component = el.components['daydream-controls'];
++
++      el.sceneEl.systems['tracked-controls'].controllers = component.controllersWhenPresent;
++
++      component.checkIfControllerPresent();
++
++      // Purposely fail.
++      this.el.addEventListener('trackpadmoved', function (evt) {
++        assert.ok(false);
+       });
+-      // emit axismove
+-      evt = new CustomEvent('axismove', {'detail': {axis: [0.1, 0.2], changed: [false, false]}});
+-      this.el.dispatchEvent(evt);
+-      // finish next tick
+-      setTimeout(function () { done(); }, 0);
++
++      // Emit axismove.
++      this.el.emit('axismove', {axis: [0.1, 0.2], changed: [false, false]});
++
++      setTimeout(() => { done(); });
+     });
+   });
+ 
+   suite('buttonchanged', function () {
+-    var name = 'trackpad';
+-    var id = 0;
+-    test('if we get buttonchanged, emit ' + name + 'changed', function (done) {
++    test('emits trackpadchanged on buttonchanged', function (done) {
+       var el = this.el;
+-      var controllerComponent = el.components[controllerComponentName];
+-      var evt;
+-
+-      el.sceneEl.systems['tracked-controls'].controllers = controllerComponent.controllersWhenPresent;
+-      // do the check
+-      controllerComponent.checkIfControllerPresent();
+-      // install event handler listening for triggerchanged
+-      this.el.addEventListener(name + 'changed', function (evt) {
++      var component = el.components['daydream-controls'];
++
++      el.sceneEl.systems['tracked-controls'].controllers = component.controllersWhenPresent;
++
++      component.checkIfControllerPresent();
++
++      // Install event handler listening for triggerchanged.
++      this.el.addEventListener('trackpadchanged', function (evt) {
+         assert.ok(evt.detail);
+         done();
+       });
+-      // emit buttonchanged
+-      evt = new CustomEvent('buttonchanged', {'detail': {id: id, state: {value: 0.5, pressed: true, touched: true}}});
+-      this.el.dispatchEvent(evt);
++
++      // Emit buttonchanged.
++      this.el.emit('buttonchanged',
++                   {id: 0, state: {value: 0.5, pressed: true, touched: true}});
+     });
+   });
+ 
+   suite('gamepaddisconnected', function () {
+-    // Due to an apparent bug in FF Nightly
+-    // where only one gamepadconnected / disconnected event is fired,
+-    // which makes it difficult to handle in individual controller entities,
+-    // we no longer remove the controllersupdate listener as a result.
+-    test('if we get gamepaddisconnected, check if present', function () {
++    /**
++     * Due to an apparent bug in FF Nightly
++     * where only one gamepadconnected / disconnected event is fired,
++     * which makes it difficult to handle in individual controller entities,
++     * we no longer remove the controllersupdate listener as a result.
++     */
++    test('checks present on gamepaddisconnected', function () {
+       var el = this.el;
+-      var controllerComponent = el.components[controllerComponentName];
+-      var checkIfControllerPresentSpy = this.sinon.spy(controllerComponent, 'checkIfControllerPresent');
++      var component = el.components['daydream-controls'];
++      var checkIfControllerPresentSpy = this.sinon.spy(component, 'checkIfControllerPresent');
+       // Because checkIfControllerPresent may be used in bound form, bind and reinstall.
+-      controllerComponent.checkIfControllerPresent = controllerComponent.checkIfControllerPresent.bind(controllerComponent);
+-      controllerComponent.pause();
+-      controllerComponent.play();
++      component.checkIfControllerPresent = component.checkIfControllerPresent.bind(component);
++      component.pause();
++      component.play();
+ 
+       el.sceneEl.systems['tracked-controls'].controllers = [];
+-      // reset everGotGamepadEvent so we don't think we've looked before
+-      delete controllerComponent.everGotGamepadEvent;
+-      // fire emulated gamepaddisconnected event
++
++      // Reset everGotGamepadEvent so we don't think we've looked before.
++      delete component.everGotGamepadEvent;
++
++      // Fire emulated gamepaddisconnected event.
+       window.dispatchEvent(new Event('gamepaddisconnected'));
+-      // check assertions
++
+       assert.ok(checkIfControllerPresentSpy.called);
+     });
+   });
+ 
+   suite('armModel', function () {
+     function makePresent (el) {
+-      var controllerComponent = el.components[controllerComponentName];
+-      el.sceneEl.systems['tracked-controls'].controllers = controllerComponent.controllersWhenPresent;
+-      // do the check
+-      controllerComponent.checkIfControllerPresent();
++      var component = el.components['daydream-controls'];
++      el.sceneEl.systems['tracked-controls'].controllers = component.controllersWhenPresent;
++      component.checkIfControllerPresent();
+     }
+ 
+-    test('if armModel false, do not apply', function () {
++    test('does not apply if armModel disabled', function () {
+       var el = this.el;
+-      el.setAttribute(controllerComponentName, 'armModel', false);
++      el.setAttribute('daydream-controls', 'armModel', false);
+       makePresent(el);
+       var trackedControls = el.components['tracked-controls'];
+       var applyArmModelSpy = this.sinon.spy(trackedControls, 'applyArmModel');
+       trackedControls.tick();
+       assert.notOk(applyArmModelSpy.called);
+     });
+ 
+-    test('if armModel true, apply', function () {
++    test('applies armModel if armModel enabled', function () {
+       var el = this.el;
+-      el.setAttribute(controllerComponentName, 'armModel', true);
++      el.setAttribute('daydream-controls', 'armModel', true);
+       makePresent(el);
+       var trackedControls = el.components['tracked-controls'];
+       var applyArmModelSpy = this.sinon.spy(trackedControls, 'applyArmModel');"
+aframevr/aframe,2879,20cd40a64e722d791e1f38f0c2e3c733f68c421c,tests/components/gearvr-controls.test.js,modified,132,145,277,"@@ -1,254 +1,241 @@
+-/* global assert, process, setup, suite, test, CustomEvent, Event */
++/* global assert, process, setup, suite, test, Event */
+ var entityFactory = require('../helpers').entityFactory;
+-var controllerComponentName = 'gearvr-controls';
+ 
+-suite(controllerComponentName, function () {
++suite('gearvr-controls', function () {
+   setup(function (done) {
+     var el = this.el = entityFactory();
+-    el.setAttribute(controllerComponentName, 'hand: right'); // to ensure index = 0
++    el.setAttribute('gearvr-controls', 'hand: right');  // To ensure index is 0.
+     el.addEventListener('loaded', function () {
+-      var controllerComponent = el.components[controllerComponentName];
+-      controllerComponent.controllersWhenPresent = [{
++      var component = el.components['gearvr-controls'];
++      component.controllersWhenPresent = [{
+         id: 'Gear VR Controller',
+         index: 0,
+         hand: 'right',
+         axes: [0, 0],
+-        buttons: [{value: 0, pressed: false, touched: false}, {value: 0, pressed: false, touched: false}],
++        buttons: [
++          {value: 0, pressed: false, touched: false},
++          {value: 0, pressed: false, touched: false}
++        ],
+         pose: {orientation: [1, 0, 0, 0]}
+       }];
+       done();
+     });
+   });
+ 
+   suite('checkIfControllerPresent', function () {
+-    test('first-time, if no controllers, remember not present', function () {
++    test('returns not present if no controllers on first on first call', function () {
+       var el = this.el;
+-      var controllerComponent = el.components[controllerComponentName];
+-      var addEventListenersSpy = this.sinon.spy(controllerComponent, 'addEventListeners');
+-      var injectTrackedControlsSpy = this.sinon.spy(controllerComponent, 'injectTrackedControls');
++      var component = el.components['gearvr-controls'];
++      var addEventListenersSpy = this.sinon.spy(component, 'addEventListeners');
++      var injectTrackedControlsSpy = this.sinon.spy(component, 'injectTrackedControls');
+ 
+       el.sceneEl.systems['tracked-controls'].controllers = [];
+ 
+-      // reset so we don't think we've looked before
+-      controllerComponent.controllerPresent = false;
+-      // do the check
+-      controllerComponent.checkIfControllerPresent();
+-      // check assertions
++      component.controllerPresent = false;
++
++      component.checkIfControllerPresent();
++
+       assert.notOk(injectTrackedControlsSpy.called);
+       assert.notOk(addEventListenersSpy.called);
+-      assert.ok(controllerComponent.controllerPresent === false); // not undefined
++      assert.ok(component.controllerPresent === false);
+     });
+ 
+-    test('if no controllers again, do not remove event listeners', function () {
++    test('does not remove event listeners if no controllers', function () {
+       var el = this.el;
+-      var controllerComponent = el.components[controllerComponentName];
+-      var addEventListenersSpy = this.sinon.spy(controllerComponent, 'addEventListeners');
+-      var injectTrackedControlsSpy = this.sinon.spy(controllerComponent, 'injectTrackedControls');
+-      var removeEventListenersSpy = this.sinon.spy(controllerComponent, 'removeEventListeners');
++      var component = el.components['gearvr-controls'];
++      var addEventListenersSpy = this.sinon.spy(component, 'addEventListeners');
++      var injectTrackedControlsSpy = this.sinon.spy(component, 'injectTrackedControls');
++      var removeEventListenersSpy = this.sinon.spy(component, 'removeEventListeners');
+ 
+       el.sceneEl.systems['tracked-controls'].controllers = [];
+ 
+-      // pretend we've looked before
+-      controllerComponent.controllerPresent = false;
+-      // do the check
+-      controllerComponent.checkIfControllerPresent();
+-      // check assertions
++      component.controllerEventsActive = false;
++      component.controllerPresent = false;
++
++      component.checkIfControllerPresent();
++
+       assert.notOk(injectTrackedControlsSpy.called);
+       assert.notOk(addEventListenersSpy.called);
+       assert.notOk(removeEventListenersSpy.called);
+-      assert.ok(controllerComponent.controllerPresent === false); // not undefined
++      assert.ok(component.controllerPresent === false);
+     });
+ 
+-    test('attach events if controller is newly present', function () {
++    test('attaches events if controller is newly present', function () {
+       var el = this.el;
+-      var controllerComponent = el.components[controllerComponentName];
+-      var addEventListenersSpy = this.sinon.spy(controllerComponent, 'addEventListeners');
+-      var injectTrackedControlsSpy = this.sinon.spy(controllerComponent, 'injectTrackedControls');
+-      var removeEventListenersSpy = this.sinon.spy(controllerComponent, 'removeEventListeners');
+-
+-      el.sceneEl.systems['tracked-controls'].controllers = controllerComponent.controllersWhenPresent;
+-
+-      // reset so we don't think we've looked before
+-      controllerComponent.controllerPresent = false;
+-      // do the check
+-      controllerComponent.checkIfControllerPresent();
+-      // check assertions
++      var component = el.components['gearvr-controls'];
++      var addEventListenersSpy = this.sinon.spy(component, 'addEventListeners');
++      var injectTrackedControlsSpy = this.sinon.spy(component, 'injectTrackedControls');
++      var removeEventListenersSpy = this.sinon.spy(component, 'removeEventListeners');
++
++      el.sceneEl.systems['tracked-controls'].controllers = component.controllersWhenPresent;
++
++      component.controllerPresent = false;
++
++      component.checkIfControllerPresent();
++
+       assert.ok(injectTrackedControlsSpy.called);
+       assert.ok(addEventListenersSpy.called);
+       assert.notOk(removeEventListenersSpy.called);
+-      assert.ok(controllerComponent.controllerPresent);
++      assert.ok(component.controllerPresent);
+     });
+ 
+-    test('do not inject or attach events again if controller is already present', function () {
++    test('does not inject/attach events again if controller already present', function () {
+       var el = this.el;
+-      var controllerComponent = el.components[controllerComponentName];
+-      var addEventListenersSpy = this.sinon.spy(controllerComponent, 'addEventListeners');
+-      var injectTrackedControlsSpy = this.sinon.spy(controllerComponent, 'injectTrackedControls');
+-      var removeEventListenersSpy = this.sinon.spy(controllerComponent, 'removeEventListeners');
+-
+-      el.sceneEl.systems['tracked-controls'].controllers = controllerComponent.controllersWhenPresent;
+-
+-      // pretend we've looked before
+-      controllerComponent.controllerPresent = true;
+-      // do the check
+-      controllerComponent.checkIfControllerPresent();
+-      // check assertions
++      var component = el.components['gearvr-controls'];
++      var addEventListenersSpy = this.sinon.spy(component, 'addEventListeners');
++      var injectTrackedControlsSpy = this.sinon.spy(component, 'injectTrackedControls');
++      var removeEventListenersSpy = this.sinon.spy(component, 'removeEventListeners');
++
++      el.sceneEl.systems['tracked-controls'].controllers = component.controllersWhenPresent;
++
++      component.controllerEventsActive = true;
++      component.controllerPresent = true;
++
++      component.checkIfControllerPresent();
++
+       assert.notOk(injectTrackedControlsSpy.called);
+       assert.notOk(addEventListenersSpy.called);
+       assert.notOk(removeEventListenersSpy.called);
+-      assert.ok(controllerComponent.controllerPresent);
++      assert.ok(component.controllerPresent);
+     });
+ 
+-    test('if controller disappears, remove event listeners', function () {
++    test('removes event listeners if controller disappears', function () {
+       var el = this.el;
+-      var controllerComponent = el.components[controllerComponentName];
+-      var addEventListenersSpy = this.sinon.spy(controllerComponent, 'addEventListeners');
+-      var injectTrackedControlsSpy = this.sinon.spy(controllerComponent, 'injectTrackedControls');
+-      var removeEventListenersSpy = this.sinon.spy(controllerComponent, 'removeEventListeners');
++      var component = el.components['gearvr-controls'];
++      var addEventListenersSpy = this.sinon.spy(component, 'addEventListeners');
++      var injectTrackedControlsSpy = this.sinon.spy(component, 'injectTrackedControls');
++      var removeEventListenersSpy = this.sinon.spy(component, 'removeEventListeners');
+ 
+       el.sceneEl.systems['tracked-controls'].controllers = [];
+ 
+-      // pretend we've looked before
+-      controllerComponent.controllerPresent = true;
+-      // do the check
+-      controllerComponent.checkIfControllerPresent();
+-      // check assertions
++      component.controllerEventsActive = true;
++      component.controllerPresent = true;
++
++      component.checkIfControllerPresent();
++
+       assert.notOk(injectTrackedControlsSpy.called);
+       assert.notOk(addEventListenersSpy.called);
+       assert.ok(removeEventListenersSpy.called);
+-      assert.notOk(controllerComponent.controllerPresent);
++      assert.notOk(component.controllerPresent);
+     });
+   });
+ 
+   suite('axismove', function () {
+-    var name = 'trackpad';
+-    test('if we get axismove, emit ' + name + 'moved', function (done) {
++    test('emits trackpadmoved on axismove', function (done) {
+       var el = this.el;
+-      var controllerComponent = el.components[controllerComponentName];
+-      var evt;
+-
+-      el.sceneEl.systems['tracked-controls'].controllers = controllerComponent.controllersWhenPresent;
+-      // do the check
+-      controllerComponent.checkIfControllerPresent();
+-      // install event handler listening for thumbstickmoved
+-      this.el.addEventListener(name + 'moved', function (evt) {
++      var component = el.components['gearvr-controls'];
++
++      el.sceneEl.systems['tracked-controls'].controllers = component.controllersWhenPresent;
++
++      component.checkIfControllerPresent();
++
++      el.addEventListener('trackpadmoved', function (evt) {
+         assert.equal(evt.detail.x, 0.1);
+         assert.equal(evt.detail.y, 0.2);
+         assert.ok(evt.detail);
+         done();
+       });
+-      // emit axismove
+-      evt = new CustomEvent('axismove', {'detail': {axis: [0.1, 0.2], changed: [true, false]}});
+-      this.el.dispatchEvent(evt);
++
++      el.emit('axismove', {axis: [0.1, 0.2], changed: [true, false]});
+     });
+ 
+-    test('if we get axismove with no changes, do not emit ' + name + 'moved', function (done) {
++    test('does not emit trackpadmoved on axismove with no changes', function (done) {
+       var el = this.el;
+-      var controllerComponent = el.components[controllerComponentName];
+-      var evt;
+-
+-      el.sceneEl.systems['tracked-controls'].controllers = controllerComponent.controllersWhenPresent;
+-      // do the check
+-      controllerComponent.checkIfControllerPresent();
+-      // install event handler listening for thumbstickmoved
+-      this.el.addEventListener(name + 'moved', function (evt) {
+-        assert.notOk(evt.detail);
++      var component = el.components['gearvr-controls'];
++
++      el.sceneEl.systems['tracked-controls'].controllers = component.controllersWhenPresent;
++
++      component.checkIfControllerPresent();
++
++      // Fail purposely.
++      el.addEventListener('thumbstickmoved', function (evt) {
++        assert.ok(false);
+       });
+-      // emit axismove
+-      evt = new CustomEvent('axismove', {'detail': {axis: [0.1, 0.2], changed: [false, false]}});
+-      this.el.dispatchEvent(evt);
+-      // finish next tick
+-      setTimeout(function () { done(); }, 0);
++
++      el.emit('axismove', {axis: [0.1, 0.2], changed: [false, false]});
++      setTimeout(() => { done(); });
+     });
+   });
+ 
+   suite('buttonchanged', function () {
+-    var name = 'trackpad';
+-    var id = 0;
+-    test('if we get buttonchanged, emit ' + name + 'changed', function (done) {
++    test('if we get buttonchanged, emit trackpadchanged', function (done) {
+       var el = this.el;
+-      var controllerComponent = el.components[controllerComponentName];
+-      var evt;
+-
+-      el.sceneEl.systems['tracked-controls'].controllers = controllerComponent.controllersWhenPresent;
+-      // do the check
+-      controllerComponent.checkIfControllerPresent();
+-      // install event handler listening for triggerchanged
+-      this.el.addEventListener(name + 'changed', function (evt) {
++      var component = el.components['gearvr-controls'];
++
++      el.sceneEl.systems['tracked-controls'].controllers = component.controllersWhenPresent;
++
++      component.checkIfControllerPresent();
++
++      el.addEventListener('trackpadchanged', function (evt) {
+         assert.ok(evt.detail);
+         done();
+       });
+-      // emit buttonchanged
+-      evt = new CustomEvent('buttonchanged', {'detail': {id: id, state: {value: 0.5, pressed: true, touched: true}}});
+-      this.el.dispatchEvent(evt);
++
++      el.emit('buttonchanged', {id: 0, state: {value: 0.5, pressed: true, touched: true}});
+     });
+ 
+-    name = 'trigger';
+-    id = 1;
+-    test('if we get buttonchanged, emit ' + name + 'changed', function (done) {
++    test('if we get buttonchanged, emit triggerchanged', function (done) {
+       var el = this.el;
+-      var controllerComponent = el.components[controllerComponentName];
+-      var evt;
+-
+-      el.sceneEl.systems['tracked-controls'].controllers = controllerComponent.controllersWhenPresent;
+-      // do the check
+-      controllerComponent.checkIfControllerPresent();
+-      // install event handler listening for triggerchanged
+-      this.el.addEventListener(name + 'changed', function (evt) {
++      var component = el.components['gearvr-controls'];
++
++      el.sceneEl.systems['tracked-controls'].controllers = component.controllersWhenPresent;
++
++      component.checkIfControllerPresent();
++
++      el.addEventListener('triggerchanged', function (evt) {
+         assert.ok(evt.detail);
+         done();
+       });
+-      // emit buttonchanged
+-      evt = new CustomEvent('buttonchanged', {'detail': {id: id, state: {value: 0.5, pressed: true, touched: true}}});
+-      this.el.dispatchEvent(evt);
++
++      el.emit('buttonchanged', {id: 1, state: {value: 0.5, pressed: true, touched: true}});
+     });
+   });
+ 
+   suite('gamepaddisconnected', function () {
+-    // Due to an apparent bug in FF Nightly
+-    // where only one gamepadconnected / disconnected event is fired,
+-    // which makes it difficult to handle in individual controller entities,
+-    // we no longer remove the controllersupdate listener as a result.
+-    test('if we get gamepaddisconnected, check if present', function () {
++    /**
++     * Due to an apparent bug in FF Nightly
++     * where only one gamepadconnected / disconnected event is fired,
++     * which makes it difficult to handle in individual controller entities,
++     * we no longer remove the controllersupdate listener as a result.
++     */
++    test('check present on gamepaddisconnected', function () {
+       var el = this.el;
+-      var controllerComponent = el.components[controllerComponentName];
+-      var checkIfControllerPresentSpy = this.sinon.spy(controllerComponent, 'checkIfControllerPresent');
++      var component = el.components['gearvr-controls'];
++      var checkIfControllerPresentSpy = this.sinon.spy(component, 'checkIfControllerPresent');
+       // Because checkIfControllerPresent may be used in bound form, bind and reinstall.
+-      controllerComponent.checkIfControllerPresent = controllerComponent.checkIfControllerPresent.bind(controllerComponent);
+-      controllerComponent.pause();
+-      controllerComponent.play();
++      component.checkIfControllerPresent = component.checkIfControllerPresent.bind(component);
++      component.pause();
++      component.play();
+ 
+       el.sceneEl.systems['tracked-controls'].controllers = [];
+-      // reset everGotGamepadEvent so we don't think we've looked before
+-      delete controllerComponent.everGotGamepadEvent;
+-      // fire emulated gamepaddisconnected event
++      // Reset everGotGamepadEvent so we don't think we've looked before.
++      delete component.everGotGamepadEvent;
++      // Fire emulated gamepaddisconnected event.
+       window.dispatchEvent(new Event('gamepaddisconnected'));
+-      // check assertions
+       assert.ok(checkIfControllerPresentSpy.called);
+     });
+   });
+ 
+   suite('armModel', function () {
+     function makePresent (el) {
+-      var controllerComponent = el.components[controllerComponentName];
+-      el.sceneEl.systems['tracked-controls'].controllers = controllerComponent.controllersWhenPresent;
+-      // do the check
+-      controllerComponent.checkIfControllerPresent();
++      var component = el.components['gearvr-controls'];
++      el.sceneEl.systems['tracked-controls'].controllers = component.controllersWhenPresent;
++      component.checkIfControllerPresent();
+     }
+ 
+-    test('if armModel false, do not apply', function () {
++    test('does not apply armModel if armModel disabled', function () {
+       var el = this.el;
+-      el.setAttribute(controllerComponentName, 'armModel', false);
++      el.setAttribute('gearvr-controls', 'armModel', false);
+       makePresent(el);
+       var trackedControls = el.components['tracked-controls'];
+       var applyArmModelSpy = this.sinon.spy(trackedControls, 'applyArmModel');
+       trackedControls.tick();
+       assert.notOk(applyArmModelSpy.called);
+     });
+ 
+-    test('if armModel true, apply', function () {
++    test('applies armModel if armModel enabled', function () {
+       var el = this.el;
+-      el.setAttribute(controllerComponentName, 'armModel', true);
++      el.setAttribute('gearvr-controls', 'armModel', true);
+       makePresent(el);
+       var trackedControls = el.components['tracked-controls'];
+       var applyArmModelSpy = this.sinon.spy(trackedControls, 'applyArmModel');"
+aframevr/aframe,2879,20cd40a64e722d791e1f38f0c2e3c733f68c421c,tests/components/oculus-touch-controls.test.js,modified,15,21,36,"@@ -1,4 +1,4 @@
+-/* global assert, process, setup, suite, test, CustomEvent, Event */
++/* global assert, process, setup, suite, test, Event */
+ var entityFactory = require('../helpers').entityFactory;
+ 
+ suite('oculus-touch-controls', function () {
+@@ -10,7 +10,9 @@ suite('oculus-touch-controls', function () {
+     el.setAttribute('oculus-touch-controls', '');
+     el.addEventListener('loaded', function () {
+       component = el.components['oculus-touch-controls'];
+-      component.controllersWhenPresent = [{id: 'Oculus Touch', index: 0, hand: 'left', pose: {}}];
++      component.controllersWhenPresent = [
++        {id: 'Oculus Touch', index: 0, hand: 'left', pose: {}}
++      ];
+       done();
+     });
+   });
+@@ -67,7 +69,7 @@ suite('oculus-touch-controls', function () {
+       assert.ok(component.controllerPresent);
+     });
+ 
+-    test('does not add or remove event listeners if presence doe not change', function () {
++    test('does not add/remove event listeners if presence does not change', function () {
+       var addEventListenersSpy = this.sinon.spy(component, 'addEventListeners');
+       var injectTrackedControlsSpy = this.sinon.spy(component, 'injectTrackedControls');
+       var removeEventListenersSpy = this.sinon.spy(component, 'removeEventListeners');
+@@ -76,6 +78,7 @@ suite('oculus-touch-controls', function () {
+       el.sceneEl.systems['tracked-controls'].controllers = component.controllersWhenPresent;
+ 
+       // Mock that it's was currently present.
++      component.controllerEventsActive = true;
+       component.controllerPresent = true;
+ 
+       component.checkIfControllerPresent();
+@@ -90,9 +93,8 @@ suite('oculus-touch-controls', function () {
+       var addEventListenersSpy = this.sinon.spy(component, 'addEventListeners');
+       var injectTrackedControlsSpy = this.sinon.spy(component, 'injectTrackedControls');
+ 
+-      // Mock isControllerPresent to return true.
+-
+       // Mock that it's was currently present.
++      component.controllerEventsActive = true;
+       component.controllerPresent = true;
+ 
+       component.checkIfControllerPresent();
+@@ -104,8 +106,7 @@ suite('oculus-touch-controls', function () {
+   });
+ 
+   suite('axismove', function () {
+-    test('can emit thumbstick moved', function (done) {
+-      var evt;
++    test('emits thumbstick moved', function (done) {
+       el.sceneEl.systems['tracked-controls'].controllers = component.controllersWhenPresent;
+       // Do the check.
+       component.checkIfControllerPresent();
+@@ -117,42 +118,35 @@ suite('oculus-touch-controls', function () {
+         done();
+       });
+       // Emit axismove.
+-      evt = new CustomEvent('axismove', {detail: {axis: [0.1, 0.2], changed: [true, false]}});
+-      this.el.dispatchEvent(evt);
++      this.el.emit('axismove', {axis: [0.1, 0.2], changed: [true, false]});
+     });
+ 
+     test('does not emit thumbstickmoved if axismove has no changes', function (done) {
+-      var evt;
+       el.sceneEl.systems['tracked-controls'].controllers = component.controllersWhenPresent;
+       // Do the check.
+       component.checkIfControllerPresent();
+-      // Install event handler listening for thumbstickmoved.
++      // Fail purposely.
+       this.el.addEventListener('thumbstickmoved', function (evt) {
+         assert.notOk(evt.detail);
+       });
+       // Emit axismove with no changes.
+-      evt = new CustomEvent('axismove', {detail: {axis: [0.1, 0.2], changed: [false, false]}});
+-      this.el.dispatchEvent(evt);
+-      setTimeout(function () { done(); });
++      this.el.emit('axismove', {axis: [0.1, 0.2], changed: [false, false]});
++      setTimeout(() => { done(); });
+     });
+   });
+ 
+   suite('buttonchanged', function () {
+     test('can emit triggerchanged', function (done) {
+-      var evt;
+       el.sceneEl.systems['tracked-controls'].controllers = component.controllersWhenPresent;
+       // Do the check.
+       component.checkIfControllerPresent();
+       // Install event handler listening for triggerchanged.
+-      this.el.addEventListener('triggerchanged', function (evt) {
++      el.addEventListener('triggerchanged', function (evt) {
+         assert.ok(evt.detail);
+         done();
+       });
+       // Emit buttonchanged.
+-      evt = new CustomEvent('buttonchanged', {
+-        detail: {id: 1, state: {value: 0.5, pressed: true, touched: true}}
+-      });
+-      this.el.dispatchEvent(evt);
++      el.emit('buttonchanged', {id: 1, state: {value: 0.5, pressed: true, touched: true}});
+     });
+   });
+ 
+@@ -162,7 +156,7 @@ suite('oculus-touch-controls', function () {
+      * which makes it difficult to handle in individual controller entities.
+      * We no longer remove the controllersupdate listener as a result.
+      */
+-    test('if we get gamepaddisconnected, check if present', function () {
++    test('checks if present on gamepaddisconnected event', function () {
+       var checkIfControllerPresentSpy = this.sinon.spy(component, 'checkIfControllerPresent');
+       // Because checkIfControllerPresent may be used in bound form, bind and reinstall.
+       component.checkIfControllerPresent = component.checkIfControllerPresent.bind(component);"
+aframevr/aframe,2879,20cd40a64e722d791e1f38f0c2e3c733f68c421c,tests/components/vive-controls.test.js,modified,2,0,2,"@@ -77,6 +77,7 @@ suite('vive-controls', function () {
+       controlsSystem.controllers = component.controllersWhenPresent;
+ 
+       // Mock looked before.
++      component.controllerEventsActive = true;
+       component.controllerPresent = true;
+ 
+       component.checkIfControllerPresent();
+@@ -94,6 +95,7 @@ suite('vive-controls', function () {
+       controlsSystem.controllers = [];
+ 
+       // Mock looked before.
++      component.controllerEventsActive = true;
+       component.controllerPresent = true;
+ 
+       component.checkIfControllerPresent();"

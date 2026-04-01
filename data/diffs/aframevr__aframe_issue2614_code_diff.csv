@@ -1,0 +1,349 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe,2614,9ac924642ecaebb0945833a45a101cdb9cce9680,src/components/scene/auto-enter-vr.js,modified,22,20,42,"@@ -2,9 +2,9 @@ var registerComponent = require('../../core/component').registerComponent;
+ var utils = require('../../utils');
+ 
+ /**
+- * Automatically enter VR, either upon vrdisplayactivate (e.g. putting on Rift headset)
++ * Automatically enter VR either upon `vrdisplayactivate` (e.g. putting on Rift headset)
+  * or immediately (if possible) if display name contains data string.
+- * The default data string is 'GearVR' for Carmel browser which only does VR.
++ * Default data string is `GearVR` for Carmel browser which only does VR.
+  */
+ module.exports.Component = registerComponent('auto-enter-vr', {
+   schema: {
+@@ -16,41 +16,43 @@ module.exports.Component = registerComponent('auto-enter-vr', {
+     var scene = this.el;
+     var self = this;
+ 
+-    // define methods to allow mock testing
++    // Define methods to allow mock testing.
+     this.enterVR = scene.enterVR.bind(scene);
+     this.exitVR = scene.exitVR.bind(scene);
+     this.shouldAutoEnterVR = this.shouldAutoEnterVR.bind(this);
+ 
+-    // don't do anything if false
+     if (utils.getUrlParameter('auto-enter-vr') === 'false') { return; }
+ 
+-    // enter VR on vrdisplayactivate (e.g. putting on Rift headset)
++    // Enter VR on `vrdisplayactivate` (e.g. putting on Rift headset).
+     window.addEventListener('vrdisplayactivate', function () { self.enterVR(); }, false);
+ 
+-    // exit VR on vrdisplaydeactivate (e.g. taking off Rift headset)
++    // Exit VR on `vrdisplaydeactivate` (e.g. taking off Rift headset).
+     window.addEventListener('vrdisplaydeactivate', function () { self.exitVR(); }, false);
+ 
+-    // check if we should try to enter VR... turns out we need to wait for next tick
+-    setTimeout(function () { if (self.shouldAutoEnterVR()) { self.enterVR(); } }, 0);
+-  },
+-
+-  update: function () {
+-    return this.shouldAutoEnterVR() ? this.enterVR() : this.exitVR();
++    // Check if we should try to enter VR. Need to wait for next tick.
++    setTimeout(function () {
++      if (self.shouldAutoEnterVR()) {
++        self.enterVR();
++      }
++    });
+   },
+ 
+   shouldAutoEnterVR: function () {
+-    var scene = this.el;
+     var data = this.data;
+-    // if false, we should not auto-enter VR
++    var display;
++    var scene = this.el;
++
+     if (!data.enabled) { return false; }
+-    // if we have a data string to match against display name, try and get it;
+-    // if we can't get display name, or it doesn't match, we should not auto-enter VR
++
++    // If we have data string to match against display name, try and get it.
++    // If we can't get display name or it doesn't match, do not auto-enter VR.
+     if (data.display && data.display !== 'all') {
+-      var display = scene.effect && scene.effect.getVRDisplay && scene.effect.getVRDisplay();
+-      if (!display || !display.displayName || display.displayName.indexOf(data.display) < 0) { return false; }
++      display = scene.effect && scene.effect.getVRDisplay && scene.effect.getVRDisplay();
++      if (!display || !display.displayName || display.displayName.indexOf(data.display) < 0) {
++        return false;
++      }
+     }
+-    // we should auto-enter VR
++
+     return true;
+   }
+ });
+-"
+aframevr/aframe,2614,9ac924642ecaebb0945833a45a101cdb9cce9680,src/components/scene/vr-mode-ui.js,modified,6,2,8,"@@ -42,7 +42,8 @@ module.exports.Component = registerComponent('vr-mode-ui', {
+     });
+ 
+     // Modal that tells the user to change orientation if in portrait.
+-    window.addEventListener('orientationchange', bind(this.toggleOrientationModalIfNeeded, this));
++    window.addEventListener('orientationchange',
++                            bind(this.toggleOrientationModalIfNeeded, this));
+   },
+ 
+   update: function () {
+@@ -104,6 +105,7 @@ module.exports.Component = registerComponent('vr-mode-ui', {
+  *
+  * Structure: <div><button></div>
+  *
++ * @param {function} enterVRHandler
+  * @returns {Element} Wrapper <div>.
+  */
+ function createEnterVRButton (enterVRHandler) {
+@@ -120,7 +122,9 @@ function createEnterVRButton (enterVRHandler) {
+ 
+   // Insert elements.
+   wrapper.appendChild(vrButton);
+-  vrButton.addEventListener('click', enterVRHandler);
++  vrButton.addEventListener('click', function (evt) {
++    enterVRHandler();
++  });
+   return wrapper;
+ }
+ "
+aframevr/aframe,2614,9ac924642ecaebb0945833a45a101cdb9cce9680,src/core/scene/a-scene.js,modified,53,10,63,"@@ -66,8 +66,8 @@ module.exports.AScene = registerElement('a-scene', {
+         this.behaviors = { tick: [], tock: [] };
+         this.hasLoaded = false;
+         this.isPlaying = false;
+-        this.renderTarget = null;
+         this.originalHTML = this.innerHTML;
++        this.renderTarget = null;
+         this.addEventListener('render-target-loaded', function () {
+           this.setupRenderer();
+           this.resize();
+@@ -109,16 +109,26 @@ module.exports.AScene = registerElement('a-scene', {
+ 
+         // Add to scene index.
+         scenes.push(this);
++
++        // Handler to exit VR (e.g., Oculus Browser back button).
++        this.onVRPresentChangeBound = bind(this.onVRPresentChange, this);
++        window.addEventListener('vrdisplaypresentchange', this.onVRPresentChangeBound);
+       },
+       writable: window.debug
+     },
+ 
++    /**
++     * Initialize all systems.
++     */
+     initSystems: {
+       value: function () {
+         Object.keys(systems).forEach(bind(this.initSystem, this));
+       }
+     },
+ 
++    /**
++     * Initialize a system.
++     */
+     initSystem: {
+       value: function (name) {
+         if (this.systems[name]) { return; }
+@@ -127,26 +137,32 @@ module.exports.AScene = registerElement('a-scene', {
+     },
+ 
+     /**
+-     * Shuts down scene on detach.
++     * Shut down scene on detach.
+      */
+     detachedCallback: {
+       value: function () {
++        var sceneIndex;
++
+         if (this.effect && this.effect.cancelAnimationFrame) {
+           this.effect.cancelAnimationFrame(this.animationFrameID);
+         } else {
+           window.cancelAnimationFrame(this.animationFrameID);
+         }
+-        var sceneIndex;
+         this.animationFrameID = null;
++
+         // Remove from scene index.
+         sceneIndex = scenes.indexOf(this);
+         scenes.splice(sceneIndex, 1);
++
++        window.removeEventListener('vrdisplaypresentchange', this.onVRPresentChangeBound);
+       }
+     },
+ 
+     /**
+-     * @param {object} behavior - Generally a component. Must implement a .update() method to
+-     *        be called on every tick.
++     * Add ticks and tocks.
++     *
++     * @param {object} behavior - Generally a component. Must implement a .update() method
++     *   to be called on every tick.
+      */
+     addBehavior: {
+       value: function (behavior) {
+@@ -176,24 +192,29 @@ module.exports.AScene = registerElement('a-scene', {
+      * Call `requestFullscreen` on desktop.
+      * Handle events, states, fullscreen styles.
+      *
++     * @param {bool} fromExternal - Whether exiting VR due to an external event (e.g.,
++     *   manually calling requestPresent via WebVR API directly).
+      * @returns {Promise}
+      */
+     enterVR: {
+-      value: function (event) {
++      value: function (fromExternal) {
+         var self = this;
+ 
+         // Don't enter VR if already in VR.
+         if (this.is('vr-mode')) { return Promise.resolve('Already in VR.'); }
+ 
+-        if (this.checkHeadsetConnected() || this.isMobile) {
++        // Enter VR via WebVR API.
++        if (!fromExternal && (this.checkHeadsetConnected() || this.isMobile)) {
+           return this.effect.requestPresent().then(enterVRSuccess, enterVRFailure);
+         }
++
++        // Either entered VR already via WebVR API or VR not supported.
+         enterVRSuccess();
+         return Promise.resolve();
+ 
+         function enterVRSuccess () {
+           self.addState('vr-mode');
+-          self.emit('enter-vr', event);
++          self.emit('enter-vr', {target: self});
+ 
+           // Lock to landscape orientation on mobile.
+           if (self.isMobile && screen.orientation && screen.orientation.lock) {
+@@ -224,21 +245,27 @@ module.exports.AScene = registerElement('a-scene', {
+      * Call `exitPresent` if WebVR or WebVR polyfill.
+      * Handle events, states, fullscreen styles.
+      *
++     * @param {bool} fromExternal - Whether exiting VR due to an external event (e.g.,
++     *   Oculus Browser GearVR back button).
+      * @returns {Promise}
+      */
+     exitVR: {
+-      value: function () {
++      value: function (fromExternal) {
+         var self = this;
+ 
+         // Don't exit VR if not in VR.
+         if (!this.is('vr-mode')) { return Promise.resolve('Not in VR.'); }
+ 
+         exitFullscreen();
+ 
+-        if (this.checkHeadsetConnected() || this.isMobile) {
++        // Handle exiting VR if not yet already and in a headset or polyfill.
++        if (!fromExternal && (this.checkHeadsetConnected() || this.isMobile)) {
+           return this.effect.exitPresent().then(exitVRSuccess, exitVRFailure);
+         }
++
++        // Handle exiting VR in all other cases (2D fullscreen, external exit VR event).
+         exitVRSuccess();
++
+         return Promise.resolve();
+ 
+         function exitVRSuccess () {
+@@ -264,6 +291,22 @@ module.exports.AScene = registerElement('a-scene', {
+       }
+     },
+ 
++    /**
++     * Handle `vrdisplaypresentchange` event for exiting VR through other means than
++     * `<ESC>` key. For example, GearVR back button on Oculus Browser.
++     */
++    onVRPresentChange: {
++      value: function (evt) {
++        // Entering VR.
++        if (evt.display.isPresenting) {
++          this.enterVR(true);
++          return;
++        }
++        // Exiting VR.
++        this.exitVR(true);
++      }
++    },
++
+     /**
+      * Wraps Entity.getAttribute to take into account for systems.
+      * If system exists, then return system data rather than possible component data."
+aframevr/aframe,2614,9ac924642ecaebb0945833a45a101cdb9cce9680,tests/__init.test.js,modified,6,1,7,"@@ -29,7 +29,7 @@ setup(function () {
+   this.sinon.stub(AScene.prototype, 'setupRenderer');
+ });
+ 
+-teardown(function () {
++teardown(function (done) {
+   // Clean up any attached elements.
+   var attachedEls = ['canvas', 'a-assets', 'a-scene'];
+   var els = document.querySelectorAll(attachedEls.join(','));
+@@ -39,4 +39,9 @@ teardown(function () {
+   this.sinon.restore();
+   delete AFRAME.components.test;
+   delete AFRAME.systems.test;
++
++  // Allow detachedCallbacks to clean themselves up.
++  setTimeout(function () {
++    done();
++  });
+ });"
+aframevr/aframe,2614,9ac924642ecaebb0945833a45a101cdb9cce9680,tests/core/scene/a-scene.test.js,modified,40,1,41,"@@ -1,4 +1,4 @@
+-/* global AFRAME, assert, process, sinon, setup, suite, teardown, test */
++/* global AFRAME, assert, CustomEvent, process, sinon, setup, suite, teardown, test */
+ var AEntity = require('core/a-entity');
+ var ANode = require('core/a-node');
+ var AScene = require('core/scene/a-scene').AScene;
+@@ -60,6 +60,25 @@ suite('a-scene (without renderer)', function () {
+     });
+   });
+ 
++  suite('vrdisplaypresentchange', function () {
++    test('tells A-Frame about entering VR if now presenting', function (done) {
++      var event;
++      var sceneEl = this.el;
++      console.log('start test');
++
++      sceneEl.setAttribute('id', 'vrdisplay');
++      sceneEl.canvas = document.createElement('canvas');
++      sceneEl.addEventListener('enter-vr', function () {
++        assert.ok(sceneEl.is('vr-mode'));
++        done();
++      });
++
++      event = new CustomEvent('vrdisplaypresentchange');
++      event.display = {isPresenting: true};
++      window.dispatchEvent(event);
++    });
++  });
++
+   suite('enterVR', function () {
+     setup(function () {
+       var sceneEl = this.el;
+@@ -112,6 +131,16 @@ suite('a-scene (without renderer)', function () {
+       });
+     });
+ 
++    test('does not call requestPresent if flag passed', function (done) {
++      var sceneEl = this.el;
++      var requestSpy = this.requestSpy;
++      this.sinon.stub(sceneEl, 'checkHeadsetConnected').returns(true);
++      sceneEl.enterVR(true).then(function () {
++        assert.notOk(requestSpy.called);
++        done();
++      });
++    });
++
+     test('adds VR mode state', function (done) {
+       var sceneEl = this.el;
+       sceneEl.enterVR().then(function () {
+@@ -207,6 +236,16 @@ suite('a-scene (without renderer)', function () {
+       });
+     });
+ 
++    test('does not call exitPresent if flag passed', function (done) {
++      var sceneEl = this.el;
++      var exitSpy = this.exitSpy;
++      this.sinon.stub(sceneEl, 'checkHeadsetConnected').returns(true);
++      sceneEl.exitVR(true).then(function () {
++        assert.notOk(exitSpy.called);
++        done();
++      });
++    });
++
+     test('removes VR mode state', function (done) {
+       var sceneEl = this.el;
+       sceneEl.exitVR().then(function () {"

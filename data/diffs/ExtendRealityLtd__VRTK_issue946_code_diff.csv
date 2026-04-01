@@ -1,0 +1,67 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+ExtendRealityLtd/VRTK,946,baf64a6,Assets/VRTK/Scripts/Pointers/PointerRenderers/VRTK_BasePointerRenderer.cs,modified,5,17,22,"@@ -124,17 +124,6 @@ public virtual void Toggle(bool pointerState, bool actualState)
+             ToggleInteraction(pointerState);
+             TogglePlayArea(pointerState, actualState);
+             ToggleRenderer(pointerState, actualState);
+-
+-            if (pointerOriginTransformFollowGameObject != null && pointerOriginTransformFollowGameObject.activeSelf != pointerState)
+-            {
+-                UpdatePointerOriginTransformFollow();
+-                pointerOriginTransformFollowGameObject.SetActive(pointerState);
+-                pointerOriginTransformFollow.enabled = pointerState;
+-                if (pointerState)
+-                {
+-                    pointerOriginTransformFollow.Follow();
+-                }
+-            }
+         }
+ 
+         /// <summary>
+@@ -183,8 +172,8 @@ protected virtual void OnEnable()
+         {
+             defaultMaterial = Resources.Load(""WorldPointer"") as Material;
+             makeRendererVisible = new List<GameObject>();
+-            CreatePointerObjects();
+             CreatePointerOriginTransformFollow();
++            CreatePointerObjects();
+         }
+ 
+         protected virtual void OnDisable()
+@@ -211,10 +200,7 @@ protected virtual void FixedUpdate()
+                 UpdateObjectInteractor();
+             }
+ 
+-            if (controllingPointer && pointerOriginTransformFollow.isActiveAndEnabled)
+-            {
+-                UpdatePointerOriginTransformFollow();
+-            }
++            UpdatePointerOriginTransformFollow();
+         }
+ 
+         protected virtual void ToggleObjectInteraction(bool state)
+@@ -255,6 +241,9 @@ protected virtual void UpdateObjectInteractor()
+         protected virtual void UpdatePointerOriginTransformFollow()
+         {
+             pointerOriginTransformFollow.gameObjectToFollow = (controllingPointer.customOrigin == null ? transform : controllingPointer.customOrigin).gameObject;
++            pointerOriginTransformFollow.enabled = controllingPointer != null;
++            pointerOriginTransformFollowGameObject.SetActive(controllingPointer != null);
++
+             pointerOriginTransformFollow.smoothsPosition = pointerOriginSmoothingSettings.smoothsPosition;
+             pointerOriginTransformFollow.maxAllowedPerFrameDistanceDifference = pointerOriginSmoothingSettings.maxAllowedPerFrameDistanceDifference;
+             pointerOriginTransformFollow.smoothsRotation = pointerOriginSmoothingSettings.smoothsRotation;
+@@ -468,7 +457,6 @@ protected virtual void ScaleObjectInteractor(Vector3 scaleAmount)
+         protected virtual void CreatePointerOriginTransformFollow()
+         {
+             pointerOriginTransformFollowGameObject = new GameObject(string.Format(""[{0}]BasePointerRenderer_Origin_Smoothed"", gameObject.name));
+-            pointerOriginTransformFollowGameObject.SetActive(false);
+             pointerOriginTransformFollow = pointerOriginTransformFollowGameObject.AddComponent<VRTK_TransformFollow>();
+             pointerOriginTransformFollow.enabled = false;
+             pointerOriginTransformFollow.gameObjectToChange = pointerOriginTransformFollowGameObject;"
+ExtendRealityLtd/VRTK,946,baf64a6,Assets/VRTK/Scripts/Utilities/ObjectFollow/VRTK_TransformFollow.cs,modified,0,1,1,"@@ -27,7 +27,6 @@ public enum FollowMoment
+         private Transform transformToChange;
+         private bool isListeningToOnPreRender;
+ 
+-
+         protected virtual void OnEnable()
+         {
+             if (gameObjectToFollow == null)"

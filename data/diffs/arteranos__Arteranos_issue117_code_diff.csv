@@ -1,0 +1,154 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+arteranos/Arteranos,117,741ce8a,Assets/Arteranos/Scripts/Avatar/AvatarPoseDriver.cs,modified,27,10,37,"@@ -10,36 +10,53 @@
+ using Arteranos.NetworkIO;
+ using Arteranos.XR;
+ using Arteranos.Core;
++using Mirror;
+ 
+ namespace Arteranos.Avatar
+ {
+ 
+-    public class AvatarPoseDriver : MonoBehaviour
++    public class AvatarPoseDriver : NetworkBehaviour
+     {
+         private IAvatarMeasures AvatarMeasures = null;
+         private NetworkPose NetworkPose = null;
+ 
+-        private bool IsOwned => NetworkPose.isOwned;
++        // Base animation directives, synchronized.
++        [SyncVar]
++        public Vector2 animMoveDirection = Vector2.zero;
++
++        [SyncVar]
++        public float animMoveSpeed = 1.0f;
++
+ 
+         private void Awake()
+         {
+             NetworkPose = GetComponent<NetworkPose>();
+         }
+ 
+-        private void Start()
++        public override void OnStartClient()
+         {
+-            if(IsOwned)
++            base.OnStartClient();
++
++            if(isLocalPlayer)
+             {
+                 SettingsManager.Client.OnVRModeChanged += OnXRChanged;
+                 OnXRChanged(SettingsManager.Client.VRMode);
+             }
+ 
+         }
+ 
+-        private void OnDestroy()
++        public override void OnStopClient()
+         {
+-            if(IsOwned)
++            if(isLocalPlayer)
+                 SettingsManager.Client.OnVRModeChanged -= OnXRChanged;
++
++            base.OnStopClient();
++        }
++
++        protected virtual void OnValidate()
++        {
++            syncDirection = SyncDirection.ClientToServer;
++            syncInterval = 0;
+         }
+ 
+         private void OnXRChanged(bool useXR)
+@@ -57,7 +74,7 @@ public void UpdateAvatarMeasures(IAvatarMeasures am)
+             NetworkPose.UploadJointNames(am.Avatar.transform, am.JointNames.ToArray());
+             AvatarMeasures = am;
+ 
+-            if (IsOwned)
++            if (isLocalPlayer)
+             {
+                 IXRControl xrc = XRControl.Instance;
+ 
+@@ -96,9 +113,9 @@ public void UpdateOwnPose()
+             if (moveSpeed.x < -0.5f) newMoveDirection.x = -1;
+             if (moveSpeed.x > 0.5f) newMoveDirection.x = 1;
+ 
+-            NetworkPose.animMoveDirection = newMoveDirection;
++            animMoveDirection = newMoveDirection;
+ 
+-            NetworkPose.animMoveSpeed = AvatarMeasures != null
++            animMoveSpeed = AvatarMeasures != null
+                 ? (float)(AvatarMeasures.UnscaledHeight / AvatarMeasures.FullHeight)
+                 : 1.0f;
+         }
+@@ -130,7 +147,7 @@ private void RouteVoice()
+         void Update()
+         {
+             // Avatars from other clients are slaved by the NetworkTransform and -Pose.
+-            if(IsOwned)
++            if(isLocalPlayer)
+             {
+                 IXRControl instance = XRControl.Instance;
+                 Transform xro = instance.rigTransform;"
+arteranos/Arteranos,117,741ce8a,Assets/Arteranos/Scripts/Avatar/NetworkPose.cs,modified,13,11,24,"@@ -8,6 +8,7 @@
+ using UnityEngine;
+ 
+ using Mirror;
++using Arteranos.Avatar;
+ 
+ namespace Arteranos.NetworkIO
+ {
+@@ -25,14 +26,19 @@ public class NetworkPose : NetworkPoseBase
+         [Tooltip(""Apply smallest-three quaternion compression. This is lossy, you can disable it if the small rotation inaccuracies are noticeable in your project."")]
+         public bool compressRotation = false;
+ 
+-        // Base animation directives, synchronized.
+-        public Vector2 animMoveDirection = Vector2.zero;
+-        public float animMoveSpeed = 1.0f;
+-
+ 
+         // Used to store last sent snapshots
+         protected PoseSnapshot last;
+ 
++        AvatarPoseDriver avatarPoseDriver = null;
++
++        protected override void Awake()
++        {
++            base.Awake();
++
++            avatarPoseDriver = GetComponent<AvatarPoseDriver>();
++        }
++
+         protected virtual bool Changed(PoseSnapshot current) =>
+             current.Changed(last.rotation, rotationSensitivity) != 0;
+ 
+@@ -158,8 +164,6 @@ public override void OnSerialize(NetworkWriter writer, bool initialState)
+             }
+ 
+             writer.WritePoseSnapshot(snapshot.rotation, ref lastSerializedRotations, mask, compressRotation);
+-            writer.WriteVector2(animMoveDirection);
+-            writer.WriteFloat(animMoveSpeed);
+ 
+             // set 'last'
+             last = snapshot;
+@@ -175,8 +179,6 @@ public override void OnDeserialize(NetworkReader reader, bool initialState)
+ 
+             // ... and delta
+             Quaternion[] rotation = reader.ReadPoseSnapshot(ref lastDeserializedRotations, compressRotation);
+-            animMoveDirection = reader.ReadVector2();
+-            animMoveSpeed = reader.ReadFloat();
+ 
+             // handle depending on server / client / host.
+             // server has priority for host mode.
+@@ -282,9 +284,9 @@ private void Update()
+             // Both local and remote avatar have to set the animation direction into effect
+             if (anim == null) return;
+ 
+-            anim.SetInteger(""IntWalkFrontBack"", (int)animMoveDirection.y);
+-            anim.SetInteger(""IntWalkLeftRight"", (int)animMoveDirection.x);
+-            anim.SetFloat(""Speed"", animMoveSpeed);
++            anim.SetInteger(""IntWalkFrontBack"", (int)avatarPoseDriver.animMoveDirection.y);
++            anim.SetInteger(""IntWalkLeftRight"", (int)avatarPoseDriver.animMoveDirection.x);
++            anim.SetFloat(""Speed"", avatarPoseDriver.animMoveSpeed);
+         }
+ 
+         private void LateUpdate()"

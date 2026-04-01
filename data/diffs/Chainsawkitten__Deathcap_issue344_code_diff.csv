@@ -1,0 +1,94 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+Chainsawkitten/Deathcap,344,45a8fcd,src/Editor/Editor.cpp,modified,1,1,2,"@@ -408,7 +408,7 @@ void Editor::NewHymnClosed(const std::string& hymn) {
+         resourceView.SetVisible(true);
+ 
+         // Default scene.
+-        Resources().scenes.push_back(""Scene #0"");
++        //Resources().scenes.push_back(""Scene #0"");
+ 
+         Entity* player = Hymn().world.GetRoot()->AddChild(""Player"");
+         player->position.z = 10.f;"
+Chainsawkitten/Deathcap,344,45a8fcd,src/Editor/GUI/ResourceView.cpp,modified,15,4,19,"@@ -45,9 +45,21 @@ void ResourceView::Show() {
+         
+         for (std::size_t i = 0; i < Resources().scenes.size(); ++i) {
+             if (ImGui::Selectable(Resources().scenes[i].c_str())) {
+-                changeScene = true;
+-                sceneIndex = i;
+-                savePromptWindow.SetTitle(""Save before you switch scene?"");
++                // Sets to dont save when opening first scene.
++                if (Resources().activeScene == -1) {
++                    changeScene = true;
++                    sceneIndex = i;
++                    savePromptWindow.SetVisible(false);
++                    savePromptWindow.SetDecision(1);
++                } else {
++                    // Does so that the prompt window wont show if you select active scene.
++                    if (Resources().scenes[i] != Resources().scenes[Resources().activeScene]) {
++                        changeScene = true;
++                        sceneIndex = i;
++                        savePromptWindow.SetTitle(""Save before you switch scene?"");
++                    }
++                }
++
+             }
+             
+             if (ImGui::BeginPopupContextItem(Resources().scenes[i].c_str())) {
+@@ -67,7 +79,6 @@ void ResourceView::Show() {
+             }
+         }
+         ImGui::TreePop();
+-
+         if (changeScene) {
+ 
+             if (Hymn().GetPath() != """") {"
+Chainsawkitten/Deathcap,344,45a8fcd,src/Editor/GUI/SavePromptWindow.cpp,modified,14,1,15,"@@ -54,4 +54,17 @@ bool SavePromptWindow::IsVisible() const {
+ 
+ void SavePromptWindow::SetVisible(bool visible) {
+     this->visible = visible;
+-}
+\ No newline at end of file
++}
++
++void GUI::SavePromptWindow::SetDecision(int option)
++{
++    if (option == 0) {
++        decision = 0;
++    }
++    if (option == 1) {
++        decision = 1;
++    }
++    if (option == 2) {
++        decision = 2;
++    }
++}"
+Chainsawkitten/Deathcap,344,45a8fcd,src/Editor/GUI/SavePromptWindow.hpp,modified,6,0,6,"@@ -23,6 +23,12 @@ namespace GUI {
+              * @param visible Whether the window should be visible.
+              */
+             void SetVisible(bool visible);
++
++            /// Sets decision to true or false.
++            /**
++            * @param option If the decision should be 0: Save, 1: Don't save, *2: cancel.
++            */
++            void SetDecision(int option);
+             
+             /// Fetches what the player picked.
+             /**"
+Chainsawkitten/Deathcap,344,45a8fcd,src/Editor/Resources.cpp,modified,1,1,2,"@@ -12,7 +12,7 @@
+ using namespace std;
+ 
+ ResourceList::ResourceList() {
+-    
++    activeScene = -1;
+ }
+ 
+ ResourceList& ResourceList::GetInstance() {"
+Chainsawkitten/Deathcap,344,45a8fcd,src/Editor/Resources.hpp,modified,1,1,2,"@@ -30,7 +30,7 @@ class ResourceList {
+         std::vector<std::string> scenes;
+         
+         /// The index to the activeScene.
+-        std::size_t activeScene;
++        int activeScene;
+         
+         /// Models.
+         std::vector<Geometry::Model*> models;"

@@ -1,0 +1,1108 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+ExtendRealityLtd/VRTK,845,6cde7ec,Assets/VRTK/Scripts/Controls/2D/PanelMenu/PanelMenuController.cs,modified,2,2,4,"@@ -1,4 +1,4 @@
+-// Panel Menu Controller|Prefabs|0070
++﻿// Panel Menu Controller|Prefabs|0070
+ namespace VRTK
+ {
+     using System.Collections;
+@@ -106,7 +106,7 @@ protected virtual void Update()
+             {
+                 if (rotateTowards == null)
+                 {
+-                    rotateTowards = GameObject.Find(""Camera (eye)"");
++                    rotateTowards = VRTK_SDKManager.instance.GetHeadsetSDK().GetHeadsetCamera().gameObject;
+                     if (rotateTowards == null)
+                     {
+                         Debug.LogWarning(""The PanelMenuController could not automatically find an object to rotate towards."");"
+ExtendRealityLtd/VRTK,845,b5080e8,Assets/VRTK/Scripts/Controls/2D/PanelMenu/PanelMenuController.cs,modified,2,2,4,"@@ -1,4 +1,4 @@
+-// Panel Menu Controller|Prefabs|0070
++﻿// Panel Menu Controller|Prefabs|0070
+ namespace VRTK
+ {
+     using System.Collections;
+@@ -106,7 +106,7 @@ protected virtual void Update()
+             {
+                 if (rotateTowards == null)
+                 {
+-                    rotateTowards = GameObject.Find(""Camera (eye)"");
++                    rotateTowards = VRTK_SDKManager.instance.GetHeadsetSDK().GetHeadsetCamera().gameObject;
+                     if (rotateTowards == null)
+                     {
+                         Debug.LogWarning(""The PanelMenuController could not automatically find an object to rotate towards."");"
+ExtendRealityLtd/VRTK,845,3d583b5,Assets/VRTK/Scripts/Interactions/Highlighters/VRTK_MaterialColorSwapHighlighter.cs,modified,19,7,26,"@@ -29,8 +29,8 @@ public class VRTK_MaterialColorSwapHighlighter : VRTK_BaseHighlighter
+ 
+         private Dictionary<string, Material[]> originalSharedRendererMaterials = new Dictionary<string, Material[]>();
+         private Dictionary<string, Material[]> originalRendererMaterials = new Dictionary<string, Material[]>();
+-        private Dictionary<string, Coroutine> faderRoutines;
+-        private bool resetMainTexture = false;
++        protected Dictionary<string, Coroutine> faderRoutines;
++        protected bool resetMainTexture = false;
+ 
+         /// <summary>
+         /// The Initialise method sets up the highlighter for use.
+@@ -102,20 +102,32 @@ public override void Unhighlight(Color? color = null, float duration = 0f)
+             }
+         }
+ 
+-        private void StoreOriginalMaterials()
++        protected virtual void StoreOriginalMaterials()
+         {
+             originalSharedRendererMaterials.Clear();
+             originalRendererMaterials.Clear();
+             foreach (Renderer renderer in GetComponentsInChildren<Renderer>(true))
+             {
+                 var objectReference = renderer.gameObject.GetInstanceID().ToString();
+-                originalSharedRendererMaterials[objectReference] = renderer.sharedMaterials;
+-                originalRendererMaterials[objectReference] = renderer.materials;
++                // create real clones of the materials to be restored to avoid overwriting
++                Material[] sharedMaterials = new Material[renderer.sharedMaterials.Length];
++                for (int i = 0; i < renderer.sharedMaterials.Length; i++)
++                {
++                    sharedMaterials[i] = new Material(renderer.sharedMaterials[i]);
++                }
++                originalSharedRendererMaterials[objectReference] = sharedMaterials;
++                // create real clones of the materials to be restored to avoid overwriting
++                Material[] materials = new Material[renderer.materials.Length];
++                for (int i = 0; i < renderer.materials.Length; i++)
++                {
++                    materials[i] = new Material(renderer.materials[i]);
++                }
++                originalRendererMaterials[objectReference] = materials;
+                 renderer.sharedMaterials = originalSharedRendererMaterials[objectReference];
+             }
+         }
+ 
+-        private void ChangeToHighlightColor(Color color, float duration = 0f)
++        protected virtual void ChangeToHighlightColor(Color color, float duration = 0f)
+         {
+             foreach (Renderer renderer in GetComponentsInChildren<Renderer>(true))
+             {
+@@ -187,4 +199,4 @@ private IEnumerator CycleColor(Material material, Color startColor, Color endCol
+             }
+         }
+     }
+-}
+\ No newline at end of file
++}"
+ExtendRealityLtd/VRTK,845,3d583b5,Assets/VRTK/Scripts/Interactions/Highlighters/VRTK_MaterialPropertyBlockColorSwapHighlighter.cs,renamed,11,47,58,"@@ -1,33 +1,24 @@
+-﻿// Simple Colour Swap|Highlighters|0020
++﻿// Material Property Block Colour Swap|Highlighters|40021
+ namespace VRTK.Highlighters
+ {
+     using UnityEngine;
+     using System.Collections;
+     using System.Collections.Generic;
+ 
+     /// <summary>
+-    /// This highlighter swaps the texture colour for the given highlight colour using MaterialPropertyBlock.
++    /// This highlighter swaps the texture colour for the given highlight colour using MaterialPropertyBlocks.
++    /// The effect of this highlighter is the same as of the VRTK_MaterialColorSwapHighlighter.cs but this highlighter
++    /// can additionally handle objects which make use material instances.
+     /// </summary>
+     /// <remarks>
+     /// Due to the way the object material is interacted with, changing the material colour will break Draw Call Batching in Unity whilst the object is highlighted.
+     ///
+     /// The Draw Call Batching will resume on the original material when the item is no longer highlighted.
+     /// </remarks>
+-    /// <example>
+-    /// `VRTK/Examples/005_Controller_BasicObjectGrabbing` demonstrates the solid highlighting on the green cube, red cube and flying saucer when the controller touches it.
+-    ///
+-    /// `VRTK/Examples/035_Controller_OpacityAndHighlighting` demonstrates the solid highlighting if the right controller collides with the green box or if any of the buttons are pressed.
+-    /// </example>
+-    public class VRTK_ColorSwapMaterialPropertyBlockHighlighter : VRTK_BaseHighlighter
++    public class VRTK_MaterialPropertyBlockColorSwapHighlighter : VRTK_MaterialColorSwapHighlighter
+     {
+-        [Tooltip(""The emission colour of the texture will be the highlight colour but this percent darker."")]
+-        public float emissionDarken = 50f;
+-        [Tooltip(""Determines if the default main texture should be cleared on highlight. `true` to reset the main default texture, `false` to not reset it."")]
+-        public bool resetMainTexture = false;
+-
+         private Dictionary<string, MaterialPropertyBlock> originalMaterialPropertyBlocks = new Dictionary<string, MaterialPropertyBlock>();
+         private Dictionary<string, MaterialPropertyBlock> highlightMaterialPropertyBlocks = new Dictionary<string, MaterialPropertyBlock>();
+-        private Dictionary<string, Coroutine> faderRoutines;
+ 
+         /// <summary>
+         /// The Initialise method sets up the highlighter for use.
+@@ -38,35 +29,8 @@ public override void Initialise(Color? color = null, Dictionary<string, object>
+         {
+             originalMaterialPropertyBlocks = new Dictionary<string, MaterialPropertyBlock>();
+             highlightMaterialPropertyBlocks = new Dictionary<string, MaterialPropertyBlock>();
+-            faderRoutines = new Dictionary<string, Coroutine>();
+-            string key = ""resetMainTexture"";
+-            if (options != null && options.ContainsKey(key) && options[key] != null)
+-            {
+-                resetMainTexture = (bool)options[key];
+-            }
+-            ResetHighlighter();
+-        }
+-
+-        /// <summary>
+-        /// The ResetHighlighter method stores the object's materials and shared materials prior to highlighting.
+-        /// </summary>
+-        public override void ResetHighlighter()
+-        {
+-            StoreOriginalMaterials();
+-        }
+-
+-        /// <summary>
+-        /// The Highlight method initiates the change of colour on the object and will fade to that colour (from a base white colour) for the given duration.
+-        /// </summary>
+-        /// <param name=""color"">The colour to highlight to.</param>
+-        /// <param name=""duration"">The time taken to fade to the highlighted colour.</param>
+-        public override void Highlight(Color? color, float duration = 0f)
+-        {
+-            if (color == null)
+-            {
+-                return;
+-            }
+-            ChangeToHighlightColor((Color)color, duration);
++            // call to parent highlighter
++            base.Initialise(color, options);
+         }
+ 
+         /// <summary>
+@@ -102,7 +66,7 @@ public override void Unhighlight(Color? color = null, float duration = 0f)
+             }
+         }
+ 
+-        private void StoreOriginalMaterials()
++        protected override void StoreOriginalMaterials()
+         {
+             originalMaterialPropertyBlocks.Clear();
+             highlightMaterialPropertyBlocks.Clear();
+@@ -115,7 +79,7 @@ private void StoreOriginalMaterials()
+             }
+         }
+ 
+-        private void ChangeToHighlightColor(Color color, float duration = 0f)
++        protected override void ChangeToHighlightColor(Color color, float duration = 0f)
+         {
+             foreach (Renderer renderer in GetComponentsInChildren<Renderer>(true))
+             {
+@@ -145,7 +109,7 @@ private void ChangeToHighlightColor(Color color, float duration = 0f)
+                 else
+                 {
+                     highlightMaterialPropertyBlock.SetColor(""_Color"", color);
+-                    highlightMaterialPropertyBlock.SetColor(""_EmissionColor"", Utilities.ColorDarken(color, emissionDarken));
++                    highlightMaterialPropertyBlock.SetColor(""_EmissionColor"", VRTK_SharedMethods.ColorDarken(color, emissionDarken));
+                     renderer.SetPropertyBlock(highlightMaterialPropertyBlock);
+                 }
+             }
+@@ -169,4 +133,4 @@ private IEnumerator CycleColor(Renderer renderer, MaterialPropertyBlock highligh
+             }
+         }
+     }
+-}
+\ No newline at end of file
++}"
+ExtendRealityLtd/VRTK,845,3d583b5,Assets/VRTK/Scripts/Interactions/Highlighters/VRTK_MaterialPropertyBlockColorSwapHighlighter.cs.meta,renamed,2,2,4,"@@ -1,7 +1,7 @@
+ fileFormatVersion: 2
+ guid: d2edd16b331bc4b4a925e13a297d295c
+-timeCreated: 1473938027
+-licenseType: Pro
++timeCreated: 1485015488
++licenseType: Free
+ MonoImporter:
+   serializedVersion: 2
+   defaultReferences: []"
+ExtendRealityLtd/VRTK,845,fb4f32e,Assets/VRTK/Scripts/Interactions/Highlighters/VRTK_MaterialColorSwapHighlighter.cs,modified,5,5,10,"@@ -29,8 +29,8 @@ public class VRTK_MaterialColorSwapHighlighter : VRTK_BaseHighlighter
+ 
+         private Dictionary<string, Material[]> originalSharedRendererMaterials = new Dictionary<string, Material[]>();
+         private Dictionary<string, Material[]> originalRendererMaterials = new Dictionary<string, Material[]>();
+-        private Dictionary<string, Coroutine> faderRoutines;
+-        private bool resetMainTexture = false;
++        protected Dictionary<string, Coroutine> faderRoutines;
++        protected bool resetMainTexture = false;
+ 
+         /// <summary>
+         /// The Initialise method sets up the highlighter for use.
+@@ -102,7 +102,7 @@ public override void Unhighlight(Color? color = null, float duration = 0f)
+             }
+         }
+ 
+-        private void StoreOriginalMaterials()
++        protected virtual void StoreOriginalMaterials()
+         {
+             originalSharedRendererMaterials.Clear();
+             originalRendererMaterials.Clear();
+@@ -115,7 +115,7 @@ private void StoreOriginalMaterials()
+             }
+         }
+ 
+-        private void ChangeToHighlightColor(Color color, float duration = 0f)
++        protected virtual void ChangeToHighlightColor(Color color, float duration = 0f)
+         {
+             foreach (Renderer renderer in GetComponentsInChildren<Renderer>(true))
+             {
+@@ -187,4 +187,4 @@ private IEnumerator CycleColor(Material material, Color startColor, Color endCol
+             }
+         }
+     }
+-}
+\ No newline at end of file
++}"
+ExtendRealityLtd/VRTK,845,fb4f32e,Assets/VRTK/Scripts/Interactions/Highlighters/VRTK_MaterialPropertyBlockColorSwapHighlighter.cs,renamed,11,47,58,"@@ -1,33 +1,24 @@
+-﻿// Simple Colour Swap|Highlighters|0020
++﻿// Material Property Block Colour Swap|Highlighters|40021
+ namespace VRTK.Highlighters
+ {
+     using UnityEngine;
+     using System.Collections;
+     using System.Collections.Generic;
+ 
+     /// <summary>
+-    /// This highlighter swaps the texture colour for the given highlight colour using MaterialPropertyBlock.
++    /// This highlighter swaps the texture colour for the given highlight colour using MaterialPropertyBlocks.
++    /// The effect of this highlighter is the same as of the VRTK_MaterialColorSwapHighlighter.cs but this highlighter
++    /// can additionally handle objects which make use material instances.
+     /// </summary>
+     /// <remarks>
+     /// Due to the way the object material is interacted with, changing the material colour will break Draw Call Batching in Unity whilst the object is highlighted.
+     ///
+     /// The Draw Call Batching will resume on the original material when the item is no longer highlighted.
+     /// </remarks>
+-    /// <example>
+-    /// `VRTK/Examples/005_Controller_BasicObjectGrabbing` demonstrates the solid highlighting on the green cube, red cube and flying saucer when the controller touches it.
+-    ///
+-    /// `VRTK/Examples/035_Controller_OpacityAndHighlighting` demonstrates the solid highlighting if the right controller collides with the green box or if any of the buttons are pressed.
+-    /// </example>
+-    public class VRTK_ColorSwapMaterialPropertyBlockHighlighter : VRTK_BaseHighlighter
++    public class VRTK_MaterialPropertyBlockColorSwapHighlighter : VRTK_MaterialColorSwapHighlighter
+     {
+-        [Tooltip(""The emission colour of the texture will be the highlight colour but this percent darker."")]
+-        public float emissionDarken = 50f;
+-        [Tooltip(""Determines if the default main texture should be cleared on highlight. `true` to reset the main default texture, `false` to not reset it."")]
+-        public bool resetMainTexture = false;
+-
+         private Dictionary<string, MaterialPropertyBlock> originalMaterialPropertyBlocks = new Dictionary<string, MaterialPropertyBlock>();
+         private Dictionary<string, MaterialPropertyBlock> highlightMaterialPropertyBlocks = new Dictionary<string, MaterialPropertyBlock>();
+-        private Dictionary<string, Coroutine> faderRoutines;
+ 
+         /// <summary>
+         /// The Initialise method sets up the highlighter for use.
+@@ -38,35 +29,8 @@ public override void Initialise(Color? color = null, Dictionary<string, object>
+         {
+             originalMaterialPropertyBlocks = new Dictionary<string, MaterialPropertyBlock>();
+             highlightMaterialPropertyBlocks = new Dictionary<string, MaterialPropertyBlock>();
+-            faderRoutines = new Dictionary<string, Coroutine>();
+-            string key = ""resetMainTexture"";
+-            if (options != null && options.ContainsKey(key) && options[key] != null)
+-            {
+-                resetMainTexture = (bool)options[key];
+-            }
+-            ResetHighlighter();
+-        }
+-
+-        /// <summary>
+-        /// The ResetHighlighter method stores the object's materials and shared materials prior to highlighting.
+-        /// </summary>
+-        public override void ResetHighlighter()
+-        {
+-            StoreOriginalMaterials();
+-        }
+-
+-        /// <summary>
+-        /// The Highlight method initiates the change of colour on the object and will fade to that colour (from a base white colour) for the given duration.
+-        /// </summary>
+-        /// <param name=""color"">The colour to highlight to.</param>
+-        /// <param name=""duration"">The time taken to fade to the highlighted colour.</param>
+-        public override void Highlight(Color? color, float duration = 0f)
+-        {
+-            if (color == null)
+-            {
+-                return;
+-            }
+-            ChangeToHighlightColor((Color)color, duration);
++            // call to parent highlighter
++            base.Initialise(color, options);
+         }
+ 
+         /// <summary>
+@@ -102,7 +66,7 @@ public override void Unhighlight(Color? color = null, float duration = 0f)
+             }
+         }
+ 
+-        private void StoreOriginalMaterials()
++        protected override void StoreOriginalMaterials()
+         {
+             originalMaterialPropertyBlocks.Clear();
+             highlightMaterialPropertyBlocks.Clear();
+@@ -115,7 +79,7 @@ private void StoreOriginalMaterials()
+             }
+         }
+ 
+-        private void ChangeToHighlightColor(Color color, float duration = 0f)
++        protected override void ChangeToHighlightColor(Color color, float duration = 0f)
+         {
+             foreach (Renderer renderer in GetComponentsInChildren<Renderer>(true))
+             {
+@@ -145,7 +109,7 @@ private void ChangeToHighlightColor(Color color, float duration = 0f)
+                 else
+                 {
+                     highlightMaterialPropertyBlock.SetColor(""_Color"", color);
+-                    highlightMaterialPropertyBlock.SetColor(""_EmissionColor"", Utilities.ColorDarken(color, emissionDarken));
++                    highlightMaterialPropertyBlock.SetColor(""_EmissionColor"", VRTK_SharedMethods.ColorDarken(color, emissionDarken));
+                     renderer.SetPropertyBlock(highlightMaterialPropertyBlock);
+                 }
+             }
+@@ -169,4 +133,4 @@ private IEnumerator CycleColor(Renderer renderer, MaterialPropertyBlock highligh
+             }
+         }
+     }
+-}
+\ No newline at end of file
++}"
+ExtendRealityLtd/VRTK,845,fb4f32e,Assets/VRTK/Scripts/Interactions/Highlighters/VRTK_MaterialPropertyBlockColorSwapHighlighter.cs.meta,renamed,2,2,4,"@@ -1,7 +1,7 @@
+ fileFormatVersion: 2
+ guid: d2edd16b331bc4b4a925e13a297d295c
+-timeCreated: 1473938027
+-licenseType: Pro
++timeCreated: 1485015488
++licenseType: Free
+ MonoImporter:
+   serializedVersion: 2
+   defaultReferences: []"
+ExtendRealityLtd/VRTK,845,a0995fa,Assets/VRTK/Scripts/Interactions/Highlighters/VRTK_MaterialColorSwapHighlighter.cs,modified,5,5,10,"@@ -29,8 +29,8 @@ public class VRTK_MaterialColorSwapHighlighter : VRTK_BaseHighlighter
+ 
+         private Dictionary<string, Material[]> originalSharedRendererMaterials = new Dictionary<string, Material[]>();
+         private Dictionary<string, Material[]> originalRendererMaterials = new Dictionary<string, Material[]>();
+-        private Dictionary<string, Coroutine> faderRoutines;
+-        private bool resetMainTexture = false;
++        protected Dictionary<string, Coroutine> faderRoutines;
++        protected bool resetMainTexture = false;
+ 
+         /// <summary>
+         /// The Initialise method sets up the highlighter for use.
+@@ -102,7 +102,7 @@ public override void Unhighlight(Color? color = null, float duration = 0f)
+             }
+         }
+ 
+-        private void StoreOriginalMaterials()
++        protected virtual void StoreOriginalMaterials()
+         {
+             originalSharedRendererMaterials.Clear();
+             originalRendererMaterials.Clear();
+@@ -115,7 +115,7 @@ private void StoreOriginalMaterials()
+             }
+         }
+ 
+-        private void ChangeToHighlightColor(Color color, float duration = 0f)
++        protected virtual void ChangeToHighlightColor(Color color, float duration = 0f)
+         {
+             foreach (Renderer renderer in GetComponentsInChildren<Renderer>(true))
+             {
+@@ -187,4 +187,4 @@ private IEnumerator CycleColor(Material material, Color startColor, Color endCol
+             }
+         }
+     }
+-}
+\ No newline at end of file
++}"
+ExtendRealityLtd/VRTK,845,a0995fa,Assets/VRTK/Scripts/Interactions/Highlighters/VRTK_MaterialPropertyBlockColorSwapHighlighter.cs,added,136,0,136,"@@ -0,0 +1,136 @@
++﻿// Material Property Block Colour Swap|Highlighters|40021
++namespace VRTK.Highlighters
++{
++    using UnityEngine;
++    using System.Collections;
++    using System.Collections.Generic;
++
++    /// <summary>
++    /// This highlighter swaps the texture colour for the given highlight colour using MaterialPropertyBlocks.
++    /// The effect of this highlighter is the same as of the VRTK_MaterialColorSwapHighlighter.cs but this highlighter
++    /// can additionally handle objects which make use material instances.
++    /// </summary>
++    /// <remarks>
++    /// Due to the way the object material is interacted with, changing the material colour will break Draw Call Batching in Unity whilst the object is highlighted.
++    ///
++    /// The Draw Call Batching will resume on the original material when the item is no longer highlighted.
++    /// </remarks>
++    public class VRTK_MaterialPropertyBlockColorSwapHighlighter : VRTK_MaterialColorSwapHighlighter
++    {
++        private Dictionary<string, MaterialPropertyBlock> originalMaterialPropertyBlocks = new Dictionary<string, MaterialPropertyBlock>();
++        private Dictionary<string, MaterialPropertyBlock> highlightMaterialPropertyBlocks = new Dictionary<string, MaterialPropertyBlock>();
++
++        /// <summary>
++        /// The Initialise method sets up the highlighter for use.
++        /// </summary>
++        /// <param name=""color"">Not used.</param>
++        /// <param name=""options"">A dictionary array containing the highlighter options:\r     * `&lt;'resetMainTexture', bool&gt;` - Determines if the default main texture should be cleared on highlight. `true` to reset the main default texture, `false` to not reset it.</param>
++        public override void Initialise(Color? color = null, Dictionary<string, object> options = null)
++        {
++            originalMaterialPropertyBlocks = new Dictionary<string, MaterialPropertyBlock>();
++            highlightMaterialPropertyBlocks = new Dictionary<string, MaterialPropertyBlock>();
++            // call to parent highlighter
++            base.Initialise(color, options);
++        }
++
++        /// <summary>
++        /// The Unhighlight method returns the object back to it's original colour.
++        /// </summary>
++        /// <param name=""color"">Not used.</param>
++        /// <param name=""duration"">Not used.</param>
++        public override void Unhighlight(Color? color = null, float duration = 0f)
++        {
++            if (originalMaterialPropertyBlocks == null)
++            {
++                return;
++            }
++
++            if (faderRoutines != null)
++            {
++                foreach (var fadeRoutine in faderRoutines)
++                {
++                    StopCoroutine(fadeRoutine.Value);
++                }
++                faderRoutines.Clear();
++            }
++
++            foreach (Renderer renderer in GetComponentsInChildren<Renderer>(true))
++            {
++                var objectReference = renderer.gameObject.GetInstanceID().ToString();
++                if (!originalMaterialPropertyBlocks.ContainsKey(objectReference))
++                {
++                    continue;
++                }
++
++                renderer.SetPropertyBlock(originalMaterialPropertyBlocks[objectReference]);
++            }
++        }
++
++        protected override void StoreOriginalMaterials()
++        {
++            originalMaterialPropertyBlocks.Clear();
++            highlightMaterialPropertyBlocks.Clear();
++            foreach (Renderer renderer in GetComponentsInChildren<Renderer>(true))
++            {
++                var objectReference = renderer.gameObject.GetInstanceID().ToString();
++                originalMaterialPropertyBlocks[objectReference] = new MaterialPropertyBlock();
++                renderer.GetPropertyBlock(originalMaterialPropertyBlocks[objectReference]);
++                highlightMaterialPropertyBlocks[objectReference] = new MaterialPropertyBlock();
++            }
++        }
++
++        protected override void ChangeToHighlightColor(Color color, float duration = 0f)
++        {
++            foreach (Renderer renderer in GetComponentsInChildren<Renderer>(true))
++            {
++                var objectReference = renderer.gameObject.GetInstanceID().ToString();
++                if (!originalMaterialPropertyBlocks.ContainsKey(objectReference))
++                {
++                    continue;
++                }
++
++                if (faderRoutines.ContainsKey(objectReference) && faderRoutines[objectReference] != null)
++                {
++                    StopCoroutine(faderRoutines[objectReference]);
++                    faderRoutines.Remove(objectReference);
++                }
++
++                var highlightMaterialPropertyBlock = highlightMaterialPropertyBlocks[objectReference];
++                renderer.GetPropertyBlock(highlightMaterialPropertyBlock);
++                if (resetMainTexture)
++                {
++                    highlightMaterialPropertyBlock.SetTexture(""_MainTex"", Texture2D.whiteTexture);
++                }
++
++                if (duration > 0f)
++                {
++                    faderRoutines[objectReference] = StartCoroutine(CycleColor(renderer, highlightMaterialPropertyBlock, color, duration));
++                }
++                else
++                {
++                    highlightMaterialPropertyBlock.SetColor(""_Color"", color);
++                    highlightMaterialPropertyBlock.SetColor(""_EmissionColor"", VRTK_SharedMethods.ColorDarken(color, emissionDarken));
++                    renderer.SetPropertyBlock(highlightMaterialPropertyBlock);
++                }
++            }
++        }
++
++        private IEnumerator CycleColor(Renderer renderer, MaterialPropertyBlock highlightMaterialPropertyBlock, Color endColor, float duration)
++        {
++            var elapsedTime = 0f;
++            while (elapsedTime <= duration)
++            {
++                elapsedTime += Time.deltaTime;
++                Color startColor = highlightMaterialPropertyBlock.GetVector(""_Color"");
++                highlightMaterialPropertyBlock.SetColor(""_Color"", Color.Lerp(startColor, endColor, (elapsedTime / duration)));
++                highlightMaterialPropertyBlock.SetColor(""_EmissionColor"", Color.Lerp(startColor, endColor, (elapsedTime / duration)));
++                if (!renderer)
++                {
++                    yield break;
++                }
++                renderer.SetPropertyBlock(highlightMaterialPropertyBlock);
++                yield return null;
++            }
++        }
++    }
++}"
+ExtendRealityLtd/VRTK,845,a0995fa,Assets/VRTK/Scripts/Interactions/Highlighters/VRTK_MaterialPropertyBlockColorSwapHighlighter.cs.meta,added,12,0,12,"@@ -0,0 +1,12 @@
++fileFormatVersion: 2
++guid: 5b0a43f0f5cfce248a93476674d6389f
++timeCreated: 1485021665
++licenseType: Free
++MonoImporter:
++  serializedVersion: 2
++  defaultReferences: []
++  executionOrder: 0
++  icon: {instanceID: 0}
++  userData: 
++  assetBundleName: 
++  assetBundleVariant: "
+ExtendRealityLtd/VRTK,845,db827a9,Assets/VRTK/Scripts/Interactions/Highlighters/VRTK_MaterialColorSwapHighlighter.cs,modified,5,5,10,"@@ -29,8 +29,8 @@ public class VRTK_MaterialColorSwapHighlighter : VRTK_BaseHighlighter
+ 
+         private Dictionary<string, Material[]> originalSharedRendererMaterials = new Dictionary<string, Material[]>();
+         private Dictionary<string, Material[]> originalRendererMaterials = new Dictionary<string, Material[]>();
+-        private Dictionary<string, Coroutine> faderRoutines;
+-        private bool resetMainTexture = false;
++        protected Dictionary<string, Coroutine> faderRoutines;
++        protected bool resetMainTexture = false;
+ 
+         /// <summary>
+         /// The Initialise method sets up the highlighter for use.
+@@ -102,7 +102,7 @@ public override void Unhighlight(Color? color = null, float duration = 0f)
+             }
+         }
+ 
+-        private void StoreOriginalMaterials()
++        protected virtual void StoreOriginalMaterials()
+         {
+             originalSharedRendererMaterials.Clear();
+             originalRendererMaterials.Clear();
+@@ -115,7 +115,7 @@ private void StoreOriginalMaterials()
+             }
+         }
+ 
+-        private void ChangeToHighlightColor(Color color, float duration = 0f)
++        protected virtual void ChangeToHighlightColor(Color color, float duration = 0f)
+         {
+             foreach (Renderer renderer in GetComponentsInChildren<Renderer>(true))
+             {
+@@ -187,4 +187,4 @@ private IEnumerator CycleColor(Material material, Color startColor, Color endCol
+             }
+         }
+     }
+-}
+\ No newline at end of file
++}"
+ExtendRealityLtd/VRTK,845,db827a9,Assets/VRTK/Scripts/Interactions/Highlighters/VRTK_MaterialPropertyBlockColorSwapHighlighter.cs,added,136,0,136,"@@ -0,0 +1,136 @@
++﻿// Material Property Block Colour Swap|Highlighters|40021
++namespace VRTK.Highlighters
++{
++    using UnityEngine;
++    using System.Collections;
++    using System.Collections.Generic;
++
++    /// <summary>
++    /// This highlighter swaps the texture colour for the given highlight colour using MaterialPropertyBlocks.
++    /// The effect of this highlighter is the same as of the VRTK_MaterialColorSwapHighlighter.cs but this highlighter
++    /// can additionally handle objects which make use material instances.
++    /// </summary>
++    /// <remarks>
++    /// Due to the way the object material is interacted with, changing the material colour will break Draw Call Batching in Unity whilst the object is highlighted.
++    ///
++    /// The Draw Call Batching will resume on the original material when the item is no longer highlighted.
++    /// </remarks>
++    public class VRTK_MaterialPropertyBlockColorSwapHighlighter : VRTK_MaterialColorSwapHighlighter
++    {
++        private Dictionary<string, MaterialPropertyBlock> originalMaterialPropertyBlocks = new Dictionary<string, MaterialPropertyBlock>();
++        private Dictionary<string, MaterialPropertyBlock> highlightMaterialPropertyBlocks = new Dictionary<string, MaterialPropertyBlock>();
++
++        /// <summary>
++        /// The Initialise method sets up the highlighter for use.
++        /// </summary>
++        /// <param name=""color"">Not used.</param>
++        /// <param name=""options"">A dictionary array containing the highlighter options:\r     * `&lt;'resetMainTexture', bool&gt;` - Determines if the default main texture should be cleared on highlight. `true` to reset the main default texture, `false` to not reset it.</param>
++        public override void Initialise(Color? color = null, Dictionary<string, object> options = null)
++        {
++            originalMaterialPropertyBlocks = new Dictionary<string, MaterialPropertyBlock>();
++            highlightMaterialPropertyBlocks = new Dictionary<string, MaterialPropertyBlock>();
++            // call to parent highlighter
++            base.Initialise(color, options);
++        }
++
++        /// <summary>
++        /// The Unhighlight method returns the object back to it's original colour.
++        /// </summary>
++        /// <param name=""color"">Not used.</param>
++        /// <param name=""duration"">Not used.</param>
++        public override void Unhighlight(Color? color = null, float duration = 0f)
++        {
++            if (originalMaterialPropertyBlocks == null)
++            {
++                return;
++            }
++
++            if (faderRoutines != null)
++            {
++                foreach (var fadeRoutine in faderRoutines)
++                {
++                    StopCoroutine(fadeRoutine.Value);
++                }
++                faderRoutines.Clear();
++            }
++
++            foreach (Renderer renderer in GetComponentsInChildren<Renderer>(true))
++            {
++                var objectReference = renderer.gameObject.GetInstanceID().ToString();
++                if (!originalMaterialPropertyBlocks.ContainsKey(objectReference))
++                {
++                    continue;
++                }
++
++                renderer.SetPropertyBlock(originalMaterialPropertyBlocks[objectReference]);
++            }
++        }
++
++        protected override void StoreOriginalMaterials()
++        {
++            originalMaterialPropertyBlocks.Clear();
++            highlightMaterialPropertyBlocks.Clear();
++            foreach (Renderer renderer in GetComponentsInChildren<Renderer>(true))
++            {
++                var objectReference = renderer.gameObject.GetInstanceID().ToString();
++                originalMaterialPropertyBlocks[objectReference] = new MaterialPropertyBlock();
++                renderer.GetPropertyBlock(originalMaterialPropertyBlocks[objectReference]);
++                highlightMaterialPropertyBlocks[objectReference] = new MaterialPropertyBlock();
++            }
++        }
++
++        protected override void ChangeToHighlightColor(Color color, float duration = 0f)
++        {
++            foreach (Renderer renderer in GetComponentsInChildren<Renderer>(true))
++            {
++                var objectReference = renderer.gameObject.GetInstanceID().ToString();
++                if (!originalMaterialPropertyBlocks.ContainsKey(objectReference))
++                {
++                    continue;
++                }
++
++                if (faderRoutines.ContainsKey(objectReference) && faderRoutines[objectReference] != null)
++                {
++                    StopCoroutine(faderRoutines[objectReference]);
++                    faderRoutines.Remove(objectReference);
++                }
++
++                var highlightMaterialPropertyBlock = highlightMaterialPropertyBlocks[objectReference];
++                renderer.GetPropertyBlock(highlightMaterialPropertyBlock);
++                if (resetMainTexture)
++                {
++                    highlightMaterialPropertyBlock.SetTexture(""_MainTex"", Texture2D.whiteTexture);
++                }
++
++                if (duration > 0f)
++                {
++                    faderRoutines[objectReference] = StartCoroutine(CycleColor(renderer, highlightMaterialPropertyBlock, color, duration));
++                }
++                else
++                {
++                    highlightMaterialPropertyBlock.SetColor(""_Color"", color);
++                    highlightMaterialPropertyBlock.SetColor(""_EmissionColor"", VRTK_SharedMethods.ColorDarken(color, emissionDarken));
++                    renderer.SetPropertyBlock(highlightMaterialPropertyBlock);
++                }
++            }
++        }
++
++        private IEnumerator CycleColor(Renderer renderer, MaterialPropertyBlock highlightMaterialPropertyBlock, Color endColor, float duration)
++        {
++            var elapsedTime = 0f;
++            while (elapsedTime <= duration)
++            {
++                elapsedTime += Time.deltaTime;
++                Color startColor = highlightMaterialPropertyBlock.GetVector(""_Color"");
++                highlightMaterialPropertyBlock.SetColor(""_Color"", Color.Lerp(startColor, endColor, (elapsedTime / duration)));
++                highlightMaterialPropertyBlock.SetColor(""_EmissionColor"", Color.Lerp(startColor, endColor, (elapsedTime / duration)));
++                if (!renderer)
++                {
++                    yield break;
++                }
++                renderer.SetPropertyBlock(highlightMaterialPropertyBlock);
++                yield return null;
++            }
++        }
++    }
++}"
+ExtendRealityLtd/VRTK,845,db827a9,Assets/VRTK/Scripts/Interactions/Highlighters/VRTK_MaterialPropertyBlockColorSwapHighlighter.cs.meta,added,12,0,12,"@@ -0,0 +1,12 @@
++fileFormatVersion: 2
++guid: 5b0a43f0f5cfce248a93476674d6389f
++timeCreated: 1485021665
++licenseType: Free
++MonoImporter:
++  serializedVersion: 2
++  defaultReferences: []
++  executionOrder: 0
++  icon: {instanceID: 0}
++  userData: 
++  assetBundleName: 
++  assetBundleVariant: "
+ExtendRealityLtd/VRTK,845,7e9fc87,Assets/VRTK/Scripts/Interactions/Highlighters/VRTK_MaterialColorSwapHighlighter.cs,modified,5,5,10,"@@ -29,8 +29,8 @@ public class VRTK_MaterialColorSwapHighlighter : VRTK_BaseHighlighter
+ 
+         private Dictionary<string, Material[]> originalSharedRendererMaterials = new Dictionary<string, Material[]>();
+         private Dictionary<string, Material[]> originalRendererMaterials = new Dictionary<string, Material[]>();
+-        private Dictionary<string, Coroutine> faderRoutines;
+-        private bool resetMainTexture = false;
++        protected Dictionary<string, Coroutine> faderRoutines;
++        protected bool resetMainTexture = false;
+ 
+         /// <summary>
+         /// The Initialise method sets up the highlighter for use.
+@@ -102,7 +102,7 @@ public override void Unhighlight(Color? color = null, float duration = 0f)
+             }
+         }
+ 
+-        private void StoreOriginalMaterials()
++        protected virtual void StoreOriginalMaterials()
+         {
+             originalSharedRendererMaterials.Clear();
+             originalRendererMaterials.Clear();
+@@ -115,7 +115,7 @@ private void StoreOriginalMaterials()
+             }
+         }
+ 
+-        private void ChangeToHighlightColor(Color color, float duration = 0f)
++        protected virtual void ChangeToHighlightColor(Color color, float duration = 0f)
+         {
+             foreach (Renderer renderer in GetComponentsInChildren<Renderer>(true))
+             {
+@@ -187,4 +187,4 @@ private IEnumerator CycleColor(Material material, Color startColor, Color endCol
+             }
+         }
+     }
+-}
+\ No newline at end of file
++}"
+ExtendRealityLtd/VRTK,845,7e9fc87,Assets/VRTK/Scripts/Interactions/Highlighters/VRTK_MaterialPropertyBlockColorSwapHighlighter.cs,added,136,0,136,"@@ -0,0 +1,136 @@
++﻿// Material Property Block Colour Swap|Highlighters|40021
++namespace VRTK.Highlighters
++{
++    using UnityEngine;
++    using System.Collections;
++    using System.Collections.Generic;
++
++    /// <summary>
++    /// This highlighter swaps the texture colour for the given highlight colour using MaterialPropertyBlocks.
++    /// The effect of this highlighter is the same as of the VRTK_MaterialColorSwapHighlighter.cs but this highlighter
++    /// can additionally handle objects which make use material instances.
++    /// </summary>
++    /// <remarks>
++    /// Due to the way the object material is interacted with, changing the material colour will break Draw Call Batching in Unity whilst the object is highlighted.
++    ///
++    /// The Draw Call Batching will resume on the original material when the item is no longer highlighted.
++    /// </remarks>
++    public class VRTK_MaterialPropertyBlockColorSwapHighlighter : VRTK_MaterialColorSwapHighlighter
++    {
++        private Dictionary<string, MaterialPropertyBlock> originalMaterialPropertyBlocks = new Dictionary<string, MaterialPropertyBlock>();
++        private Dictionary<string, MaterialPropertyBlock> highlightMaterialPropertyBlocks = new Dictionary<string, MaterialPropertyBlock>();
++
++        /// <summary>
++        /// The Initialise method sets up the highlighter for use.
++        /// </summary>
++        /// <param name=""color"">Not used.</param>
++        /// <param name=""options"">A dictionary array containing the highlighter options:\r     * `&lt;'resetMainTexture', bool&gt;` - Determines if the default main texture should be cleared on highlight. `true` to reset the main default texture, `false` to not reset it.</param>
++        public override void Initialise(Color? color = null, Dictionary<string, object> options = null)
++        {
++            originalMaterialPropertyBlocks = new Dictionary<string, MaterialPropertyBlock>();
++            highlightMaterialPropertyBlocks = new Dictionary<string, MaterialPropertyBlock>();
++            // call to parent highlighter
++            base.Initialise(color, options);
++        }
++
++        /// <summary>
++        /// The Unhighlight method returns the object back to it's original colour.
++        /// </summary>
++        /// <param name=""color"">Not used.</param>
++        /// <param name=""duration"">Not used.</param>
++        public override void Unhighlight(Color? color = null, float duration = 0f)
++        {
++            if (originalMaterialPropertyBlocks == null)
++            {
++                return;
++            }
++
++            if (faderRoutines != null)
++            {
++                foreach (var fadeRoutine in faderRoutines)
++                {
++                    StopCoroutine(fadeRoutine.Value);
++                }
++                faderRoutines.Clear();
++            }
++
++            foreach (Renderer renderer in GetComponentsInChildren<Renderer>(true))
++            {
++                var objectReference = renderer.gameObject.GetInstanceID().ToString();
++                if (!originalMaterialPropertyBlocks.ContainsKey(objectReference))
++                {
++                    continue;
++                }
++
++                renderer.SetPropertyBlock(originalMaterialPropertyBlocks[objectReference]);
++            }
++        }
++
++        protected override void StoreOriginalMaterials()
++        {
++            originalMaterialPropertyBlocks.Clear();
++            highlightMaterialPropertyBlocks.Clear();
++            foreach (Renderer renderer in GetComponentsInChildren<Renderer>(true))
++            {
++                var objectReference = renderer.gameObject.GetInstanceID().ToString();
++                originalMaterialPropertyBlocks[objectReference] = new MaterialPropertyBlock();
++                renderer.GetPropertyBlock(originalMaterialPropertyBlocks[objectReference]);
++                highlightMaterialPropertyBlocks[objectReference] = new MaterialPropertyBlock();
++            }
++        }
++
++        protected override void ChangeToHighlightColor(Color color, float duration = 0f)
++        {
++            foreach (Renderer renderer in GetComponentsInChildren<Renderer>(true))
++            {
++                var objectReference = renderer.gameObject.GetInstanceID().ToString();
++                if (!originalMaterialPropertyBlocks.ContainsKey(objectReference))
++                {
++                    continue;
++                }
++
++                if (faderRoutines.ContainsKey(objectReference) && faderRoutines[objectReference] != null)
++                {
++                    StopCoroutine(faderRoutines[objectReference]);
++                    faderRoutines.Remove(objectReference);
++                }
++
++                var highlightMaterialPropertyBlock = highlightMaterialPropertyBlocks[objectReference];
++                renderer.GetPropertyBlock(highlightMaterialPropertyBlock);
++                if (resetMainTexture)
++                {
++                    highlightMaterialPropertyBlock.SetTexture(""_MainTex"", Texture2D.whiteTexture);
++                }
++
++                if (duration > 0f)
++                {
++                    faderRoutines[objectReference] = StartCoroutine(CycleColor(renderer, highlightMaterialPropertyBlock, color, duration));
++                }
++                else
++                {
++                    highlightMaterialPropertyBlock.SetColor(""_Color"", color);
++                    highlightMaterialPropertyBlock.SetColor(""_EmissionColor"", VRTK_SharedMethods.ColorDarken(color, emissionDarken));
++                    renderer.SetPropertyBlock(highlightMaterialPropertyBlock);
++                }
++            }
++        }
++
++        private IEnumerator CycleColor(Renderer renderer, MaterialPropertyBlock highlightMaterialPropertyBlock, Color endColor, float duration)
++        {
++            var elapsedTime = 0f;
++            while (elapsedTime <= duration)
++            {
++                elapsedTime += Time.deltaTime;
++                Color startColor = highlightMaterialPropertyBlock.GetVector(""_Color"");
++                highlightMaterialPropertyBlock.SetColor(""_Color"", Color.Lerp(startColor, endColor, (elapsedTime / duration)));
++                highlightMaterialPropertyBlock.SetColor(""_EmissionColor"", Color.Lerp(startColor, endColor, (elapsedTime / duration)));
++                if (!renderer)
++                {
++                    yield break;
++                }
++                renderer.SetPropertyBlock(highlightMaterialPropertyBlock);
++                yield return null;
++            }
++        }
++    }
++}"
+ExtendRealityLtd/VRTK,845,7e9fc87,Assets/VRTK/Scripts/Interactions/Highlighters/VRTK_MaterialPropertyBlockColorSwapHighlighter.cs.meta,added,12,0,12,"@@ -0,0 +1,12 @@
++fileFormatVersion: 2
++guid: 5b0a43f0f5cfce248a93476674d6389f
++timeCreated: 1485021665
++licenseType: Free
++MonoImporter:
++  serializedVersion: 2
++  defaultReferences: []
++  executionOrder: 0
++  icon: {instanceID: 0}
++  userData: 
++  assetBundleName: 
++  assetBundleVariant: "
+ExtendRealityLtd/VRTK,845,51dcd58,Assets/VRTK/Scripts/Interactions/Highlighters/VRTK_MaterialColorSwapHighlighter.cs,modified,5,5,10,"@@ -29,8 +29,8 @@ public class VRTK_MaterialColorSwapHighlighter : VRTK_BaseHighlighter
+ 
+         private Dictionary<string, Material[]> originalSharedRendererMaterials = new Dictionary<string, Material[]>();
+         private Dictionary<string, Material[]> originalRendererMaterials = new Dictionary<string, Material[]>();
+-        private Dictionary<string, Coroutine> faderRoutines;
+-        private bool resetMainTexture = false;
++        protected Dictionary<string, Coroutine> faderRoutines;
++        protected bool resetMainTexture = false;
+ 
+         /// <summary>
+         /// The Initialise method sets up the highlighter for use.
+@@ -102,7 +102,7 @@ public override void Unhighlight(Color? color = null, float duration = 0f)
+             }
+         }
+ 
+-        private void StoreOriginalMaterials()
++        protected virtual void StoreOriginalMaterials()
+         {
+             originalSharedRendererMaterials.Clear();
+             originalRendererMaterials.Clear();
+@@ -115,7 +115,7 @@ private void StoreOriginalMaterials()
+             }
+         }
+ 
+-        private void ChangeToHighlightColor(Color color, float duration = 0f)
++        protected virtual void ChangeToHighlightColor(Color color, float duration = 0f)
+         {
+             foreach (Renderer renderer in GetComponentsInChildren<Renderer>(true))
+             {
+@@ -187,4 +187,4 @@ private IEnumerator CycleColor(Material material, Color startColor, Color endCol
+             }
+         }
+     }
+-}
+\ No newline at end of file
++}"
+ExtendRealityLtd/VRTK,845,51dcd58,Assets/VRTK/Scripts/Interactions/Highlighters/VRTK_MaterialPropertyBlockColorSwapHighlighter.cs,added,136,0,136,"@@ -0,0 +1,136 @@
++﻿// Material Property Block Colour Swap|Highlighters|40021
++namespace VRTK.Highlighters
++{
++    using UnityEngine;
++    using System.Collections;
++    using System.Collections.Generic;
++
++    /// <summary>
++    /// This highlighter swaps the texture colour for the given highlight colour using MaterialPropertyBlocks.
++    /// The effect of this highlighter is the same as of the VRTK_MaterialColorSwapHighlighter.cs but this highlighter
++    /// can additionally handle objects which make use material instances.
++    /// </summary>
++    /// <remarks>
++    /// Due to the way the object material is interacted with, changing the material colour will break Draw Call Batching in Unity whilst the object is highlighted.
++    ///
++    /// The Draw Call Batching will resume on the original material when the item is no longer highlighted.
++    /// </remarks>
++    public class VRTK_MaterialPropertyBlockColorSwapHighlighter : VRTK_MaterialColorSwapHighlighter
++    {
++        private Dictionary<string, MaterialPropertyBlock> originalMaterialPropertyBlocks = new Dictionary<string, MaterialPropertyBlock>();
++        private Dictionary<string, MaterialPropertyBlock> highlightMaterialPropertyBlocks = new Dictionary<string, MaterialPropertyBlock>();
++
++        /// <summary>
++        /// The Initialise method sets up the highlighter for use.
++        /// </summary>
++        /// <param name=""color"">Not used.</param>
++        /// <param name=""options"">A dictionary array containing the highlighter options:\r     * `&lt;'resetMainTexture', bool&gt;` - Determines if the default main texture should be cleared on highlight. `true` to reset the main default texture, `false` to not reset it.</param>
++        public override void Initialise(Color? color = null, Dictionary<string, object> options = null)
++        {
++            originalMaterialPropertyBlocks = new Dictionary<string, MaterialPropertyBlock>();
++            highlightMaterialPropertyBlocks = new Dictionary<string, MaterialPropertyBlock>();
++            // call to parent highlighter
++            base.Initialise(color, options);
++        }
++
++        /// <summary>
++        /// The Unhighlight method returns the object back to it's original colour.
++        /// </summary>
++        /// <param name=""color"">Not used.</param>
++        /// <param name=""duration"">Not used.</param>
++        public override void Unhighlight(Color? color = null, float duration = 0f)
++        {
++            if (originalMaterialPropertyBlocks == null)
++            {
++                return;
++            }
++
++            if (faderRoutines != null)
++            {
++                foreach (var fadeRoutine in faderRoutines)
++                {
++                    StopCoroutine(fadeRoutine.Value);
++                }
++                faderRoutines.Clear();
++            }
++
++            foreach (Renderer renderer in GetComponentsInChildren<Renderer>(true))
++            {
++                var objectReference = renderer.gameObject.GetInstanceID().ToString();
++                if (!originalMaterialPropertyBlocks.ContainsKey(objectReference))
++                {
++                    continue;
++                }
++
++                renderer.SetPropertyBlock(originalMaterialPropertyBlocks[objectReference]);
++            }
++        }
++
++        protected override void StoreOriginalMaterials()
++        {
++            originalMaterialPropertyBlocks.Clear();
++            highlightMaterialPropertyBlocks.Clear();
++            foreach (Renderer renderer in GetComponentsInChildren<Renderer>(true))
++            {
++                var objectReference = renderer.gameObject.GetInstanceID().ToString();
++                originalMaterialPropertyBlocks[objectReference] = new MaterialPropertyBlock();
++                renderer.GetPropertyBlock(originalMaterialPropertyBlocks[objectReference]);
++                highlightMaterialPropertyBlocks[objectReference] = new MaterialPropertyBlock();
++            }
++        }
++
++        protected override void ChangeToHighlightColor(Color color, float duration = 0f)
++        {
++            foreach (Renderer renderer in GetComponentsInChildren<Renderer>(true))
++            {
++                var objectReference = renderer.gameObject.GetInstanceID().ToString();
++                if (!originalMaterialPropertyBlocks.ContainsKey(objectReference))
++                {
++                    continue;
++                }
++
++                if (faderRoutines.ContainsKey(objectReference) && faderRoutines[objectReference] != null)
++                {
++                    StopCoroutine(faderRoutines[objectReference]);
++                    faderRoutines.Remove(objectReference);
++                }
++
++                var highlightMaterialPropertyBlock = highlightMaterialPropertyBlocks[objectReference];
++                renderer.GetPropertyBlock(highlightMaterialPropertyBlock);
++                if (resetMainTexture)
++                {
++                    highlightMaterialPropertyBlock.SetTexture(""_MainTex"", Texture2D.whiteTexture);
++                }
++
++                if (duration > 0f)
++                {
++                    faderRoutines[objectReference] = StartCoroutine(CycleColor(renderer, highlightMaterialPropertyBlock, color, duration));
++                }
++                else
++                {
++                    highlightMaterialPropertyBlock.SetColor(""_Color"", color);
++                    highlightMaterialPropertyBlock.SetColor(""_EmissionColor"", VRTK_SharedMethods.ColorDarken(color, emissionDarken));
++                    renderer.SetPropertyBlock(highlightMaterialPropertyBlock);
++                }
++            }
++        }
++
++        private IEnumerator CycleColor(Renderer renderer, MaterialPropertyBlock highlightMaterialPropertyBlock, Color endColor, float duration)
++        {
++            var elapsedTime = 0f;
++            while (elapsedTime <= duration)
++            {
++                elapsedTime += Time.deltaTime;
++                Color startColor = highlightMaterialPropertyBlock.GetVector(""_Color"");
++                highlightMaterialPropertyBlock.SetColor(""_Color"", Color.Lerp(startColor, endColor, (elapsedTime / duration)));
++                highlightMaterialPropertyBlock.SetColor(""_EmissionColor"", Color.Lerp(startColor, endColor, (elapsedTime / duration)));
++                if (!renderer)
++                {
++                    yield break;
++                }
++                renderer.SetPropertyBlock(highlightMaterialPropertyBlock);
++                yield return null;
++            }
++        }
++    }
++}"
+ExtendRealityLtd/VRTK,845,51dcd58,Assets/VRTK/Scripts/Interactions/Highlighters/VRTK_MaterialPropertyBlockColorSwapHighlighter.cs.meta,added,12,0,12,"@@ -0,0 +1,12 @@
++fileFormatVersion: 2
++guid: 5b0a43f0f5cfce248a93476674d6389f
++timeCreated: 1485021665
++licenseType: Free
++MonoImporter:
++  serializedVersion: 2
++  defaultReferences: []
++  executionOrder: 0
++  icon: {instanceID: 0}
++  userData: 
++  assetBundleName: 
++  assetBundleVariant: "

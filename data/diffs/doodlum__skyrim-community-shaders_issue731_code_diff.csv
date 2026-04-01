@@ -1,0 +1,322 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+doodlum/skyrim-community-shaders,731,8bf47deb5b5325cb21fb585205cc660abed51b8b,package/Shaders/Common/Permutation.hlsli,modified,1,0,1,"@@ -53,6 +53,7 @@ namespace ExtraFlags
+ {
+ 	static const uint InWorld = (1 << 0);
+ 	static const uint IsBeastRace = (1 << 1);
++	static const uint EffectShadows = (1 << 2);
+ }
+ 
+ cbuffer PerShader : register(b4)"
+doodlum/skyrim-community-shaders,731,8bf47deb5b5325cb21fb585205cc660abed51b8b,package/Shaders/Effect.hlsl,modified,2,6,8,"@@ -484,7 +484,6 @@ cbuffer PerGeometry : register(b2)
+ 	float4 AlphaTestRef : packoffset(c9);
+ 	float4 MembraneRimColor : packoffset(c10);
+ 	float4 MembraneVars : packoffset(c11);
+-	uint ExtendedFlags : packoffset(c12);
+ #	else
+ 	float4 PLightPositionX[2] : packoffset(c0);
+ 	float4 PLightPositionY[2] : packoffset(c2);
+@@ -498,12 +497,9 @@ cbuffer PerGeometry : register(b2)
+ 	float4 AlphaTestRef : packoffset(c12);
+ 	float4 MembraneRimColor : packoffset(c13);
+ 	float4 MembraneVars : packoffset(c14);
+-	uint ExtendedFlags : packoffset(c15);
+ #	endif
+ };
+ 
+-static const uint Effect_Shadows = 1 << 0;
+-
+ #	if defined(LIGHT_LIMIT_FIX)
+ #		include ""LightLimitFix/LightLimitFix.hlsli""
+ #	endif
+@@ -530,7 +526,7 @@ float3 GetLightingColor(float3 msPosition, float3 worldPosition, float4 screenPo
+ 	float angleShadow = saturate(DirLightDirectionShared.z) * saturate(DirLightDirectionShared.z);
+ 	float dirLightBacklighting = 1.0 + saturate(dot(normalize(worldPosition), -DirLightDirectionShared.xyz));
+ 
+-	if (ExtendedFlags & Effect_Shadows) {
++	if (ExtraShaderDescriptor & ExtraFlags::EffectShadows) {
+ 		if (InMapMenu)
+ 			color = dirLightBacklighting * DirLightColorShared * angleShadow;
+ 		else if (!InInterior && (ExtraShaderDescriptor & ExtraFlags::InWorld))
+@@ -793,7 +789,7 @@ PS_OUTPUT main(PS_INPUT input)
+ 	psout.ScreenSpaceNormals.xy = screenSpaceNormal.xy + 0.5.xx;
+ 	psout.ScreenSpaceNormals.zw = 0.0.xx;
+ #	else
+-	psout.Normal = float4(!(ExtendedFlags & Effect_Shadows), 0, 0, finalColor.w);
++	psout.Normal = float4(!(ExtraShaderDescriptor & ExtraFlags::EffectShadows), 0, 0, finalColor.w);
+ 	psout.Color2 = finalColor;
+ #	endif
+ "
+doodlum/skyrim-community-shaders,731,8bf47deb5b5325cb21fb585205cc660abed51b8b,src/Features/LightLimitFix.cpp,modified,37,14,51,"@@ -341,10 +341,12 @@ void LightLimitFix::BSLightingShader_SetupGeometry_GeometrySetupConstantPointLig
+ 
+ 		SetLightPosition(light, niLight->world.translate, inWorld);
+ 
++		light.lightFlags = static_cast<LightFlags>(runtimeData.radius.y);
++
+ 		if (bsLight->IsShadowLight()) {
+ 			auto* shadowLight = static_cast<RE::BSShadowLight*>(bsLight);
+ 			GET_INSTANCE_MEMBER(shadowLightIndex, shadowLight);
+-			light.shadowMaskIndex = std::min(3u, shadowLightIndex);
++			light.shadowMaskIndex = shadowLightIndex;
+ 			light.lightFlags.set(LightFlags::Shadow);
+ 		}
+ 
+@@ -791,6 +793,8 @@ void LightLimitFix::UpdateLights()
+ 
+ 					light.radius = runtimeData.radius.x;
+ 
++					light.lightFlags = static_cast<LightFlags>(runtimeData.radius.y);
++
+ 					if (!IsGlobalLight(bsLight)) {
+ 						// List of BSMultiBoundRooms affected by a light
+ 						for (const auto& roomPtr : bsLight->rooms) {
+@@ -806,14 +810,17 @@ void LightLimitFix::UpdateLights()
+ 					if (bsLight->IsShadowLight()) {
+ 						auto* shadowLight = static_cast<RE::BSShadowLight*>(bsLight);
+ 						GET_INSTANCE_MEMBER(shadowLightIndex, shadowLight);
+-						light.shadowMaskIndex = std::min(3u, shadowLightIndex);
++						light.shadowMaskIndex = shadowLightIndex;
+ 						light.lightFlags.set(LightFlags::Shadow);
+ 					}
+ 
+-					SetLightPosition(light, niLight->world.translate);
++					// Check for inactive shadow light
++					if (light.shadowMaskIndex != 255) {
++						SetLightPosition(light, niLight->world.translate);
+ 
+-					if ((light.color.x + light.color.y + light.color.z) > 1e-4 && light.radius > 1e-4) {
+-						lightsData.push_back(light);
++						if ((light.color.x + light.color.y + light.color.z) > 1e-4 && light.radius > 1e-4) {
++							lightsData.push_back(light);
++						}
+ 					}
+ 				}
+ 			}
+@@ -842,13 +849,15 @@ void LightLimitFix::UpdateLights()
+ 				if (particleSystem && particleSystem->GetParticleRuntimeData().particleData.get()) {
+ 					// Process BSGeometry
+ 					auto particleData = particleSystem->GetParticleRuntimeData().particleData.get();
++					auto& particleSystemRuntimeData = particleSystem->GetParticleSystemRuntimeData();
++					auto& particleRuntimeData = particleData->GetParticlesRuntimeData();
+ 
+ 					auto numVertices = particleData->GetActiveVertexCount();
+ 					for (std::uint32_t p = 0; p < numVertices; p++) {
+-						float radius = particleData->GetParticlesRuntimeData().sizes[p] * 70.0f;
++						float radius = particleRuntimeData.sizes[p] * 70.0f;
+ 
+-						auto initialPosition = particleData->GetParticlesRuntimeData().positions[p];
+-						if (!particleSystem->GetParticleSystemRuntimeData().isWorldspace) {
++						auto initialPosition = particleRuntimeData.positions[p];
++						if (!particleSystemRuntimeData.isWorldspace) {
+ 							// Detect first-person meshes
+ 							if ((particleLight.node->GetModelData().modelBound.radius * particleLight.node->world.scale) != particleLight.node->worldBound.radius)
+ 								initialPosition += particleLight.node->worldBound.center;
+@@ -887,14 +896,28 @@ void LightLimitFix::UpdateLights()
+ 							}
+ 						}
+ 
+-						float alpha = particleLight.color.alpha * particleData->GetParticlesRuntimeData().color[p].alpha;
+-						float3 color;
+-						color.x = particleLight.color.red * particleData->GetParticlesRuntimeData().color[p].red;
+-						color.y = particleLight.color.green * particleData->GetParticlesRuntimeData().color[p].green;
+-						color.z = particleLight.color.blue * particleData->GetParticlesRuntimeData().color[p].blue;
+-						clusteredLight.color += Saturation(color, settings.ParticleLightsSaturation) * alpha * settings.ParticleBrightness;
++						if (particleRuntimeData.color) {
++							float alpha = particleLight.color.alpha * particleRuntimeData.color[p].alpha;
++
++							float3 color;
++							color.x = particleLight.color.red * particleRuntimeData.color[p].red;
++							color.y = particleLight.color.green * particleRuntimeData.color[p].green;
++							color.z = particleLight.color.blue * particleRuntimeData.color[p].blue;
++
++							clusteredLight.color += Saturation(color, settings.ParticleLightsSaturation) * alpha * settings.ParticleBrightness;
++						} else {
++							float alpha = particleLight.color.alpha;
++
++							float3 color;
++							color.x = particleLight.color.red;
++							color.y = particleLight.color.green;
++							color.z = particleLight.color.blue;
++
++							clusteredLight.color += Saturation(color, settings.ParticleLightsSaturation) * alpha * settings.ParticleBrightness;
++						}
+ 
+ 						clusteredLight.radius += radius * particleLight.color.alpha * settings.ParticleRadius;
++
+ 						clusteredLight.positionWS[0].data.x += positionWS.x;
+ 						clusteredLight.positionWS[0].data.y += positionWS.y;
+ 						clusteredLight.positionWS[0].data.z += positionWS.z;"
+doodlum/skyrim-community-shaders,731,8bf47deb5b5325cb21fb585205cc660abed51b8b,src/Hooks.cpp,modified,4,41,45,"@@ -144,52 +144,19 @@ namespace EffectExtensions
+ {
+ 	struct BSEffectShader_SetupGeometry
+ 	{
+-		static inline RE::BSRenderPass* CurrentRenderPass = nullptr;
+-
+ 		static void thunk(RE::BSShader* shader, RE::BSRenderPass* pass, uint32_t renderFlags)
+ 		{
+-			CurrentRenderPass = pass;
+ 			func(shader, pass, renderFlags);
+-			CurrentRenderPass = nullptr;
+-		}
+-		static inline REL::Relocation<decltype(thunk)> func;
+-	};
+-
+-	enum class EffectExtendedFlags : uint32_t
+-	{
+-		Shadows = 1 << 0,
+-	};
+-
+-	void EffectSetupGeometry(ID3D11Resource* pResource)
+-	{
+-		auto shadowState = RE::BSGraphics::RendererShadowState::GetSingleton();
+-		GET_INSTANCE_MEMBER(currentPixelShader, shadowState)
+-		if (RE::BSRenderPass* EffectRenderPass = BSEffectShader_SetupGeometry::CurrentRenderPass;
+-			EffectRenderPass && EffectRenderPass->geometry &&
+-			pResource == static_cast<void*>(currentPixelShader->constantBuffers[2].buffer)) {
+-			if (auto* shaderProperty = static_cast<RE::BSShaderProperty*>(EffectRenderPass->geometry->GetGeometryRuntimeData().properties[1].get())) {
+-				stl::enumeration<EffectExtendedFlags> flags;
++			if (auto* shaderProperty = static_cast<RE::BSShaderProperty*>(pass->geometry->GetGeometryRuntimeData().properties[1].get())) {
+ 				if (shaderProperty->flags.any(RE::BSShaderProperty::EShaderPropertyFlag::kUniformScale)) {
+-					flags.set(EffectExtendedFlags::Shadows);
++					State::GetSingleton()->currentExtraDescriptor |= (uint)State::ExtraShaderDescriptors::EffectShadows;
+ 				}
+-
+-				const auto& effectPSConstants = ShaderConstants::EffectPS::Get();
+-				shadowState->SetPSConstant(flags, RE::BSGraphics::ConstantGroupLevel::PerGeometry, effectPSConstants.ExtendedFlags);
+ 			}
+ 		}
+-	}
++		static inline REL::Relocation<decltype(thunk)> func;
++	};
+ }
+ 
+-struct ID3D11DeviceContext_Unmap
+-{
+-	static void thunk(ID3D11DeviceContext* This, ID3D11Resource* pResource, UINT Subresource)
+-	{
+-		EffectExtensions::EffectSetupGeometry(pResource);
+-		func(This, pResource, Subresource);
+-	}
+-	static inline REL::Relocation<decltype(thunk)> func;
+-};
+-
+ struct IDXGISwapChain_Present
+ {
+ 	static HRESULT WINAPI thunk(IDXGISwapChain* This, UINT SyncInterval, UINT Flags)
+@@ -398,8 +365,6 @@ namespace Hooks
+ 			logger::info(""Detouring virtual function tables"");
+ 			stl::detour_vfunc<8, IDXGISwapChain_Present>(swapchain);
+ 
+-			stl::detour_vfunc<15, ID3D11DeviceContext_Unmap>(context);
+-
+ 			auto& shaderCache = SIE::ShaderCache::Instance();
+ 			if (shaderCache.IsDump()) {
+ 				stl::detour_vfunc<12, ID3D11Device_CreateVertexShader>(device);
+@@ -492,7 +457,6 @@ namespace Hooks
+ 						if (state->enabledClasses[type - 1]) {
+ 							RE::BSGraphics::VertexShader* vertexShader = shaderCache.GetVertexShader(*currentShader, state->modifiedVertexDescriptor);
+ 							if (vertexShader) {
+-								a_vertexShader = vertexShader;
+ 								state->context->VSSetShader(reinterpret_cast<ID3D11VertexShader*>(vertexShader->shader), NULL, NULL);
+ 								auto shadowState = RE::BSGraphics::RendererShadowState::GetSingleton();
+ 								GET_INSTANCE_MEMBER(currentVertexShader, shadowState)
+@@ -524,7 +488,6 @@ namespace Hooks
+ 						if (state->enabledClasses[type - 1]) {
+ 							RE::BSGraphics::PixelShader* pixelShader = shaderCache.GetPixelShader(*currentShader, state->modifiedPixelDescriptor);
+ 							if (pixelShader) {
+-								a_pixelShader = pixelShader;
+ 								state->context->PSSetShader(reinterpret_cast<ID3D11PixelShader*>(pixelShader->shader), NULL, NULL);
+ 								auto shadowState = RE::BSGraphics::RendererShadowState::GetSingleton();
+ 								GET_INSTANCE_MEMBER(currentPixelShader, shadowState)"
+doodlum/skyrim-community-shaders,731,8bf47deb5b5325cb21fb585205cc660abed51b8b,src/ShaderCache.cpp,modified,1,1,2,"@@ -1647,7 +1647,7 @@ namespace SIE
+ 				// { ""BSImagespaceShaderISUnderwaterMask"", static_cast<uint32_t>(ISUnderwaterMask) },
+ 				{ ""BSImagespaceShaderISApplyVolumetricLighting"", static_cast<uint32_t>(ISApplyVolumetricLighting) },
+ 				{ ""BSImagespaceShaderReflectionsRayTracing"", static_cast<uint32_t>(ISReflectionsRayTracing) },
+-				{ ""BSImagespaceShaderReflectionsDebugSpecMask"", static_cast<uint32_t>(ISReflectionsDebugSpecMask) },
++				//{ ""BSImagespaceShaderReflectionsDebugSpecMask"", static_cast<uint32_t>(ISReflectionsDebugSpecMask) },
+ 
+ 				{ ""BSImagespaceShaderVolumetricLightingRaymarchCS"", 256 },
+ 				{ ""BSImagespaceShaderVolumetricLightingGenerateCS"", 257 },"
+doodlum/skyrim-community-shaders,731,8bf47deb5b5325cb21fb585205cc660abed51b8b,src/State.cpp,modified,31,31,62,"@@ -33,6 +33,37 @@ void State::Draw()
+ 		if (skylighting->loaded)
+ 			skylighting->SkylightingShaderHacks();
+ 
++		if (auto accumulator = RE::BSGraphics::BSShaderAccumulator::GetCurrentAccumulator()) {
++			// Set an unused bit to indicate if we are rendering an object in the main rendering pass
++			if (accumulator->GetRuntimeData().activeShadowSceneNode == RE::BSShaderManager::State::GetSingleton().shadowSceneNode[0]) {
++				currentExtraDescriptor |= (uint32_t)ExtraShaderDescriptors::InWorld;
++			}
++		}
++
++		if (forceUpdatePermutationBuffer || currentPixelDescriptor != lastPixelDescriptor || currentExtraDescriptor != lastExtraDescriptor) {
++			PermutationCB data{};
++			data.VertexShaderDescriptor = currentVertexDescriptor;
++			data.PixelShaderDescriptor = currentPixelDescriptor;
++			data.ExtraShaderDescriptor = currentExtraDescriptor;
++
++			permutationCB->Update(data);
++
++			lastVertexDescriptor = currentVertexDescriptor;
++			lastPixelDescriptor = currentPixelDescriptor;
++			lastExtraDescriptor = currentExtraDescriptor;
++
++			forceUpdatePermutationBuffer = false;
++		}
++
++		currentExtraDescriptor = 0;
++
++		static Util::FrameChecker frameChecker;
++		if (frameChecker.IsNewFrame()) {
++			ID3D11Buffer* buffers[3] = { permutationCB->CB(), sharedDataCB->CB(), featureDataCB->CB() };
++			context->PSSetConstantBuffers(4, 3, buffers);
++			context->CSSetConstantBuffers(5, 2, buffers + 1);
++		}
++
+ 		if (currentShader && updateShader) {
+ 			auto type = currentShader->shaderType.get();
+ 			if (type == RE::BSShader::Type::Utility) {
+@@ -46,37 +77,6 @@ void State::Draw()
+ 					// Only check against non-shader bits
+ 					currentPixelDescriptor &= ~modifiedPixelDescriptor;
+ 
+-					if (auto accumulator = RE::BSGraphics::BSShaderAccumulator::GetCurrentAccumulator()) {
+-						// Set an unused bit to indicate if we are rendering an object in the main rendering pass
+-						if (accumulator->GetRuntimeData().activeShadowSceneNode == RE::BSShaderManager::State::GetSingleton().shadowSceneNode[0]) {
+-							currentExtraDescriptor |= (uint32_t)ExtraShaderDescriptors::InWorld;
+-						}
+-					}
+-
+-					if (forceUpdatePermutationBuffer || currentPixelDescriptor != lastPixelDescriptor || currentExtraDescriptor != lastExtraDescriptor) {
+-						PermutationCB data{};
+-						data.VertexShaderDescriptor = currentVertexDescriptor;
+-						data.PixelShaderDescriptor = currentPixelDescriptor;
+-						data.ExtraShaderDescriptor = currentExtraDescriptor;
+-
+-						permutationCB->Update(data);
+-
+-						lastVertexDescriptor = currentVertexDescriptor;
+-						lastPixelDescriptor = currentPixelDescriptor;
+-						lastExtraDescriptor = currentExtraDescriptor;
+-
+-						forceUpdatePermutationBuffer = false;
+-					}
+-
+-					currentExtraDescriptor = 0;
+-
+-					static Util::FrameChecker frameChecker;
+-					if (frameChecker.IsNewFrame()) {
+-						ID3D11Buffer* buffers[3] = { permutationCB->CB(), sharedDataCB->CB(), featureDataCB->CB() };
+-						context->PSSetConstantBuffers(4, 3, buffers);
+-						context->CSSetConstantBuffers(5, 2, buffers + 1);
+-					}
+-
+ 					if (IsDeveloperMode()) {
+ 						BeginPerfEvent(std::format(""Draw: CS {}::{:x}::{}"", magic_enum::enum_name(currentShader->shaderType.get()), currentPixelDescriptor, currentShader->fxpFilename));
+ 						SetPerfMarker(std::format(""Defines: {}"", SIE::ShaderCache::GetDefinesString(*currentShader, currentPixelDescriptor)));"
+doodlum/skyrim-community-shaders,731,8bf47deb5b5325cb21fb585205cc660abed51b8b,src/State.h,modified,1,0,1,"@@ -120,6 +120,7 @@ class State
+ 	{
+ 		InWorld = 1 << 0,
+ 		IsBeastRace = 1 << 1,
++		EffectShadows = 1 << 2,
+ 	};
+ 
+ 	void UpdateSharedData();"

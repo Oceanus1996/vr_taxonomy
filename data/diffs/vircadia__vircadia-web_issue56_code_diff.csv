@@ -1,0 +1,163 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vircadia/vircadia-web,56,f17a53fde551366e84ecfc11291eeb6fc9b05863,src/components/components/login/MetaverseLogin.vue,modified,19,9,28,"@@ -19,8 +19,7 @@
+             dense
+             label=""Username""
+             hint=""Enter your username.""
+-            lazy-rules
+-            :rules=""[ val => val && val.length > 0 || 'Please enter a username.']""
++            :disable=""loading""
+         />
+ 
+         <q-input
+@@ -30,8 +29,7 @@
+             label=""Password""
+             :type=""showPassword ? 'text' : 'password'""
+             hint=""Enter your password.""
+-            lazy-rules
+-            :rules=""[ val => val && val.length > 0 || 'Please enter a password.']""
++            :disable=""loading""
+         >
+             <template v-slot:append>
+                 <q-icon
+@@ -43,7 +41,7 @@
+         </q-input>
+ 
+         <div align=""right"">
+-            <q-btn label=""Login"" type=""submit"" color=""primary""/>
++            <q-btn label=""Login"" type=""submit"" color=""primary"" :disable=""usernameEmpty || passwordEmpty"" :loading=""loading"" />
+         </div>
+     </q-form>
+ </template>
+@@ -60,11 +58,21 @@ export default defineComponent({
+     data: () => ({
+         username: """",
+         password: """",
+-        showPassword: false
++        showPassword: false,
++        loading: false
+     }),
+ 
++    computed: {
++        usernameEmpty: function() {
++            return this.username.length <= 0;
++        },
++        passwordEmpty: function() {
++            return this.password.length <= 0;
++        }
++    },
+     methods: {
+         async onSubmit() {
++            this.loading = true;
+             try {
+                 const loginResponse = await Account.login(this.username, this.password);
+ 
+@@ -75,15 +83,16 @@ export default defineComponent({
+                         icon: ""cloud_done"",
+                         message: ""Welcome "" + this.username + "".""
+                     });
+-
++                    this.loading = false;
+                     this.$emit(""closeDialog"");
+                 } else {
+                     this.$q.notify({
+                         type: ""negative"",
+                         textColor: ""white"",
+                         icon: ""warning"",
+-                        message: ""Login attempted failed""
++                        message: ""Login attempt failed.""
+                     });
++                    this.loading = false;
+                 }
+             } catch (result) {
+                 // TODO: what is the type of ""result""? Define the fields
+@@ -92,8 +101,9 @@ export default defineComponent({
+                     textColor: ""white"",
+                     icon: ""warning"",
+                     // message: ""Login attempted failed: "" + result.error
+-                    message: ""Login attempted failed: "" + (result as string)
++                    message: ""Login attempt failed: "" + (result as string)
+                 });
++                this.loading = false;
+             }
+         }
+     }"
+vircadia/vircadia-web,56,f17a53fde551366e84ecfc11291eeb6fc9b05863,src/components/components/login/MetaverseRegister.vue,modified,11,2,13,"@@ -21,6 +21,7 @@
+             hint=""Enter your username.""
+             lazy-rules
+             :rules=""[ val => val && val.length > 0 || 'Please enter a username.']""
++            :disable=""loading""
+         />
+ 
+         <q-input
+@@ -31,6 +32,7 @@
+             hint=""Enter your email.""
+             lazy-rules
+             :rules=""[ val => val && val.length > 0 || 'Please enter an email.']""
++            :disable=""loading""
+         />
+ 
+         <q-input
+@@ -42,6 +44,7 @@
+             hint=""Enter your password.""
+             lazy-rules
+             :rules=""[ val => val && val.length > 0 || 'Please enter a password.']""
++            :disable=""loading""
+         >
+             <template v-slot:append>
+                 <q-icon
+@@ -61,6 +64,7 @@
+             hint=""Enter your password again.""
+             lazy-rules
+             :rules=""[ val => val && val.length > 0 && val === password || 'Please ensure your passwords match.']""
++            :disable=""loading""
+         >
+             <template v-slot:append>
+                 <q-icon
+@@ -72,7 +76,7 @@
+         </q-input>
+ 
+         <div align=""right"">
+-            <q-btn label=""Register"" type=""submit"" color=""primary""/>
++            <q-btn label=""Register"" type=""submit"" color=""primary"" :loading=""loading"" />
+         </div>
+     </q-form>
+ </template>
+@@ -92,11 +96,13 @@ export default defineComponent({
+         password: """",
+         confirmPassword: """",
+         showPassword: false,
+-        showConfirmPassword: false
++        showConfirmPassword: false,
++        loading: false
+     }),
+ 
+     methods: {
+         async onSubmit() {
++            this.loading = true;
+             const $q = useQuasar();
+             try {
+                 const awaiting = await Account.createAccount(this.username, this.password, this.email);
+@@ -116,13 +122,15 @@ export default defineComponent({
+                         message: ""Check your email "" + this.email + "" to complete registration."",
+                         actions: [{ label: ""Dismiss"", color: ""white"", handler: () => { /* ... */ } }]
+                     });
++                    this.loading = false;
+                 } else {
+                     this.$q.notify({
+                         type: ""positive"",
+                         textColor: ""white"",
+                         icon: ""cloud_done"",
+                         message: ""Successfully registered "" + this.username + "".""
+                     });
++                    this.loading = false;
+                 }
+             } catch (result) {
+                 // TODO: what is the type of ""result""?
+@@ -133,6 +141,7 @@ export default defineComponent({
+                     // message: ""Failed to register: "" + result.error
+                     message: ""Failed to register: "" + (result as string)
+                 });
++                this.loading = false;
+             }
+         }
+     }"

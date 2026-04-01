@@ -1,0 +1,143 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+secondlife/viewer,2558,8d57388,indra/newview/app_settings/shaders/class2/deferred/alphaF.glsl,modified,1,1,2,"@@ -150,7 +150,7 @@ vec3 calcPointLightOrSpotLight(vec3 light_col, vec3 diffuse, vec3 v, vec3 n, vec
+         float amb_da = 0.0;//ambiance;
+         if (da > 0)
+         {
+-            lit = max(da * dist_atten,0.0);
++            lit = clamp(da * dist_atten, 0.0, 1.0);
+             col = lit * light_col * diffuse;
+             amb_da += (da*0.5+0.5) * ambiance;
+         }"
+secondlife/viewer,2558,8d57388,indra/newview/app_settings/shaders/class3/deferred/materialF.glsl,modified,1,1,2,"@@ -140,7 +140,7 @@ vec3 calcPointLightOrSpotLight(vec3 light_col, vec3 npos, vec3 diffuse, vec4 spe
+         float amb_da = ambiance;
+         if (da >= 0)
+         {
+-            lit = max(da * dist_atten, 0.0);
++            lit = clamp(da * dist_atten, 0.0, 1.0);
+             col = lit * light_col * diffuse;
+             amb_da += (da*0.5 + 0.5) * ambiance;
+         }"
+secondlife/viewer,2558,c883c7f,indra/llrender/llcubemaparray.cpp,modified,5,1,6,"@@ -109,7 +109,7 @@ LLCubeMapArray::~LLCubeMapArray()
+ {
+ }
+ 
+-void LLCubeMapArray::allocate(U32 resolution, U32 components, U32 count, bool use_mips)
++void LLCubeMapArray::allocate(U32 resolution, U32 components, U32 count, bool use_mips, bool hdr)
+ {
+     U32 texname = 0;
+     mWidth = resolution;
+@@ -128,6 +128,10 @@ void LLCubeMapArray::allocate(U32 resolution, U32 components, U32 count, bool us
+     free_cur_tex_image();
+ 
+     U32 format = components == 4 ? GL_RGBA16F : GL_RGB16F;
++    if (!hdr)
++    {
++        format = components == 4 ? GL_RGBA8 : GL_RGB8;
++    }
+     U32 mip = 0;
+     U32 mip_resolution = resolution;
+     while (mip_resolution >= 1)"
+secondlife/viewer,2558,c883c7f,indra/llrender/llcubemaparray.h,modified,1,1,2,"@@ -52,7 +52,7 @@ class LLCubeMapArray : public LLRefCount
+     // components - number of components per pixel
+     // count - number of cube maps in the array
+     // use_mips - if true, mipmaps will be allocated for this cube map array and anisotropic filtering will be used
+-    void allocate(U32 res, U32 components, U32 count, bool use_mips = true);
++    void allocate(U32 res, U32 components, U32 count, bool use_mips = true, bool hdr = true);
+     void bind(S32 stage);
+     void unbind();
+ "
+secondlife/viewer,2558,c883c7f,indra/newview/llheroprobemanager.cpp,modified,7,3,10,"@@ -89,9 +89,11 @@ void LLHeroProbeManager::update()
+ 
+     initReflectionMaps();
+ 
++    static LLCachedControl<bool> render_hdr(gSavedSettings, ""RenderHDREnabled"", true);
++
+     if (!mRenderTarget.isComplete())
+     {
+-        U32 color_fmt = GL_RGBA16F;
++        U32 color_fmt = render_hdr ? GL_RGBA16F : GL_RGBA8;
+         mRenderTarget.allocate(mProbeResolution, mProbeResolution, color_fmt, true);
+     }
+ 
+@@ -103,7 +105,7 @@ void LLHeroProbeManager::update()
+         mMipChain.resize(count);
+         for (U32 i = 0; i < count; ++i)
+         {
+-            mMipChain[i].allocate(res, res, GL_RGBA16F);
++            mMipChain[i].allocate(res, res, render_hdr ? GL_RGBA16F : GL_RGBA8);
+             res /= 2;
+         }
+     }
+@@ -537,8 +539,10 @@ void LLHeroProbeManager::initReflectionMaps()
+ 
+         mTexture = new LLCubeMapArray();
+ 
++        static LLCachedControl<bool> render_hdr(gSavedSettings, ""RenderHDREnabled"", true);
++
+         // store mReflectionProbeCount+2 cube maps, final two cube maps are used for render target and radiance map generation source)
+-        mTexture->allocate(mProbeResolution, 3, mReflectionProbeCount + 2);
++        mTexture->allocate(mProbeResolution, 3, mReflectionProbeCount + 2, true, render_hdr);
+ 
+         if (mDefaultProbe.isNull())
+         {"
+secondlife/viewer,2558,c883c7f,indra/newview/llreflectionmapmanager.cpp,modified,8,4,12,"@@ -223,9 +223,11 @@ void LLReflectionMapManager::update()
+ 
+     initReflectionMaps();
+ 
++    static LLCachedControl<bool> render_hdr(gSavedSettings, ""RenderHDREnabled"", true);
++
+     if (!mRenderTarget.isComplete())
+     {
+-        U32 color_fmt = GL_RGB16F;
++        U32 color_fmt = render_hdr ? GL_RGBA16F : GL_RGBA8;
+         U32 targetRes = mProbeResolution * 4; // super sample
+         mRenderTarget.allocate(targetRes, targetRes, color_fmt, true);
+     }
+@@ -238,7 +240,7 @@ void LLReflectionMapManager::update()
+         mMipChain.resize(count);
+         for (U32 i = 0; i < count; ++i)
+         {
+-            mMipChain[i].allocate(res, res, GL_RGB16F);
++            mMipChain[i].allocate(res, res, render_hdr ? GL_RGB16F : GL_RGB8);
+             res /= 2;
+         }
+     }
+@@ -1415,11 +1417,13 @@ void LLReflectionMapManager::initReflectionMaps()
+         {
+             mTexture = new LLCubeMapArray();
+ 
++            static LLCachedControl<bool> render_hdr(gSavedSettings, ""RenderHDREnabled"", true);
++
+             // store mReflectionProbeCount+2 cube maps, final two cube maps are used for render target and radiance map generation source)
+-            mTexture->allocate(mProbeResolution, 3, mReflectionProbeCount + 2);
++            mTexture->allocate(mProbeResolution, 3, mReflectionProbeCount + 2, true, render_hdr);
+ 
+             mIrradianceMaps = new LLCubeMapArray();
+-            mIrradianceMaps->allocate(LL_IRRADIANCE_MAP_RESOLUTION, 3, mReflectionProbeCount, false);
++            mIrradianceMaps->allocate(LL_IRRADIANCE_MAP_RESOLUTION, 3, mReflectionProbeCount, false, render_hdr);
+         }
+ 
+         // reset probe state"
+secondlife/viewer,2558,c883c7f,indra/newview/llviewercontrol.cpp,modified,4,2,6,"@@ -261,6 +261,8 @@ static bool handleDisableVintageMode(const LLSD& newvalue)
+ 
+ static bool handleEnableHDR(const LLSD& newvalue)
+ {
++    gPipeline.mReflectionMapManager.reset();
++    gPipeline.mHeroProbeManager.reset();
+     return handleReleaseGLBufferChanged(newvalue) && handleSetShaderChanged(newvalue);
+ }
+ 
+@@ -448,11 +450,11 @@ static bool handleReflectionProbeDetailChanged(const LLSD& newvalue)
+     if (gPipeline.isInit())
+     {
+         LLPipeline::refreshCachedSettings();
++        gPipeline.mReflectionMapManager.reset();
++        gPipeline.mHeroProbeManager.reset();
+         gPipeline.releaseGLBuffers();
+         gPipeline.createGLBuffers();
+         LLViewerShaderMgr::instance()->setShaders();
+-        gPipeline.mReflectionMapManager.reset();
+-        gPipeline.mHeroProbeManager.reset();
+     }
+     return true;
+ }"

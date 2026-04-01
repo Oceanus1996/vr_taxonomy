@@ -1,0 +1,116 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vircadia/vircadia-native-core,125,e541ef3,hifi_qt.py,modified,2,2,4,"@@ -146,7 +146,7 @@ def __init__(self, args):
+                 u_minor = int( distro.minor_version() )
+                 if distro.id() == 'ubuntu' or distro.id() == 'linuxmint':
+                     if (distro.id() == 'ubuntu' and u_major == 18) or distro.id() == 'linuxmint' and u_major == 19:
+-                        self.qtUrl = self.assets_url + '/dependencies/vcpkg/qt5-install-5.15.2-ubuntu-18.04-amd64.tar.xz'
++                        self.qtUrl = self.assets_url + '/dependencies/qt5/qt5-install-5.15.5-2022.07.17-kde_ea4efc067b47c11b1aac61668afd8578a6834f5b-ubuntu-18.04-amd64.tar.xz'
+                     elif (distro.id() == 'ubuntu' and u_major > 18) or (distro.id() == 'linuxmint' and u_major > 19):
+                         self.__no_qt_package_error()
+                     else:
+@@ -205,7 +205,7 @@ def writeConfig(self):
+ 
+     def installQt(self):
+         if not os.path.isdir(self.fullPath):
+-            print ('Downloading Qt from AWS')
++            print ('Downloading Qt package')
+             print('Extracting ' + self.qtUrl + ' to ' + self.path)
+             hifi_utils.downloadAndExtract(self.qtUrl, self.path)
+         else:"
+vircadia/vircadia-native-core,125,e541ef3,tools/qt-builder/Dockerfile_Ubuntu_18.04_Qt5,added,78,0,78,"@@ -0,0 +1,78 @@
++# Docker file for building Overte Qt5 packages for Ubuntu 18.04
++
++# Some steps for actually using this:
++# - Check which commit you are building https://invent.kde.org/qt/qt/qt5/-/tree/kde/5.15
++# - Adjust this file to include the commit hash you are building, the date, the number of threads you want to use (-j10), and the Qt and QtWebEngine versions.
++#     Keep in mind that building Qt requires a lot of memory. You should have over 1.2GiB of system memory available per thread.
++# - Run the build process with something like `PROGRESS_NO_TRUNC=1 DOCKER_BUILDKIT=1 BUILDKIT_STEP_LOG_MAX_SIZE=-1 docker build --progress plain -t overte-qt5:5.15.5-2022.07.13-kde_ea4efc067b47c11b1aac61668afd8578a6834f5b -f Dockerfile_Ubuntu_18.04_Qt5 .`
++#     Buildkit is used to cache intermittent steps in case you need to modify something afterwards.
++# - Once the build has completed, create a container from the image and export the created Qt package.
++#     `docker create --name extract overte-qt5:5.15.5-2022.07.13-kde_ea4efc067b47c11b1aac61668afd8578a6834f5b`
++#     `docker cp extract:qt5-install-5.15.5-2022.07.13-kde_ea4efc067b47c11b1aac61668afd8578a6834f5b-ubuntu-18.04-amd64.tar.xz /path/on/host`
++#     `docker rm extract`
++
++FROM ubuntu:18.04
++LABEL maintainer=""Julian Groß (julian.gro@overte.org)""
++LABEL description=""Development image for Overte Qt5 packages for Ubuntu 18.04.""
++
++# Don't use any frontend when installalling packages during the creation of this container
++ARG DEBIAN_FRONTEND=noninteractive
++
++RUN echo UTC >/etc/timezone
++
++# Enable source repositories for apt
++RUN sed -Ei 's/^# deb-src /deb-src /' /etc/apt/sources.list
++
++# Update package list
++RUN apt-get update
++
++# Upgrade packages
++RUN apt-get -y upgrade
++
++RUN apt-get -y install git
++
++# Clone and enter single branch of Qt5
++RUN git clone --recursive https://invent.kde.org/qt/qt/qt5.git -b kde/5.15
++# Note: We don't need to update QtWebengine because KDE has already done this.
++
++# Adjust QMAKE_LIBDIR_X11 and QMAKE_LIBDIR_OPENGL
++RUN sed -i qt5/qtbase/mkspecs/linux-g++-64/qmake.conf -e 's/\/usr\/X11R6\/lib64/\/usr\/lib\/x86_64-linux-gnu/g'
++
++# Install Qt5 system build dependencies
++RUN apt-get -y build-dep qt5-default
++
++# Install build dependencies
++RUN apt-get -y install git python gperf flex bison pkg-config mesa-utils libgl1-mesa-dev make g++ libdbus-glib-1-dev libnss3-dev nodejs libxkbfile-dev libx11-dev
++
++
++RUN mkdir qt5-install && mkdir qt5-build
++WORKDIR qt5-build
++RUN ../qt5/configure -force-debug-info -release -opensource -confirm-license -platform linux-g++-64 -recheck-all -nomake tests -nomake examples -skip qttranslations -skip qtserialport -skip qt3d -skip qtlocation -skip qtwayland -skip qtsensors -skip qtgamepad -skip qtcharts -skip qtx11extras -skip qtmacextras -skip qtvirtualkeyboard -skip qtpurchasing -skip qtdatavis3d -skip qtlottie -skip qtquick3d -skip qtpim -skip qtdocgallery -no-warnings-are-errors -no-pch -no-icu -prefix ../qt5-install
++
++RUN NINJAFLAGS='-j10' make -j10
++
++RUN make -j10 module-qtscript
++
++RUN make -j10 install
++
++WORKDIR ./qtscript
++RUN make -j10 install
++
++WORKDIR ../../qt5-install
++RUN find . -name \*.prl -exec sed -i -e '/^QMAKE_PRL_BUILD_DIR/d' {} \;
++
++# Overwrite QtWebengine version to work around version conflicts
++RUN find . -name \Qt5WebEngine*Config.cmake -exec sed -i '' -e 's/5\.15\.10/5\.15\.5/g' {} \;
++RUN cp lib/libQt5WebEngine.so.5.15.10 lib/libQt5WebEngine.so.5.15.5
++RUN cp lib/libQt5WebEngineCore.so.5.15.10 lib/libQt5WebEngineCore.so.5.15.5
++RUN cp lib/libQt5WebEngineWidgets.so.5.15.10 lib/libQt5WebEngineWidgets.so.5.15.5
++RUN cp lib/libQt5Pdf.so.5.15.10 lib/libQt5Pdf.so.5.15.5
++RUN cp lib/libQt5PdfWidgets.so.5.15.10 lib/libQt5PdfWidgets.so.5.15.5
++
++
++COPY ./qt.conf ./bin/
++
++RUN cp ../qt5-build/config.summary ./
++
++WORKDIR ..
++RUN XZ_OPT='-T0' tar -Jcvf qt5-install-5.15.5-2022.07.13-kde_ea4efc067b47c11b1aac61668afd8578a6834f5b-ubuntu-18.04-amd64.tar.xz qt5-install"
+vircadia/vircadia-native-core,125,e541ef3,tools/qt-builder/README.md,modified,3,1,4,"@@ -56,6 +56,8 @@ https://wiki.qt.io/Jom
+ Install in C:\Jom and add directory to PATH.
+ 
+ ### Linux
++**Note: For Ubuntu 18.04 you may also build a Qt package via the accompanying Dockerfile.**
++
+ 1.  qt5 requirements
+ On Ubuntu based systems you can just have apt install the dependencies for the qt5-default package:
+ Edit /etc/apt/sources.list (edit as root) and uncomment all source repositories by replacing all `# deb-src` with `deb-src`.
+@@ -225,7 +227,7 @@ amd64:
+ ```bash
+ ../qt5/configure -force-debug-info -release -opensource -confirm-license -platform linux-g++-64 -recheck-all -nomake tests -nomake examples -skip qttranslations -skip qtserialport -skip qt3d -skip qtlocation -skip qtwayland -skip qtsensors -skip qtgamepad -skip qtcharts -skip qtx11extras -skip qtmacextras -skip qtvirtualkeyboard -skip qtpurchasing -skip qtdatavis3d -skip qtlottie -skip qtquick3d -skip qtpim -skip qtdocgallery -no-warnings-are-errors -no-pch -no-egl -no-icu -prefix ../qt5-install
+ ```
+-If libX11 or libGL aren't found, you will need to manually provide those locations. Search for `libX11.so` and `libGL.so` respectively and provide paths to their folders inside `qt5/qtbase/mkdspecs/linux-g++-64/qmake.conf`.
++Make sure libX11 or libGL are found, you will need to manually provide their locations. Search for `libX11.so` and `libGL.so` respectively and provide paths to their folders inside `qt5/qtbase/mkdspecs/linux-g++-64/qmake.conf`.
+ On Ubuntu 18.04 both are in `/usr/lib/x86_64-linux-gnu`
+ 
+ aarch64:"

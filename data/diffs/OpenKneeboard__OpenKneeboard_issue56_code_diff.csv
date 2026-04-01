@@ -1,0 +1,22 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch,gpt_bug_detection
+OpenKneeboard/OpenKneeboard,56,f8dc1c6,src/app/app-common/tabs/TabWithPlainTextContent.cpp,modified,13,1,14,"@@ -200,7 +200,19 @@ void TabWithPlainTextContent::LayoutMessages() {
+     return;
+   }
+ 
+-  for (const auto& message: mMessages) {
++  for (auto message: mMessages) {
++    // tabs are variable width, and everything else here
++    // assumes that all characters are the same width.
++    //
++    // Expand them
++    while(true) {
++      auto pos = message.find_first_of(""\t"");
++      if (pos == message.npos) {
++        break;
++      }
++      message.replace(pos, 1, ""    "");
++    }
++
+     std::vector<std::string_view> rawLines;
+     std::string_view remaining(message);
+     while (!remaining.empty()) {","{""has_bug"": true, ""bugs"": [{""line_start"": 53, ""line_end"": 53, ""description"": ""Off-by-one error in calculating the number of rows. The calculation should ensure that it does not result in a negative number of rows."", ""buggy_code"": ""mRows = static_cast<int>((size.height - (2 * mPadding)) / metrics.height) - 2;""}, {""line_start"": 118, ""line_end"": 120, ""description"": ""Potential out-of-bounds access when accessing mCompletePages with pageIndex. If pageIndex equals mCompletePages.size(), it should be handled carefully to avoid accessing an invalid index."", ""buggy_code"": ""const auto& lines = (pageIndex == mCompletePages.size()) ? mCurrentPageLines : mCompletePages.at(pageIndex);""}, {""line_start"": 198, ""line_end"": 200, ""description"": ""Logic error in LayoutMessages function. If mRows or mColumns are less than or equal to 1, it returns early without processing messages, which may lead to incomplete rendering of messages."", ""buggy_code"": ""if (mRows <= 1 || mColumns <= 1) { return; }""}, {""line_start"": 226, ""line_end"": 226, ""description"": ""Potential off-by-one error when handling newlines. The condition checks if remaining.size() is less than or equal to newline, which could lead to an empty string being pushed into rawLines."", ""buggy_code"": ""if (remaining.size() <= newline) {""}]}"

@@ -1,0 +1,89 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+icosa-foundation/open-brush,582,bd80194,Assets/Scripts/API/ApiMethods.MultiMirror.cs,modified,0,9,9,"@@ -97,15 +97,6 @@ public static void WallpaperSymmetrySkewX(float x, float y)
+             PointerManager.m_Instance.CalculateMirrors();
+         }
+ 
+-        [ApiEndpoint(""symmetry.colorshift.enable"",
+-        description: ""Enables or disables symmetry color shift"",
+-        exampleUsage: ""on"")]
+-        public static void SymmetryColorShiftEnabled(bool enabled)
+-        {
+-            PointerManager.m_Instance.m_SymmetryColorShiftEnabled = enabled;
+-            PointerManager.m_Instance.CalculateMirrors();
+-        }
+-
+         [ApiEndpoint(""symmetry.colorshift.hue"",
+         description: ""Sets the custom wallpaper color shift hue (mode is one of SineWave, SquareWave, SawtoothWave, TriangleWave, Noise)"",
+         exampleUsage: ""Noise,1,2"")]"
+icosa-foundation/open-brush,582,bd80194,Assets/Scripts/GUI/MirrorOptionsPopUpWindow.cs,modified,0,7,7,"@@ -96,8 +96,6 @@ public override void Init(GameObject rParent, string sText)
+             m_WallpaperScaleSliderY.SetInitialValueAndUpdate(PointerManager.m_Instance.m_WallpaperSymmetryScaleY);
+             m_WallpaperSkewSliderX.SetInitialValueAndUpdate(PointerManager.m_Instance.m_WallpaperSymmetrySkewX);
+             m_WallpaperSkewSliderY.SetInitialValueAndUpdate(PointerManager.m_Instance.m_WallpaperSymmetrySkewY);
+-
+-            // m_ToggleJitter.m_InitialToggleState = PointerManager.m_Instance.m_SymmetryColorShiftEnabled;
+         }
+ 
+         public OptionButton GetParentButton()
+@@ -493,11 +491,6 @@ public void HandleWaveformButtons(TextActionButton btn)
+             }
+         }
+ 
+-        public void HandleToggleColorShift(ActionToggleButton btn)
+-        {
+-            PointerManager.m_Instance.m_SymmetryColorShiftEnabled = btn.ToggleState;
+-        }
+-
+         public void HandleChangeAmp(Vector3 value)
+         {
+             UpdateActiveColorShiftValues(freq: -1, amp: value.z);"
+icosa-foundation/open-brush,582,bd80194,Assets/Scripts/PointerManager.cs,modified,10,12,22,"@@ -83,8 +83,6 @@ public enum ColorShiftComponent
+ 
+         [NonSerialized] public bool m_SymmetryLockedToController = false;
+ 
+-        [NonSerialized] public bool m_SymmetryColorShiftEnabled = true;
+-
+         [Serializable]
+         public struct ColorShiftComponentSetting
+         {
+@@ -823,7 +821,7 @@ public void SetSymmetryMode(SymmetryMode mode, bool recordCommand = true)
+                     // Don't call CalculateMirrorPointers
+                     // as this is handled below
+                     CalculateMirrorMatrices();
+-                    CalculateMirrorColors();
++                    CalculateMirrorColors(m_CustomMirrorMatrices.Count);
+                     active = m_CustomMirrorMatrices.Count;
+                     break;
+                 case SymmetryMode.DebugMultiple:
+@@ -990,15 +988,15 @@ private void CalculateMirrorMatrices()
+ 
+         public void CalculateMirrorColors()
+         {
+-            if (m_SymmetryColorShiftEnabled)
++            CalculateMirrorColors(m_NumActivePointers);
++        }
++
++        public void CalculateMirrorColors(int numPointers)
++        {
++            m_SymmetryPointerColors = new List<Color>();
++            for (float i = 0; i < numPointers; i++)
+             {
+-                m_SymmetryPointerColors = new List<Color>();
+-                for (float i = 0; i < m_NumActivePointers; i++)
+-                {
+-                    m_SymmetryPointerColors.Add(CalcColorShift(m_lastChosenColor, i / m_NumActivePointers));
+-                    // BrushDescriptor desc = BrushCatalog.m_Instance.GetBrush(MainPointer.CurrentBrush.m_Guid);
+-                    // script.BrushSize01 = GenerateJitteredSize(desc, MainPointer.BrushSize01);
+-                }
++                m_SymmetryPointerColors.Add(CalcColorShift(m_lastChosenColor, i / numPointers));
+             }
+         }
+ 
+@@ -1507,7 +1505,7 @@ void InitiateLine(bool isContinue = false)
+ 
+                 // Currently only Multimirror mode shows UI for color shift
+                 // So disable it for all other modes
+-                if (m_SymmetryColorShiftEnabled && m_CurrentSymmetryMode == SymmetryMode.MultiMirror)
++                if (m_CurrentSymmetryMode == SymmetryMode.MultiMirror)
+                 {
+                     script.SetColor(m_SymmetryPointerColors[i % m_SymmetryPointerColors.Count]);
+                 }"

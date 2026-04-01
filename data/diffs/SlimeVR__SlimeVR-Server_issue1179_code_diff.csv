@@ -1,0 +1,208 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+SlimeVR/SlimeVR-Server,1179,8d55440,gui/public/i18n/en/translation.ftl,modified,6,0,6,"@@ -74,6 +74,12 @@ skeleton_bone-ELBOW_OFFSET = Elbow Offset
+ 
+ ## Tracker reset buttons
+ reset-reset_all = Reset all proportions
++reset-reset_all_warning =
++    <b>Warning:</b> This will reset your proportions to being just based on your height.
++    Are you sure you want to do this?
++reset-reset_all_warning-reset = Reset proportions
++reset-reset_all_warning-cancel = Cancel
++
+ reset-full = Full Reset
+ reset-mounting = Reset Mounting
+ reset-yaw = Yaw Reset"
+SlimeVR/SlimeVR-Server,1179,8d55440,gui/src/components/onboarding/OnboardingLayout.tsx,modified,5,5,10,"@@ -10,7 +10,7 @@ import './OnboardingLayout.scss';
+ export function OnboardingLayout({ children }: { children: ReactNode }) {
+   const { isMobile } = useBreakpoint('mobile');
+   const { state, skipSetup } = useOnboarding();
+-  const [skipWarning, setSkipWarning] = useState(false);
++  const [showWarning, setShowWarning] = useState(false);
+ 
+   return !state.alonePage ? (
+     <div className=""onboarding-layout h-full"">
+@@ -21,15 +21,15 @@ export function OnboardingLayout({ children }: { children: ReactNode }) {
+         <div className=""absolute top-12 mobile:top-0 right-2 z-50"">
+           <SkipSetupButton
+             visible={true}
+-            modalVisible={skipWarning}
+-            onClick={() => setSkipWarning(true)}
++            modalVisible={showWarning}
++            onClick={() => setShowWarning(true)}
+           ></SkipSetupButton>
+         </div>
+         <div className=""h-full w-full overflow-y-auto"">{children}</div>
+         <SkipSetupWarningModal
+           accept={skipSetup}
+-          onClose={() => setSkipWarning(false)}
+-          isOpen={skipWarning}
++          onClose={() => setShowWarning(false)}
++          isOpen={showWarning}
+         ></SkipSetupWarningModal>
+       </div>
+     </div>"
+SlimeVR/SlimeVR-Server,1179,8d55440,gui/src/components/onboarding/pages/body-proportions/AutomaticProportions.tsx,modified,13,1,14,"@@ -15,6 +15,8 @@ import { VerifyResultsStep } from './autobone-steps/VerifyResults';
+ import { useCountdown } from '@/hooks/countdown';
+ import { CheckHeight } from './autobone-steps/CheckHeight';
+ import { PreparationStep } from './autobone-steps/Preparation';
++import { useState } from 'react';
++import { ProportionsResetModal } from './ProportionsResetModal';
+ 
+ export function AutomaticProportionsPage() {
+   const { l10n } = useLocalization();
+@@ -30,6 +32,8 @@ export function AutomaticProportionsPage() {
+     },
+   });
+ 
++  const [showWarning, setShowWarning] = useState(false);
++
+   applyProgress(0.9);
+ 
+   return (
+@@ -65,7 +69,7 @@ export function AutomaticProportionsPage() {
+         <div className=""w-full pb-4 flex flex-row mobile:justify-center"">
+           <Button
+             variant=""secondary""
+-            onClick={startCountdown}
++            onClick={() => setShowWarning(true)}
+             disabled={isCounting}
+           >
+             <div className=""relative"">
+@@ -76,6 +80,14 @@ export function AutomaticProportionsPage() {
+             </div>
+           </Button>
+         </div>
++        <ProportionsResetModal
++          accept={() => {
++            startCountdown();
++            setShowWarning(false);
++          }}
++          onClose={() => setShowWarning(false)}
++          isOpen={showWarning}
++        ></ProportionsResetModal>
+       </div>
+     </AutoboneContextC.Provider>
+   );"
+SlimeVR/SlimeVR-Server,1179,8d55440,gui/src/components/onboarding/pages/body-proportions/ManualProportions.tsx,modified,12,2,14,"@@ -7,15 +7,17 @@ import { CheckBox } from '@/components/commons/Checkbox';
+ import { Typography } from '@/components/commons/Typography';
+ import { BodyProportions } from './BodyProportions';
+ import { useLocalization } from '@fluent/react';
+-import { useEffect, useMemo } from 'react';
++import { useEffect, useMemo, useState } from 'react';
+ import { useBreakpoint } from '@/hooks/breakpoint';
+ import { SkeletonVisualizerWidget } from '@/components/widgets/SkeletonVisualizerWidget';
++import { ProportionsResetModal } from './ProportionsResetModal';
+ 
+ export function ButtonsControl() {
+   const { l10n } = useLocalization();
+   const { state } = useOnboarding();
+   const { sendRPCPacket } = useWebsocketAPI();
+ 
++  const [showWarning, setShowWarning] = useState(false);
+   const resetAll = () => {
+     sendRPCPacket(
+       RpcMessage.SkeletonResetAllRequest,
+@@ -32,9 +34,17 @@ export function ButtonsControl() {
+       >
+         {l10n.getString('onboarding-previous_step')}
+       </Button>
+-      <Button variant=""secondary"" onClick={resetAll}>
++      <Button variant=""secondary"" onClick={() => setShowWarning(true)}>
+         {l10n.getString('reset-reset_all')}
+       </Button>
++      <ProportionsResetModal
++        accept={() => {
++          resetAll();
++          setShowWarning(false);
++        }}
++        onClose={() => setShowWarning(false)}
++        isOpen={showWarning}
++      ></ProportionsResetModal>
+       {!state.alonePage && (
+         <Button variant=""primary"" className=""ml-auto"" to=""/onboarding/done"">
+           {l10n.getString('onboarding-continue')}"
+SlimeVR/SlimeVR-Server,1179,8d55440,gui/src/components/onboarding/pages/body-proportions/ProportionsResetModal.tsx,added,64,0,64,"@@ -0,0 +1,64 @@
++import { Button } from '@/components/commons/Button';
++import { WarningBox } from '@/components/commons/TipBox';
++import { Localized, useLocalization } from '@fluent/react';
++import { BaseModal } from '@/components/commons/BaseModal';
++import ReactModal from 'react-modal';
++
++export function ProportionsResetModal({
++  isOpen = true,
++  onClose,
++  accept,
++  ...props
++}: {
++  /**
++   * Is the parent/sibling component opened?
++   */
++  isOpen: boolean;
++  /**
++   * Function to trigger when the warning hasn't been accepted
++   */
++  onClose: () => void;
++  /**
++   * Function when you press `Reset settings`
++   */
++  accept: () => void;
++} & ReactModal.Props) {
++  const { l10n } = useLocalization();
++
++  return (
++    <BaseModal
++      isOpen={isOpen}
++      shouldCloseOnOverlayClick
++      onRequestClose={onClose}
++      className={props.className}
++      overlayClassName={props.overlayClassName}
++    >
++      <div className=""flex w-full h-full flex-col "">
++        <div className=""flex flex-col flex-grow items-center gap-3"">
++          <Localized id=""reset-reset_all_warning"" elems={{ b: <b></b> }}>
++            <WarningBox>
++              <b>Warning:</b> This will reset your proportions to being just
++              based on your height.
++              <br />
++              Are you sure you want to do this?
++            </WarningBox>
++          </Localized>
++
++          <div className=""flex flex-row gap-3 pt-5 place-content-center"">
++            <Button variant=""primary"" onClick={onClose}>
++              {l10n.getString('reset-reset_all_warning-cancel')}
++            </Button>
++            <Button
++              variant=""tertiary""
++              onClick={() => {
++                accept();
++              }}
++            >
++              {l10n.getString('reset-reset_all_warning-reset')}
++            </Button>
++          </div>
++        </div>
++      </div>
++    </BaseModal>
++  );
++}"
+SlimeVR/SlimeVR-Server,1179,8d55440,gui/src/components/onboarding/pages/mounting/MountingChoose.tsx,modified,3,3,6,"@@ -10,7 +10,7 @@ export function MountingChoose() {
+   const { l10n } = useLocalization();
+   const { applyProgress, skipSetup, state } = useOnboarding();
+   const [animated, setAnimated] = useState(false);
+-  const [skipWarning, setSkipWarning] = useState(false);
++  const [showWarning, setShowWarning] = useState(false);
+ 
+   applyProgress(0.65);
+ 
+@@ -139,8 +139,8 @@ export function MountingChoose() {
+       </div>
+       <SkipSetupWarningModal
+         accept={skipSetup}
+-        onClose={() => setSkipWarning(false)}
+-        isOpen={skipWarning}
++        onClose={() => setShowWarning(false)}
++        isOpen={showWarning}
+       ></SkipSetupWarningModal>
+     </>
+   );"

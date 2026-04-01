@@ -1,0 +1,365 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+Unity-Technologies/EditorXR,252,b331d371ce75f48961362574cb4b15c3d7cfaa90,Manipulators/BaseManipulator.cs,modified,53,47,100,"@@ -11,7 +11,7 @@ class BaseManipulator : MonoBehaviour, IManipulator
+ 	{
+ 		protected const float k_BaseManipulatorSize = 0.3f;
+ 		const float k_MinHandleTipDirectionDelta = 0.01f;
+-		const float k_LazyFollow = 50f;
++		const float k_LazyFollow = 40f;
+ 
+ 		class HandleTip
+ 		{
+@@ -28,14 +28,20 @@ class HandleTip
+ 		protected List<BaseHandle> m_AllHandles;
+ 
+ 		[SerializeField]
+-		float m_LinearHandleScaleBump = 1.5f;
++		float m_LinearHandleScaleBump = 1.8f;
+ 
+ 		[SerializeField]
+-		float m_PlaneHandleScaleBump = 1.1f;
++		float m_PlaneHandleScaleBump = 1.2f;
+ 
+ 		[SerializeField]
+ 		float m_SphereHandleScaleBump = 1.1f;
+ 
++		[SerializeField]
++		float m_HandleAlpha = 0.4f;
++
++		[SerializeField]
++		float m_HandleHoverAlpha = 0.8f;
++
+ 		readonly Dictionary<Type, float> m_ScaleBumps = new Dictionary<Type, float>();
+ 		readonly Dictionary<Transform, HandleTip> m_HandleTips = new Dictionary<Transform, HandleTip>();
+ 
+@@ -54,64 +60,58 @@ void Awake()
+ 			m_ScaleBumps[typeof(LinearHandle)] = m_LinearHandleScaleBump;
+ 			m_ScaleBumps[typeof(PlaneHandle)] = m_PlaneHandleScaleBump;
+ 			m_ScaleBumps[typeof(SphereHandle)] = m_SphereHandleScaleBump;
++
++			foreach (var handle in m_AllHandles)
++			{
++				MaterialUtils.CloneMaterials(handle.GetComponent<Renderer>());
++
++				handle.hoverStarted += OnHandleHoverStarted;
++				handle.hovering += OnHandleHovering;
++				handle.hoverEnded += OnHandleHoverEnded;
++
++
++				handle.dragStarted += OnHandleDragStarted;
++				handle.dragging += OnHandleDragging;
++				handle.dragEnded += OnHandleDragEnded;
++			}
+ 		}
+ 
+ 		protected virtual void OnEnable()
+ 		{
+ 			if (adjustScaleForCamera)
+ 				Camera.onPreRender += OnCameraPreRender;
+-
+-			foreach (var h in m_AllHandles)
+-			{
+-				SetUpHandle(h);
+-			}
+ 		}
+ 
+ 		protected virtual void OnDisable()
+ 		{
+ 			Camera.onPreRender -= OnCameraPreRender;
+ 
+-			foreach (var h in m_AllHandles)
+-			{
+-				TakeDownHandle(h);
+-			}
+-
+ 			foreach (var kvp in m_HandleTips)
+ 			{
+ 				kvp.Value.renderer.gameObject.SetActive(false);
+ 			}
+ 		}
+ 
+-		protected virtual void SetUpHandle(BaseHandle handle)
++		void OnDestroy()
+ 		{
+-			handle.hoverStarted += OnHandleHoverStarted;
+-			handle.hovering += OnHandleHovering;
+-			handle.hoverEnded += OnHandleHoverEnded;
+-
+-
+-			handle.dragStarted += OnHandleDragStarted;
+-			handle.dragging += OnHandleDragging;
+-			handle.dragEnded += OnHandleDragEnded;
+-		}
+-
+-		protected virtual void TakeDownHandle(BaseHandle handle)
+-		{
+-			handle.hoverStarted -= OnHandleHoverStarted;
+-			handle.hovering -= OnHandleHovering;
+-			handle.hoverEnded -= OnHandleHoverEnded;
+-
+-
+-			handle.dragStarted -= OnHandleDragStarted;
+-			handle.dragging -= OnHandleDragging;
+-			handle.dragEnded -= OnHandleDragEnded;
++			foreach (var handle in m_AllHandles)
++			{
++				ObjectUtils.Destroy(handle.GetComponent<Renderer>().sharedMaterial);
++			}
+ 		}
+ 
+-		void ScaleBump(BaseHandle handle, bool scaleUp)
++		protected virtual void ShowHoverState(BaseHandle handle, bool hovering)
+ 		{
+ 			var type = handle.GetType();
+ 			float scaleBump;
+ 			if (m_ScaleBumps.TryGetValue(type, out scaleBump))
+-				handle.transform.localScale = scaleUp ? handle.transform.localScale * scaleBump : handle.transform.localScale / scaleBump;
++				handle.transform.localScale = hovering ? handle.transform.localScale * scaleBump : handle.transform.localScale / scaleBump;
++
++			var handleRenderer = handle.GetComponent<Renderer>();
++			var material = handleRenderer.sharedMaterial;
++			var color = material.color;
++			color.a = hovering ? m_HandleHoverAlpha : m_HandleAlpha;
++			material.color = color;
+ 		}
+ 
+ 		void OnCameraPreRender(Camera camera)
+@@ -140,7 +140,6 @@ protected virtual void UpdateHandleTip(BaseHandle handle, HandleEventData eventD
+ 				handleTipRenderer = m_HandleTip;
+ 				if (m_HandleTips.Count > 0)
+ 					handleTipRenderer = ObjectUtils.Instantiate(handleTipRenderer.gameObject, transform).GetComponent<Renderer>();
+-				MaterialUtils.CloneMaterials(handleTipRenderer);
+ 
+ 				handleTip = new HandleTip { renderer = handleTipRenderer };
+ 				m_HandleTips[rayOrigin] = handleTip;
+@@ -155,12 +154,12 @@ protected virtual void UpdateHandleTip(BaseHandle handle, HandleEventData eventD
+ 			var handleTipGameObject = handleTipRenderer.gameObject;
+ 			var wasActive = handleTipGameObject.activeSelf;
+ 			handleTipGameObject.SetActive(active);
++			var handleTipTransform = handleTipRenderer.transform;
+ 
+ 			if (active) // Reposition handle tip based on current raycast position when hovering or dragging
+ 			{
+-				handleTipRenderer.sharedMaterial.color = handle.GetComponent<Renderer>().sharedMaterial.color;
++				handleTipRenderer.sharedMaterial = handle.GetComponent<Renderer>().sharedMaterial;
+ 
+-				var handleTipTransform = handleTipRenderer.transform;
+ 				var handleTransform = handle.transform;
+ 				var handleTipPosition = handleTipTransform.position;
+ 				var distanceFromRayOrigin = Vector3.Distance(handleTipPosition, rayOrigin.position);
+@@ -215,7 +214,7 @@ protected virtual void UpdateHandleTip(BaseHandle handle, HandleEventData eventD
+ 				}
+ 
+ 				if (handle.hasDragSource && !handleTip.positionOffset.HasValue)
+-					handleTip.positionOffset = handle.transform.InverseTransformPoint(handleTransform.position);
++					handleTip.positionOffset = handle.transform.InverseTransformPoint(handleTipTransform.position);
+ 			}
+ 			else if(!handle.hasDragSource)
+ 			{
+@@ -225,13 +224,14 @@ protected virtual void UpdateHandleTip(BaseHandle handle, HandleEventData eventD
+ 
+ 		protected virtual void OnHandleHoverStarted(BaseHandle handle, HandleEventData eventData)
+ 		{
+-			if (handle.IndexOfHoverSource(eventData.rayOrigin) > 0)
++			var rayOrigin = eventData.rayOrigin;
++			if (handle.IndexOfHoverSource(rayOrigin) > 0)
+ 				return;
+ 
+ 			if (!handle.hasDragSource)
+ 			{
++				ShowHoverState(handle, true);
+ 				UpdateHandleTip(handle, eventData, true);
+-				ScaleBump(handle, true);
+ 			}
+ 		}
+ 
+@@ -240,20 +240,22 @@ protected virtual void OnHandleHovering(BaseHandle handle, HandleEventData event
+ 			if (handle.IndexOfHoverSource(eventData.rayOrigin) > 0)
+ 				return;
+ 
+-			UpdateHandleTip(handle, eventData, !handle.hasDragSource);
++			if (!handle.hasDragSource)
++				UpdateHandleTip(handle, eventData, true);
+ 		}
+ 
+ 		protected virtual void OnHandleHoverEnded(BaseHandle handle, HandleEventData eventData)
+ 		{
+-			if (handle.IndexOfHoverSource(eventData.rayOrigin) > 0)
++			var rayOrigin = eventData.rayOrigin;
++			if (handle.IndexOfHoverSource(rayOrigin) > 0)
+ 				return;
+ 
+ 			if (!handle.hasDragSource)
+ 			{
+ 				UpdateHandleTip(handle, eventData, false);
+ 
+ 				if (!handle.hasHoverSource)
+-					ScaleBump(handle, false);
++					ShowHoverState(handle, false);
+ 			}
+ 		}
+ 
+@@ -266,11 +268,15 @@ protected virtual void OnHandleDragStarted(BaseHandle handle, HandleEventData ev
+ 			foreach (var h in m_AllHandles)
+ 				h.gameObject.SetActive(h == handle);
+ 
++			foreach (var kvp in m_HandleTips)
++				kvp.Value.renderer.gameObject.SetActive(false);
++
+ 			if (dragStarted != null)
+ 				dragStarted();
+ 
+ 			dragging = true;
+ 
++			ShowHoverState(handle, false);
+ 			UpdateHandleTip(handle, eventData, true);
+ 		}
+ 
+@@ -299,8 +305,8 @@ protected virtual void OnHandleDragEnded(BaseHandle handle, HandleEventData even
+ 
+ 			dragging = false;
+ 
+-			if (!handle.hasDragSource && !handle.hasHoverSource)
+-				ScaleBump(handle, false);
++			if (!handle.hasDragSource && handle.hasHoverSource)
++				ShowHoverState(handle, true);
+ 		}
+ 	}
+ }"
+Unity-Technologies/EditorXR,252,b331d371ce75f48961362574cb4b15c3d7cfaa90,Manipulators/Materials/Handle_G.mat,modified,1,1,2,"@@ -11,7 +11,7 @@ Material:
+   m_ShaderKeywords: _ALPHAPREMULTIPLY_ON _EMISSION _SMOOTHNESS_TEXTURE_ALBEDO_CHANNEL_A
+   m_LightmapFlags: 1
+   m_EnableInstancingVariants: 0
+-  m_CustomRenderQueue: -1
++  m_CustomRenderQueue: 3000
+   stringTagMap:
+     RenderType: Transparent
+   disabledShaderPasses: []"
+Unity-Technologies/EditorXR,252,b331d371ce75f48961362574cb4b15c3d7cfaa90,Manipulators/Materials/PlaneMaterial.mat,modified,1,1,2,"@@ -11,7 +11,7 @@ Material:
+   m_ShaderKeywords: _ALPHAPREMULTIPLY_ON _EMISSION
+   m_LightmapFlags: 1
+   m_EnableInstancingVariants: 0
+-  m_CustomRenderQueue: -1
++  m_CustomRenderQueue: 3000
+   stringTagMap:
+     RenderType: Transparent
+   disabledShaderPasses: []"
+Unity-Technologies/EditorXR,252,b331d371ce75f48961362574cb4b15c3d7cfaa90,Manipulators/ScaleManipulator.prefab,modified,7,5,12,"@@ -196,13 +196,13 @@ Transform:
+   m_PrefabParentObject: {fileID: 0}
+   m_PrefabInternal: {fileID: 100100000}
+   m_GameObject: {fileID: 1000012986686592}
+-  m_LocalRotation: {x: -0.5, y: 0.5, z: 0.5, w: 0.5}
++  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+   m_LocalPosition: {x: 0, y: 0, z: 0}
+   m_LocalScale: {x: 0.1, y: 0.1, z: 0.1}
+   m_Children: []
+   m_Father: {fileID: 4000011621453950}
+   m_RootOrder: 4
+-  m_LocalEulerAnglesHint: {x: -90, y: 90, z: 0}
++  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+ --- !u!23 &23000010356371698
+ MeshRenderer:
+   m_ObjectHideFlags: 1
+@@ -312,7 +312,7 @@ MeshRenderer:
+   m_LightProbeUsage: 0
+   m_ReflectionProbeUsage: 0
+   m_Materials:
+-  - {fileID: 2100000, guid: 0c0bcbee36e026343a113109292ee771, type: 2}
++  - {fileID: 2100000, guid: 60ba0d848a3eeec49a02ffe6f85017f2, type: 2}
+   m_StaticBatchInfo:
+     firstSubMesh: 0
+     subMeshCount: 0
+@@ -483,9 +483,11 @@ MonoBehaviour:
+   - {fileID: 114000013052707070}
+   - {fileID: 114000011988091676}
+   - {fileID: 114000011147854508}
+-  m_LinearHandleScaleBump: 1.5
+-  m_PlaneHandleScaleBump: 1.1
++  m_LinearHandleScaleBump: 1.8
++  m_PlaneHandleScaleBump: 1.2
+   m_SphereHandleScaleBump: 1.1
++  m_HandleAlpha: 0.4
++  m_HandleHoverAlpha: 0.8
+   m_UniformHandle: {fileID: 114000010053947466}
+ --- !u!136 &136000010215347092
+ CapsuleCollider:"
+Unity-Technologies/EditorXR,252,b331d371ce75f48961362574cb4b15c3d7cfaa90,Manipulators/StandardManipulator.cs,modified,4,15,19,"@@ -36,20 +36,12 @@ void Update()
+ 			}
+ 		}
+ 
+-		protected override void OnHandleHoverStarted(BaseHandle handle, HandleEventData eventData)
++		protected override void ShowHoverState(BaseHandle handle, bool hovering)
+ 		{
+-			base.OnHandleHoverStarted(handle, eventData);
++			base.ShowHoverState(handle, hovering);
+ 
+-			if (!handle.hasDragSource && handle is RadialHandle)
+-				handle.GetComponent<MeshFilter>().sharedMesh = m_FatRadialHandleMesh;
+-		}
+-
+-		protected override void OnHandleHoverEnded(BaseHandle handle, HandleEventData eventData)
+-		{
+-			base.OnHandleHoverEnded(handle, eventData);
+-
+-			if (!handle.hasDragSource && !handle.hasHoverSource && handle is RadialHandle)
+-				handle.GetComponent<MeshFilter>().sharedMesh = m_RadialHandleMesh;
++			if (handle is RadialHandle)
++				handle.GetComponent<MeshFilter>().sharedMesh = hovering ? m_FatRadialHandleMesh : m_RadialHandleMesh;
+ 		}
+ 
+ 		protected override void OnHandleDragStarted(BaseHandle handle, HandleEventData eventData)
+@@ -95,9 +87,6 @@ protected override void OnHandleDragEnded(BaseHandle handle, HandleEventData eve
+ 
+ 			if (handle is SphereHandle)
+ 				handle.transform.localScale /= m_SphereHandleHideScale;
+-
+-			if (handle is RadialHandle && !handle.hasDragSource && !handle.hasHoverSource)
+-				handle.GetComponent<MeshFilter>().sharedMesh = m_RadialHandleMesh;
+ 		}
+ 	}
+ }"
+Unity-Technologies/EditorXR,252,b331d371ce75f48961362574cb4b15c3d7cfaa90,Manipulators/StandardManipulator.prefab,modified,5,3,8,"@@ -151,7 +151,7 @@ GameObject:
+   - component: {fileID: 33000013153004220}
+   - component: {fileID: 23000012097216674}
+   m_Layer: 5
+-  m_Name: Arrow
++  m_Name: HandleTip
+   m_TagString: Untagged
+   m_Icon: {fileID: 0}
+   m_NavMeshLayer: 0
+@@ -1073,9 +1073,11 @@ MonoBehaviour:
+   - {fileID: 114000012656813054}
+   - {fileID: 114000010105022974}
+   - {fileID: 114000011169532704}
+-  m_LinearHandleScaleBump: 1.5
+-  m_PlaneHandleScaleBump: 1.1
++  m_LinearHandleScaleBump: 1.8
++  m_PlaneHandleScaleBump: 1.2
+   m_SphereHandleScaleBump: 1.1
++  m_HandleAlpha: 0.4
++  m_HandleHoverAlpha: 0.8
+   m_PlaneHandlesParent: {fileID: 4000012837354530}
+   m_RadialHandleMesh: {fileID: 4300008, guid: cdace0cf368873c4796b9f9ade156c53, type: 3}
+   m_FatRadialHandleMesh: {fileID: 4300010, guid: cdace0cf368873c4796b9f9ade156c53,"
+Unity-Technologies/EditorXR,252,b331d371ce75f48961362574cb4b15c3d7cfaa90,Scripts/Core/EditorVR.cs,modified,2,0,2,"@@ -445,6 +445,8 @@ void LateBindNestedModules(IEnumerable<Type> types)
+ 
+ 		void SetHideFlags(HideFlags hideFlags)
+ 		{
++			ObjectUtils.hideFlags = hideFlags;
++
+ 			foreach (var manager in Resources.FindObjectsOfTypeAll<InputManager>())
+ 			{
+ 				manager.gameObject.hideFlags = hideFlags;"
+Unity-Technologies/EditorXR,252,b331d371ce75f48961362574cb4b15c3d7cfaa90,Scripts/Handles/LinearHandle.cs,modified,2,3,5,"@@ -72,11 +72,10 @@ protected override void OnHandleHoverStarted(HandleEventData eventData)
+ 		{
+ 			var linearEventData = (LinearHandleEventData)eventData;
+ 
++			m_LastPositions[eventData.rayOrigin] = linearEventData.raycastHitWorldPosition;
++
+ 			if (m_DragSources.Count == 0)
+-			{
+-				m_LastPositions[eventData.rayOrigin] = linearEventData.raycastHitWorldPosition;
+ 				UpdateEventData(linearEventData);
+-			}
+ 
+ 			base.OnHandleHoverStarted(eventData);
+ 		}"

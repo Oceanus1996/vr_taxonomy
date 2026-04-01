@@ -1,0 +1,173 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+SlimeVR/SlimeVR-Server,571,fcb3829,gui/src/components/commons/Dropdown.tsx,modified,35,6,41,"@@ -1,6 +1,7 @@
+ import classNames from 'classnames';
+-import { useState } from 'react';
++import { useEffect, useState } from 'react';
+ import { Control, Controller } from 'react-hook-form';
++import { a11yClick } from '../utils/a11y';
+ 
+ export interface DropdownItem {
+   label: string;
+@@ -12,19 +13,35 @@ export type DropdownDirection = 'up' | 'down';
+ export function Dropdown({
+   direction = 'up',
+   variant = 'primary',
++  alignment = 'right',
+   placeholder,
+   control,
+   name,
+   items = [],
+ }: {
+   direction?: DropdownDirection;
+   variant?: 'primary' | 'secondary';
++  alignment?: 'right' | 'left';
+   placeholder: string;
+   control: Control<any>;
+   name: string;
+   items: DropdownItem[];
+ }) {
+   const [isOpen, setOpen] = useState(false);
++  useEffect(() => {
++    if (!isOpen) return;
++
++    function onWheelEvent() {
++      if (isOpen && !document.querySelector('div.dropdown-scroll:hover')) {
++        setOpen(false);
++      }
++    }
++
++    document.addEventListener('wheel', onWheelEvent, { passive: true });
++
++    // TS doesn't let me specify { passive: true }, but I believe it will work anyways
++    return () => document.removeEventListener('wheel', onWheelEvent);
++  }, [isOpen]);
+ 
+   return (
+     <Controller
+@@ -41,13 +58,16 @@ export function Dropdown({
+           <div className=""relative w-fit"">
+             <div
+               className={classNames(
+-                'min-h-[35px] text-white px-5 py-2.5 rounded-md focus:ring-4 text-center flex',
++                'min-h-[35px] text-white px-5 py-2.5 rounded-md focus:ring-4 text-center',
++                'flex cursor-pointer',
+                 variant == 'primary' &&
+                   'bg-background-60 hover:bg-background-50',
+                 variant == 'secondary' &&
+                   'bg-background-70 hover:bg-background-60'
+               )}
+               onClick={() => setOpen((open) => !open)}
++              onKeyDown={(ev) => a11yClick(ev) && setOpen((open) => !open)}
++              tabIndex={0}
+             >
+               <div className=""flex-grow"">
+                 {items.find((i) => i.value == value)?.label || placeholder}
+@@ -79,26 +99,35 @@ export function Dropdown({
+             {isOpen && (
+               <div
+                 className={classNames(
+-                  'absolute z-10 rounded shadow right-0 min-w-max',
++                  'absolute z-10 rounded shadow min-w-max max-h-[50vh]',
++                  'overflow-y-auto dropdown-scroll',
+                   direction === 'up' && 'bottom-[45px]',
+                   direction === 'down' && 'top-[45px]',
+                   variant == 'primary' && 'bg-background-60',
+-                  variant == 'secondary' && 'bg-background-70'
++                  variant == 'secondary' && 'bg-background-70',
++                  alignment === 'right' && 'right-0',
++                  alignment === 'left' && 'left-0'
+                 )}
+               >
+-                <ul className=""py-1 text-sm text-gray-200 flex flex-col "">
++                <ul className=""py-1 text-sm text-gray-200 flex flex-col pr-2"">
+                   {items.map((item) => (
+                     <li
+                       className={classNames(
+-                        'py-2 px-4 hover:text-white min-w-max',
++                        'py-2 px-4 hover:text-white min-w-max cursor-pointer',
+                         variant == 'primary' && 'hover:bg-background-50',
+                         variant == 'secondary' && 'hover:bg-background-60'
+                       )}
+                       onClick={() => {
+                         onChange(item.value);
+                         setOpen(false);
+                       }}
++                      onKeyDown={(ev) => {
++                        if (!a11yClick(ev)) return;
++                        onChange(item.value);
++                        setOpen(false);
++                      }}
+                       key={item.value}
++                      tabIndex={0}
+                     >
+                       {item.label}
+                     </li>"
+SlimeVR/SlimeVR-Server,571,fcb3829,gui/src/components/commons/LangSelector.tsx,modified,3,0,3,"@@ -7,8 +7,10 @@ import { Dropdown, DropdownDirection } from './Dropdown';
+ 
+ export function LangSelector({
+   direction = 'up',
++  alignment = 'right',
+ }: {
+   direction?: DropdownDirection;
++  alignment?: 'right' | 'left';
+ }) {
+   const { changeLocales } = useContext(LangContext);
+   const { l10n } = useLocalization();
+@@ -41,6 +43,7 @@ export function LangSelector({
+       )}
+       items={languagesItems}
+       direction={direction}
++      alignment={alignment}
+     ></Dropdown>
+   );
+ }"
+SlimeVR/SlimeVR-Server,571,fcb3829,gui/src/components/settings/pages/GeneralSettings.tsx,modified,1,1,2,"@@ -806,7 +806,7 @@ export function GeneralSettings() {
+             </Typography>
+           </div>
+           <div className=""grid sm:grid-cols-2 pb-4"">
+-            <LangSelector />
++            <LangSelector alignment=""left"" />
+           </div>
+         </>
+       </SettingsPageLayout>"
+SlimeVR/SlimeVR-Server,571,fcb3829,gui/src/components/utils/a11y.ts,added,8,0,8,"@@ -0,0 +1,8 @@
++export function a11yClick(event: React.KeyboardEvent | React.MouseEvent) {
++  if (event.type === 'click') {
++    return true;
++  } else if (event.type === 'keydown') {
++    const keyboard = event as React.KeyboardEvent;
++    return keyboard.key === 'Enter' || keyboard.key === ' ';
++  }
++}"
+SlimeVR/SlimeVR-Server,571,fcb3829,gui/src/index.css,modified,18,0,18,"@@ -9,6 +9,12 @@ body {
+   width: 100vw;
+   user-select: none;
+   background: theme('colors.background.20');
++
++  /**
++    * Scrollbars for Firefox
++    */
++  scrollbar-color: theme('colors.background.50') theme('colors.background.60');
++  scrollbar-width: thin;
+ }
+ 
+ @media (-webkit-animation) {
+@@ -65,6 +71,18 @@ html {
+   background: theme('colors.background.60');
+ }
+ 
++.dropdown-scroll {
++  scrollbar-color: theme('colors.background.40') theme('colors.background.50');
++}
++
++.dropdown-scroll::-webkit-scrollbar-thumb {
++  background: theme('colors.background.40');
++}
++
++.dropdown-scroll::-webkit-scrollbar-thumb:hover {
++  background: theme('colors.background.50');
++}
++
+ input::-ms-reveal,
+ input::-ms-clear {
+   display: none;"

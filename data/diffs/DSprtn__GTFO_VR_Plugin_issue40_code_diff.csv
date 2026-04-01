@@ -1,0 +1,647 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+DSprtn/GTFO_VR_Plugin,40,bab68e7bdc69868c1943bbdbb3b124b7ef1b7c47,GTFO_VR/Core/UI/VRWorldSpaceUI.cs,modified,148,149,297,"@@ -15,6 +15,47 @@ namespace GTFO_VR.UI
+     /// </summary>
+     public class VRWorldSpaceUI : MonoBehaviour
+     {
++        private enum WorldUIElementType
++        {
++            Default, Interact, Status, Intel, Compass
++        }
++        
++        private class WorldUIElement
++        {
++            public RectTransformComp Element;
++            public GameObject Holder;
++            public float Scale = 1;
++            public float MaxScale = 1;
++            public float HolderScale = 1;
++            public bool ReplaceShaders = false;
++            public bool SmoothRotate = false;
++            public WorldUIElementType Type;
++            public Func<Vector3> GetPosition;
++
++            public WorldUIElement(
++                RectTransformComp element,
++                GameObject holder,
++                float scale,
++                float maxScale,
++                float holderScale,
++                Func<Vector3> getPosition,
++                WorldUIElementType type = WorldUIElementType.Default,
++                bool replaceShaders = true,
++                bool smoothRotate = false)
++            {
++                Element = element;
++                Holder = holder;
++                Scale = scale;
++                MaxScale = maxScale;
++                HolderScale = holderScale;
++                Type = type;
++                ReplaceShaders = replaceShaders;
++                SmoothRotate = smoothRotate;
++                GetPosition = getPosition;
++            }
++        }
++
++
+         public VRWorldSpaceUI(IntPtr value)
+ : base(value) { }
+ 
+@@ -27,13 +68,23 @@ public VRWorldSpaceUI(IntPtr value)
+         public static PUI_WardenIntel intel;
+         public static PUI_ObjectiveTimer timer;
+         public static PUI_Subtitles subtitles;
++        public static PUI_CommunicationMenu comms;
+ 
+         private GameObject m_statusBarHolder;
+         private GameObject m_interactionBarHolder;
+         private GameObject m_compassHolder;
+         private GameObject m_intelHolder;
+         private GameObject m_timerHolder;
+         private GameObject m_subtitlesHolder;
++        private GameObject m_commsHolder;
++
++        private WorldUIElement m_statusBarElement;
++        private WorldUIElement m_interactionBarElement;
++        private WorldUIElement m_compassElement;
++        private WorldUIElement m_intelElement;
++        private WorldUIElement m_timerElement;
++        private WorldUIElement m_subtitlesElement;
++        private WorldUIElement m_commsElement;
+ 
+         // Compass will not be visible after this distance from the center of its rect
+         private float m_compassCullDistance = 1.2f;
+@@ -59,6 +110,11 @@ public static void SetPlayerGUIRef(PlayerGuiLayer playerGUIRef, PUI_Compass comp
+             subtitles = subtitlesRef;
+         }
+ 
++        public static void SetCommsGUIRef(PUI_CommunicationMenu commsRef)
++        {
++            comms = commsRef;
++        }
++
+         private void Start()
+         {
+             Log.Info(""Creating status and interaction prompt VR UI"");
+@@ -68,22 +124,30 @@ private void Start()
+             m_intelHolder = new GameObject(""IntelHolder"");
+             m_timerHolder = new GameObject(""TimerHolder"");
+             m_subtitlesHolder = new GameObject(""SubtitlesHolder"");
++            m_commsHolder = new GameObject(""CommsHolder"");
+             Invoke(nameof(VRWorldSpaceUI.Setup), 1f);
+         }
+ 
+         private void Setup()
+         {
+-            SetupElement(statusBar.transform, m_statusBarHolder.transform, 0.0018f, holderScale:1.6f);
+-            SetupElement(interactionBar.transform, m_interactionBarHolder.transform, 0.0018f, holderScale:1.1f);
+-            SetupElement(compass.transform, m_compassHolder.transform, 0.0036f, false, holderScale:1.35f);
+-            SetupElement(intel.transform, m_intelHolder.transform, 0.0018f, holderScale:1f);
+-            SetupElement(subtitles.transform, m_subtitlesHolder.transform, 0.0018f, holderScale: 1f);
++            m_statusBarElement =        new WorldUIElement(statusBar,       m_statusBarHolder,      0.0018f,    0.002f,     1.6f,   GetStatusBarPosition, type: WorldUIElementType.Status);
++            m_interactionBarElement =   new WorldUIElement(interactionBar,  m_interactionBarHolder, 0.0018f,    0.002f,     1.1f,   GetInteractionPromptPosition, type: WorldUIElementType.Interact);
++            m_compassElement =          new WorldUIElement(compass,         m_compassHolder,        0.0036f,    0.0037f,    1.35f,  GetCompassPosition, type: WorldUIElementType.Compass, replaceShaders: false);
++            m_intelElement =            new WorldUIElement(intel,           m_intelHolder,          0.0018f,    0.002f,     1f,     GetIntelPosition, type: WorldUIElementType.Intel, smoothRotate: true);
++            m_subtitlesElement =        new WorldUIElement(subtitles,       m_subtitlesHolder,      0.0018f,    0.002f,     1f,     GetSubtitlesPosition);
++            m_commsElement =            new WorldUIElement(comms,           m_commsHolder,          0.0018f,    0.002f,     0.5f,   GetCommsPosition, smoothRotate: true);
++            m_timerElement =            new WorldUIElement(timer,           m_timerHolder,          0.0036f,    0.0037f,    1f,     GetTimerPosition);
++
++            SetupElement(m_statusBarElement);
++            SetupElement(m_interactionBarElement);
++            SetupElement(m_compassElement);
++            SetupElement(m_intelElement);
++            SetupElement(m_timerElement);
++            SetupElement(m_subtitlesElement);
++            SetupElement(m_commsElement);
+ 
+-            //TODO: timer is destroyed when expedition is changed, so it will vanish and not be repopulated here.
+-            SetupElement(timer.transform, m_timerHolder.transform, 0.0036f, false, holderScale: 1f);
+-
+-            SetTextShader(compass.transform, VRAssets.TextSphereClip);
+             SetSpriteRendererShader(compass.transform, VRAssets.SpriteSphereClip);
++            setSharedMaterialShader();
+ 
+             m_intelHolder.SetActive(true);
+ 
+@@ -109,83 +173,63 @@ private void SnapUIToPlayerView()
+ 
+         private void UpdateWorldSpaceUI()
+         {
+-            UpdateInteraction();
+-            UpdateStatus();
+-            UpdateCompass();
+-            UpdateIntel();
+-            UpdateTimer();
+-            UpdateSubtitles();
+-        }
+-
+-        private void UpdateIntel()
+-        {
+-            m_intelHolder.transform.position = GetIntelPosition();
+-
+-            if (FocusStateEvents.currentState.Equals(eFocusState.InElevator))
+-            {
+-                Vector3 flatForward = (m_intelHolder.transform.position - VRPlayer.FpsCamera.transform.position).normalized;
+-                flatForward.y = 0;
+-                m_intelHolder.transform.rotation = Quaternion.LookRotation(flatForward.normalized);
+-            }
+-            else
+-            {
+-                m_intelHolder.transform.rotation = LerpUIRot(m_intelHolder.transform);
+-            }
+-
+-            if(intel != null && intel.transform.localScale.x > 0.002) {
+-                intel.transform.localScale = Vector3.one * 0.0018f;
+-            }
+-            
++            UpdateUIElement(m_statusBarElement);
++            UpdateUIElement(m_interactionBarElement);
++            UpdateUIElement(m_compassElement);
++            UpdateCompassCull();
++            UpdateUIElement(m_intelElement);
++            UpdateUIElement(m_timerElement);
++            UpdateUIElement(m_subtitlesElement);
++            UpdateUIElement(m_commsElement);
+         }
+ 
+-        private void UpdateStatus()
++        private void UpdateUIElement( WorldUIElement ui )
+         {
+-            if (m_statusBarHolder == null)
++            if (ui.Holder == null)
+             {
+-                Log.Error(""m_statusBarHolder bar was null!"");
++                Log.Error(""World UI holder was null!"");
+                 return;
+             }
+-            m_statusBarHolder.SetActive(interactGUI.IsVisible() && interactGUI.MessageVisible);
+-            if (m_statusBarHolder.activeSelf)
++
++            switch (ui.Type)
+             {
+-                m_statusBarHolder.transform.position = GetStatusBarPosition();
+-                m_statusBarHolder.transform.rotation = Quaternion.LookRotation(HMD.GetFlatForwardDirection());
++                case WorldUIElementType.Compass:
++                    ui.Holder.SetActive(playerGUI.IsVisible());
++                    break;
++                case WorldUIElementType.Interact:
++                    ui.Holder.SetActive(interactGUI.IsVisible() && interactGUI.InteractPromptVisible);
++                    break;
++                case WorldUIElementType.Status:
++                    ui.Holder.SetActive(interactGUI.IsVisible() && interactGUI.MessageVisible);
++                    break;
++                default:
++                    break;
+             }
+-        }
+ 
+-        private void UpdateInteraction()
+-        {
+-            if(m_interactionBarHolder == null)
+-            {
+-                Log.Error(""m_interactionBarHolder was null!"");
++            if (!ui.Holder.active)
+                 return;
+-            }
+-            m_interactionBarHolder.SetActive(interactGUI.IsVisible() && interactGUI.InteractPromptVisible);
+-            if (m_interactionBarHolder.activeSelf)
++
++            ui.Holder.transform.position = ui.GetPosition();
++
++            if ( ui.Type == WorldUIElementType.Intel && FocusStateEvents.currentState.Equals(eFocusState.InElevator))
+             {
+-                m_interactionBarHolder.transform.position = GetInteractionPromptPosition();
+-                m_interactionBarHolder.transform.rotation = Quaternion.LookRotation(HMD.GetFlatForwardDirection());
++                Vector3 flatForward = (m_intelHolder.transform.position - VRPlayer.FpsCamera.transform.position).normalized;
++                flatForward.y = 0;
++                ui.Holder.transform.rotation = Quaternion.LookRotation(flatForward.normalized);
+             }
+-        }
+-
+-        private void UpdateCompass()
+-        {
+-            if (m_compassHolder == null)
++            else if (ui.SmoothRotate)
+             {
+-                Log.Error(""m_compassHolder bar was null!"");
+-                return;
++                ui.Holder.transform.rotation = LerpUIRot(ui.Holder.transform);
+             }
+-            if(compass != null && compass.transform.localScale.x > 0.0037)
++            else
+             {
+-                compass.transform.localScale = Vector3.one * 0.0036f;
++                ui.Holder.transform.rotation = Quaternion.LookRotation(HMD.GetFlatForwardDirection());
+             }
+-            m_compassHolder.SetActive(playerGUI.IsVisible());
+-            if (m_compassHolder.activeSelf)
++
++            if (ui.Element != null && ui.Element.transform.localScale.x > ui.MaxScale)
+             {
+-                m_compassHolder.transform.position = GetCompassPosition();
+-                m_compassHolder.transform.rotation = Quaternion.LookRotation(HMD.GetFlatForwardDirection());
++                ui.Element.transform.localScale = Vector3.one * ui.Scale;
+             }
+-            UpdateCompassCull();
+         }
+ 
+         private void UpdateCompassCull()
+@@ -194,70 +238,12 @@ private void UpdateCompassCull()
+             Shader.SetGlobalColor(""_ClippingSphere"", new Color(compassPos.x, compassPos.y, compassPos.z, m_compassCullDistance));
+         }
+ 
+-        private void UpdateTimer()
+-        {
+-            if (m_timerHolder == null)
+-            {
+-                Log.Error(""m_timerHolder was null!"");
+-                return;
+-            }
+-            
+-            if (timer != null && timer.transform.localScale.x > 0.0037)
+-            {
+-                timer.transform.localScale = Vector3.one * 0.0036f;
+-            }
+-
+-            // do not use playerGUI.TimerOnMainScreenVisible, it is not true when it should or is be visible. 
+-            m_timerHolder.SetActive(playerGUI.IsVisible()); 
+-            if (m_timerHolder.activeSelf)
+-            {
+-                m_timerHolder.transform.position = GetTimerPosition();
+-                m_timerHolder.transform.rotation = Quaternion.LookRotation(HMD.GetFlatForwardDirection());
+-            }
+-        }
+-
+-        private void UpdateSubtitles()
+-        {
+-            if (m_subtitlesHolder == null)
+-            {
+-                Log.Error(""m_subtitlesHolder was null!"");
+-                return;
+-            }
+-
+-            if (subtitles != null && subtitles.transform.localScale.x > 0.02f)
+-            {
+-                subtitles.transform.localScale = Vector3.one * 0.0018f;
+-            }
+-
+-            m_subtitlesHolder.SetActive(playerGUI.IsVisible());
+-            if (m_subtitlesHolder.activeSelf)
+-            {
+-                m_subtitlesHolder.transform.position = GetSubtitlesPosition();
+-                m_subtitlesHolder.transform.rotation = Quaternion.LookRotation(HMD.GetFlatForwardDirection());
+-            }
+-        }
+-
+         public static void PrepareNavMarker(NavMarker n)
+         {
+             n.transform.SetParent(null);
+             n.m_initScale *= 0.009f;
+             SetTransformHierarchyLayer(n.transform);
+ 
+-            foreach(TextMeshPro p in n.transform.GetComponentsInChildren<TextMeshPro>(true))
+-            {
+-                if(p == null || p.fontSharedMaterial == null)
+-                {
+-                    return;
+-                }
+-                Log.Debug($""Prev shader = {p.fontMaterial.shader.name}"");
+-                p.fontSharedMaterial.shader = VRAssets.GetTextNoCull();
+-            }
+-
+-            if(n != null && n.m_distance != null && n.m_distance.fontSharedMaterial != null)
+-            {
+-                n.m_distance.fontSharedMaterial.shader = VRAssets.GetTextNoCull();
+-            }
+-
+             if (n.m_trackingObj)
+             {
+                 n.transform.position = n.m_trackingObj.transform.position;
+@@ -287,6 +273,11 @@ private Vector3 GetTimerPosition()
+             return HMD.GetWorldPosition() + HMD.GetFlatForwardDirection() * 1.45f + new Vector3(0, 1.50f, 0);
+         }
+ 
++        private Vector3 GetCommsPosition()
++        {
++            return HMD.GetWorldPosition() + HMD.GetFlatForwardDirection() * 1.45f + new Vector3(0f, 0.5f, 0);
++        }
++
+         private Vector3 GetSubtitlesPosition()
+         {
+             return HMD.GetWorldPosition() + HMD.GetFlatForwardDirection() * 1.45f + new Vector3(0, -0.75f, 0);
+@@ -324,28 +315,40 @@ private static void CenterRect(Transform t)
+             rect.transform.localPosition = Vector3.zero;
+         }
+ 
+-        private static void SetupElement(Transform ui, Transform holder, float scale, bool replaceShaders = true, float holderScale = 1f)
++        private static void SetupElement( WorldUIElement ui )
+         {
+-            holder.transform.localScale *= holderScale;
+-            ui.SetParent(holder);
+-            SetTransformHierarchyLayer(ui);
+-            if (replaceShaders)
++            ui.Holder.transform.localScale *= ui.HolderScale;
++            ui.Element.transform.SetParent(ui.Holder.transform);
++            SetTransformHierarchyLayer(ui.Element.transform);
++            if (ui.ReplaceShaders)
+             {
+-                SetSpriteRendererShader(ui);
+-                SetTextShader(ui);
++                SetSpriteRendererShader(ui.Element.transform);
+             }
+ 
+-            ui.transform.localScale = Vector3.one * scale;
+-            ui.transform.localPosition = Vector3.zero;
+-            ui.transform.localRotation = Quaternion.identity;
++            ui.Element.transform.localScale = Vector3.one * ui.Scale;
++            ui.Element.transform.localPosition = Vector3.zero;
++            ui.Element.transform.localRotation = Quaternion.identity;
+         }
+ 
+-        private static void SetTextShader(Transform ui)
++        private static void setSharedMaterialShader()
+         {
+-            foreach (TextMeshPro p in ui.GetComponentsInChildren<TextMeshPro>(true))
++            if ( comms != null )
+             {
+-                p.GetComponent<MeshRenderer>().material.shader = VRAssets.TextAlwaysRender;
+-                p.ForceMeshUpdate(false);
++                // A single item is always populated during PUI_CommunicationMenu.Setup()
++                PUI_CommunicationButton btn = comms.m_buttons[0];
++
++                // This material is shared by most of the UI elements
++                btn.m_lineText.fontSharedMaterial.shader = VRAssets.GetTextNoCull();
++                btn.m_numberText.fontSharedMaterial.shader = VRAssets.GetTextNoCull();
++                btn.m_lineText.fontSharedMaterial.renderQueue = 4001;
++                btn.m_numberText.fontSharedMaterial.renderQueue = 4001;
++            }
++
++            if (compass != null)
++            {
++                // Compass has its own font material, but is shared between all its components.
++                compass.m_fontMaterial.shader = VRAssets.TextSphereClip;
++                compass.m_fontMaterial.renderQueue = 4001;
+             }
+         }
+ 
+@@ -365,15 +368,6 @@ private static void SetSpriteRendererShader(Transform ui, Shader shader)
+             }
+         }
+ 
+-        private static void SetTextShader(Transform ui, Shader shader)
+-        {
+-            foreach (TextMeshPro p in ui.GetComponentsInChildren<TextMeshPro>(true))
+-            {
+-                p.GetComponent<MeshRenderer>().material.shader = shader;
+-                p.ForceMeshUpdate(false);
+-            }
+-        }
+-
+         private static void SetTransformHierarchyLayer(Transform transform)
+         {
+             foreach (RectTransform t in transform.GetComponentsInChildren<RectTransform>(true))
+@@ -419,6 +413,11 @@ private void OnDestroy()
+                 m_subtitlesHolder.transform.DetachChildren();
+                 Destroy(m_subtitlesHolder);
+             }
++            if (m_commsHolder != null)
++            {
++                m_commsHolder.transform.DetachChildren();
++                Destroy(m_commsHolder);
++            }
+             SteamVR_Events.NewPosesApplied.Remove(OnNewPoses);
+             PlayerOrigin.OnOriginShift -= SnapUIToPlayerView;
+         }"
+DSprtn/GTFO_VR_Plugin,40,bab68e7bdc69868c1943bbdbb3b124b7ef1b7c47,GTFO_VR/Core/VRSystems.cs,modified,4,0,4,"@@ -136,6 +136,10 @@ public void FocusChanged(eFocusState state)
+         {
+             if (state.Equals(eFocusState.FPS) || state.Equals(eFocusState.InElevator))
+             {
++                // VR bindings require this to be disabled.
++                // It is overriden if player accesses settings, so refresh when returning to FPS.
++                CellSettingsManager.SetBoolValue(eCellSettingID.Gameplay_HoldToShowComsList, false);
++
+                 HandleIngameFocus();
+             }
+ "
+DSprtn/GTFO_VR_Plugin,40,bab68e7bdc69868c1943bbdbb3b124b7ef1b7c47,GTFO_VR/Core/VR_Input/SteamVR_InputHandler.cs,modified,30,2,32,"@@ -1,4 +1,5 @@
+ ﻿using GTFO_VR.Events;
++using GTFO_VR.UI;
+ using System.Collections.Generic;
+ using UnityEngine;
+ using Valve.VR;
+@@ -46,6 +47,8 @@ public static class SteamVR_InputHandler
+ 
+         private static SteamVR_Action_Boolean m_aimOrShoveAction;
+ 
++        private static SteamVR_Action_Boolean m_openAndSelectComms;
++
+         private static Dictionary<InputAction, SteamVR_Action_Boolean> boolActions;
+ 
+         public static void Setup()
+@@ -116,9 +119,31 @@ public static bool GetActionDown(InputAction action)
+             {
+                 return true;
+             }
++            if (handleCommsAction(action))
++            {
++                return false;
++            }
++
+             return boolActionMapping != null && boolActionMapping.GetStateDown(SteamVR_Input_Sources.Any);
+         }
+ 
++        private static bool handleCommsAction(InputAction action)
++        {
++            // Same button used to both open menu and navigate items, so suppress toggle action if menu is open.
++            if (action == InputAction.ToggleCommunicationMenu && FocusStateEvents.currentState != eFocusState.FPS)
++            {
++                return true; // Return
++            }
++
++            // Interact normally does nothing while in the comms menu, at least at the time of writing. Suppress just in case.
++            if (action == InputAction.Use && FocusStateEvents.currentState == eFocusState.FPS_CommunicationDialog)
++            {
++                return true; // Return
++            }
++
++            return false; // Continue
++        }
++
+         public static bool GetAction(InputAction action)
+         {
+             if (!Initialized)
+@@ -182,9 +207,9 @@ private static void InitializeActionMapping()
+             m_pingAction = SteamVR_Input.GetBooleanAction(""Ping"", false);
+             m_openObjectivesAction = SteamVR_Input.GetBooleanAction(""OpenObjectives"", false);
+             m_aimOrShoveAction = SteamVR_Input.GetBooleanAction(""AimOrShove"", false);
++            m_openAndSelectComms = SteamVR_Input.GetBooleanAction(""OpenAndSelectComms"", false);
+             m_pushToTalkAction = SteamVR_Input.GetBooleanActionFromPath(""/actions/default/in/PushToTalk"");
+ 
+-
+             boolActions = new Dictionary<InputAction, SteamVR_Action_Boolean>
+             {
+ 
+@@ -207,6 +232,8 @@ private static void InitializeActionMapping()
+                 { InputAction.MenuToggle, m_openMenuAction },
+                 { InputAction.ToggleMap, m_openMapAction },
+                 { InputAction.Flashlight, m_flashlightAction },
++                { InputAction.ToggleCommunicationMenu, m_openAndSelectComms },
++                { InputAction.SelectCommunicationMenu, m_interactAction },
+             };
+ 
+         }
+@@ -241,7 +268,8 @@ private static float GetAxisValue(InputAction action)
+                 {
+                     return 1f;
+                 }
+-                if (m_weaponSwitchRightAction.GetStateDown(SteamVR_Input_Sources.Any))
++                if (m_weaponSwitchRightAction.GetStateDown(SteamVR_Input_Sources.Any) 
++                    || (FocusStateEvents.currentState == eFocusState.FPS_CommunicationDialog && m_openAndSelectComms.GetStateDown(SteamVR_Input_Sources.Any) ) )  // Comms menu navigation
+                 {
+                     return -1f;
+                 }"
+DSprtn/GTFO_VR_Plugin,40,bab68e7bdc69868c1943bbdbb3b124b7ef1b7c47,GTFO_VR/GTFO_VR.csproj,modified,1,0,1,"@@ -143,6 +143,7 @@
+     <Compile Include=""Injections\Gameplay\InjectVRHammer.cs"" />
+     <Compile Include=""Injections\UI\InjectWatchObjectives.cs"" />
+     <Compile Include=""Injections\UI\InjectWatchUpdateStatus.cs"" />
++    <Compile Include=""Injections\UI\InjectCommsMenu.cs"" />
+     <Compile Include=""Injections\Gameplay\InjectWeaponAimFlashlightAggro.cs"" />
+     <Compile Include=""Core\GTFO_VR_Plugin.cs"" />
+     <Compile Include=""Core\UI\DividedBarShaderController.cs"" />"
+DSprtn/GTFO_VR_Plugin,40,bab68e7bdc69868c1943bbdbb3b124b7ef1b7c47,GTFO_VR/Injections/Gameplay/InjectSemanticInteractionTweaks.cs,modified,49,0,49,"@@ -151,6 +151,55 @@ private static void Postfix()
+         }
+     }
+ 
++    [HarmonyPatch(typeof(PUI_CommunicationMenu), nameof(PUI_CommunicationMenu.UpdateCmdTripMine))]
++    internal class InjectCommsMinerPlacementTweak
++    {
++        private static void Prefix()
++        {
++            InjectFPSCameraForwardTweakForInteraction.useVRControllerForward = true;
++            InjectFPSCameraPositionTweakForInteraction.useControllerPosition = true;
++        }
++
++        private static void Postfix()
++        {
++            InjectFPSCameraForwardTweakForInteraction.useVRControllerForward = false;
++            InjectFPSCameraPositionTweakForInteraction.useControllerPosition = false;
++        }
++    }
++
++    [HarmonyPatch(typeof(PUI_CommunicationMenu), nameof(PUI_CommunicationMenu.UpdateCmdSentryGun))]
++    internal class InjectCommsSentryPlacementTweak
++    {
++        private static void Prefix()
++        {
++            InjectFPSCameraForwardTweakForInteraction.useVRControllerForward = true;
++            InjectFPSCameraPositionTweakForInteraction.useControllerPosition = true;
++        }
++
++        private static void Postfix()
++        {
++            InjectFPSCameraForwardTweakForInteraction.useVRControllerForward = false;
++            InjectFPSCameraPositionTweakForInteraction.useControllerPosition = false;
++        }
++    }
++
++
++    [HarmonyPatch(typeof(PUI_CommunicationMenu), nameof(PUI_CommunicationMenu.UpdateButtonsForNode))]
++    internal class InjectCommsFinalPlacementTweak
++    {
++        private static void Prefix()
++        {
++            InjectFPSCameraForwardTweakForInteraction.useVRControllerForward = true;
++            InjectFPSCameraPositionTweakForInteraction.useControllerPosition = true;
++        }
++
++        private static void Postfix()
++        {
++            InjectFPSCameraForwardTweakForInteraction.useVRControllerForward = false;
++            InjectFPSCameraPositionTweakForInteraction.useControllerPosition = false;
++        }
++    }
++
+     [HarmonyPatch(typeof(FPSCamera), nameof(FPSCamera.Forward))]
+     [HarmonyPatch(MethodType.Getter)]
+     internal class InjectFPSCameraForwardTweakForInteraction"
+DSprtn/GTFO_VR_Plugin,40,bab68e7bdc69868c1943bbdbb3b124b7ef1b7c47,GTFO_VR/Injections/UI/InjectCommsMenu.cs,added,40,0,40,"@@ -0,0 +1,40 @@
++﻿using GTFO_VR.UI;
++using GTFO_VR.Events;
++using HarmonyLib;
++using GTFO_VR.Core;
++using GTFO_VR.Core.VR_Input;
++
++namespace GTFO_VR.Injections.UI
++{
++    [HarmonyPatch(typeof(PUI_CommunicationMenu), nameof(PUI_CommunicationMenu.Setup))]
++    internal class InjectCommsSetupTrace
++    {
++        private static void Postfix( PUI_CommunicationMenu __instance )
++        {
++            VRWorldSpaceUI.SetCommsGUIRef(__instance);
++        }
++    }
++
++    [HarmonyPatch(typeof(PUI_CommunicationMenu), nameof(PUI_CommunicationMenu.Update))]
++    internal class InjectCommsSelectAction
++    {
++        private static bool Prefix(PUI_CommunicationMenu __instance)
++        {
++            // Check input and perform the action, like the original update() should be doing.
++            if (SteamVR_InputHandler.GetActionDown(InputAction.SelectCommunicationMenu))
++            {
++                if (__instance.m_active)
++                {
++                    // MoveNext refers to the next node i.e. the child node, so it's actually ""select highlighted"".
++                    VRWorldSpaceUI.comms.MoveNext(__instance.m_highlightedButtonIndex);
++
++                    // Skip the original update function so this doesn't get triggered twice if the base game ever fixes their inputs.
++                    return false;
++                }
++            }
++
++            return true;
++        }
++    }
++
++}
+\ No newline at end of file"
+DSprtn/GTFO_VR_Plugin,40,bab68e7bdc69868c1943bbdbb3b124b7ef1b7c47,GTFO_VR/Injections/UI/InjectNavMarkerWorldSpace.cs,modified,12,3,15,"@@ -25,14 +25,23 @@ private static void Postfix(NavMarker __instance)
+     /// For some reason we can't do this the easy way like all the other UI, so we just brute force it.
+     /// </summary>
+     [HarmonyPatch(typeof(NavMarkerComponent), nameof(NavMarkerComponent.Start))]
+-    internal class InjectNavMarkerWorldSpriteHack
++    internal class InjectNavMarkerMaterialTweak
+     {
+         private static void Postfix(NavMarkerComponent __instance)
+         {
+             foreach (SpriteRenderer r in __instance.transform.GetComponentsInChildren<SpriteRenderer>())
+             {
+-                r.material.shader = VRAssets.SpriteAlwaysRender;
+-                r.material.renderQueue = 4001;
++                if ( r.sharedMaterial != null )
++                {
++                    r.sharedMaterial.shader = VRAssets.SpriteAlwaysRender;
++                    r.sharedMaterial.renderQueue = 4001;
++                }
++            }
++
++            if ( __instance.m_text != null && __instance.m_text.fontSharedMaterial != null)
++            {
++                __instance.m_text.fontSharedMaterial.shader = VRAssets.GetTextNoCull();
++                __instance.m_text.fontSharedMaterial.renderQueue = 4001;
+             }
+         }
+     }"
+DSprtn/GTFO_VR_Plugin,40,bab68e7bdc69868c1943bbdbb3b124b7ef1b7c47,Release_Dependencies/StreamingAssets/SteamVR_Standalone/actions.json,modified,4,0,4,"@@ -108,6 +108,10 @@
+     {
+       ""name"": ""/actions/default/in/WatchRadialMenu"",
+       ""type"": ""boolean""
++    },
++	{
++      ""name"": ""/actions/default/in/OpenAndSelectComms"",
++      ""type"": ""boolean""
+     },
+     {
+       ""name"": ""/actions/default/out/Haptic"","
+DSprtn/GTFO_VR_Plugin,40,bab68e7bdc69868c1943bbdbb3b124b7ef1b7c47,Release_Dependencies/libs/SteamVR_Standalone_IL2CPP.dll,modified,0,0,0,

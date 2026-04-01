@@ -1,0 +1,140 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+Raicuparta/nomai-vr,408,a0fb51a8c38912d4f9f9660770ca2abce48ccc15,NomaiVR/EffectFixes/VisorEffectsFix.cs,added,74,0,74,"@@ -0,0 +1,74 @@
++﻿using OWML.Utils;
++using System.Collections;
++using UnityEngine;
++
++namespace NomaiVR
++{
++    internal class VisorEffectsFix : NomaiVRModule<VisorEffectsFix.Behaviour, VisorEffectsFix.Patch>
++    {
++        protected override bool IsPersistent => false;
++        protected override OWScene[] Scenes => PlayableScenes;
++        public const float WATER_EXIT_COOLDOWN = 8.0f;
++        public static bool s_canShowCameraWaterEffect = true;
++
++        public class Behaviour : MonoBehaviour
++        {
++            private IEnumerator _cameraWaterExitEffectCooldown;
++
++            internal void Start()
++            {
++                // Disable underwater distortion.
++                FindObjectOfType<UnderwaterEffectBubbleController>().gameObject.SetActive(false);
++
++                // Disable water entering and exiting effect.
++                var visorEffects = FindObjectOfType<VisorEffectController>();
++                visorEffects._waterClearLength = 1f;
++                visorEffects._waterFadeInLength = 0.2f;
++
++                //Move Visor Effect renderers further to avoid clipping
++                visorEffects._crackEffectRenderer.transform.localPosition += Vector3.down * 0.07f;
++                visorEffects._visorEffectRenderer.transform.localPosition += Vector3.down * 0.1f;
++                visorEffects._rainDropletsParticleSystem.transform.localPosition += Vector3.down * 0.09f;
++                visorEffects._rainStreaksParticleSystem.transform.localPosition += Vector3.down * 0.09f;
++
++                //Enable cooldown on water exit effect
++                GlobalMessenger.AddListener(""PlayerCameraExitWater"", OnCameraExitWater);
++            }
++
++            internal void OnDestroy()
++            {
++                StopAllCoroutines();
++                GlobalMessenger.RemoveListener(""PlayerCameraExitWater"", OnCameraExitWater);
++            }
++
++            internal void OnCameraExitWater()
++            {
++                if (_cameraWaterExitEffectCooldown != null)
++                    StopCoroutine(_cameraWaterExitEffectCooldown);
++                StartCoroutine(_cameraWaterExitEffectCooldown = WaitCameraWaterEffectCooldown());
++            }
++
++            internal IEnumerator WaitCameraWaterEffectCooldown()
++            {
++                yield return new WaitForSeconds(WATER_EXIT_COOLDOWN);
++                _cameraWaterExitEffectCooldown = null;
++                s_canShowCameraWaterEffect = true;
++            }
++        }
++
++        public class Patch : NomaiVRPatch
++        {
++            public override void ApplyPatches()
++            {
++                Postfix<VisorEffectController>(""OnCameraExitWater"", nameof(PostOnCameraExitWater));
++            }
++
++            public static void PostOnCameraExitWater(VisorEffectController __instance)
++            {
++                if (!s_canShowCameraWaterEffect)
++                    __instance._waterClearTimer = __instance._waterClearLength;
++                s_canShowCameraWaterEffect = false;
++            }
++        }
++    }
++}"
+Raicuparta/nomai-vr,408,a0fb51a8c38912d4f9f9660770ca2abce48ccc15,NomaiVR/EffectFixes/WaterFix.cs,removed,0,25,25,"@@ -1,25 +0,0 @@
+-﻿using OWML.Utils;
+-using UnityEngine;
+-
+-namespace NomaiVR
+-{
+-    internal class WaterFix : NomaiVRModule<WaterFix.Behaviour, NomaiVRModule.EmptyPatch>
+-    {
+-        protected override bool IsPersistent => false;
+-        protected override OWScene[] Scenes => PlayableScenes;
+-
+-        public class Behaviour : MonoBehaviour
+-        {
+-            internal void Start()
+-            {
+-                // Disable underwater distortion.
+-                FindObjectOfType<UnderwaterEffectBubbleController>().gameObject.SetActive(false);
+-
+-                // Disable water entering and exiting effect.
+-                var visorEffects = FindObjectOfType<VisorEffectController>();
+-                visorEffects._waterClearLength = 0;
+-                visorEffects._waterFadeInLength = 0;
+-            }
+-        }
+-    }
+-}"
+Raicuparta/nomai-vr,408,a0fb51a8c38912d4f9f9660770ca2abce48ccc15,NomaiVR/NomaiVR.cs,modified,1,1,2,"@@ -27,7 +27,7 @@ internal void Start()
+             new Dialogue();
+             new FogFix();
+             new LoopTransitionFix();
+-            new WaterFix();
++            new VisorEffectsFix();
+             new ProjectionStoneCameraFix();
+             new CameraMaskFix();
+             new MapFix();"
+Raicuparta/nomai-vr,408,a0fb51a8c38912d4f9f9660770ca2abce48ccc15,NomaiVR/NomaiVR.csproj,modified,5,1,6,"@@ -85,6 +85,10 @@
+     <Reference Include=""UnityEngine.CoreModule"">
+       <HintPath>$(GameDir)\OuterWilds_Data\Managed\UnityEngine.CoreModule.dll</HintPath>
+     </Reference>
++    <Reference Include=""UnityEngine.ParticleSystemModule, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL"">
++      <SpecificVersion>False</SpecificVersion>
++      <HintPath>$(GameDir)\OuterWilds_Data\Managed\UnityEngine.ParticleSystemModule.dll</HintPath>
++    </Reference>
+     <Reference Include=""UnityEngine.PhysicsModule, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL"">
+       <SpecificVersion>False</SpecificVersion>
+       <HintPath>$(GameDir)\OuterWilds_Data\Managed\UnityEngine.PhysicsModule.dll</HintPath>
+@@ -123,7 +127,7 @@
+     <Compile Include=""EffectFixes\LoopTransitionFix.cs"" />
+     <Compile Include=""EffectFixes\ProjectionStoneCameraFix.cs"" />
+     <Compile Include=""EffectFixes\CameraMaskFix.cs"" />
+-    <Compile Include=""EffectFixes\WaterFix.cs"" />
++    <Compile Include=""EffectFixes\VisorEffectsFix.cs"" />
+     <Compile Include=""FatalErrorChecker.cs"" />
+     <Compile Include=""Hands\NomaiVR_Hand_Skeleton.cs"" />
+     <Compile Include=""Helpers\CameraHelper.cs"" />"
+Raicuparta/nomai-vr,408,a0fb51a8c38912d4f9f9660770ca2abce48ccc15,NomaiVR/UI/HelmetHUD.cs,modified,1,1,2,"@@ -43,7 +43,7 @@ public static void SetHelmetScale()
+ 
+             private void FixCameraClipping()
+             {
+-                Camera.main.nearClipPlane = 0.01f;
++                Camera.main.nearClipPlane = 0.05f;
+             }
+ 
+             private HUDHelmetAnimator SetUpHelmetAnimator()"

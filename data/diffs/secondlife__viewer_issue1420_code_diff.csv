@@ -1,0 +1,2073 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+secondlife/viewer,1420,ad64251,indra/llxml/llxmlnode.cpp,modified,33,13,46,"@@ -137,19 +137,19 @@ LLXMLNode::LLXMLNode(const LLXMLNode& rhs) :
+ }
+ 
+ // returns a new copy of this node and all its children
+-LLXMLNodePtr LLXMLNode::deepCopy()
++LLXMLNodePtr LLXMLNode::deepCopy() const
+ {
+ 	LLXMLNodePtr newnode = LLXMLNodePtr(new LLXMLNode(*this));
+ 	if (mChildren.notNull())
+ 	{
+-		for (LLXMLChildList::iterator iter = mChildren->map.begin();
++		for (LLXMLChildList::const_iterator iter = mChildren->map.begin();
+ 			 iter != mChildren->map.end(); ++iter)	
+ 		{
+ 			LLXMLNodePtr temp_ptr_for_gcc(iter->second->deepCopy());
+ 			newnode->addChild(temp_ptr_for_gcc);
+ 		}
+ 	}
+-	for (LLXMLAttribList::iterator iter = mAttributes.begin();
++	for (LLXMLAttribList::const_iterator iter = mAttributes.begin();
+ 		 iter != mAttributes.end(); ++iter)
+ 	{
+ 		LLXMLNodePtr temp_ptr_for_gcc(iter->second->deepCopy());
+@@ -653,10 +653,12 @@ bool LLXMLNode::updateNode(
+ static std::map<std::string, LLXMLNodePtr> sXMLCache;
+ static LLSharedMutex sXMLCacheMutex;
+ 
+-static void saveToCache(const std::string& filename, LLXMLNodePtr& node)
++static void saveToCache(const std::string& filename, const LLXMLNodePtr& node)
+ {
++    LLXMLNodePtr node_copy = node->deepCopy();
++
+     LLExclusiveMutexLock lock(&sXMLCacheMutex);
+-    sXMLCache.emplace(filename, node.notNull() ? node->deepCopy() : nullptr);
++    sXMLCache.emplace(filename, node_copy);
+ }
+ 
+ static bool loadFromCache(const std::string& filename, LLXMLNodePtr& node)
+@@ -665,8 +667,8 @@ static bool loadFromCache(const std::string& filename, LLXMLNodePtr& node)
+     auto it = sXMLCache.find(filename);
+     if (it == sXMLCache.end())
+         return false;
+-    node = it->second.notNull() ? it->second->deepCopy() : nullptr;
+-    return node.notNull();
++    node = it->second->deepCopy();
++    return true;
+ }
+ 
+ // static
+@@ -676,33 +678,54 @@ bool LLXMLNode::parseFile(const std::string& filename, LLXMLNodePtr& node, LLXML
+     if (cacheable)
+     {
+         if (loadFromCache(filename, node))
++        {
++            node->setDefault(defaults_tree);
++            node->updateDefault();
+             return true;
++        }
+     }
+ 
+     std::string xml = gDirUtilp->getFileContents(filename);
+     if (xml.empty())
+     {
+         LL_WARNS(""XMLNode"") << ""no XML file: "" << filename << LL_ENDL;
+     }
+-    else if (parseBuffer(xml.data(), xml.size(), node, defaults_tree))
++    else if (parseBuffer(xml.data(), xml.size(), node))
+     {
+         if (cacheable)
+         {
+             saveToCache(filename, node);
+         }
++        node->setDefault(defaults_tree);
++        node->updateDefault();
+         return true;
+     }
+ 
+     node = nullptr;
+     return false;
+ }
+ 
++// static
++bool LLXMLNode::parseBuffer(
++    const char* buffer,
++    U32 length,
++    LLXMLNodePtr& node,
++    LLXMLNode* defaults)
++{
++    if (parseBuffer(buffer, length, node))
++    {
++        node->setDefault(defaults);
++        node->updateDefault();
++        return true;
++    }
++    return false;
++}
++
+ // static
+ bool LLXMLNode::parseBuffer(
+ 	const char* buffer,
+ 	U32 length,
+-	LLXMLNodePtr& node, 
+-	LLXMLNode* defaults)
++	LLXMLNodePtr& node)
+ {
+ 	// Init
+ 	XML_Parser my_parser = XML_ParserCreate(NULL);
+@@ -739,9 +762,6 @@ bool LLXMLNode::parseBuffer(
+ 
+ 	LLXMLNode *return_node = file_node->mChildren->map.begin()->second;
+ 
+-	return_node->setDefault(defaults);
+-	return_node->updateDefault();
+-
+ 	node = return_node;
+ 	return true;
+ }"
+secondlife/viewer,1420,ad64251,indra/llxml/llxmlnode.h,modified,10,6,16,"@@ -121,7 +121,7 @@ class LLXMLNode : public LLThreadSafeRefCount
+ 	LLXMLNode(const char* name, bool is_attribute);
+ 	LLXMLNode(LLStringTableEntry* name, bool is_attribute);
+ 	LLXMLNode(const LLXMLNode& rhs);
+-	LLXMLNodePtr deepCopy();
++	LLXMLNodePtr deepCopy() const;
+ 
+ 	bool isNull();
+ 
+@@ -135,11 +135,11 @@ class LLXMLNode : public LLThreadSafeRefCount
+ 		LLXMLNodePtr& node,
+ 		LLXMLNode* defaults_tree,
+ 		bool cacheable = false);
+-	static bool parseBuffer(
+-		const char* buffer,
+-		U32 length,
+-		LLXMLNodePtr& node,
+-		LLXMLNode* defaults);
++    static bool parseBuffer(
++        const char* buffer,
++        U32 length,
++        LLXMLNodePtr& node,
++        LLXMLNode* defaults);
+ 	static bool parseStream(
+ 		std::istream& str,
+ 		LLXMLNodePtr& node,
+@@ -290,6 +290,10 @@ class LLXMLNode : public LLThreadSafeRefCount
+ 
+ protected:
+ 	bool removeChild(LLXMLNode* child);
++    static bool parseBuffer(
++        const char* buffer,
++        U32 length,
++        LLXMLNodePtr& node);
+ 
+ public:
+ 	std::string mID;				// The ID attribute of this node"
+secondlife/viewer,1420,942ff2c,indra/llxml/llxmlnode.cpp,modified,33,13,46,"@@ -137,19 +137,19 @@ LLXMLNode::LLXMLNode(const LLXMLNode& rhs) :
+ }
+ 
+ // returns a new copy of this node and all its children
+-LLXMLNodePtr LLXMLNode::deepCopy()
++LLXMLNodePtr LLXMLNode::deepCopy() const
+ {
+ 	LLXMLNodePtr newnode = LLXMLNodePtr(new LLXMLNode(*this));
+ 	if (mChildren.notNull())
+ 	{
+-		for (LLXMLChildList::iterator iter = mChildren->map.begin();
++		for (LLXMLChildList::const_iterator iter = mChildren->map.begin();
+ 			 iter != mChildren->map.end(); ++iter)	
+ 		{
+ 			LLXMLNodePtr temp_ptr_for_gcc(iter->second->deepCopy());
+ 			newnode->addChild(temp_ptr_for_gcc);
+ 		}
+ 	}
+-	for (LLXMLAttribList::iterator iter = mAttributes.begin();
++	for (LLXMLAttribList::const_iterator iter = mAttributes.begin();
+ 		 iter != mAttributes.end(); ++iter)
+ 	{
+ 		LLXMLNodePtr temp_ptr_for_gcc(iter->second->deepCopy());
+@@ -653,10 +653,12 @@ bool LLXMLNode::updateNode(
+ static std::map<std::string, LLXMLNodePtr> sXMLCache;
+ static LLSharedMutex sXMLCacheMutex;
+ 
+-static void saveToCache(const std::string& filename, LLXMLNodePtr& node)
++static void saveToCache(const std::string& filename, const LLXMLNodePtr& node)
+ {
++    LLXMLNodePtr node_copy = node->deepCopy();
++
+     LLExclusiveMutexLock lock(&sXMLCacheMutex);
+-    sXMLCache.emplace(filename, node.notNull() ? node->deepCopy() : nullptr);
++    sXMLCache.emplace(filename, node_copy);
+ }
+ 
+ static bool loadFromCache(const std::string& filename, LLXMLNodePtr& node)
+@@ -665,8 +667,8 @@ static bool loadFromCache(const std::string& filename, LLXMLNodePtr& node)
+     auto it = sXMLCache.find(filename);
+     if (it == sXMLCache.end())
+         return false;
+-    node = it->second.notNull() ? it->second->deepCopy() : nullptr;
+-    return node.notNull();
++    node = it->second->deepCopy();
++    return true;
+ }
+ 
+ // static
+@@ -676,33 +678,54 @@ bool LLXMLNode::parseFile(const std::string& filename, LLXMLNodePtr& node, LLXML
+     if (cacheable)
+     {
+         if (loadFromCache(filename, node))
++        {
++            node->setDefault(defaults_tree);
++            node->updateDefault();
+             return true;
++        }
+     }
+ 
+     std::string xml = gDirUtilp->getFileContents(filename);
+     if (xml.empty())
+     {
+         LL_WARNS(""XMLNode"") << ""no XML file: "" << filename << LL_ENDL;
+     }
+-    else if (parseBuffer(xml.data(), xml.size(), node, defaults_tree))
++    else if (parseBuffer(xml.data(), xml.size(), node))
+     {
+         if (cacheable)
+         {
+             saveToCache(filename, node);
+         }
++        node->setDefault(defaults_tree);
++        node->updateDefault();
+         return true;
+     }
+ 
+     node = nullptr;
+     return false;
+ }
+ 
++// static
++bool LLXMLNode::parseBuffer(
++    const char* buffer,
++    U32 length,
++    LLXMLNodePtr& node,
++    LLXMLNode* defaults)
++{
++    if (parseBuffer(buffer, length, node))
++    {
++        node->setDefault(defaults);
++        node->updateDefault();
++        return true;
++    }
++    return false;
++}
++
+ // static
+ bool LLXMLNode::parseBuffer(
+ 	const char* buffer,
+ 	U32 length,
+-	LLXMLNodePtr& node, 
+-	LLXMLNode* defaults)
++	LLXMLNodePtr& node)
+ {
+ 	// Init
+ 	XML_Parser my_parser = XML_ParserCreate(NULL);
+@@ -739,9 +762,6 @@ bool LLXMLNode::parseBuffer(
+ 
+ 	LLXMLNode *return_node = file_node->mChildren->map.begin()->second;
+ 
+-	return_node->setDefault(defaults);
+-	return_node->updateDefault();
+-
+ 	node = return_node;
+ 	return true;
+ }"
+secondlife/viewer,1420,942ff2c,indra/llxml/llxmlnode.h,modified,10,6,16,"@@ -121,7 +121,7 @@ class LLXMLNode : public LLThreadSafeRefCount
+ 	LLXMLNode(const char* name, bool is_attribute);
+ 	LLXMLNode(LLStringTableEntry* name, bool is_attribute);
+ 	LLXMLNode(const LLXMLNode& rhs);
+-	LLXMLNodePtr deepCopy();
++	LLXMLNodePtr deepCopy() const;
+ 
+ 	bool isNull();
+ 
+@@ -135,11 +135,11 @@ class LLXMLNode : public LLThreadSafeRefCount
+ 		LLXMLNodePtr& node,
+ 		LLXMLNode* defaults_tree,
+ 		bool cacheable = false);
+-	static bool parseBuffer(
+-		const char* buffer,
+-		U32 length,
+-		LLXMLNodePtr& node,
+-		LLXMLNode* defaults);
++    static bool parseBuffer(
++        const char* buffer,
++        U32 length,
++        LLXMLNodePtr& node,
++        LLXMLNode* defaults);
+ 	static bool parseStream(
+ 		std::istream& str,
+ 		LLXMLNodePtr& node,
+@@ -290,6 +290,10 @@ class LLXMLNode : public LLThreadSafeRefCount
+ 
+ protected:
+ 	bool removeChild(LLXMLNode* child);
++    static bool parseBuffer(
++        const char* buffer,
++        U32 length,
++        LLXMLNodePtr& node);
+ 
+ public:
+ 	std::string mID;				// The ID attribute of this node"
+secondlife/viewer,1420,2008f87,indra/llfilesystem/lldir.cpp,modified,3,30,33,"@@ -70,7 +70,6 @@ LLDir *gDirUtilp = (LLDir *)&gDirUtil;
+ /// Values for findSkinnedFilenames(subdir) parameter
+ const char
+ 	*LLDir::XUI      = ""xui"",
+-	*LLDir::HTML     = ""html"",
+ 	*LLDir::TEXTURES = ""textures"",
+ 	*LLDir::SKINBASE = """";
+ 
+@@ -761,13 +760,14 @@ std::vector<std::string> LLDir::findSkinnedFilenames(const std::string& subdir,
+ 		else
+ 		{
+ 			// We do not recognize this subdir. Investigate.
+-			if (skinExists(subdir, ""en""))
++			std::string subdir_path(add(getDefaultSkinDir(), subdir));
++			if (fileExists(add(subdir_path, ""en"")))
+ 			{
+ 				// defaultSkinDir/subdir contains subdir ""en"". That's our
+ 				// default language; this subdir is localized.
+ 				found = sLocalized.insert(StringMap::value_type(subdir, ""en"")).first;
+ 			}
+-			else if (skinExists(subdir, ""en-us""))
++			else if (fileExists(add(subdir_path, ""en-us"")))
+ 			{
+ 				// defaultSkinDir/subdir contains subdir ""en-us"" but not ""en"".
+ 				// Set as default language; this subdir is localized.
+@@ -864,33 +864,6 @@ std::vector<std::string> LLDir::findSkinnedFilenames(const std::string& subdir,
+ 	return results;
+ }
+ 
+-// virtual
+-bool LLDir::skinExists(const std::string& subdir, const std::string& skin) const
+-{
+-    std::string skin_path(add(getDefaultSkinDir(), subdir, skin));
+-    return fileExists(skin_path);
+-}
+-
+-// virtual
+-std::string LLDir::getFileContents(const std::string& filename) const
+-{
+-    LLFILE* fp = LLFile::fopen(filename, ""rb""); /* Flawfinder: ignore */
+-    if (fp)
+-    {
+-        fseek(fp, 0, SEEK_END);
+-        U32 length = ftell(fp);
+-        fseek(fp, 0, SEEK_SET);
+-
+-        std::vector<char> buffer(length);
+-        size_t nread = fread(buffer.data(), 1, length, fp);
+-        fclose(fp);
+-
+-        return std::string(buffer.data(), nread);
+-    }
+-
+-    return LLStringUtil::null;
+-}
+-
+ std::string LLDir::getTempFilename() const
+ {
+ 	LLUUID random_uuid;"
+secondlife/viewer,1420,2008f87,indra/llfilesystem/lldir.h,modified,1,3,4,"@@ -72,8 +72,6 @@ class LLDir
+ // pure virtual functions
+ 	virtual std::string getCurPath() = 0;
+ 	virtual bool fileExists(const std::string &filename) const = 0;
+-	virtual bool skinExists(const std::string& subdir, const std::string &skin) const;
+-	virtual std::string getFileContents(const std::string& filename) const;
+ 
+ 	const std::string findFile(const std::string& filename, const std::vector<std::string> filenames) const; 
+ 	const std::string findFile(const std::string& filename, const std::string& searchPath1 = """", const std::string& searchPath2 = """", const std::string& searchPath3 = """") const;
+@@ -152,7 +150,7 @@ class LLDir
+ 												  const std::string& filename,
+ 												  ESkinConstraint constraint=CURRENT_SKIN) const;
+ 	/// Values for findSkinnedFilenames(subdir) parameter
+-	static const char *XUI, *HTML, *TEXTURES, *SKINBASE;
++	static const char *XUI, *TEXTURES, *SKINBASE;
+ 	/**
+ 	 * Return the base-language pathname from findSkinnedFilenames(), or
+ 	 * the empty string if no such file exists. Parameters are identical to"
+secondlife/viewer,1420,2008f87,indra/llui/llfloater.cpp,modified,2,6,8,"@@ -3522,16 +3522,12 @@ bool LLFloater::isVisible(const LLFloater* floater)
+     return floater && floater->getVisible();
+ }
+ 
+-bool LLFloater::buildFromFile(const std::string& filename, bool cacheable)
++bool LLFloater::buildFromFile(const std::string& filename)
+ {
+     LL_PROFILE_ZONE_SCOPED;
+-
+-    llassert_msg(!cacheable || !mSingleInstance || !mReuseInstance,
+-        ""No needs to cache XML for floater with mSingleInstance AND mReuseInstance flags set"");
+-
+ 	LLXMLNodePtr root;
+ 
+-	if (!LLUICtrlFactory::getLayeredXMLNode(filename, root, LLDir::CURRENT_SKIN, cacheable))
++	if (!LLUICtrlFactory::getLayeredXMLNode(filename, root))
+ 	{
+ 		LL_WARNS() << ""Couldn't find (or parse) floater from: "" << filename << LL_ENDL;
+ 		return false;"
+secondlife/viewer,1420,2008f87,indra/llui/llfloater.h,modified,1,1,2,"@@ -208,7 +208,7 @@ class LLFloater : public LLPanel, public LLInstanceTracker<LLFloater>
+ 
+ 	// Don't export top/left for rect, only height/width
+ 	static void setupParamsForExport(Params& p, LLView* parent);
+-	bool buildFromFile(const std::string &filename, bool cacheable = false);
++	bool buildFromFile(const std::string &filename);
+ 
+ 	boost::signals2::connection setMinimizeCallback( const commit_signal_t::slot_type& cb );
+ 	boost::signals2::connection setOpenCallback( const commit_signal_t::slot_type& cb );"
+secondlife/viewer,1420,2008f87,indra/llui/llmenubutton.cpp,modified,1,1,2,"@@ -95,7 +95,7 @@ void LLMenuButton::setMenu(const std::string& menu_filename, EMenuPosition posit
+ 	}
+ 
+ 	llassert(LLMenuGL::sMenuContainer != NULL);
+-	LLToggleableMenu* menu = LLUICtrlFactory::getInstance()->createFromFile<LLToggleableMenu>(menu_filename, LLMenuGL::sMenuContainer, LLMenuHolderGL::child_registry_t::instance(), true);
++	LLToggleableMenu* menu = LLUICtrlFactory::getInstance()->createFromFile<LLToggleableMenu>(menu_filename, LLMenuGL::sMenuContainer, LLMenuHolderGL::child_registry_t::instance());
+ 	if (!menu)
+ 	{
+ 		LL_WARNS() << ""Error loading menu_button menu"" << LL_ENDL;"
+secondlife/viewer,1420,2008f87,indra/llui/llpanel.cpp,modified,2,2,4,"@@ -803,13 +803,13 @@ boost::signals2::connection LLPanel::setVisibleCallback( const commit_signal_t::
+ //-----------------------------------------------------------------------------
+ // buildPanel()
+ //-----------------------------------------------------------------------------
+-bool LLPanel::buildFromFile(const std::string& filename, const LLPanel::Params& default_params, bool cacheable)
++bool LLPanel::buildFromFile(const std::string& filename, const LLPanel::Params& default_params)
+ {
+     LL_PROFILE_ZONE_SCOPED;
+ 	bool didPost = false;
+ 	LLXMLNodePtr root;
+ 
+-	if (!LLUICtrlFactory::getLayeredXMLNode(filename, root, LLDir::CURRENT_SKIN, cacheable))
++	if (!LLUICtrlFactory::getLayeredXMLNode(filename, root))
+ 	{
+ 		LL_WARNS() << ""Couldn't parse panel from: "" << filename << LL_ENDL;
+ 		return didPost;"
+secondlife/viewer,1420,2008f87,indra/llui/llpanel.h,modified,1,2,3,"@@ -107,8 +107,7 @@ class LLPanel : public LLUICtrl, public LLBadgeHolder
+ public:
+ 	typedef std::vector<class LLUICtrl *>				ctrl_list_t;
+ 
+-	bool buildFromFile(const std::string &filename, const LLPanel::Params& default_params, bool cacheable = false);
+-	bool buildFromFile(const std::string &filename, bool cacheable = false) { return buildFromFile(filename, getDefaultParams(), cacheable); }
++	bool buildFromFile(const std::string &filename, const LLPanel::Params& default_params = getDefaultParams());
+ 
+ 	static LLPanel* createFactoryPanel(const std::string& name);
+ "
+secondlife/viewer,1420,2008f87,indra/llui/lluictrlfactory.cpp,modified,2,2,4,"@@ -157,7 +157,7 @@ void LLUICtrlFactory::createChildren(LLView* viewp, LLXMLNodePtr node, const wid
+ // getLayeredXMLNode()
+ //-----------------------------------------------------------------------------
+ bool LLUICtrlFactory::getLayeredXMLNode(const std::string &xui_filename, LLXMLNodePtr& root,
+-                                        LLDir::ESkinConstraint constraint, bool cacheable)
++                                        LLDir::ESkinConstraint constraint)
+ {
+     LL_PROFILE_ZONE_SCOPED_CATEGORY_UI;
+ 	std::vector<std::string> paths =
+@@ -169,7 +169,7 @@ bool LLUICtrlFactory::getLayeredXMLNode(const std::string &xui_filename, LLXMLNo
+ 		paths.push_back(xui_filename);
+ 	}
+ 
+-	return LLXMLNode::getLayeredXMLNode(root, paths, cacheable);
++	return LLXMLNode::getLayeredXMLNode(root, paths);
+ }
+ 
+ "
+secondlife/viewer,1420,2008f87,indra/llui/lluictrlfactory.h,modified,3,3,6,"@@ -148,15 +148,15 @@ class LLUICtrlFactory : public LLSingleton<LLUICtrlFactory>
+ 	LLView* createFromXML(LLXMLNodePtr node, LLView* parent, const std::string& filename, const widget_registry_t&, LLXMLNodePtr output_node );
+ 
+ 	template<typename T>
+-	static T* createFromFile(const std::string &filename, LLView *parent, const widget_registry_t& registry, bool cacheable = false)
++	static T* createFromFile(const std::string &filename, LLView *parent, const widget_registry_t& registry)
+ 	{
+ 		T* widget = NULL;
+ 
+ 		instance().pushFileName(filename);
+ 		{
+ 			LLXMLNodePtr root_node;
+ 
+-			if (!LLUICtrlFactory::getLayeredXMLNode(filename, root_node, LLDir::CURRENT_SKIN, cacheable))
++			if (!LLUICtrlFactory::getLayeredXMLNode(filename, root_node))
+ 			{
+                 LL_WARNS() << ""Couldn't parse XUI from path: "" << instance().getCurFileName() << "", from filename: "" << filename << LL_ENDL;
+ 				goto fail;
+@@ -192,7 +192,7 @@ class LLUICtrlFactory : public LLSingleton<LLUICtrlFactory>
+ 	static void createChildren(LLView* viewp, LLXMLNodePtr node, const widget_registry_t&, LLXMLNodePtr output_node = NULL);
+ 
+ 	static bool getLayeredXMLNode(const std::string &filename, LLXMLNodePtr& root,
+-								  LLDir::ESkinConstraint constraint = LLDir::CURRENT_SKIN, bool cacheable = false);
++								  LLDir::ESkinConstraint constraint=LLDir::CURRENT_SKIN);
+ 
+ private:
+ 	//NOTE: both friend declarations are necessary to keep both gcc and msvc happy"
+secondlife/viewer,1420,2008f87,indra/llui/llxuiparser.cpp,modified,22,5,27,"@@ -28,7 +28,6 @@
+ 
+ #include ""llxuiparser.h""
+ 
+-#include ""lldir.h""
+ #include ""llxmlnode.h""
+ #include ""llfasttimer.h""
+ #ifdef LL_USESYSTEMLIBS
+@@ -45,7 +44,6 @@
+ 
+ #include ""lluicolor.h""
+ #include ""v3math.h""
+-
+ using namespace BOOST_SPIRIT_CLASSIC_NS;
+ 
+ const S32 MAX_STRING_ATTRIBUTE_SIZE = 40;
+@@ -1399,17 +1397,36 @@ bool LLSimpleXUIParser::readXUI(const std::string& filename, LLInitParam::BaseBl
+ 	mCurReadDepth = 0;
+ 	setParseSilently(silent);
+ 
+-	std::string xml = gDirUtilp->getFileContents(filename);
+-	if (xml.empty())
++	ScopedFile file(filename, ""rb"");
++	if( !file.isOpen() )
+ 	{
+ 		LL_WARNS(""ReadXUI"") << ""Unable to open file "" << filename << LL_ENDL;
+ 		XML_ParserFree( mParser );
+ 		return false;
+ 	}
+ 
++	S32 bytes_read = 0;
++	
++	S32 buffer_size = file.getRemainingBytes();
++	void* buffer = XML_GetBuffer(mParser, buffer_size);
++	if( !buffer ) 
++	{
++		LL_WARNS(""ReadXUI"") << ""Unable to allocate XML buffer while reading file "" << filename << LL_ENDL;
++		XML_ParserFree( mParser );
++		return false;
++	}
++
++	bytes_read = (S32)fread(buffer, 1, buffer_size, file.mFile);
++	if( bytes_read <= 0 )
++	{
++		LL_WARNS(""ReadXUI"") << ""Error while reading file  "" << filename << LL_ENDL;
++		XML_ParserFree( mParser );
++		return false;
++	}
++	
+ 	mEmptyLeafNode.push_back(false);
+ 
+-	if (!XML_Parse(mParser, xml.data(), (int)xml.size(), true))
++	if( !XML_ParseBuffer(mParser, bytes_read, true ) )
+ 	{
+ 		LL_WARNS(""ReadXUI"") << ""Error while parsing file  "" << filename << LL_ENDL;
+ 		XML_ParserFree( mParser );"
+secondlife/viewer,1420,2008f87,indra/llxml/llcontrol.cpp,modified,12,12,24,"@@ -753,13 +753,13 @@ void LLControlGroup::setUntypedValue(std::string_view name, const LLSD& val)
+ //---------------------------------------------------------------
+ 
+ // Returns number of controls loaded, so 0 if failure
+-U32 LLControlGroup::loadFromFileLegacy(const std::string& filename, const std::string& xml, bool require_declaration, eControlType declare_as)
++U32 LLControlGroup::loadFromFileLegacy(const std::string& filename, bool require_declaration, eControlType declare_as)
+ {
+ 	std::string name;
+ 
+ 	LLXmlTree xml_controls;
+ 
+-	if (!xml_controls.parseString(xml))
++	if (!xml_controls.parseFile(filename))
+ 	{
+ 		LL_WARNS(""Settings"") << ""Unable to open control file "" << filename << LL_ENDL;
+ 		return 0;
+@@ -772,7 +772,7 @@ U32 LLControlGroup::loadFromFileLegacy(const std::string& filename, const std::s
+ 		return 0;
+ 	}
+ 
+-	U32 validitems = 0;
++	U32		validitems = 0;
+ 	S32 version;
+ 	
+ 	rootp->getAttributeS32(""version"", version);
+@@ -990,24 +990,24 @@ U32 LLControlGroup::saveToFile(const std::string& filename, bool nondefault_only
+ U32 LLControlGroup::loadFromFile(const std::string& filename, bool set_default_values, bool save_values)
+ {
+ 	LLSD settings;
+-
+-	std::string xml = gDirUtilp->getFileContents(filename);
+-	if (xml.empty())
++	llifstream infile;
++	infile.open(filename.c_str());
++	if(!infile.is_open())
+ 	{
+ 		LL_WARNS(""Settings"") << ""Cannot find file "" << filename << "" to load."" << LL_ENDL;
+ 		return 0;
+ 	}
+ 
+-	std::stringstream stream(xml);
+-	if (LLSDParser::PARSE_FAILURE == LLSDSerialize::fromXML(settings, stream))
++	if (LLSDParser::PARSE_FAILURE == LLSDSerialize::fromXML(settings, infile))
+ 	{
++		infile.close();
+ 		LL_WARNS(""Settings"") << ""Unable to parse LLSD control file "" << filename << "". Trying Legacy Method."" << LL_ENDL;
+-		return loadFromFileLegacy(filename, xml, true, TYPE_STRING);
++		return loadFromFileLegacy(filename, true, TYPE_STRING);
+ 	}
+ 
+ 	U32	validitems = 0;
+ 	bool hidefromsettingseditor = false;
+-
++	
+ 	for(LLSD::map_const_iterator itr = settings.beginMap(); itr != settings.endMap(); ++itr)
+ 	{
+ 		LLControlVariable::ePersist persist = LLControlVariable::PERSIST_NONDFT;
+@@ -1019,7 +1019,7 @@ U32 LLControlGroup::loadFromFile(const std::string& filename, bool set_default_v
+ 			persist = control_map[""Persist""].asInteger()?
+ 					  LLControlVariable::PERSIST_NONDFT : LLControlVariable::PERSIST_NO;
+ 		}
+-
++		
+ 		// Sometimes we want to use the settings system to provide cheap persistence, but we
+ 		// don't want the settings themselves to be easily manipulated in the UI because 
+ 		// doing so can cause support problems. So we have this option:
+@@ -1031,7 +1031,7 @@ U32 LLControlGroup::loadFromFile(const std::string& filename, bool set_default_v
+ 		{
+ 			hidefromsettingseditor = false;
+ 		}
+-
++		
+ 		// If the control exists just set the value from the input file.
+ 		LLControlVariable* existing_control = getControl(name);
+ 		if(existing_control)"
+secondlife/viewer,1420,2008f87,indra/llxml/llcontrol.h,modified,1,1,2,"@@ -300,7 +300,7 @@ class LLControlGroup : public LLInstanceTracker<LLControlGroup, std::string>
+ 	// Returns number of controls loaded, 0 if failed
+ 	// If require_declaration is false, will auto-declare controls it finds
+ 	// as the given type.
+-	U32	loadFromFileLegacy(const std::string& filename, const std::string& xml, bool require_declaration = true, eControlType declare_as = TYPE_STRING);
++	U32	loadFromFileLegacy(const std::string& filename, bool require_declaration = true, eControlType declare_as = TYPE_STRING);
+  	U32 saveToFile(const std::string& filename, bool nondefault_only);
+  	U32	loadFromFile(const std::string& filename, bool default_values = false, bool save_values = true);
+ 	void	resetToDefaults();"
+secondlife/viewer,1420,2008f87,indra/llxml/llxmlnode.cpp,modified,35,79,114,"@@ -137,19 +137,19 @@ LLXMLNode::LLXMLNode(const LLXMLNode& rhs) :
+ }
+ 
+ // returns a new copy of this node and all its children
+-LLXMLNodePtr LLXMLNode::deepCopy() const
++LLXMLNodePtr LLXMLNode::deepCopy()
+ {
+ 	LLXMLNodePtr newnode = LLXMLNodePtr(new LLXMLNode(*this));
+ 	if (mChildren.notNull())
+ 	{
+-		for (LLXMLChildList::const_iterator iter = mChildren->map.begin();
++		for (LLXMLChildList::iterator iter = mChildren->map.begin();
+ 			 iter != mChildren->map.end(); ++iter)	
+ 		{
+ 			LLXMLNodePtr temp_ptr_for_gcc(iter->second->deepCopy());
+ 			newnode->addChild(temp_ptr_for_gcc);
+ 		}
+ 	}
+-	for (LLXMLAttribList::const_iterator iter = mAttributes.begin();
++	for (LLXMLAttribList::iterator iter = mAttributes.begin();
+ 		 iter != mAttributes.end(); ++iter)
+ 	{
+ 		LLXMLNodePtr temp_ptr_for_gcc(iter->second->deepCopy());
+@@ -650,82 +650,37 @@ bool LLXMLNode::updateNode(
+ 	return true;
+ }
+ 
+-static std::map<std::string, LLXMLNodePtr> sXMLCache;
+-static LLSharedMutex sXMLCacheMutex;
+-
+-static void saveToCache(const std::string& filename, const LLXMLNodePtr& node)
+-{
+-    LLXMLNodePtr node_copy = node->deepCopy();
+-
+-    LLExclusiveMutexLock lock(&sXMLCacheMutex);
+-    sXMLCache.emplace(filename, node_copy);
+-}
+-
+-static bool loadFromCache(const std::string& filename, LLXMLNodePtr& node)
++// static
++bool LLXMLNode::parseFile(const std::string& filename, LLXMLNodePtr& node, LLXMLNode* defaults_tree)
+ {
+-    LLSharedMutexLock lock(&sXMLCacheMutex);
+-    auto it = sXMLCache.find(filename);
+-    if (it == sXMLCache.end())
+-        return false;
+-    node = it->second->deepCopy();
+-    return true;
+-}
++	// Read file
++	LL_DEBUGS(""XMLNode"") << ""parsing XML file: "" << filename << LL_ENDL;
++	LLFILE* fp = LLFile::fopen(filename, ""rb"");		/* Flawfinder: ignore */
++	if (fp == NULL)
++	{
++		node = NULL ;
++		return false;
++	}
++	fseek(fp, 0, SEEK_END);
++	U32 length = ftell(fp);
++	fseek(fp, 0, SEEK_SET);
+ 
+-// static
+-bool LLXMLNode::parseFile(const std::string& filename, LLXMLNodePtr& node, LLXMLNode* defaults_tree, bool cacheable)
+-{
+-    // Try to read from cache
+-    if (cacheable)
+-    {
+-        if (loadFromCache(filename, node))
+-        {
+-            node->setDefault(defaults_tree);
+-            node->updateDefault();
+-            return true;
+-        }
+-    }
+-
+-    std::string xml = gDirUtilp->getFileContents(filename);
+-    if (xml.empty())
+-    {
+-        LL_WARNS(""XMLNode"") << ""no XML file: "" << filename << LL_ENDL;
+-    }
+-    else if (parseBuffer(xml.data(), xml.size(), node))
+-    {
+-        if (cacheable)
+-        {
+-            saveToCache(filename, node);
+-        }
+-        node->setDefault(defaults_tree);
+-        node->updateDefault();
+-        return true;
+-    }
+-
+-    node = nullptr;
+-    return false;
+-}
++	U8* buffer = new U8[length+1];
++	size_t nread = fread(buffer, 1, length, fp);
++	buffer[nread] = 0;
++	fclose(fp);
+ 
+-// static
+-bool LLXMLNode::parseBuffer(
+-    const char* buffer,
+-    U32 length,
+-    LLXMLNodePtr& node,
+-    LLXMLNode* defaults)
+-{
+-    if (parseBuffer(buffer, length, node))
+-    {
+-        node->setDefault(defaults);
+-        node->updateDefault();
+-        return true;
+-    }
+-    return false;
++	bool rv = parseBuffer(buffer, nread, node, defaults_tree);
++	delete [] buffer;
++	return rv;
+ }
+ 
+ // static
+ bool LLXMLNode::parseBuffer(
+-	const char* buffer,
++	U8* buffer,
+ 	U32 length,
+-	LLXMLNodePtr& node)
++	LLXMLNodePtr& node, 
++	LLXMLNode* defaults)
+ {
+ 	// Init
+ 	XML_Parser my_parser = XML_ParserCreate(NULL);
+@@ -741,7 +696,7 @@ bool LLXMLNode::parseBuffer(
+ 	XML_SetUserData(my_parser, (void *)file_node_ptr);
+ 
+ 	// Do the parsing
+-	if (XML_Parse(my_parser, buffer, length, true) != XML_STATUS_OK)
++	if (XML_Parse(my_parser, (const char *)buffer, length, true) != XML_STATUS_OK)
+ 	{
+ 		LL_WARNS() << ""Error parsing xml error code: ""
+ 				<< XML_ErrorString(XML_GetErrorCode(my_parser))
+@@ -762,6 +717,9 @@ bool LLXMLNode::parseBuffer(
+ 
+ 	LLXMLNode *return_node = file_node->mChildren->map.begin()->second;
+ 
++	return_node->setDefault(defaults);
++	return_node->updateDefault();
++
+ 	node = return_node;
+ 	return true;
+ }
+@@ -866,20 +824,18 @@ bool LLXMLNode::isFullyDefault()
+ }
+ 
+ // static
+-bool LLXMLNode::getLayeredXMLNode(LLXMLNodePtr& root, const std::vector<std::string>& paths, bool cacheable)
++bool LLXMLNode::getLayeredXMLNode(LLXMLNodePtr& root,
++								  const std::vector<std::string>& paths)
+ {
+-	if (paths.empty())
+-	{
+-		return false;
+-	}
++	if (paths.empty()) return false;
+ 
+ 	std::string filename = paths.front();
+ 	if (filename.empty())
+ 	{
+ 		return false;
+ 	}
+-
+-	if (!LLXMLNode::parseFile(filename, root, nullptr, cacheable))
++	
++	if (!LLXMLNode::parseFile(filename, root, NULL))
+ 	{
+ 		LL_WARNS() << ""Problem reading UI description file: "" << filename << LL_ENDL;
+ 		return false;"
+secondlife/viewer,1420,2008f87,indra/llxml/llxmlnode.h,modified,17,21,38,"@@ -121,39 +121,39 @@ class LLXMLNode : public LLThreadSafeRefCount
+ 	LLXMLNode(const char* name, bool is_attribute);
+ 	LLXMLNode(LLStringTableEntry* name, bool is_attribute);
+ 	LLXMLNode(const LLXMLNode& rhs);
+-	LLXMLNodePtr deepCopy() const;
++	LLXMLNodePtr deepCopy();
+ 
+ 	bool isNull();
+ 
+ 	bool deleteChild(LLXMLNode* child);
+-    void addChild(LLXMLNodePtr& new_child);
++    void addChild(LLXMLNodePtr& new_child); 
+     void setParent(LLXMLNodePtr& new_parent); // reparent if necessary
+ 
+-    // Deserialization
++    // Serialization
+ 	static bool parseFile(
+ 		const std::string& filename,
+-		LLXMLNodePtr& node,
+-		LLXMLNode* defaults_tree,
+-		bool cacheable = false);
+-    static bool parseBuffer(
+-        const char* buffer,
+-        U32 length,
+-        LLXMLNodePtr& node,
+-        LLXMLNode* defaults);
++		LLXMLNodePtr& node, 
++		LLXMLNode* defaults_tree);
++	static bool parseBuffer(
++		U8* buffer,
++		U32 length,
++		LLXMLNodePtr& node, 
++		LLXMLNode* defaults);
+ 	static bool parseStream(
+ 		std::istream& str,
+-		LLXMLNodePtr& node,
++		LLXMLNodePtr& node, 
+ 		LLXMLNode* defaults);
+ 	static bool updateNode(
+ 		LLXMLNodePtr& node,
+ 		LLXMLNodePtr& update_node);
+-
+-	static bool getLayeredXMLNode(LLXMLNodePtr& root, const std::vector<std::string>& paths, bool cacheable = false);
+-
++	
++	static bool getLayeredXMLNode(LLXMLNodePtr& root, const std::vector<std::string>& paths);
++	
++	
+ 	// Write standard XML file header:
+ 	// <?xml version=""1.0"" encoding=""utf-8"" standalone=""yes"" ?>
+ 	static void writeHeaderToFile(LLFILE *out_file);
+-
++	
+ 	// Write XML to file with one attribute per line.
+ 	// XML escapes values as they are written.
+     void writeToFile(LLFILE *out_file, const std::string& indent = std::string(), bool use_type_decorations=true);
+@@ -237,7 +237,7 @@ class LLXMLNode : public LLThreadSafeRefCount
+ 	// Setters
+ 
+ 	bool setAttributeString(const char* attr, const std::string& value);
+-
++	
+ 	void setBoolValue(const bool value)	{ setBoolValue(1, &value); }
+ 	void setByteValue(const U8 value, Encoding encoding = ENCODING_DEFAULT) { setByteValue(1, &value, encoding); }
+ 	void setIntValue(const S32 value, Encoding encoding = ENCODING_DEFAULT) { setIntValue(1, &value, encoding); }
+@@ -290,10 +290,6 @@ class LLXMLNode : public LLThreadSafeRefCount
+ 
+ protected:
+ 	bool removeChild(LLXMLNode* child);
+-    static bool parseBuffer(
+-        const char* buffer,
+-        U32 length,
+-        LLXMLNodePtr& node);
+ 
+ public:
+ 	std::string mID;				// The ID attribute of this node"
+secondlife/viewer,1420,2008f87,indra/llxml/llxmltree.cpp,modified,3,42,45,"@@ -35,7 +35,6 @@
+ #include ""v4math.h""
+ #include ""llquaternion.h""
+ #include ""lluuid.h""
+-#include ""lldir.h""
+ 
+ //////////////////////////////////////////////////////////////
+ // LLXmlTree
+@@ -61,37 +60,20 @@ void LLXmlTree::cleanup()
+ 	mNodeNames.cleanup();
+ }
+ 
+-bool LLXmlTree::parseFile(const std::string & filename, bool keep_contents)
+-{
+-	delete mRoot;
+-	mRoot = NULL;
+-
+-	std::string xml = gDirUtilp->getFileContents(filename);
+-	if (xml.empty())
+-	{
+-		LL_WARNS() << ""LLXmlTree parse failed. No XML file: "" << filename << LL_ENDL;
+-		return false;
+-	}
+-
+-	bool success = parseString(xml, keep_contents);
+ 
+-	return success;
+-}
+-
+-bool LLXmlTree::parseString(const std::string &xml, bool keep_contents)
++bool LLXmlTree::parseFile(const std::string &path, bool keep_contents)
+ {
+ 	delete mRoot;
+ 	mRoot = NULL;
+ 
+ 	LLXmlTreeParser parser(this);
+-	bool success = parser.parseString(xml, &mRoot, keep_contents);
+-	if (!success)
++	bool success = parser.parseFile( path, &mRoot, keep_contents );
++	if( !success )
+ 	{
+ 		S32 line_number = parser.getCurrentLineNumber();
+ 		const char* error =  parser.getErrorString();
+ 		LL_WARNS() << ""LLXmlTree parse failed.  Line "" << line_number << "": "" << error << LL_ENDL;
+ 	}
+-
+ 	return success;
+ }
+ 
+@@ -554,27 +536,6 @@ bool LLXmlTreeParser::parseFile(const std::string &path, LLXmlTreeNode** root, b
+ 	return success;
+ }
+ 
+-bool LLXmlTreeParser::parseString(const std::string& xml, LLXmlTreeNode** root, bool keep_contents)
+-{
+-	llassert( !mRoot );
+-	llassert( !mCurrent );
+-
+-	mKeepContents = keep_contents;
+-
+-	bool success = LLXmlParser::parse(xml.data(), (int)xml.size(), true);
+-
+-	*root = mRoot;
+-	mRoot = NULL;
+-
+-	if (success)
+-	{
+-		llassert(!mCurrent);
+-	}
+-
+-	mCurrent = NULL;
+-	
+-	return success;
+-}
+ 
+ const std::string& LLXmlTreeParser::tabs()
+ {"
+secondlife/viewer,1420,2008f87,indra/llxml/llxmltree.h,modified,1,3,4,"@@ -56,7 +56,6 @@ class LLXmlTree
+ 	void cleanup();
+ 
+ 	virtual bool	parseFile(const std::string &path, bool keep_contents = true);
+-	virtual bool	parseString(const std::string &xml, bool keep_contents = true);
+ 
+ 	LLXmlTreeNode*	getRoot() { return mRoot; }
+ 
+@@ -200,8 +199,7 @@ class LLXmlTreeParser : public LLXmlParser
+ 	LLXmlTreeParser(LLXmlTree* tree);
+ 	virtual ~LLXmlTreeParser();
+ 
+-	bool parseFile(const std::string &path, LLXmlTreeNode** root, bool keep_contents);
+-	bool parseString(const std::string &xml, LLXmlTreeNode** root, bool keep_contents);
++	bool parseFile(const std::string &path, LLXmlTreeNode** root, bool keep_contents );
+ 
+ protected:
+ 	const std::string& tabs();"
+secondlife/viewer,1420,2008f87,indra/newview/llappviewer.cpp,modified,1,1,2,"@@ -2995,7 +2995,7 @@ void LLAppViewer::initStrings()
+ {
+ 	std::string strings_file = ""strings.xml"";
+ 	std::string strings_path_full = gDirUtilp->findSkinnedFilenameBaseLang(LLDir::XUI, strings_file);
+-	if (strings_path_full.empty() || !gDirUtilp->fileExists(strings_path_full))
++	if (strings_path_full.empty() || !LLFile::isfile(strings_path_full))
+ 	{
+ 		if (strings_path_full.empty())
+ 		{"
+secondlife/viewer,1420,2008f87,indra/newview/llblocklist.cpp,modified,2,3,5,"@@ -61,9 +61,8 @@ LLBlockList::LLBlockList(const Params& p)
+ 	LLToggleableMenu* context_menu = LLUICtrlFactory::getInstance()->createFromFile<LLToggleableMenu>(
+ 									""menu_people_blocked_gear.xml"",
+ 									gMenuHolder,
+-									LLViewerMenuHolderGL::child_registry_t::instance(),
+-									true);
+-	if (context_menu)
++									LLViewerMenuHolderGL::child_registry_t::instance());
++	if(context_menu)
+ 	{
+ 		mContextMenu = context_menu->getHandle();
+ 	}"
+secondlife/viewer,1420,2008f87,indra/newview/llchathistory.cpp,modified,3,3,6,"@@ -131,7 +131,7 @@ class LLChatHistoryHeader: public LLPanel
+ 	static LLChatHistoryHeader* createInstance(const std::string& file_name)
+ 	{
+ 		LLChatHistoryHeader* pInstance = new LLChatHistoryHeader;
+-		pInstance->buildFromFile(file_name, true);
++		pInstance->buildFromFile(file_name);	
+ 		return pInstance;
+ 	}
+ 
+@@ -587,7 +587,7 @@ class LLChatHistoryHeader: public LLPanel
+ 		mUserNameTextBox = getChild<LLTextBox>(""user_name"");
+ 		mTimeBoxTextBox = getChild<LLTextBox>(""time_box"");
+ 
+-		mInfoCtrl = LLUICtrlFactory::getInstance()->createFromFile<LLUICtrl>(""inspector_info_ctrl.xml"", this, LLPanel::child_registry_t::instance(), true);
++		mInfoCtrl = LLUICtrlFactory::getInstance()->createFromFile<LLUICtrl>(""inspector_info_ctrl.xml"", this, LLPanel::child_registry_t::instance());
+         if (mInfoCtrl)
+         {
+             mInfoCtrl->setCommitCallback(boost::bind(&LLChatHistoryHeader::onClickInfoCtrl, mInfoCtrl));
+@@ -1181,7 +1181,7 @@ void LLChatHistory::initFromParams(const LLChatHistory::Params& p)
+ 
+ LLView* LLChatHistory::getSeparator()
+ {
+-	LLPanel* separator = LLUICtrlFactory::getInstance()->createFromFile<LLPanel>(mMessageSeparatorFilename, NULL, LLPanel::child_registry_t::instance(), true);
++	LLPanel* separator = LLUICtrlFactory::getInstance()->createFromFile<LLPanel>(mMessageSeparatorFilename, NULL, LLPanel::child_registry_t::instance());
+ 	return separator;
+ }
+ "
+secondlife/viewer,1420,2008f87,indra/newview/llcommandlineparser.cpp,modified,4,3,7,"@@ -657,11 +657,12 @@ void LLControlGroupCLP::configure(const std::string& config_filename, LLControlG
+     // This method reads the llsd based config file, and uses it to set 
+     // members of a control group.
+     LLSD clpConfigLLSD;
++    
++    llifstream input_stream;
++    input_stream.open(config_filename.c_str(), std::ios::in | std::ios::binary);
+ 
+-    std::string xml = gDirUtilp->getFileContents(config_filename);
+-    if (!xml.empty())
++    if(input_stream.is_open())
+     {
+-        std::stringstream input_stream(xml);
+         LLSDSerialize::fromXML(clpConfigLLSD, input_stream);
+         for(LLSD::map_iterator option_itr = clpConfigLLSD.beginMap(); 
+             option_itr != clpConfigLLSD.endMap(); "
+secondlife/viewer,1420,2008f87,indra/newview/llfavoritesbar.cpp,modified,2,3,5,"@@ -886,11 +886,10 @@ const LLButton::Params& LLFavoritesBarCtrl::getButtonParams()
+ 	if (!params_initialized)
+ 	{
+ 		LLXMLNodePtr button_xml_node;
+-		static const std::string filename(""favorites_bar_button.xml"");
+-		if (LLUICtrlFactory::getLayeredXMLNode(filename, button_xml_node, LLDir::CURRENT_SKIN, true))
++		if(LLUICtrlFactory::getLayeredXMLNode(""favorites_bar_button.xml"", button_xml_node))
+ 		{
+ 			LLXUIParser parser;
+-			parser.readXUI(button_xml_node, button_params, filename);
++			parser.readXUI(button_xml_node, button_params, ""favorites_bar_button.xml"");
+ 		}
+ 		params_initialized = true;
+ 	}"
+secondlife/viewer,1420,2008f87,indra/newview/llmediactrl.cpp,modified,1,1,2,"@@ -633,7 +633,7 @@ void LLMediaCtrl::navigateTo( std::string url_in, std::string mime_type, bool cl
+ void LLMediaCtrl::navigateToLocalPage( const std::string& subdir, const std::string& filename_in )
+ {
+ 	std::string filename(gDirUtilp->add(subdir, filename_in));
+-	std::string expanded_filename = gDirUtilp->findSkinnedFilename(LLDir::HTML, filename);
++	std::string expanded_filename = gDirUtilp->findSkinnedFilename(""html"", filename);
+ 
+ 	if (expanded_filename.empty())
+ 	{"
+secondlife/viewer,1420,2008f87,indra/newview/llnotificationlistitem.cpp,modified,1,1,2,"@@ -594,7 +594,7 @@ LLSystemNotificationListItem::LLSystemNotificationListItem(const Params& p)
+     mSystemNotificationIcon(NULL),
+     mIsCaution(false)
+ {
+-    buildFromFile(""panel_notification_list_item.xml"", true);
++    buildFromFile(""panel_notification_list_item.xml"");
+     mIsCaution = p.notification_priority >= NOTIFICATION_PRIORITY_HIGH;
+     if (mIsCaution)
+     {"
+secondlife/viewer,1420,2008f87,indra/newview/lltoast.cpp,modified,1,1,2,"@@ -119,7 +119,7 @@ LLToast::LLToast(const LLToast::Params& p)
+ {
+ 	mTimer.reset(new LLToastLifeTimer(this, p.lifetime_secs));
+ 
+-	buildFromFile(""panel_toast.xml"", true);
++	buildFromFile(""panel_toast.xml"");
+ 
+ 	setCanDrag(false);
+ "
+secondlife/viewer,1420,2008f87,indra/newview/lltoastnotifypanel.cpp,modified,2,2,4,"@@ -266,9 +266,9 @@ void LLToastNotifyPanel::init( LLRect rect, bool show_images )
+ 	LLRect current_rect = getRect();
+ 
+ 	setXMLFilename("""");
+-	buildFromFile(""panel_notification.xml"", true);
++	buildFromFile(""panel_notification.xml"");
+ 
+-    if (rect != LLRect::null)
++    if(rect != LLRect::null)
+     {
+         this->setShape(rect);
+     }"
+secondlife/viewer,1420,2008f87,indra/newview/lltoastscriptquestion.cpp,modified,1,1,2,"@@ -37,7 +37,7 @@ LLToastScriptQuestion::LLToastScriptQuestion(const LLNotificationPtr& notificati
+ :
+ LLToastPanel(notification)
+ {
+-	buildFromFile(""panel_script_question_toast.xml"", true);
++	buildFromFile(""panel_script_question_toast.xml"");
+ }
+ 
+ bool LLToastScriptQuestion::postBuild()"
+secondlife/viewer,1420,2008f87,indra/newview/llviewertexturelist.cpp,modified,1,1,2,"@@ -416,7 +416,7 @@ LLViewerFetchedTexture* LLViewerTextureList::getImageFromFile(const std::string&
+ 		return NULL ;
+ 	}
+ 
+-	std::string full_path = gDirUtilp->findSkinnedFilename(LLDir::TEXTURES, filename);
++	std::string full_path = gDirUtilp->findSkinnedFilename(""textures"", filename);
+ 	if (full_path.empty())
+ 	{
+ 		LL_WARNS() << ""Failed to find local image file: "" << filename << LL_ENDL;"
+secondlife/viewer,1420,14f56a7,indra/llfilesystem/lldir.cpp,modified,3,30,33,"@@ -70,7 +70,6 @@ LLDir *gDirUtilp = (LLDir *)&gDirUtil;
+ /// Values for findSkinnedFilenames(subdir) parameter
+ const char
+ 	*LLDir::XUI      = ""xui"",
+-	*LLDir::HTML     = ""html"",
+ 	*LLDir::TEXTURES = ""textures"",
+ 	*LLDir::SKINBASE = """";
+ 
+@@ -761,13 +760,14 @@ std::vector<std::string> LLDir::findSkinnedFilenames(const std::string& subdir,
+ 		else
+ 		{
+ 			// We do not recognize this subdir. Investigate.
+-			if (skinExists(subdir, ""en""))
++			std::string subdir_path(add(getDefaultSkinDir(), subdir));
++			if (fileExists(add(subdir_path, ""en"")))
+ 			{
+ 				// defaultSkinDir/subdir contains subdir ""en"". That's our
+ 				// default language; this subdir is localized.
+ 				found = sLocalized.insert(StringMap::value_type(subdir, ""en"")).first;
+ 			}
+-			else if (skinExists(subdir, ""en-us""))
++			else if (fileExists(add(subdir_path, ""en-us"")))
+ 			{
+ 				// defaultSkinDir/subdir contains subdir ""en-us"" but not ""en"".
+ 				// Set as default language; this subdir is localized.
+@@ -864,33 +864,6 @@ std::vector<std::string> LLDir::findSkinnedFilenames(const std::string& subdir,
+ 	return results;
+ }
+ 
+-// virtual
+-bool LLDir::skinExists(const std::string& subdir, const std::string& skin) const
+-{
+-    std::string skin_path(add(getDefaultSkinDir(), subdir, skin));
+-    return fileExists(skin_path);
+-}
+-
+-// virtual
+-std::string LLDir::getFileContents(const std::string& filename) const
+-{
+-    LLFILE* fp = LLFile::fopen(filename, ""rb""); /* Flawfinder: ignore */
+-    if (fp)
+-    {
+-        fseek(fp, 0, SEEK_END);
+-        U32 length = ftell(fp);
+-        fseek(fp, 0, SEEK_SET);
+-
+-        std::vector<char> buffer(length);
+-        size_t nread = fread(buffer.data(), 1, length, fp);
+-        fclose(fp);
+-
+-        return std::string(buffer.data(), nread);
+-    }
+-
+-    return LLStringUtil::null;
+-}
+-
+ std::string LLDir::getTempFilename() const
+ {
+ 	LLUUID random_uuid;"
+secondlife/viewer,1420,14f56a7,indra/llfilesystem/lldir.h,modified,1,3,4,"@@ -72,8 +72,6 @@ class LLDir
+ // pure virtual functions
+ 	virtual std::string getCurPath() = 0;
+ 	virtual bool fileExists(const std::string &filename) const = 0;
+-	virtual bool skinExists(const std::string& subdir, const std::string &skin) const;
+-	virtual std::string getFileContents(const std::string& filename) const;
+ 
+ 	const std::string findFile(const std::string& filename, const std::vector<std::string> filenames) const; 
+ 	const std::string findFile(const std::string& filename, const std::string& searchPath1 = """", const std::string& searchPath2 = """", const std::string& searchPath3 = """") const;
+@@ -152,7 +150,7 @@ class LLDir
+ 												  const std::string& filename,
+ 												  ESkinConstraint constraint=CURRENT_SKIN) const;
+ 	/// Values for findSkinnedFilenames(subdir) parameter
+-	static const char *XUI, *HTML, *TEXTURES, *SKINBASE;
++	static const char *XUI, *TEXTURES, *SKINBASE;
+ 	/**
+ 	 * Return the base-language pathname from findSkinnedFilenames(), or
+ 	 * the empty string if no such file exists. Parameters are identical to"
+secondlife/viewer,1420,14f56a7,indra/llui/llfloater.cpp,modified,2,6,8,"@@ -3522,16 +3522,12 @@ bool LLFloater::isVisible(const LLFloater* floater)
+     return floater && floater->getVisible();
+ }
+ 
+-bool LLFloater::buildFromFile(const std::string& filename, bool cacheable)
++bool LLFloater::buildFromFile(const std::string& filename)
+ {
+     LL_PROFILE_ZONE_SCOPED;
+-
+-    llassert_msg(!cacheable || !mSingleInstance || !mReuseInstance,
+-        ""No needs to cache XML for floater with mSingleInstance AND mReuseInstance flags set"");
+-
+ 	LLXMLNodePtr root;
+ 
+-	if (!LLUICtrlFactory::getLayeredXMLNode(filename, root, LLDir::CURRENT_SKIN, cacheable))
++	if (!LLUICtrlFactory::getLayeredXMLNode(filename, root))
+ 	{
+ 		LL_WARNS() << ""Couldn't find (or parse) floater from: "" << filename << LL_ENDL;
+ 		return false;"
+secondlife/viewer,1420,14f56a7,indra/llui/llfloater.h,modified,1,1,2,"@@ -208,7 +208,7 @@ class LLFloater : public LLPanel, public LLInstanceTracker<LLFloater>
+ 
+ 	// Don't export top/left for rect, only height/width
+ 	static void setupParamsForExport(Params& p, LLView* parent);
+-	bool buildFromFile(const std::string &filename, bool cacheable = false);
++	bool buildFromFile(const std::string &filename);
+ 
+ 	boost::signals2::connection setMinimizeCallback( const commit_signal_t::slot_type& cb );
+ 	boost::signals2::connection setOpenCallback( const commit_signal_t::slot_type& cb );"
+secondlife/viewer,1420,14f56a7,indra/llui/llmenubutton.cpp,modified,1,1,2,"@@ -95,7 +95,7 @@ void LLMenuButton::setMenu(const std::string& menu_filename, EMenuPosition posit
+ 	}
+ 
+ 	llassert(LLMenuGL::sMenuContainer != NULL);
+-	LLToggleableMenu* menu = LLUICtrlFactory::getInstance()->createFromFile<LLToggleableMenu>(menu_filename, LLMenuGL::sMenuContainer, LLMenuHolderGL::child_registry_t::instance(), true);
++	LLToggleableMenu* menu = LLUICtrlFactory::getInstance()->createFromFile<LLToggleableMenu>(menu_filename, LLMenuGL::sMenuContainer, LLMenuHolderGL::child_registry_t::instance());
+ 	if (!menu)
+ 	{
+ 		LL_WARNS() << ""Error loading menu_button menu"" << LL_ENDL;"
+secondlife/viewer,1420,14f56a7,indra/llui/llpanel.cpp,modified,2,2,4,"@@ -803,13 +803,13 @@ boost::signals2::connection LLPanel::setVisibleCallback( const commit_signal_t::
+ //-----------------------------------------------------------------------------
+ // buildPanel()
+ //-----------------------------------------------------------------------------
+-bool LLPanel::buildFromFile(const std::string& filename, const LLPanel::Params& default_params, bool cacheable)
++bool LLPanel::buildFromFile(const std::string& filename, const LLPanel::Params& default_params)
+ {
+     LL_PROFILE_ZONE_SCOPED;
+ 	bool didPost = false;
+ 	LLXMLNodePtr root;
+ 
+-	if (!LLUICtrlFactory::getLayeredXMLNode(filename, root, LLDir::CURRENT_SKIN, cacheable))
++	if (!LLUICtrlFactory::getLayeredXMLNode(filename, root))
+ 	{
+ 		LL_WARNS() << ""Couldn't parse panel from: "" << filename << LL_ENDL;
+ 		return didPost;"
+secondlife/viewer,1420,14f56a7,indra/llui/llpanel.h,modified,1,2,3,"@@ -107,8 +107,7 @@ class LLPanel : public LLUICtrl, public LLBadgeHolder
+ public:
+ 	typedef std::vector<class LLUICtrl *>				ctrl_list_t;
+ 
+-	bool buildFromFile(const std::string &filename, const LLPanel::Params& default_params, bool cacheable = false);
+-	bool buildFromFile(const std::string &filename, bool cacheable = false) { return buildFromFile(filename, getDefaultParams(), cacheable); }
++	bool buildFromFile(const std::string &filename, const LLPanel::Params& default_params = getDefaultParams());
+ 
+ 	static LLPanel* createFactoryPanel(const std::string& name);
+ "
+secondlife/viewer,1420,14f56a7,indra/llui/lluictrlfactory.cpp,modified,2,2,4,"@@ -157,7 +157,7 @@ void LLUICtrlFactory::createChildren(LLView* viewp, LLXMLNodePtr node, const wid
+ // getLayeredXMLNode()
+ //-----------------------------------------------------------------------------
+ bool LLUICtrlFactory::getLayeredXMLNode(const std::string &xui_filename, LLXMLNodePtr& root,
+-                                        LLDir::ESkinConstraint constraint, bool cacheable)
++                                        LLDir::ESkinConstraint constraint)
+ {
+     LL_PROFILE_ZONE_SCOPED_CATEGORY_UI;
+ 	std::vector<std::string> paths =
+@@ -169,7 +169,7 @@ bool LLUICtrlFactory::getLayeredXMLNode(const std::string &xui_filename, LLXMLNo
+ 		paths.push_back(xui_filename);
+ 	}
+ 
+-	return LLXMLNode::getLayeredXMLNode(root, paths, cacheable);
++	return LLXMLNode::getLayeredXMLNode(root, paths);
+ }
+ 
+ "
+secondlife/viewer,1420,14f56a7,indra/llui/lluictrlfactory.h,modified,3,3,6,"@@ -148,15 +148,15 @@ class LLUICtrlFactory : public LLSingleton<LLUICtrlFactory>
+ 	LLView* createFromXML(LLXMLNodePtr node, LLView* parent, const std::string& filename, const widget_registry_t&, LLXMLNodePtr output_node );
+ 
+ 	template<typename T>
+-	static T* createFromFile(const std::string &filename, LLView *parent, const widget_registry_t& registry, bool cacheable = false)
++	static T* createFromFile(const std::string &filename, LLView *parent, const widget_registry_t& registry)
+ 	{
+ 		T* widget = NULL;
+ 
+ 		instance().pushFileName(filename);
+ 		{
+ 			LLXMLNodePtr root_node;
+ 
+-			if (!LLUICtrlFactory::getLayeredXMLNode(filename, root_node, LLDir::CURRENT_SKIN, cacheable))
++			if (!LLUICtrlFactory::getLayeredXMLNode(filename, root_node))
+ 			{
+                 LL_WARNS() << ""Couldn't parse XUI from path: "" << instance().getCurFileName() << "", from filename: "" << filename << LL_ENDL;
+ 				goto fail;
+@@ -192,7 +192,7 @@ class LLUICtrlFactory : public LLSingleton<LLUICtrlFactory>
+ 	static void createChildren(LLView* viewp, LLXMLNodePtr node, const widget_registry_t&, LLXMLNodePtr output_node = NULL);
+ 
+ 	static bool getLayeredXMLNode(const std::string &filename, LLXMLNodePtr& root,
+-								  LLDir::ESkinConstraint constraint = LLDir::CURRENT_SKIN, bool cacheable = false);
++								  LLDir::ESkinConstraint constraint=LLDir::CURRENT_SKIN);
+ 
+ private:
+ 	//NOTE: both friend declarations are necessary to keep both gcc and msvc happy"
+secondlife/viewer,1420,14f56a7,indra/llui/llxuiparser.cpp,modified,22,5,27,"@@ -28,7 +28,6 @@
+ 
+ #include ""llxuiparser.h""
+ 
+-#include ""lldir.h""
+ #include ""llxmlnode.h""
+ #include ""llfasttimer.h""
+ #ifdef LL_USESYSTEMLIBS
+@@ -45,7 +44,6 @@
+ 
+ #include ""lluicolor.h""
+ #include ""v3math.h""
+-
+ using namespace BOOST_SPIRIT_CLASSIC_NS;
+ 
+ const S32 MAX_STRING_ATTRIBUTE_SIZE = 40;
+@@ -1399,17 +1397,36 @@ bool LLSimpleXUIParser::readXUI(const std::string& filename, LLInitParam::BaseBl
+ 	mCurReadDepth = 0;
+ 	setParseSilently(silent);
+ 
+-	std::string xml = gDirUtilp->getFileContents(filename);
+-	if (xml.empty())
++	ScopedFile file(filename, ""rb"");
++	if( !file.isOpen() )
+ 	{
+ 		LL_WARNS(""ReadXUI"") << ""Unable to open file "" << filename << LL_ENDL;
+ 		XML_ParserFree( mParser );
+ 		return false;
+ 	}
+ 
++	S32 bytes_read = 0;
++	
++	S32 buffer_size = file.getRemainingBytes();
++	void* buffer = XML_GetBuffer(mParser, buffer_size);
++	if( !buffer ) 
++	{
++		LL_WARNS(""ReadXUI"") << ""Unable to allocate XML buffer while reading file "" << filename << LL_ENDL;
++		XML_ParserFree( mParser );
++		return false;
++	}
++
++	bytes_read = (S32)fread(buffer, 1, buffer_size, file.mFile);
++	if( bytes_read <= 0 )
++	{
++		LL_WARNS(""ReadXUI"") << ""Error while reading file  "" << filename << LL_ENDL;
++		XML_ParserFree( mParser );
++		return false;
++	}
++	
+ 	mEmptyLeafNode.push_back(false);
+ 
+-	if (!XML_Parse(mParser, xml.data(), (int)xml.size(), true))
++	if( !XML_ParseBuffer(mParser, bytes_read, true ) )
+ 	{
+ 		LL_WARNS(""ReadXUI"") << ""Error while parsing file  "" << filename << LL_ENDL;
+ 		XML_ParserFree( mParser );"
+secondlife/viewer,1420,14f56a7,indra/llxml/llcontrol.cpp,modified,12,12,24,"@@ -753,13 +753,13 @@ void LLControlGroup::setUntypedValue(std::string_view name, const LLSD& val)
+ //---------------------------------------------------------------
+ 
+ // Returns number of controls loaded, so 0 if failure
+-U32 LLControlGroup::loadFromFileLegacy(const std::string& filename, const std::string& xml, bool require_declaration, eControlType declare_as)
++U32 LLControlGroup::loadFromFileLegacy(const std::string& filename, bool require_declaration, eControlType declare_as)
+ {
+ 	std::string name;
+ 
+ 	LLXmlTree xml_controls;
+ 
+-	if (!xml_controls.parseString(xml))
++	if (!xml_controls.parseFile(filename))
+ 	{
+ 		LL_WARNS(""Settings"") << ""Unable to open control file "" << filename << LL_ENDL;
+ 		return 0;
+@@ -772,7 +772,7 @@ U32 LLControlGroup::loadFromFileLegacy(const std::string& filename, const std::s
+ 		return 0;
+ 	}
+ 
+-	U32 validitems = 0;
++	U32		validitems = 0;
+ 	S32 version;
+ 	
+ 	rootp->getAttributeS32(""version"", version);
+@@ -990,24 +990,24 @@ U32 LLControlGroup::saveToFile(const std::string& filename, bool nondefault_only
+ U32 LLControlGroup::loadFromFile(const std::string& filename, bool set_default_values, bool save_values)
+ {
+ 	LLSD settings;
+-
+-	std::string xml = gDirUtilp->getFileContents(filename);
+-	if (xml.empty())
++	llifstream infile;
++	infile.open(filename.c_str());
++	if(!infile.is_open())
+ 	{
+ 		LL_WARNS(""Settings"") << ""Cannot find file "" << filename << "" to load."" << LL_ENDL;
+ 		return 0;
+ 	}
+ 
+-	std::stringstream stream(xml);
+-	if (LLSDParser::PARSE_FAILURE == LLSDSerialize::fromXML(settings, stream))
++	if (LLSDParser::PARSE_FAILURE == LLSDSerialize::fromXML(settings, infile))
+ 	{
++		infile.close();
+ 		LL_WARNS(""Settings"") << ""Unable to parse LLSD control file "" << filename << "". Trying Legacy Method."" << LL_ENDL;
+-		return loadFromFileLegacy(filename, xml, true, TYPE_STRING);
++		return loadFromFileLegacy(filename, true, TYPE_STRING);
+ 	}
+ 
+ 	U32	validitems = 0;
+ 	bool hidefromsettingseditor = false;
+-
++	
+ 	for(LLSD::map_const_iterator itr = settings.beginMap(); itr != settings.endMap(); ++itr)
+ 	{
+ 		LLControlVariable::ePersist persist = LLControlVariable::PERSIST_NONDFT;
+@@ -1019,7 +1019,7 @@ U32 LLControlGroup::loadFromFile(const std::string& filename, bool set_default_v
+ 			persist = control_map[""Persist""].asInteger()?
+ 					  LLControlVariable::PERSIST_NONDFT : LLControlVariable::PERSIST_NO;
+ 		}
+-
++		
+ 		// Sometimes we want to use the settings system to provide cheap persistence, but we
+ 		// don't want the settings themselves to be easily manipulated in the UI because 
+ 		// doing so can cause support problems. So we have this option:
+@@ -1031,7 +1031,7 @@ U32 LLControlGroup::loadFromFile(const std::string& filename, bool set_default_v
+ 		{
+ 			hidefromsettingseditor = false;
+ 		}
+-
++		
+ 		// If the control exists just set the value from the input file.
+ 		LLControlVariable* existing_control = getControl(name);
+ 		if(existing_control)"
+secondlife/viewer,1420,14f56a7,indra/llxml/llcontrol.h,modified,1,1,2,"@@ -300,7 +300,7 @@ class LLControlGroup : public LLInstanceTracker<LLControlGroup, std::string>
+ 	// Returns number of controls loaded, 0 if failed
+ 	// If require_declaration is false, will auto-declare controls it finds
+ 	// as the given type.
+-	U32	loadFromFileLegacy(const std::string& filename, const std::string& xml, bool require_declaration = true, eControlType declare_as = TYPE_STRING);
++	U32	loadFromFileLegacy(const std::string& filename, bool require_declaration = true, eControlType declare_as = TYPE_STRING);
+  	U32 saveToFile(const std::string& filename, bool nondefault_only);
+  	U32	loadFromFile(const std::string& filename, bool default_values = false, bool save_values = true);
+ 	void	resetToDefaults();"
+secondlife/viewer,1420,14f56a7,indra/llxml/llxmlnode.cpp,modified,35,79,114,"@@ -137,19 +137,19 @@ LLXMLNode::LLXMLNode(const LLXMLNode& rhs) :
+ }
+ 
+ // returns a new copy of this node and all its children
+-LLXMLNodePtr LLXMLNode::deepCopy() const
++LLXMLNodePtr LLXMLNode::deepCopy()
+ {
+ 	LLXMLNodePtr newnode = LLXMLNodePtr(new LLXMLNode(*this));
+ 	if (mChildren.notNull())
+ 	{
+-		for (LLXMLChildList::const_iterator iter = mChildren->map.begin();
++		for (LLXMLChildList::iterator iter = mChildren->map.begin();
+ 			 iter != mChildren->map.end(); ++iter)	
+ 		{
+ 			LLXMLNodePtr temp_ptr_for_gcc(iter->second->deepCopy());
+ 			newnode->addChild(temp_ptr_for_gcc);
+ 		}
+ 	}
+-	for (LLXMLAttribList::const_iterator iter = mAttributes.begin();
++	for (LLXMLAttribList::iterator iter = mAttributes.begin();
+ 		 iter != mAttributes.end(); ++iter)
+ 	{
+ 		LLXMLNodePtr temp_ptr_for_gcc(iter->second->deepCopy());
+@@ -650,82 +650,37 @@ bool LLXMLNode::updateNode(
+ 	return true;
+ }
+ 
+-static std::map<std::string, LLXMLNodePtr> sXMLCache;
+-static LLSharedMutex sXMLCacheMutex;
+-
+-static void saveToCache(const std::string& filename, const LLXMLNodePtr& node)
+-{
+-    LLXMLNodePtr node_copy = node->deepCopy();
+-
+-    LLExclusiveMutexLock lock(&sXMLCacheMutex);
+-    sXMLCache.emplace(filename, node_copy);
+-}
+-
+-static bool loadFromCache(const std::string& filename, LLXMLNodePtr& node)
++// static
++bool LLXMLNode::parseFile(const std::string& filename, LLXMLNodePtr& node, LLXMLNode* defaults_tree)
+ {
+-    LLSharedMutexLock lock(&sXMLCacheMutex);
+-    auto it = sXMLCache.find(filename);
+-    if (it == sXMLCache.end())
+-        return false;
+-    node = it->second->deepCopy();
+-    return true;
+-}
++	// Read file
++	LL_DEBUGS(""XMLNode"") << ""parsing XML file: "" << filename << LL_ENDL;
++	LLFILE* fp = LLFile::fopen(filename, ""rb"");		/* Flawfinder: ignore */
++	if (fp == NULL)
++	{
++		node = NULL ;
++		return false;
++	}
++	fseek(fp, 0, SEEK_END);
++	U32 length = ftell(fp);
++	fseek(fp, 0, SEEK_SET);
+ 
+-// static
+-bool LLXMLNode::parseFile(const std::string& filename, LLXMLNodePtr& node, LLXMLNode* defaults_tree, bool cacheable)
+-{
+-    // Try to read from cache
+-    if (cacheable)
+-    {
+-        if (loadFromCache(filename, node))
+-        {
+-            node->setDefault(defaults_tree);
+-            node->updateDefault();
+-            return true;
+-        }
+-    }
+-
+-    std::string xml = gDirUtilp->getFileContents(filename);
+-    if (xml.empty())
+-    {
+-        LL_WARNS(""XMLNode"") << ""no XML file: "" << filename << LL_ENDL;
+-    }
+-    else if (parseBuffer(xml.data(), xml.size(), node))
+-    {
+-        if (cacheable)
+-        {
+-            saveToCache(filename, node);
+-        }
+-        node->setDefault(defaults_tree);
+-        node->updateDefault();
+-        return true;
+-    }
+-
+-    node = nullptr;
+-    return false;
+-}
++	U8* buffer = new U8[length+1];
++	size_t nread = fread(buffer, 1, length, fp);
++	buffer[nread] = 0;
++	fclose(fp);
+ 
+-// static
+-bool LLXMLNode::parseBuffer(
+-    const char* buffer,
+-    U32 length,
+-    LLXMLNodePtr& node,
+-    LLXMLNode* defaults)
+-{
+-    if (parseBuffer(buffer, length, node))
+-    {
+-        node->setDefault(defaults);
+-        node->updateDefault();
+-        return true;
+-    }
+-    return false;
++	bool rv = parseBuffer(buffer, nread, node, defaults_tree);
++	delete [] buffer;
++	return rv;
+ }
+ 
+ // static
+ bool LLXMLNode::parseBuffer(
+-	const char* buffer,
++	U8* buffer,
+ 	U32 length,
+-	LLXMLNodePtr& node)
++	LLXMLNodePtr& node, 
++	LLXMLNode* defaults)
+ {
+ 	// Init
+ 	XML_Parser my_parser = XML_ParserCreate(NULL);
+@@ -741,7 +696,7 @@ bool LLXMLNode::parseBuffer(
+ 	XML_SetUserData(my_parser, (void *)file_node_ptr);
+ 
+ 	// Do the parsing
+-	if (XML_Parse(my_parser, buffer, length, true) != XML_STATUS_OK)
++	if (XML_Parse(my_parser, (const char *)buffer, length, true) != XML_STATUS_OK)
+ 	{
+ 		LL_WARNS() << ""Error parsing xml error code: ""
+ 				<< XML_ErrorString(XML_GetErrorCode(my_parser))
+@@ -762,6 +717,9 @@ bool LLXMLNode::parseBuffer(
+ 
+ 	LLXMLNode *return_node = file_node->mChildren->map.begin()->second;
+ 
++	return_node->setDefault(defaults);
++	return_node->updateDefault();
++
+ 	node = return_node;
+ 	return true;
+ }
+@@ -866,20 +824,18 @@ bool LLXMLNode::isFullyDefault()
+ }
+ 
+ // static
+-bool LLXMLNode::getLayeredXMLNode(LLXMLNodePtr& root, const std::vector<std::string>& paths, bool cacheable)
++bool LLXMLNode::getLayeredXMLNode(LLXMLNodePtr& root,
++								  const std::vector<std::string>& paths)
+ {
+-	if (paths.empty())
+-	{
+-		return false;
+-	}
++	if (paths.empty()) return false;
+ 
+ 	std::string filename = paths.front();
+ 	if (filename.empty())
+ 	{
+ 		return false;
+ 	}
+-
+-	if (!LLXMLNode::parseFile(filename, root, nullptr, cacheable))
++	
++	if (!LLXMLNode::parseFile(filename, root, NULL))
+ 	{
+ 		LL_WARNS() << ""Problem reading UI description file: "" << filename << LL_ENDL;
+ 		return false;"
+secondlife/viewer,1420,14f56a7,indra/llxml/llxmlnode.h,modified,17,21,38,"@@ -121,39 +121,39 @@ class LLXMLNode : public LLThreadSafeRefCount
+ 	LLXMLNode(const char* name, bool is_attribute);
+ 	LLXMLNode(LLStringTableEntry* name, bool is_attribute);
+ 	LLXMLNode(const LLXMLNode& rhs);
+-	LLXMLNodePtr deepCopy() const;
++	LLXMLNodePtr deepCopy();
+ 
+ 	bool isNull();
+ 
+ 	bool deleteChild(LLXMLNode* child);
+-    void addChild(LLXMLNodePtr& new_child);
++    void addChild(LLXMLNodePtr& new_child); 
+     void setParent(LLXMLNodePtr& new_parent); // reparent if necessary
+ 
+-    // Deserialization
++    // Serialization
+ 	static bool parseFile(
+ 		const std::string& filename,
+-		LLXMLNodePtr& node,
+-		LLXMLNode* defaults_tree,
+-		bool cacheable = false);
+-    static bool parseBuffer(
+-        const char* buffer,
+-        U32 length,
+-        LLXMLNodePtr& node,
+-        LLXMLNode* defaults);
++		LLXMLNodePtr& node, 
++		LLXMLNode* defaults_tree);
++	static bool parseBuffer(
++		U8* buffer,
++		U32 length,
++		LLXMLNodePtr& node, 
++		LLXMLNode* defaults);
+ 	static bool parseStream(
+ 		std::istream& str,
+-		LLXMLNodePtr& node,
++		LLXMLNodePtr& node, 
+ 		LLXMLNode* defaults);
+ 	static bool updateNode(
+ 		LLXMLNodePtr& node,
+ 		LLXMLNodePtr& update_node);
+-
+-	static bool getLayeredXMLNode(LLXMLNodePtr& root, const std::vector<std::string>& paths, bool cacheable = false);
+-
++	
++	static bool getLayeredXMLNode(LLXMLNodePtr& root, const std::vector<std::string>& paths);
++	
++	
+ 	// Write standard XML file header:
+ 	// <?xml version=""1.0"" encoding=""utf-8"" standalone=""yes"" ?>
+ 	static void writeHeaderToFile(LLFILE *out_file);
+-
++	
+ 	// Write XML to file with one attribute per line.
+ 	// XML escapes values as they are written.
+     void writeToFile(LLFILE *out_file, const std::string& indent = std::string(), bool use_type_decorations=true);
+@@ -237,7 +237,7 @@ class LLXMLNode : public LLThreadSafeRefCount
+ 	// Setters
+ 
+ 	bool setAttributeString(const char* attr, const std::string& value);
+-
++	
+ 	void setBoolValue(const bool value)	{ setBoolValue(1, &value); }
+ 	void setByteValue(const U8 value, Encoding encoding = ENCODING_DEFAULT) { setByteValue(1, &value, encoding); }
+ 	void setIntValue(const S32 value, Encoding encoding = ENCODING_DEFAULT) { setIntValue(1, &value, encoding); }
+@@ -290,10 +290,6 @@ class LLXMLNode : public LLThreadSafeRefCount
+ 
+ protected:
+ 	bool removeChild(LLXMLNode* child);
+-    static bool parseBuffer(
+-        const char* buffer,
+-        U32 length,
+-        LLXMLNodePtr& node);
+ 
+ public:
+ 	std::string mID;				// The ID attribute of this node"
+secondlife/viewer,1420,14f56a7,indra/llxml/llxmltree.cpp,modified,3,42,45,"@@ -35,7 +35,6 @@
+ #include ""v4math.h""
+ #include ""llquaternion.h""
+ #include ""lluuid.h""
+-#include ""lldir.h""
+ 
+ //////////////////////////////////////////////////////////////
+ // LLXmlTree
+@@ -61,37 +60,20 @@ void LLXmlTree::cleanup()
+ 	mNodeNames.cleanup();
+ }
+ 
+-bool LLXmlTree::parseFile(const std::string & filename, bool keep_contents)
+-{
+-	delete mRoot;
+-	mRoot = NULL;
+-
+-	std::string xml = gDirUtilp->getFileContents(filename);
+-	if (xml.empty())
+-	{
+-		LL_WARNS() << ""LLXmlTree parse failed. No XML file: "" << filename << LL_ENDL;
+-		return false;
+-	}
+-
+-	bool success = parseString(xml, keep_contents);
+ 
+-	return success;
+-}
+-
+-bool LLXmlTree::parseString(const std::string &xml, bool keep_contents)
++bool LLXmlTree::parseFile(const std::string &path, bool keep_contents)
+ {
+ 	delete mRoot;
+ 	mRoot = NULL;
+ 
+ 	LLXmlTreeParser parser(this);
+-	bool success = parser.parseString(xml, &mRoot, keep_contents);
+-	if (!success)
++	bool success = parser.parseFile( path, &mRoot, keep_contents );
++	if( !success )
+ 	{
+ 		S32 line_number = parser.getCurrentLineNumber();
+ 		const char* error =  parser.getErrorString();
+ 		LL_WARNS() << ""LLXmlTree parse failed.  Line "" << line_number << "": "" << error << LL_ENDL;
+ 	}
+-
+ 	return success;
+ }
+ 
+@@ -554,27 +536,6 @@ bool LLXmlTreeParser::parseFile(const std::string &path, LLXmlTreeNode** root, b
+ 	return success;
+ }
+ 
+-bool LLXmlTreeParser::parseString(const std::string& xml, LLXmlTreeNode** root, bool keep_contents)
+-{
+-	llassert( !mRoot );
+-	llassert( !mCurrent );
+-
+-	mKeepContents = keep_contents;
+-
+-	bool success = LLXmlParser::parse(xml.data(), (int)xml.size(), true);
+-
+-	*root = mRoot;
+-	mRoot = NULL;
+-
+-	if (success)
+-	{
+-		llassert(!mCurrent);
+-	}
+-
+-	mCurrent = NULL;
+-	
+-	return success;
+-}
+ 
+ const std::string& LLXmlTreeParser::tabs()
+ {"
+secondlife/viewer,1420,14f56a7,indra/llxml/llxmltree.h,modified,1,3,4,"@@ -56,7 +56,6 @@ class LLXmlTree
+ 	void cleanup();
+ 
+ 	virtual bool	parseFile(const std::string &path, bool keep_contents = true);
+-	virtual bool	parseString(const std::string &xml, bool keep_contents = true);
+ 
+ 	LLXmlTreeNode*	getRoot() { return mRoot; }
+ 
+@@ -200,8 +199,7 @@ class LLXmlTreeParser : public LLXmlParser
+ 	LLXmlTreeParser(LLXmlTree* tree);
+ 	virtual ~LLXmlTreeParser();
+ 
+-	bool parseFile(const std::string &path, LLXmlTreeNode** root, bool keep_contents);
+-	bool parseString(const std::string &xml, LLXmlTreeNode** root, bool keep_contents);
++	bool parseFile(const std::string &path, LLXmlTreeNode** root, bool keep_contents );
+ 
+ protected:
+ 	const std::string& tabs();"
+secondlife/viewer,1420,14f56a7,indra/newview/llappviewer.cpp,modified,1,1,2,"@@ -2995,7 +2995,7 @@ void LLAppViewer::initStrings()
+ {
+ 	std::string strings_file = ""strings.xml"";
+ 	std::string strings_path_full = gDirUtilp->findSkinnedFilenameBaseLang(LLDir::XUI, strings_file);
+-	if (strings_path_full.empty() || !gDirUtilp->fileExists(strings_path_full))
++	if (strings_path_full.empty() || !LLFile::isfile(strings_path_full))
+ 	{
+ 		if (strings_path_full.empty())
+ 		{"
+secondlife/viewer,1420,14f56a7,indra/newview/llblocklist.cpp,modified,2,3,5,"@@ -61,9 +61,8 @@ LLBlockList::LLBlockList(const Params& p)
+ 	LLToggleableMenu* context_menu = LLUICtrlFactory::getInstance()->createFromFile<LLToggleableMenu>(
+ 									""menu_people_blocked_gear.xml"",
+ 									gMenuHolder,
+-									LLViewerMenuHolderGL::child_registry_t::instance(),
+-									true);
+-	if (context_menu)
++									LLViewerMenuHolderGL::child_registry_t::instance());
++	if(context_menu)
+ 	{
+ 		mContextMenu = context_menu->getHandle();
+ 	}"
+secondlife/viewer,1420,14f56a7,indra/newview/llchathistory.cpp,modified,3,3,6,"@@ -131,7 +131,7 @@ class LLChatHistoryHeader: public LLPanel
+ 	static LLChatHistoryHeader* createInstance(const std::string& file_name)
+ 	{
+ 		LLChatHistoryHeader* pInstance = new LLChatHistoryHeader;
+-		pInstance->buildFromFile(file_name, true);
++		pInstance->buildFromFile(file_name);	
+ 		return pInstance;
+ 	}
+ 
+@@ -587,7 +587,7 @@ class LLChatHistoryHeader: public LLPanel
+ 		mUserNameTextBox = getChild<LLTextBox>(""user_name"");
+ 		mTimeBoxTextBox = getChild<LLTextBox>(""time_box"");
+ 
+-		mInfoCtrl = LLUICtrlFactory::getInstance()->createFromFile<LLUICtrl>(""inspector_info_ctrl.xml"", this, LLPanel::child_registry_t::instance(), true);
++		mInfoCtrl = LLUICtrlFactory::getInstance()->createFromFile<LLUICtrl>(""inspector_info_ctrl.xml"", this, LLPanel::child_registry_t::instance());
+         if (mInfoCtrl)
+         {
+             mInfoCtrl->setCommitCallback(boost::bind(&LLChatHistoryHeader::onClickInfoCtrl, mInfoCtrl));
+@@ -1181,7 +1181,7 @@ void LLChatHistory::initFromParams(const LLChatHistory::Params& p)
+ 
+ LLView* LLChatHistory::getSeparator()
+ {
+-	LLPanel* separator = LLUICtrlFactory::getInstance()->createFromFile<LLPanel>(mMessageSeparatorFilename, NULL, LLPanel::child_registry_t::instance(), true);
++	LLPanel* separator = LLUICtrlFactory::getInstance()->createFromFile<LLPanel>(mMessageSeparatorFilename, NULL, LLPanel::child_registry_t::instance());
+ 	return separator;
+ }
+ "
+secondlife/viewer,1420,14f56a7,indra/newview/llcommandlineparser.cpp,modified,4,3,7,"@@ -657,11 +657,12 @@ void LLControlGroupCLP::configure(const std::string& config_filename, LLControlG
+     // This method reads the llsd based config file, and uses it to set 
+     // members of a control group.
+     LLSD clpConfigLLSD;
++    
++    llifstream input_stream;
++    input_stream.open(config_filename.c_str(), std::ios::in | std::ios::binary);
+ 
+-    std::string xml = gDirUtilp->getFileContents(config_filename);
+-    if (!xml.empty())
++    if(input_stream.is_open())
+     {
+-        std::stringstream input_stream(xml);
+         LLSDSerialize::fromXML(clpConfigLLSD, input_stream);
+         for(LLSD::map_iterator option_itr = clpConfigLLSD.beginMap(); 
+             option_itr != clpConfigLLSD.endMap(); "
+secondlife/viewer,1420,14f56a7,indra/newview/llfavoritesbar.cpp,modified,2,3,5,"@@ -886,11 +886,10 @@ const LLButton::Params& LLFavoritesBarCtrl::getButtonParams()
+ 	if (!params_initialized)
+ 	{
+ 		LLXMLNodePtr button_xml_node;
+-		static const std::string filename(""favorites_bar_button.xml"");
+-		if (LLUICtrlFactory::getLayeredXMLNode(filename, button_xml_node, LLDir::CURRENT_SKIN, true))
++		if(LLUICtrlFactory::getLayeredXMLNode(""favorites_bar_button.xml"", button_xml_node))
+ 		{
+ 			LLXUIParser parser;
+-			parser.readXUI(button_xml_node, button_params, filename);
++			parser.readXUI(button_xml_node, button_params, ""favorites_bar_button.xml"");
+ 		}
+ 		params_initialized = true;
+ 	}"
+secondlife/viewer,1420,14f56a7,indra/newview/llmediactrl.cpp,modified,1,1,2,"@@ -633,7 +633,7 @@ void LLMediaCtrl::navigateTo( std::string url_in, std::string mime_type, bool cl
+ void LLMediaCtrl::navigateToLocalPage( const std::string& subdir, const std::string& filename_in )
+ {
+ 	std::string filename(gDirUtilp->add(subdir, filename_in));
+-	std::string expanded_filename = gDirUtilp->findSkinnedFilename(LLDir::HTML, filename);
++	std::string expanded_filename = gDirUtilp->findSkinnedFilename(""html"", filename);
+ 
+ 	if (expanded_filename.empty())
+ 	{"
+secondlife/viewer,1420,14f56a7,indra/newview/llnotificationlistitem.cpp,modified,1,1,2,"@@ -594,7 +594,7 @@ LLSystemNotificationListItem::LLSystemNotificationListItem(const Params& p)
+     mSystemNotificationIcon(NULL),
+     mIsCaution(false)
+ {
+-    buildFromFile(""panel_notification_list_item.xml"", true);
++    buildFromFile(""panel_notification_list_item.xml"");
+     mIsCaution = p.notification_priority >= NOTIFICATION_PRIORITY_HIGH;
+     if (mIsCaution)
+     {"
+secondlife/viewer,1420,14f56a7,indra/newview/lltoast.cpp,modified,1,1,2,"@@ -119,7 +119,7 @@ LLToast::LLToast(const LLToast::Params& p)
+ {
+ 	mTimer.reset(new LLToastLifeTimer(this, p.lifetime_secs));
+ 
+-	buildFromFile(""panel_toast.xml"", true);
++	buildFromFile(""panel_toast.xml"");
+ 
+ 	setCanDrag(false);
+ "
+secondlife/viewer,1420,14f56a7,indra/newview/lltoastnotifypanel.cpp,modified,2,2,4,"@@ -266,9 +266,9 @@ void LLToastNotifyPanel::init( LLRect rect, bool show_images )
+ 	LLRect current_rect = getRect();
+ 
+ 	setXMLFilename("""");
+-	buildFromFile(""panel_notification.xml"", true);
++	buildFromFile(""panel_notification.xml"");
+ 
+-    if (rect != LLRect::null)
++    if(rect != LLRect::null)
+     {
+         this->setShape(rect);
+     }"
+secondlife/viewer,1420,14f56a7,indra/newview/lltoastscriptquestion.cpp,modified,1,1,2,"@@ -37,7 +37,7 @@ LLToastScriptQuestion::LLToastScriptQuestion(const LLNotificationPtr& notificati
+ :
+ LLToastPanel(notification)
+ {
+-	buildFromFile(""panel_script_question_toast.xml"", true);
++	buildFromFile(""panel_script_question_toast.xml"");
+ }
+ 
+ bool LLToastScriptQuestion::postBuild()"
+secondlife/viewer,1420,14f56a7,indra/newview/llviewertexturelist.cpp,modified,1,1,2,"@@ -416,7 +416,7 @@ LLViewerFetchedTexture* LLViewerTextureList::getImageFromFile(const std::string&
+ 		return NULL ;
+ 	}
+ 
+-	std::string full_path = gDirUtilp->findSkinnedFilename(LLDir::TEXTURES, filename);
++	std::string full_path = gDirUtilp->findSkinnedFilename(""textures"", filename);
+ 	if (full_path.empty())
+ 	{
+ 		LL_WARNS() << ""Failed to find local image file: "" << filename << LL_ENDL;"
+secondlife/viewer,1420,a920d81,indra/llxml/llxmlnode.cpp,modified,33,13,46,"@@ -137,19 +137,19 @@ LLXMLNode::LLXMLNode(const LLXMLNode& rhs) :
+ }
+ 
+ // returns a new copy of this node and all its children
+-LLXMLNodePtr LLXMLNode::deepCopy()
++LLXMLNodePtr LLXMLNode::deepCopy() const
+ {
+ 	LLXMLNodePtr newnode = LLXMLNodePtr(new LLXMLNode(*this));
+ 	if (mChildren.notNull())
+ 	{
+-		for (LLXMLChildList::iterator iter = mChildren->map.begin();
++		for (LLXMLChildList::const_iterator iter = mChildren->map.begin();
+ 			 iter != mChildren->map.end(); ++iter)	
+ 		{
+ 			LLXMLNodePtr temp_ptr_for_gcc(iter->second->deepCopy());
+ 			newnode->addChild(temp_ptr_for_gcc);
+ 		}
+ 	}
+-	for (LLXMLAttribList::iterator iter = mAttributes.begin();
++	for (LLXMLAttribList::const_iterator iter = mAttributes.begin();
+ 		 iter != mAttributes.end(); ++iter)
+ 	{
+ 		LLXMLNodePtr temp_ptr_for_gcc(iter->second->deepCopy());
+@@ -653,10 +653,12 @@ bool LLXMLNode::updateNode(
+ static std::map<std::string, LLXMLNodePtr> sXMLCache;
+ static LLSharedMutex sXMLCacheMutex;
+ 
+-static void saveToCache(const std::string& filename, LLXMLNodePtr& node)
++static void saveToCache(const std::string& filename, const LLXMLNodePtr& node)
+ {
++    LLXMLNodePtr node_copy = node->deepCopy();
++
+     LLExclusiveMutexLock lock(&sXMLCacheMutex);
+-    sXMLCache.emplace(filename, node.notNull() ? node->deepCopy() : nullptr);
++    sXMLCache.emplace(filename, node_copy);
+ }
+ 
+ static bool loadFromCache(const std::string& filename, LLXMLNodePtr& node)
+@@ -665,8 +667,8 @@ static bool loadFromCache(const std::string& filename, LLXMLNodePtr& node)
+     auto it = sXMLCache.find(filename);
+     if (it == sXMLCache.end())
+         return false;
+-    node = it->second.notNull() ? it->second->deepCopy() : nullptr;
+-    return node.notNull();
++    node = it->second->deepCopy();
++    return true;
+ }
+ 
+ // static
+@@ -676,33 +678,54 @@ bool LLXMLNode::parseFile(const std::string& filename, LLXMLNodePtr& node, LLXML
+     if (cacheable)
+     {
+         if (loadFromCache(filename, node))
++        {
++            node->setDefault(defaults_tree);
++            node->updateDefault();
+             return true;
++        }
+     }
+ 
+     std::string xml = gDirUtilp->getFileContents(filename);
+     if (xml.empty())
+     {
+         LL_WARNS(""XMLNode"") << ""no XML file: "" << filename << LL_ENDL;
+     }
+-    else if (parseBuffer(xml.data(), xml.size(), node, defaults_tree))
++    else if (parseBuffer(xml.data(), xml.size(), node))
+     {
+         if (cacheable)
+         {
+             saveToCache(filename, node);
+         }
++        node->setDefault(defaults_tree);
++        node->updateDefault();
+         return true;
+     }
+ 
+     node = nullptr;
+     return false;
+ }
+ 
++// static
++bool LLXMLNode::parseBuffer(
++    const char* buffer,
++    U32 length,
++    LLXMLNodePtr& node,
++    LLXMLNode* defaults)
++{
++    if (parseBuffer(buffer, length, node))
++    {
++        node->setDefault(defaults);
++        node->updateDefault();
++        return true;
++    }
++    return false;
++}
++
+ // static
+ bool LLXMLNode::parseBuffer(
+ 	const char* buffer,
+ 	U32 length,
+-	LLXMLNodePtr& node, 
+-	LLXMLNode* defaults)
++	LLXMLNodePtr& node)
+ {
+ 	// Init
+ 	XML_Parser my_parser = XML_ParserCreate(NULL);
+@@ -739,9 +762,6 @@ bool LLXMLNode::parseBuffer(
+ 
+ 	LLXMLNode *return_node = file_node->mChildren->map.begin()->second;
+ 
+-	return_node->setDefault(defaults);
+-	return_node->updateDefault();
+-
+ 	node = return_node;
+ 	return true;
+ }"
+secondlife/viewer,1420,a920d81,indra/llxml/llxmlnode.h,modified,10,6,16,"@@ -121,7 +121,7 @@ class LLXMLNode : public LLThreadSafeRefCount
+ 	LLXMLNode(const char* name, bool is_attribute);
+ 	LLXMLNode(LLStringTableEntry* name, bool is_attribute);
+ 	LLXMLNode(const LLXMLNode& rhs);
+-	LLXMLNodePtr deepCopy();
++	LLXMLNodePtr deepCopy() const;
+ 
+ 	bool isNull();
+ 
+@@ -135,11 +135,11 @@ class LLXMLNode : public LLThreadSafeRefCount
+ 		LLXMLNodePtr& node,
+ 		LLXMLNode* defaults_tree,
+ 		bool cacheable = false);
+-	static bool parseBuffer(
+-		const char* buffer,
+-		U32 length,
+-		LLXMLNodePtr& node,
+-		LLXMLNode* defaults);
++    static bool parseBuffer(
++        const char* buffer,
++        U32 length,
++        LLXMLNodePtr& node,
++        LLXMLNode* defaults);
+ 	static bool parseStream(
+ 		std::istream& str,
+ 		LLXMLNodePtr& node,
+@@ -290,6 +290,10 @@ class LLXMLNode : public LLThreadSafeRefCount
+ 
+ protected:
+ 	bool removeChild(LLXMLNode* child);
++    static bool parseBuffer(
++        const char* buffer,
++        U32 length,
++        LLXMLNodePtr& node);
+ 
+ public:
+ 	std::string mID;				// The ID attribute of this node"

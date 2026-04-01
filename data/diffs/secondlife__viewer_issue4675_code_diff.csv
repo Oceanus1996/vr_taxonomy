@@ -1,0 +1,187 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+secondlife/viewer,4675,c2ff7fa,indra/newview/llconversationview.cpp,modified,1,1,2,"@@ -543,7 +543,7 @@ void LLConversationViewSession::onCurrentVoiceSessionChanged(const LLUUID& sessi
+     {
+         bool old_value = mIsInActiveVoiceChannel;
+         mIsInActiveVoiceChannel = vmi->getUUID() == session_id;
+-        mCallIconLayoutPanel->setVisible(mIsInActiveVoiceChannel);
++        mCallIconLayoutPanel->setVisible(mIsInActiveVoiceChannel && LLVoiceChannel::isSuspended());
+         if (old_value != mIsInActiveVoiceChannel)
+         {
+             refresh();"
+secondlife/viewer,4675,c2ff7fa,indra/newview/llspeakingindicatormanager.cpp,modified,11,2,13,"@@ -200,8 +200,17 @@ void SpeakingIndicatorManager::cleanupSingleton()
+ 
+ void SpeakingIndicatorManager::sOnCurrentChannelChanged(const LLUUID& /*session_id*/)
+ {
+-    switchSpeakerIndicators(mSwitchedIndicatorsOn, false);
+-    mSwitchedIndicatorsOn.clear();
++    if (LLVoiceChannel::isSuspended())
++    {
++        switchSpeakerIndicators(mSwitchedIndicatorsOn, false);
++        mSwitchedIndicatorsOn.clear();
++    }
++    else
++    {
++        // Multiple onParticipantsChanged can arrive at the same time
++        // from different sources, might want to filter by some factor.
++        onParticipantsChanged();
++    }
+ }
+ 
+ void SpeakingIndicatorManager::onParticipantsChanged()"
+secondlife/viewer,4675,c2ff7fa,indra/newview/llvoicechannel.cpp,modified,3,1,4,"@@ -357,6 +357,8 @@ void LLVoiceChannel::suspend()
+     {
+         sSuspendedVoiceChannel = sCurrentVoiceChannel;
+         sSuspended = true;
++
++        sCurrentVoiceChannelChangedSignal(sSuspendedVoiceChannel->mSessionID);
+     }
+ }
+ 
+@@ -365,6 +367,7 @@ void LLVoiceChannel::resume()
+ {
+     if (sSuspended)
+     {
++        sSuspended = false; // needs to be before activate() so that observers will be able to read state
+         if (LLVoiceClient::getInstance()->voiceEnabled())
+         {
+             if (sSuspendedVoiceChannel)
+@@ -382,7 +385,6 @@ void LLVoiceChannel::resume()
+                 LLVoiceChannelProximal::getInstance()->activate();
+             }
+         }
+-        sSuspended = false;
+     }
+ }
+ "
+secondlife/viewer,4675,c2ff7fa,indra/newview/llvoicechannel.h,modified,1,0,1,"@@ -103,6 +103,7 @@ class LLVoiceChannel : public LLVoiceClientStatusObserver
+ 
+     static void suspend();
+     static void resume();
++    static bool isSuspended() { return sSuspended; }
+ 
+   protected:
+     virtual void setState(EState state);"
+secondlife/viewer,4675,3fd3b0f,indra/newview/llconversationview.cpp,modified,1,1,2,"@@ -543,7 +543,7 @@ void LLConversationViewSession::onCurrentVoiceSessionChanged(const LLUUID& sessi
+     {
+         bool old_value = mIsInActiveVoiceChannel;
+         mIsInActiveVoiceChannel = vmi->getUUID() == session_id;
+-        mCallIconLayoutPanel->setVisible(mIsInActiveVoiceChannel);
++        mCallIconLayoutPanel->setVisible(mIsInActiveVoiceChannel && !LLVoiceChannel::isSuspended());
+         if (old_value != mIsInActiveVoiceChannel)
+         {
+             refresh();"
+secondlife/viewer,4675,3fd3b0f,indra/newview/llspeakingindicatormanager.cpp,modified,11,2,13,"@@ -200,8 +200,17 @@ void SpeakingIndicatorManager::cleanupSingleton()
+ 
+ void SpeakingIndicatorManager::sOnCurrentChannelChanged(const LLUUID& /*session_id*/)
+ {
+-    switchSpeakerIndicators(mSwitchedIndicatorsOn, false);
+-    mSwitchedIndicatorsOn.clear();
++    if (LLVoiceChannel::isSuspended())
++    {
++        switchSpeakerIndicators(mSwitchedIndicatorsOn, false);
++        mSwitchedIndicatorsOn.clear();
++    }
++    else
++    {
++        // Multiple onParticipantsChanged can arrive at the same time
++        // from different sources, might want to filter by some factor.
++        onParticipantsChanged();
++    }
+ }
+ 
+ void SpeakingIndicatorManager::onParticipantsChanged()"
+secondlife/viewer,4675,3fd3b0f,indra/newview/llvoicechannel.cpp,modified,3,1,4,"@@ -357,6 +357,8 @@ void LLVoiceChannel::suspend()
+     {
+         sSuspendedVoiceChannel = sCurrentVoiceChannel;
+         sSuspended = true;
++
++        sCurrentVoiceChannelChangedSignal(sSuspendedVoiceChannel->mSessionID);
+     }
+ }
+ 
+@@ -365,6 +367,7 @@ void LLVoiceChannel::resume()
+ {
+     if (sSuspended)
+     {
++        sSuspended = false; // needs to be before activate() so that observers will be able to read state
+         if (LLVoiceClient::getInstance()->voiceEnabled())
+         {
+             if (sSuspendedVoiceChannel)
+@@ -382,7 +385,6 @@ void LLVoiceChannel::resume()
+                 LLVoiceChannelProximal::getInstance()->activate();
+             }
+         }
+-        sSuspended = false;
+     }
+ }
+ "
+secondlife/viewer,4675,3fd3b0f,indra/newview/llvoicechannel.h,modified,1,0,1,"@@ -103,6 +103,7 @@ class LLVoiceChannel : public LLVoiceClientStatusObserver
+ 
+     static void suspend();
+     static void resume();
++    static bool isSuspended() { return sSuspended; }
+ 
+   protected:
+     virtual void setState(EState state);"
+secondlife/viewer,4675,7ec9736,indra/newview/llconversationview.cpp,modified,1,1,2,"@@ -543,7 +543,7 @@ void LLConversationViewSession::onCurrentVoiceSessionChanged(const LLUUID& sessi
+     {
+         bool old_value = mIsInActiveVoiceChannel;
+         mIsInActiveVoiceChannel = vmi->getUUID() == session_id;
+-        mCallIconLayoutPanel->setVisible(mIsInActiveVoiceChannel);
++        mCallIconLayoutPanel->setVisible(mIsInActiveVoiceChannel && !LLVoiceChannel::isSuspended());
+         if (old_value != mIsInActiveVoiceChannel)
+         {
+             refresh();"
+secondlife/viewer,4675,7ec9736,indra/newview/llspeakingindicatormanager.cpp,modified,11,2,13,"@@ -200,8 +200,17 @@ void SpeakingIndicatorManager::cleanupSingleton()
+ 
+ void SpeakingIndicatorManager::sOnCurrentChannelChanged(const LLUUID& /*session_id*/)
+ {
+-    switchSpeakerIndicators(mSwitchedIndicatorsOn, false);
+-    mSwitchedIndicatorsOn.clear();
++    if (LLVoiceChannel::isSuspended())
++    {
++        switchSpeakerIndicators(mSwitchedIndicatorsOn, false);
++        mSwitchedIndicatorsOn.clear();
++    }
++    else
++    {
++        // Multiple onParticipantsChanged can arrive at the same time
++        // from different sources, might want to filter by some factor.
++        onParticipantsChanged();
++    }
+ }
+ 
+ void SpeakingIndicatorManager::onParticipantsChanged()"
+secondlife/viewer,4675,7ec9736,indra/newview/llvoicechannel.cpp,modified,3,1,4,"@@ -357,6 +357,8 @@ void LLVoiceChannel::suspend()
+     {
+         sSuspendedVoiceChannel = sCurrentVoiceChannel;
+         sSuspended = true;
++
++        sCurrentVoiceChannelChangedSignal(sSuspendedVoiceChannel->mSessionID);
+     }
+ }
+ 
+@@ -365,6 +367,7 @@ void LLVoiceChannel::resume()
+ {
+     if (sSuspended)
+     {
++        sSuspended = false; // needs to be before activate() so that observers will be able to read state
+         if (LLVoiceClient::getInstance()->voiceEnabled())
+         {
+             if (sSuspendedVoiceChannel)
+@@ -382,7 +385,6 @@ void LLVoiceChannel::resume()
+                 LLVoiceChannelProximal::getInstance()->activate();
+             }
+         }
+-        sSuspended = false;
+     }
+ }
+ "
+secondlife/viewer,4675,7ec9736,indra/newview/llvoicechannel.h,modified,1,0,1,"@@ -103,6 +103,7 @@ class LLVoiceChannel : public LLVoiceClientStatusObserver
+ 
+     static void suspend();
+     static void resume();
++    static bool isSuspended() { return sSuspended; }
+ 
+   protected:
+     virtual void setState(EState state);"

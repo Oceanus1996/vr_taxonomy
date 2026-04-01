@@ -1,0 +1,83 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+ashqal/MD360Player4Android,167,47ca7d4d798f7481754c4b41ee61ef00420abcc1,vrlib/src/main/java/com/asha/vrlib/MD360Program.java,modified,4,1,5,"@@ -95,14 +95,17 @@ public int getTextureCoordinateHandle() {
+         return mTextureCoordinateHandle;
+     }
+ 
+-    private static class FragmentShaderFactory{
++    private static class FragmentShaderFactory {
+ 
+         static String fs(Context context, int type){
+             int resId;
+             switch (type){
+                 case MDVRLibrary.ContentType.BITMAP:
+                     resId = R.raw.per_pixel_fragment_shader_bitmap;
+                     break;
++                case MDVRLibrary.ContentType.FBO:
++                    resId = R.raw.per_pixel_fragment_shader_bitmap_fbo;
++                    break;
+                 case MDVRLibrary.ContentType.VIDEO:
+                 default:
+                     resId = R.raw.per_pixel_fragment_shader;"
+ashqal/MD360Player4Android,167,47ca7d4d798f7481754c4b41ee61ef00420abcc1,vrlib/src/main/java/com/asha/vrlib/MDVRLibrary.java,modified,2,1,3,"@@ -691,9 +691,10 @@ private MDVRLibrary build(MDGLScreenWrapper screenWrapper){
+         }
+     }
+ 
+-    public interface ContentType{
++    public interface ContentType {
+         int VIDEO = 0;
+         int BITMAP = 1;
++        int FBO = 2;
+         int DEFAULT = VIDEO;
+     }
+ }"
+ashqal/MD360Player4Android,167,47ca7d4d798f7481754c4b41ee61ef00420abcc1,vrlib/src/main/java/com/asha/vrlib/plugins/MDBarrelDistortionLinePipe.java,modified,1,1,2,"@@ -50,7 +50,7 @@ public class MDBarrelDistortionLinePipe extends MDAbsLinePipe {
+     public MDBarrelDistortionLinePipe(DisplayModeManager displayModeManager) {
+         mDisplayModeManager = displayModeManager;
+         mConfiguration = displayModeManager.getBarrelDistortionConfig();
+-        mProgram = new MD360Program(MDVRLibrary.ContentType.BITMAP);
++        mProgram = new MD360Program(MDVRLibrary.ContentType.FBO);
+         mDirector = new MD360DirectorFactory.OrthogonalImpl().createDirector(0);
+         object3D = new MDBarrelDistortionMesh();
+         mDrawingCache = new MDDrawingCache();"
+ashqal/MD360Player4Android,167,47ca7d4d798f7481754c4b41ee61ef00420abcc1,vrlib/src/main/java/com/asha/vrlib/plugins/MDMultiFishEyePlugin.java,modified,1,1,2,"@@ -45,7 +45,7 @@ public class MDMultiFishEyePlugin extends MDAbsPlugin {
+     public MDMultiFishEyePlugin(MDMainPluginBuilder builder, float radius, MDDirection direction) {
+         mTexture = builder.getTexture();
+         mProgram = new MD360Program(builder.getContentType());
+-        mBitmapProgram = new MD360Program(MDVRLibrary.ContentType.BITMAP);
++        mBitmapProgram = new MD360Program(MDVRLibrary.ContentType.FBO);
+ 
+         mProjectionModeManager = builder.getProjectionModeManager();
+ "
+ashqal/MD360Player4Android,167,47ca7d4d798f7481754c4b41ee61ef00420abcc1,vrlib/src/main/res/raw/per_pixel_fragment_shader_bitmap.glsl,modified,4,8,12,"@@ -1,16 +1,12 @@
+-precision mediump float;       	// Set the default precision to medium. We don't need as high of a
+-								// precision in the fragment shader.
+-//uniform vec3 u_LightPos;       	// The position of the light in eye space.
++precision mediump float;
+ uniform sampler2D u_Texture;
+   
+-varying vec2 v_TexCoordinate;   // Interpolated texture coordinate per fragment.
++varying vec2 v_TexCoordinate;
+ vec2 m_TmpCoordinate;
+-  
+-// The entry point for our fragment shader.
++
+ void main()                    		
+ {
+     m_TmpCoordinate[0] = v_TexCoordinate[0];
+     m_TmpCoordinate[1] = 1. - v_TexCoordinate[1];
+     gl_FragColor =  texture2D(u_Texture, m_TmpCoordinate);
+-}                                                                     	
+-
++}
+\ No newline at end of file"
+ashqal/MD360Player4Android,167,47ca7d4d798f7481754c4b41ee61ef00420abcc1,vrlib/src/main/res/raw/per_pixel_fragment_shader_bitmap_fbo.glsl,added,9,0,9,"@@ -0,0 +1,9 @@
++precision mediump float;
++uniform sampler2D u_Texture;
++  
++varying vec2 v_TexCoordinate;
++
++void main()                    		
++{
++    gl_FragColor =  texture2D(u_Texture, v_TexCoordinate);
++}
+\ No newline at end of file"

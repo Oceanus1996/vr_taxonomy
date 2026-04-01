@@ -1,0 +1,174 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch,gpt_bug_detection
+vizorvr/patches,1506,e290a04,browser/scripts/ui-site.js,modified,6,0,6,"@@ -224,6 +224,8 @@ var siteUI = new function() {
+                     height: $homePlayerContainer.innerHeight()
+                 }
+             }
++
++			WebVRConfig.getContainerMeta = E2.app.calculateCanvasArea
+ 			onResize();
+ 		});
+ 
+@@ -287,6 +289,10 @@ var siteUI = new function() {
+         })
+ 	}
+ 
++	this.isFullScreen = function() {
++		return !!(document.mozFullScreenElement || document.webkitFullscreenElement)
++	}
++
+ 	this.isInIframe = function() {
+ 		try {
+ 			return window.self !== window.top;","{""has_bug"": true, ""bugs"": [{""line_start"": 4, ""line_end"": 4, ""description"": ""Using 'var' to declare 'msg' can lead to unexpected behavior due to hoisting. It should be declared with 'let' or 'const'."", ""buggy_code"": ""if (typeof msg === 'undefined') var msg = function(msg) {console.error(msg)};""}, {""line_start"": 176, ""line_end"": 176, ""description"": ""The condition checks if the body does not have the class 'layoutMobile', but it returns false, which may prevent the intended action. This could lead to a logic error."", ""buggy_code"": ""if (!$body.hasClass('layoutMobile')) return false;""}, {""line_start"": 209, ""line_end"": 210, ""description"": ""The variable '$window' is not defined in the provided code, which will lead to a reference error when trying to access its height."", ""buggy_code"": ""var teamY = $window.height();""}, {""line_start"": 220, ""line_end"": 220, ""description"": ""The function 'E2.app.canInitiateCameraMove' is set to return false, which may not be the intended behavior for the homepage player. This could lead to user experience issues."", ""buggy_code"": ""E2.app.canInitiateCameraMove = function(){return false};""}]}"
+vizorvr/patches,1506,e290a04,browser/scripts/ui/playerUI.js,modified,7,0,7,"@@ -452,7 +452,14 @@ VizorPlayerUI.prototype.suspendVRcamera = function() {
+ }
+ 
+ VizorPlayerUI.prototype.enableVRcamera = function() {
++	var that = this
+ 	this.vrCameraEnabled = true
++
++	E2.app.canInitiateCameraMove = function(e){
++		var isKeyboard = (e instanceof KeyboardEvent) && (e.target === document.body)
++		var isCanvas = (!isKeyboard) && E2.util.isCanvasInFocus(e)
++		return siteUI.isFullScreen() || that.vrCameraEnabled && (isKeyboard || isCanvas)
++	}
+ }
+ 
+ VizorPlayerUI.prototype.play = function() {","{""has_bug"": true, ""bugs"": [{""line_start"": 141, ""line_end"": 141, ""description"": ""Potential null reference issue if siteUI is not defined."", ""buggy_code"": ""if (siteUI.hasOrientationChange""}, {""line_start"": 162, ""line_end"": 162, ""description"": ""Off-by-one error in height calculation, may cause layout issues on mobile."", ""buggy_code"": ""$body.css({ height: (1.1*h) + 'px'  // allow dragging the body to hide the top bar""}, {""line_start"": 168, ""line_end"": 168, ""description"": ""Potential resource leak if the timeout is not cleared, leading to multiple executions."", ""buggy_code"": ""setTimeout(function () {""}, {""line_start"": 180, ""line_end"": 180, ""description"": ""Incorrect condition handling, may not trigger the expected behavior in iframe."", ""buggy_code"": ""E2.core.webVRManager.onFSClick_()""}]}"
+vizorvr/patches,1506,e290a04,browser/vendor/borismus/webvr-manager.js,modified,27,7,34,"@@ -565,6 +565,18 @@ WebVRManager.prototype.onBackClick_ = function() {
+ };
+ 
+ WebVRManager.prototype.getContainerDimensions = function() {	  // gm #896
++
++  // vizor.io gm #896
++  if (WebVRConfig && WebVRConfig.getContainerMeta) {
++     var meta = WebVRConfig.getContainerMeta()
++     var ret = {
++       width:   meta.width,
++       height:  meta.height
++     }
++    return ret
++  }
++  // end vizor.io gm #896
++
+ 	var container, width, height;
+ 	if (this.renderer.domElement) {
+ 	  container = this.renderer.domElement.parentNode;
+@@ -585,22 +597,30 @@ WebVRManager.prototype.getContainerDimensions = function() {	  // gm #896
+ 	}
+ }
+ 
++// vizor.io gm #896
++
+ WebVRManager.prototype.resizeIfNeeded_ = function(camera) {
+   // Only resize the canvas if it needs to be resized.
+   var size = this.renderer.getSize();
+-  if (size.width != window.innerWidth || size.height != window.innerHeight) {
+-    this.resize_();
++
++  var d = this.getContainerDimensions();
++  if ( size.width != d.width || size.height != d.height) {
++    this.resize_(d, camera);
+   }
+ };
+ 
+-WebVRManager.prototype.resize_ = function() {
+-  this.effect.setSize(window.innerWidth, window.innerHeight);
+-  if (this.camera) {
+-    this.camera.aspect = window.innerWidth / window.innerHeight;
+-    this.camera.updateProjectionMatrix();
++WebVRManager.prototype.resize_ = function(dimensions, camera) {
++  dimensions = dimensions || this.getContainerDimensions();
++  this.effect.setSize(dimensions.width, dimensions.height);
++  camera = camera || this.camera
++  if (camera) {
++    camera.aspect = dimensions.width / dimensions.height;
++    camera.updateProjectionMatrix();
+   }
+ };
+ 
++// end vizor.io gm #896
++
+ WebVRManager.prototype.requestFullscreen_ = function() {
+   var canvas = this.renderer.domElement;
+   if (canvas.requestFullscreen) {","{""has_bug"": true, ""bugs"": [{""line_start"": 61, ""line_end"": 61, ""description"": ""Missing semicolon at the end of the line, which can lead to unexpected behavior in JavaScript."", ""buggy_code"": ""s.width = '24px'""}, {""line_start"": 91, ""line_end"": 91, ""description"": ""Potential null/undefined reference issue if WebVRConfig is not defined, leading to a runtime error."", ""buggy_code"": ""isVRCompatible = isVRCompatible || WebVRConfig.FORCE_ENABLE_VR;""}]}"
+vizorvr/patches,1506,e290a04,browser/vendor/borismus/webvr-polyfill.js,modified,34,4,38,"@@ -4467,6 +4467,12 @@ MouseKeyboardVRDisplay.prototype.getImmediatePose = function() {
+ };
+ 
+ MouseKeyboardVRDisplay.prototype.onKeyDown_ = function(e) {
++
++  // vizor.io gm #1504
++  if (E2 && E2.app && !E2.app.canInitiateCameraMove(e))
++      return true
++  // end vizor.io gm #1504
++
+   // Track WASD and arrow keys.
+   if (e.keyCode == 38) { // Up key.
+     this.animatePhi_(this.phi_ + KEY_SPEED);
+@@ -4515,6 +4521,11 @@ MouseKeyboardVRDisplay.prototype.animateKeyTransitions_ = function(angleName, ta
+ };
+ 
+ MouseKeyboardVRDisplay.prototype.onMouseDown_ = function(e) {
++  // vizor.io gm #1504
++  if (E2 && E2.app &&  !E2.app.canInitiateCameraMove(e))
++      return true
++  // end vizor.io gm #1504
++
+   this.rotateStart_.set(e.clientX, e.clientY);
+   this.isDragging_ = true;
+ };
+@@ -4536,9 +4547,22 @@ MouseKeyboardVRDisplay.prototype.onMouseMove_ = function(e) {
+   this.rotateDelta_.subVectors(this.rotateEnd_, this.rotateStart_);
+   this.rotateStart_.copy(this.rotateEnd_);
+ 
++  // vizor.io gm #896
++  var element = document.body,
++      height = element.clientHeight,
++      width = element.clientWidth
++
++  if (WebVRConfig && WebVRConfig.getContainerMeta) {
++     var meta = WebVRConfig.getContainerMeta()
++     height  = meta.height
++     width   = meta.width
++  }
++
+   // Keep track of the cumulative euler angles.
+-  this.phi_ += 2 * Math.PI * this.rotateDelta_.y / screen.height * MOUSE_SPEED_Y;
+-  this.theta_ += 2 * Math.PI * this.rotateDelta_.x / screen.width * MOUSE_SPEED_X;
++  this.phi_ += 2 * Math.PI * this.rotateDelta_.y / height * MOUSE_SPEED_Y;
++  this.theta_ += 2 * Math.PI * this.rotateDelta_.x / width * MOUSE_SPEED_X;
++
++  // end vizor.io gm #896
+ 
+   // Prevent looking too far up or down.
+   this.phi_ = Util.clamp(this.phi_, -Math.PI/2, Math.PI/2);
+@@ -5014,7 +5038,7 @@ FusionPoseSensor.prototype.onDeviceMotionChange_ = function(deviceMotion) {
+   var deltaS = timestampS - this.previousTimestampS;
+   if (deltaS <= Util.MIN_TIMESTEP || deltaS > Util.MAX_TIMESTEP) {
+     console.warn('Invalid timestamps detected. Time step between successive ' +
+-                 'gyroscope sensor samples is very small or not monotonic');
++                 'gyroscope sensor samples is very small or not monotonic ');
+     this.previousTimestampS = timestampS;
+     return;
+   }
+@@ -7500,6 +7524,12 @@ TouchPanner.prototype.resetSensor = function() {
+ };
+ 
+ TouchPanner.prototype.onTouchStart_ = function(e) {
++
++    // vizor.io gm #1504
++    if (E2 && E2.app &&  !E2.app.canInitiateCameraMove(e))
++        return
++    // end vizor.io gm #1504
++
+   // Only respond if there is exactly one touch.
+   if (e.touches.length != 1) {
+     return;
+@@ -7548,7 +7578,7 @@ module.exports = TouchPanner;
+  */
+ var Util = window.Util || {};
+ 
+-Util.MIN_TIMESTEP = 0.001;
++Util.MIN_TIMESTEP = 0.0008;
+ Util.MAX_TIMESTEP = 1;
+ 
+ Util.base64 = function(mimeType, base64) {","{""has_bug"": true, ""bugs"": [{""line_start"": 30, ""line_end"": 30, ""description"": ""Off-by-one error in the while loop condition. The loop should iterate until 'len' is greater than 0, but it decrements 'len' without checking if it has reached 0, which can lead to an infinite loop if 'queue' is not properly managed."", ""buggy_code"": ""while(len) {""}, {""line_start"": 35, ""line_end"": 35, ""description"": ""Potential null reference issue. 'currentQueue' can be null if 'queue' is empty, leading to a runtime error when trying to access 'currentQueue[queueIndex].run()'."", ""buggy_code"": ""currentQueue[queueIndex].run();""}, {""line_start"": 39, ""line_end"": 39, ""description"": ""Logic error. The length of 'queue' is updated after processing the current queue, which can lead to skipping some items if new items are added to the queue during processing."", ""buggy_code"": ""len = queue.length;""}]}"

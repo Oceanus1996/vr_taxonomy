@@ -1,0 +1,126 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vrcx-team/VRCX,1230,a0cbf3807bfc76020f433b57ca6a8bdc2052fe44,src/app.js,modified,3,3,6,"@@ -13664,15 +13664,15 @@ console.log(`isLinux: ${LINUX}`);
+             menuActiveIndex: this.menuActiveIndex,
+             gameLogTable: this.gameLogTable,
+             shiftHeld: this.shiftHeld,
+-            hideTooltips: this.hideTooltips
++            hideTooltips: this.hideTooltips,
++            gameLogIsFriend: this.gameLogIsFriend,
++            gameLogIsFavorite: this.gameLogIsFavorite
+         };
+     };
+ 
+     $app.computed.gameLogTabEvent = function () {
+         return {
+             gameLogTableLookup: this.gameLogTableLookup,
+-            gameLogIsFriend: this.gameLogIsFriend,
+-            gameLogIsFavorite: this.gameLogIsFavorite,
+             lookupUser: this.lookupUser,
+             updateGameLogSessionTable: (val) =>
+                 (this.gameLogSessionTable = val),"
+vrcx-team/VRCX,1230,a0cbf3807bfc76020f433b57ca6a8bdc2052fe44,src/components/dialogs/ChooseFavoriteGroupDialog.vue,modified,4,4,8,"@@ -167,16 +167,16 @@
+                     });
+             },
+             addLocalWorldFavorite(...args) {
+-                this.$emit('add-local-world-favorite', ...args);
++                this.$emit('addLocalWorldFavorite', ...args);
+             },
+             removeLocalWorldFavorite(...args) {
+-                this.$emit('remove-local-world-favorite', ...args);
++                this.$emit('removeLocalWorldFavorite', ...args);
+             },
+             addLocalAvatarFavorite(...args) {
+-                this.$emit('add-local-avatar-favorite', ...args);
++                this.$emit('addLocalAvatarFavorite', ...args);
+             },
+             removeLocalAvatarFavorite(...args) {
+-                this.$emit('remove-local-avatar-favorite', ...args);
++                this.$emit('removeLocalAvatarFavorite', ...args);
+             },
+             deleteFavoriteNoConfirm(...args) {
+                 this.$emit('deleteFavoriteNoConfirm', ...args);"
+vrcx-team/VRCX,1230,a0cbf3807bfc76020f433b57ca6a8bdc2052fe44,src/views/FriendLog/FriendLog.vue,modified,1,1,2,"@@ -1,5 +1,5 @@
+ <template>
+-    <div v-if=""menuActiveIndex === 'friendLog'"" class=""x-container"">
++    <div v-show=""menuActiveIndex === 'friendLog'"" class=""x-container"">
+         <data-tables v-bind=""friendLogTable"">
+             <template #tool>
+                 <div style=""margin: 0 0 10px; display: flex; align-items: center"">"
+vrcx-team/VRCX,1230,a0cbf3807bfc76020f433b57ca6a8bdc2052fe44,src/views/GameLog/GameLog.vue,modified,8,8,16,"@@ -225,6 +225,14 @@
+         shiftHeld: {
+             type: Boolean,
+             default: false
++        },
++        gameLogIsFriend: {
++            type: Function,
++            default: () => () => false
++        },
++        gameLogIsFavorite: {
++            type: Function,
++            default: () => () => false
+         }
+     });
+ 
+@@ -241,14 +249,6 @@
+         emit('gameLogTableLookup');
+     }
+ 
+-    function gameLogIsFriend(row) {
+-        emit('gameLogIsFriend', row);
+-    }
+-
+-    function gameLogIsFavorite(row) {
+-        emit('gameLogIsFavorite', row);
+-    }
+-
+     function lookupUser(ref) {
+         emit('lookupUser', ref);
+     }"
+vrcx-team/VRCX,1230,a0cbf3807bfc76020f433b57ca6a8bdc2052fe44,src/views/Moderation/Moderation.vue,modified,1,1,2,"@@ -1,5 +1,5 @@
+ <template>
+-    <div class=""x-container"" v-if=""menuActiveIndex === 'moderation'"">
++    <div v-show=""menuActiveIndex === 'moderation'"" class=""x-container"">
+         <data-tables
+             :data=""tableData.data""
+             :pageSize=""tableData.pageSize"""
+vrcx-team/VRCX,1230,a0cbf3807bfc76020f433b57ca6a8bdc2052fe44,src/views/Notifications/Notification.vue,modified,1,1,2,"@@ -1,5 +1,5 @@
+ <template>
+-    <div v-if=""menuActiveIndex === 'notification'"" v-loading=""API.isNotificationsLoading"" class=""x-container"">
++    <div v-show=""menuActiveIndex === 'notification'"" v-loading=""API.isNotificationsLoading"" class=""x-container"">
+         <data-tables v-bind=""notificationTable"" ref=""notificationTableRef"" class=""notification-table"">
+             <template #tool>
+                 <div style=""margin: 0 0 10px; display: flex; align-items: center"">"
+vrcx-team/VRCX,1230,a0cbf3807bfc76020f433b57ca6a8bdc2052fe44,src/views/PlayerList/PlayerList.vue,modified,4,4,8,"@@ -1,5 +1,5 @@
+ <template>
+-    <div v-if=""menuActiveIndex === 'playerList'"" class=""x-container"" style=""padding-top: 5px"">
++    <div v-show=""menuActiveIndex === 'playerList'"" class=""x-container"" style=""padding-top: 5px"">
+         <div style=""display: flex; flex-direction: column; height: 100%"">
+             <div v-if=""currentInstanceWorld.ref.id"" style=""display: flex"">
+                 <el-popover placement=""right"" width=""500px"" trigger=""click"" style=""height: 120px"">
+@@ -776,8 +776,8 @@
+                         <template #default=""scope"">
+                             <span
+                                 class=""name""
+-                                :class=""scope.row.ref.trustClass""
+-                                v-text=""scope.row.ref.trustLevel""></span>
++                                :class=""scope.row.ref.$trustClass""
++                                v-text=""scope.row.ref.$trustLevel""></span>
+                         </template>
+                     </el-table-column>
+                     <el-table-column :label=""t('table.playerList.language')"" width=""100"" prop=""ref.$languages"">
+@@ -875,7 +875,7 @@
+         },
+         photonEventTableTypeFilter: {
+             type: Array,
+-            default: []
++            default: () => []
+         },
+         photonEventTableTypeFilterList: {
+             type: Array,"
+vrcx-team/VRCX,1230,a0cbf3807bfc76020f433b57ca6a8bdc2052fe44,src/views/Search/Search.vue,modified,1,1,2,"@@ -1,5 +1,5 @@
+ <template>
+-    <div v-if=""menuActiveIndex === 'search'"" class=""x-container"">
++    <div v-show=""menuActiveIndex === 'search'"" class=""x-container"">
+         <div style=""margin: 0 0 10px; display: flex; align-items: center"">
+             <el-input
+                 :value=""searchText"""

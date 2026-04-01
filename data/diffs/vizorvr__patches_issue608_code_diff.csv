@@ -1,0 +1,377 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vizorvr/patches,608,f7cd736,browser/plugins/three_material_modifier.plugin.js,modified,4,4,8,"@@ -65,9 +65,7 @@
+ 			E2.app.graphApi.removeSlot(that.node.parent_graph, that.node, suid)
+ 		})
+ 
+-		layout.append(removeButton)
+-		layout.append(make('br'))
+-		layout.append(addButton)
++		layout.append(removeButton, addButton)
+ 
+ 		return layout
+ 	}
+@@ -161,12 +159,14 @@
+ 
+ 	ThreeMaterialModifier.prototype.adjustMaterialSlots = function() {
+ 		var slots = this.dynInputs = this.node.getDynamicInputSlots()
++		var renamed = false;
+ 		for (var i = 0, len = slots.length; i < len; i++) {
+-			this.node.rename_slot(
++			renamed = this.node.rename_slot(
+ 				slots[i].type, 
+ 				slots[i].uid,
+ 				i < this.materialNames.length ? this.materialNames[i] : ('input ' + i))
+ 		}
++		return renamed;
+ 	}
+ 
+ })()
+\ No newline at end of file"
+vizorvr/patches,608,f7cd736,browser/plugins/three_material_shader.plugin.js,modified,1,3,4,"@@ -122,9 +122,7 @@
+ 			createEditor('pixel', 'ps_src')
+ 		})
+ 
+-		layout.append(vertexButton)
+-		layout.append(make('br'))
+-		layout.append(pixelButton)
++		layout.append(vertexButton, pixelButton)
+ 
+ 		return layout
+ 	}"
+vizorvr/patches,608,f7cd736,browser/scripts/application.js,modified,11,11,22,"@@ -89,7 +89,10 @@ Application.prototype.offsetToCanvasCoord = function(ofs) {
+ 
+ Application.prototype.getSlotPosition = function(node, slot_div, type, result) {
+ 	var area = node.open ? slot_div : node.ui.dom;
+-	var o = this.offsetToCanvasCoord(area.offset());
++	if (!area) return false;
++	var areaOffset = area.offset();
++	if (!areaOffset) return false;
++	var o = this.offsetToCanvasCoord(areaOffset);
+ 
+ 	result[0] = Math.round(type === E2.slot_type.input ? o[0] : o[0] + area.width() + (node.open ? 0 : 5));
+ 	result[1] = Math.round(o[1] + (area.height() / 2));
+@@ -105,16 +108,10 @@ Application.prototype.instantiatePlugin = function(id, position) {
+ 	function createPlugin(name) {
+ 		var activeGraph = E2.core.active_graph
+ 
+-		console.log('that', that.scrollOffset);
+-		console.log('parent', parentOffset);
+-		console.log('position', position);
+-
+ 		var newX = Math.floor(position[0] + that.scrollOffset[0]);
+ 		var newY = Math.floor(position[1] + that.scrollOffset[1]);
+ 		var node = new Node(activeGraph, id, newX, newY);
+ 
+-		console.log('xy', newX, newY);
+-
+ 		if (name) { // is graph?
+ 			node.plugin.setGraph(new Graph(E2.core, activeGraph))
+ 			node.title = name
+@@ -626,13 +623,16 @@ Application.prototype.clearSelection = function() {
+ 
+ }
+ 
+-Application.prototype.redrawConnection = function(connection) {
+-	var gsp = this.getSlotPosition.bind(this);
++Application.prototype.redrawConnection = function(connection) {	/* @TODO: rename this method */
+ 	var cn = connection
++	if (!cn.ui) {
++		console.warn('redrawConnection but no ui for ' + cn.uid);
++		return;
++	}
+ 	var cui = cn.ui
+ 
+-	gsp(cn.src_node, cui.src_slot_div, E2.slot_type.output, cui.src_pos);
+-	gsp(cn.dst_node, cui.dst_slot_div, E2.slot_type.input, cui.dst_pos);
++	this.getSlotPosition(cn.src_node, cui.src_slot_div, E2.slot_type.output, cui.src_pos);
++	this.getSlotPosition(cn.dst_node, cui.dst_slot_div, E2.slot_type.input, cui.dst_pos);
+ }
+ 
+ Application.prototype.onCanvasMouseDown = function(e) {"
+vizorvr/patches,608,f7cd736,browser/scripts/contextMenu.js,modified,12,7,19,"@@ -81,7 +81,7 @@ Menu.prototype.create = function(parent, position, is_root)
+ 			li.mousedown(function(self, item) { return function(e)
+ 			{
+ 				self.cm.hide();
+-				self.callback(item.icon, self.cm.pos);
++				self.callback(item.icon, self.cm.called_pos);
+ 				e.stopPropagation();
+ 				return false;
+ 			}}(this, item));
+@@ -149,18 +149,23 @@ Menu.prototype.destroy = function()
+ function ContextMenu(parent, items) {
+ 	EventEmitter.call(this)
+ 	var that = this;
+-	
++
++	this.pos = [0, 0];
++	this.called_pos = [0,0];
++
+ 	this.items = items;
+ 	this.callback = function(icon, pos) {
+-		that.emit('created', icon, pos)
++		that.emit('created', icon, that.called_pos)
+ 	};
+-	this.pos = [0, 0];
++
+ 	
+ 	$(document).bind('contextmenu', function(e) {
+ 		if(e.target.id !== 'canvas')
+ 			return true;
+-		
+-		that.show([e.pageX, e.pageY]);		// THIS SHOWS THE MENU AT PAGEX/PAGEY
++
++		that.pos = [e.pageX, e.pageY];
++		that.called_pos = [e.offsetX, e.offsetY];	// remembers the offset in the canvas for creating the plugin later
++		that.show(that.pos);						// shows the menu as before
+ 		return false;
+ 	})
+ 
+@@ -174,7 +179,7 @@ ContextMenu.prototype = Object.create(EventEmitter.prototype)
+ 
+ ContextMenu.prototype.show = function(pos) {
+ 	this.pos = pos;
+-	this.hide();	
++	this.hide();
+ 	this.menu = new Menu(this, this.items, this.callback);
+ 	this.menu.create(null, pos, true);
+ }"
+vizorvr/patches,608,f7cd736,browser/scripts/node-ui.js,modified,53,21,74,"@@ -24,7 +24,7 @@ function NodeUI(parent_node, x, y, z) {
+ 	this._destroying = false;
+ 	this._destroyed = false;
+ 	this.flags = {
+-		set				: false,
++		_set				: false,
+ 		has_subgraph	: false,
+ 		has_plugin_ui 	: false,
+ 		has_inputs 		: false,
+@@ -194,8 +194,14 @@ function NodeUI(parent_node, x, y, z) {
+ 		E2.app.onNodeDragStopped.bind(E2.app, parent_node))
+ 
+ 	this.update();	// place in position;
+-//	this.parent_node.addListener('slotAdded', this.redrawSlots.bind(this));
+-//	this.parent_node.addListener('slotRemoved', this.redrawSlots.bind(this));
++	this.parent_node.on('slotAdded', function(slot){
++		this.setCssClass();	// resets this.flags
++		this.redrawSlots();
++	}.bind(this));
++	this.parent_node.on('slotRemoved', function(slot){
++		this.setCssClass();
++		this.redrawSlots();
++	}.bind(this));
+ 
+ }
+ 
+@@ -282,6 +288,7 @@ NodeUI.prototype.isSelected = function() { return !!this.selected; };
+ 
+ NodeUI.prototype.setCssClass = function() {
+ 	var $dom = this.dom;
++	var flags = this.getPluginUIFlags(true);
+ 
+ 	if (this.canDisplayInline()) {
+ 		$dom.removeClass('p_expand').removeClass('p_collapse').addClass('p_inline');
+@@ -302,10 +309,10 @@ NodeUI.prototype.setCssClass = function() {
+ 			$j.removeClass(className);
+ 		return $j
+ 	};
+-	classIf(this.hasInputs(), 'p_has_ins');
+-	classIf(this.hasOutputs(), 'p_has_outs');
+-	classIf(this.hasSingleInputOnly(), 'p_1in');
+-	classIf(this.hasSingleOutputOnly(), 'p_1out');
++	classIf(flags.has_inputs, 'p_has_ins');
++	classIf(flags.has_outputs, 'p_has_outs');
++	classIf(flags.single_in, 'p_1in');
++	classIf(flags.single_out, 'p_1out');
+ 	classIf(this.canDisplayOutputInHeader(), 'p_header_out');
+ 	classIf(this.canDisplayInputInHeader(), 'p_header_in');
+ 	classIf(this.isSelected(), 'p_selected');
+@@ -320,8 +327,8 @@ NodeUI.prototype.setCssClass = function() {
+ 
+ NodeUI.prototype.getPluginUIFlags = function(reset) {
+ 	if (typeof reset === 'undefined') reset = false;
+-	if (reset) this.flags.set = false;
+-	if (this.flags.set) return this.flags;
++	if (reset) this.flags._set = false;
++	if (this.flags._set) return this.flags;
+ 	this.flags.has_subgraph 	= this.hasSubgraph();
+ 	this.flags.has_plugin_ui 	= this.hasPluginUI();
+ 	this.flags.has_inputs 		= this.hasInputs();
+@@ -331,7 +338,7 @@ NodeUI.prototype.getPluginUIFlags = function(reset) {
+ 	this.flags.has_edit 		= this.hasEditButton();
+ 	this.flags.single_in 		= this.hasSingleInputOnly();
+ 	this.flags.single_out 		= this.hasSingleOutputOnly();
+-	this.flags.set = true;
++	this.flags._set = true;
+ 	return this.flags;
+ };
+ 
+@@ -540,7 +547,7 @@ NodeUI.prototype.showRenameControl = function() {
+ 
+ 				if (name) {
+ 					E2.app.graphApi.renameNode(E2.core.active_graph, node, name);
+-					that.setCssClass();	// @todo remove call once nodeRenamed handler works
++					that.redrawActiveGraph();	// @todo remove call once nodeRenamed handler works
+ 				}
+ 
+ 				input.remove();
+@@ -735,8 +742,8 @@ NodeUI.prototype.create_slot = function(container, s, type) {
+ 	var nid = this.nid;
+ 
+ 	var is_input = (type === E2.slot_type.input);
+-	var is_dynamic = (typeof s.uid != 'undefined')
+-	var is_connected = (typeof s.is_connected != 'undefined') && s.is_connected;
++	var is_dynamic = (typeof s.uid !== 'undefined')
++	var is_connected = (typeof s.is_connected !== 'undefined') && s.is_connected;
+ 
+ 	var sid;
+ 	if (is_dynamic)
+@@ -751,16 +758,15 @@ NodeUI.prototype.create_slot = function(container, s, type) {
+ 	if (is_connected) $div.addClass('p_connected');
+ 
+ 	var $status = make('span');	// contains the two svg-s, on and off, loaded from sprite already in the document.
+-	$status.addClass('status');
+-	$status.append(NodeUI.makeSpriteSVG('vp-port-connected', 'p_conn_status p_on'));
+-	$status.append(NodeUI.makeSpriteSVG('vp-port-unconnected', 'p_conn_status p_off'));
++	var $label = make('label').html(s.name);
+ 	if (is_input) {
+-		$div.append($status);
+-		$div.append('<label>'+ s.name +'</label>');
++		$div.append($status, $label);
+ 	} else {
+-		$div.append('<label>'+ s.name +'</label>');
+-		$div.append($status);
++		$div.append($label, $status);
+ 	}
++	$status.addClass('status');
++	$status.append(NodeUI.makeSpriteSVG('vp-port-connected', 'p_conn_status p_on'));
++	$status.append(NodeUI.makeSpriteSVG('vp-port-unconnected', 'p_conn_status p_off'));
+ 
+ 	container.append($div);
+ 	$div.mouseenter(E2.app.onSlotEntered.bind(E2.app, parent_node, s, $div));
+@@ -775,16 +781,38 @@ NodeUI.prototype.create_slot = function(container, s, type) {
+ 
+ 	$div.attr('alt', altSid);
+ 
++	var suid = s.uid || '';
+ 	// some more metadata
+ 	var is_dyn = is_dynamic.toString();
+ 	$div.data('nid', this.nid).attr('data-nid', this.nid);
++	$div.data('sid', suid).attr('data-sid', suid);
+ 	$div.data('dyn', is_dyn).attr('data-dyn', is_dyn);
+ 	$div.data('type', type).attr('data-type', type);
+ 	this.setupTooltips($div);
+ 
+ 	return $div;
+ };
+ 
++NodeUI.prototype.renameSlot = function(slot, name, suid, slot_type) {
++	if (!slot) return false;	// don't know what we're doing
++
++	var is_inp = slot.type === E2.slot_type.input;
++	var seek = (is_inp) ? [this.input_col, this.inline_in] : [this.output_col, this.inline_out];
++
++	var did_rename = false;
++	seek.forEach(function($j){
++		var slots = $j.find('div.p_slot');
++		slots.filter(function(){
++			return (jQuery(this).data('sid') === slot.uid);
++		})
++		.each(function(){
++			jQuery(this).find('label').html(name);
++			did_rename = true;
++		});
++	});
++
++	return did_rename;
++};
+ 
+ NodeUI.prototype.render_slots = function(container, slots, type) {
+ 	for(var i = 0, len = slots.length; i < len; i++)
+@@ -818,9 +846,13 @@ NodeUI.redrawActiveGraph = function() {
+ 	E2.core.active_graph.connections.forEach(function(c){
+ 		if (c.ui) {
+ 			c.ui.resolve_slot_divs(false);
++			E2.app.redrawConnection(c);
+ 			changed = true;
+ 		}
+ 	});
+-	if (changed) E2.app.updateCanvas(true);
++
++	if (changed) {
++		E2.app.updateCanvas(true);
++	}
+ 	return changed;
+ }
+\ No newline at end of file"
+vizorvr/patches,608,f7cd736,browser/scripts/node.js,modified,3,28,31,"@@ -175,16 +175,6 @@ Node.prototype.add_slot = function(slot_type, def) {
+ 		slots[i].index = i
+ 	}
+ 
+-	if (this.ui) {
+-		// TODO refactor: remove ui link - emit an event from NodeStore instead
+-		this.ui.redrawSlots();
+-		this.inputs.concat(this.outputs).map(function(c) {
+-			c.ui.resolve_slot_divs()
+-		})
+-		E2.app.updateCanvas(true)
+-		this.update_connections();
+-	}
+-
+ 	this.emit('slotAdded', def)
+ 	
+ 	return def.uid;
+@@ -236,15 +226,6 @@ Node.prototype.remove_slot = function(slot_type, suid) {
+ 	
+ 		if (s === slot) {
+ 			pending.push(c);
+-			
+-			if (c.ui)
+-				canvas_dirty = true;
+-		} else if(s.uid !== undefined && s.index >= idx) {
+-			if (c.ui) {
+-				c.ui.resolve_slot_divs()
+-				E2.app.redrawConnection(c)
+-				canvas_dirty = true;
+-			}
+ 		}
+ 	}
+ 	
+@@ -254,8 +235,6 @@ Node.prototype.remove_slot = function(slot_type, suid) {
+ 		
+ 	this.emit('slotRemoved', slot)
+ 
+-	if(canvas_dirty)
+-		E2.app.updateCanvas(true);
+ };
+ 
+ Node.prototype.findSlotByUid = function(suid) {
+@@ -287,19 +266,15 @@ Node.prototype.find_dynamic_slot = function(slot_type, suid) {
+ }
+ 
+ Node.prototype.rename_slot = function(slot_type, suid, name) {
+-	var is_inp = slot_type === E2.slot_type.input;
+ 	var slot = this.find_dynamic_slot(slot_type, suid);
+-
++	var renamed = false;
+ 	if (slot) {
+ 		slot.name = name;
+-
+ 		if (this.ui) {
+-			this.ui.dom.find('#n' + this.uid + 
+-				(is_inp ? 'di' : 'do') + 
+-				slot.uid)
+-			.text(name);
++			renamed = this.ui.renameSlot(slot, name, suid, slot_type);
+ 		}
+ 	}
++	return renamed;
+ }
+ 	
+ Node.prototype.change_slot_datatype = function(slot_type, suid, dt, arrayness) {"
+vizorvr/patches,608,f7cd736,less/patch_editor.less,modified,1,0,1,"@@ -249,6 +249,7 @@ div.graph-node {
+ 			}
+ 		  	label {
+ 			  font-size: @vp-node-slot-text-size;
++			  font-weight: 600;
+ 			  padding: 5px;
+ 			  vertical-align: middle;
+ 			  display:table-cell;"

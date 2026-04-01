@@ -1,0 +1,956 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+danielesteban/blocks,4,81ee8b0,client/core/peers.js,modified,13,3,16,"@@ -35,12 +35,12 @@ class Peers extends Object3D {
+     });
+   }
+ 
+-  broadcast({ controllers, head }) {
++  broadcast({ controllers, head, skin }) {
+     const { peers } = this;
+     const hands = controllers
+       .filter(({ hand }) => (!!hand))
+       .sort(({ hand: { handedness: a } }, { hand: { handedness: b } }) => b.localeCompare(a));
+-    const payload = new Float32Array([
++    const update = new Float32Array([
+       ...head.position.toArray(),
+       ...head.quaternion.toArray(),
+       ...(hands.length === 2 ? (
+@@ -54,13 +54,23 @@ class Peers extends Object3D {
+         }, [])
+       ) : []),
+     ]);
++    const payload = new Uint8Array(1 + update.byteLength);
++    payload[0] = 0x01;
++    payload.set(new Uint8Array(update.buffer), 1);
+     peers.forEach(({ connection }) => {
+       if (
+         connection
+         && connection._channel
+         && connection._channel.readyState === 'open'
+       ) {
+         connection.send(payload);
++        if (!connection.hasSentSkin) {
++          connection.hasSentSkin = true;
++          const encoded = (new TextEncoder()).encode(skin);
++          const payload = new Uint8Array(1 + encoded.length);
++          payload.set(encoded, 1);
++          connection.send(payload);
++        }
+       }
+     });
+   }
+@@ -77,7 +87,7 @@ class Peers extends Object3D {
+     });
+     const peer = new Peer({ peer: id, connection, listener });
+     connection.on('error', () => {});
+-    connection.on('data', peer.onUpdate.bind(peer));
++    connection.on('data', peer.onData.bind(peer));
+     connection.on('signal', (signal) => (
+       server.send(JSON.stringify({
+         type: 'SIGNAL',"
+danielesteban/blocks,4,81ee8b0,client/core/player.js,modified,9,0,9,"@@ -7,6 +7,7 @@ import {
+   Vector3,
+ } from './three.js';
+ import DesktopControls from './desktop.js';
++import Head from '../renderables/head.js';
+ import Hand from '../renderables/hand.js';
+ import Marker from '../renderables/marker.js';
+ import Pointer from '../renderables/pointer.js';
+@@ -82,6 +83,14 @@ class Player extends Object3D {
+       return controller;
+     });
+     this.desktopControls = new DesktopControls({ xr });
++    {
++      let skin = localStorage.getItem('blocks::skin');
++      if (!skin) {
++        skin = Head.generateTexture();
++        localStorage.setItem('blocks::skin', skin);
++      }
++      this.skin = skin;
++    }
+   }
+ 
+   onAnimationTick({ camera, delta }) {"
+danielesteban/blocks,4,81ee8b0,client/renderables/head.js,added,193,0,193,"@@ -0,0 +1,193 @@
++import {
++  BoxBufferGeometry,
++  Texture,
++  DoubleSide,
++  Mesh,
++  MeshBasicMaterial,
++  NearestFilter,
++} from '../core/three.js';
++
++// Textured mesh for the player/peer head
++
++class Head extends Mesh {
++  static setupGeometry() {
++    const geometry = new BoxBufferGeometry(0.3, 0.3, 0.3, 1, 1, 1);
++    const uv = geometry.getAttribute('uv');
++    Head.uvs.forEach((offset, face) => {
++      for (let i = 0; i < 4; i += 1) {
++        const o = ((face * 4) + i) * 2;
++        uv.array[o] = (uv.array[o] + offset.x) * 0.25;
++        uv.array[o + 1] = 1 - (((1 - uv.array[o + 1]) + offset.y) * 0.5);
++      }
++    });
++    delete geometry.attributes.normal;
++    Head.geometry = geometry;
++  }
++
++  static setupMaterials() {
++    Head.materials = {
++      opaque: new MeshBasicMaterial(),
++      transparent: new MeshBasicMaterial({
++        alphaTest: 1,
++        side: DoubleSide,
++        transparent: true,
++      }),
++    };
++  }
++
++  constructor() {
++    if (!Head.geometry) {
++      Head.setupGeometry();
++    }
++    if (!Head.materials) {
++      Head.setupMaterials();
++    }
++    super(
++      Head.geometry,
++      Head.materials.opaque.clone()
++    );
++    this.transparentMesh = new Mesh(
++      Head.geometry,
++      Head.materials.transparent.clone()
++    );
++    this.transparentMesh.scale.multiplyScalar(1.05);
++    this.add(this.transparentMesh);
++  }
++
++  dispose() {
++    const { material } = this;
++    material.forEach((material) => {
++      material.map.dispose();
++      material.dispose();
++    });
++  }
++
++  updateTexture(url) {
++    const {
++      material,
++      transparentMesh: { material: transparentMaterial },
++    } = this;
++    const image = new Image();
++    image.src = url;
++    image.onload = () => {
++      const opaque = new Texture(image);
++      opaque.needsUpdate = true;
++      opaque.magFilter = NearestFilter;
++      opaque.minFilter = NearestFilter;
++      opaque.repeat.x = 0.5;
++      if (material.map) {
++        material.map.dispose();
++      }
++      material.map = opaque;
++      material.needsUpdate = true;
++
++      const transparent = opaque.clone();
++      transparent.needsUpdate = true;
++      transparent.offset.x = 0.5;
++      if (transparentMaterial.map) {
++        transparentMaterial.map.dispose();
++      }
++      transparentMaterial.map = transparent;
++      transparentMaterial.needsUpdate = true;
++    };
++  }
++
++  static generateTexture() {
++    const renderer = document.createElement('canvas');
++    renderer.width = 64;
++    renderer.height = 16;
++    const ctx = renderer.getContext('2d');
++    const size = 8;
++    const skin = Math.floor(Math.random() * 150);
++    const eyes = {
++      r: Math.floor(Math.random() * 100),
++      g: Math.floor(Math.random() * 100),
++      b: Math.floor(Math.random() * 100),
++    };
++    const hair = {
++      r: Math.floor(Math.random() * 100),
++      g: Math.floor(Math.random() * 100),
++      b: Math.floor(Math.random() * 100),
++    };
++    Head.uvs.forEach((offset, face) => {
++      for (let x = 0; x < size; x += 1) {
++        for (let y = 0; y < size; y += 1) {
++          ctx.globalAlpha = 1;
++          const l = Math.floor(Math.random() * 10);
++          ctx.fillStyle = `rgb(${skin + l}, ${(skin * 0.75) + l}, ${skin + l})`;
++          ctx.fillRect(
++            offset.x * size + x,
++            offset.y * size + y,
++            1,
++            1
++          );
++          if (face !== 3) {
++            const px = offset.x * size + x;
++            const py = offset.y * size + y;
++            ctx.globalAlpha = (
++              Math.sqrt((px - 12) ** 2 + (py - 19) ** 2) > 10
++              && Math.random() > 0.25
++            ) ? 1 : 0;
++            const l = Math.floor(Math.random() * 50);
++            ctx.fillStyle = `rgb(${hair.r + l}, ${hair.g + l}, ${hair.b + l})`;
++            ctx.fillRect(32 + px, py, 1, 1);
++          }
++        }
++      }
++      if (face !== 5) {
++        return;
++      }
++      ctx.globalAlpha = 0.5;
++      ctx.fillStyle = `rgb(${eyes.r}, ${eyes.g}, ${eyes.b})`;
++      [
++        // r-eye
++        [1, 2],
++        [2, 2],
++        [1, 3],
++        [2, 3],
++        // l-eye
++        [5, 2],
++        [6, 2],
++        [5, 3],
++        [6, 3],
++      ].forEach(([x, y]) => (
++        ctx.fillRect(
++          offset.x * size + x,
++          offset.y * size + y,
++          1,
++          1
++        )
++      ));
++      ctx.globalAlpha = 0.25;
++      ctx.fillStyle = '#bbb';
++      [
++        // mouth
++        [1, 6],
++        [2, 6],
++        [3, 6],
++        [4, 6],
++        [5, 6],
++        [6, 6],
++      ].forEach(([x, y]) => (
++        ctx.fillRect(
++          offset.x * size + x,
++          offset.y * size + y,
++          1,
++          1
++        )
++      ));
++    });
++    return renderer.toDataURL();
++  }
++}
++
++Head.uvs = [
++  { x: 0, y: 1 },
++  { x: 2, y: 1 },
++  { x: 1, y: 0 },
++  { x: 2, y: 0 },
++  { x: 3, y: 1 },
++  { x: 1, y: 1 },
++];
++
++export default Head;"
+danielesteban/blocks,4,81ee8b0,client/renderables/peer.js,modified,32,59,91,"@@ -1,45 +1,11 @@
+-import {
+-  BufferGeometry,
+-  BufferGeometryUtils,
+-  Mesh,
+-  MeshBasicMaterial,
+-  Object3D,
+-  PositionalAudio,
+-  SphereGeometry,
+-  VertexColors,
+-} from '../core/three.js';
++import { Object3D, PositionalAudio } from '../core/three.js';
++import Head from './head.js';
+ import Hand from './hand.js';
+ 
+ // Peer head & hands
+ 
+ class Peer extends Object3D {
+-  static setupGeometry() {
+-    const sphere = new SphereGeometry(0.15, 16, 32);
+-    sphere.faces.forEach((face, i) => {
+-      if (i % 2 === 1) {
+-        face.color.offsetHSL(0, 0, Math.random() * -0.1);
+-        sphere.faces[i - 1].color.copy(face.color);
+-      }
+-    });
+-    const geometry = (new BufferGeometry()).fromGeometry(sphere);
+-    delete geometry.attributes.normal;
+-    delete geometry.attributes.uv;
+-    Peer.geometry = BufferGeometryUtils.mergeVertices(geometry);
+-  }
+-
+-  static setupMaterial() {
+-    Peer.material = new MeshBasicMaterial({
+-      vertexColors: VertexColors,
+-    });
+-  }
+-
+   constructor({ peer, connection, listener }) {
+-    if (!Peer.geometry) {
+-      Peer.setupGeometry();
+-    }
+-    if (!Peer.material) {
+-      Peer.setupMaterial();
+-    }
+     super();
+     this.audio = new PositionalAudio(listener);
+     this.audio.player = new Audio();
+@@ -53,10 +19,7 @@ class Peer extends Object3D {
+       this.add(controller);
+       return controller;
+     });
+-    this.head = new Mesh(
+-      Peer.geometry,
+-      Peer.material
+-    );
++    this.head = new Head();
+     this.head.visible = false;
+     this.head.add(this.audio);
+     this.add(this.head);
+@@ -89,26 +52,36 @@ class Peer extends Object3D {
+     audio.player.play();
+   }
+ 
+-  onUpdate({ buffer }) {
++  onData(data) {
+     const { controllers, head } = this;
+-    const view = new Float32Array(buffer);
+-    if (view.length >= 7) {
+-      const { position, quaternion } = head;
+-      position.fromArray(view);
+-      quaternion.fromArray(view, 3);
+-      head.updateMatrixWorld();
+-      head.visible = true;
+-    }
+-    if (view.length >= 22) {
+-      controllers.forEach((controller, i) => {
+-        const { hand, position, quaternion } = controller;
+-        const offset = 7 + (i * 8);
+-        position.fromArray(view, offset);
+-        quaternion.fromArray(view, offset + 3);
+-        controller.updateMatrixWorld();
+-        hand.setFingers(view[offset + 7]);
+-        controller.visible = true;
+-      });
++    switch (data[0]) {
++      case 0:
++        head.updateTexture(data.slice(1).toString());
++        break;
++      case 1: {
++        const view = new Float32Array((new Uint8Array(data.slice(1))).buffer);
++        if (view.length >= 7) {
++          const { position, quaternion } = head;
++          position.fromArray(view);
++          quaternion.fromArray(view, 3);
++          head.updateMatrixWorld();
++          head.visible = true;
++        }
++        if (view.length >= 22) {
++          controllers.forEach((controller, i) => {
++            const { hand, position, quaternion } = controller;
++            const offset = 7 + (i * 8);
++            position.fromArray(view, offset);
++            quaternion.fromArray(view, offset + 3);
++            controller.updateMatrixWorld();
++            hand.setFingers(view[offset + 7]);
++            controller.visible = true;
++          });
++        }
++        break;
++      }
++      default:
++        break;
+     }
+   }
+ }"
+danielesteban/blocks,4,3622ba7,client/renderables/menu.js,modified,104,15,119,"@@ -21,6 +21,7 @@ class Menu extends Panel {
+       width: width * 0.1,
+       height: height * 0.75,
+     };
++    const { pages } = Menu;
+     super({
+       handedness: 'left',
+       pages: [
+@@ -39,15 +40,15 @@ class Menu extends Panel {
+             {
+               label: 'Block',
+               x: 8,
+-              y: 20,
++              y: 8,
+               width: 32,
+               height: 24,
+               onPointer: () => this.setBlock(0x01),
+             },
+             {
+               label: 'Glass',
+               x: 48,
+-              y: 20,
++              y: 8,
+               width: 32,
+               height: 24,
+               onPointer: () => this.setBlock(0x02),
+@@ -56,47 +57,55 @@ class Menu extends Panel {
+               background: '#393',
+               label: 'Light',
+               x: 88,
+-              y: 20,
++              y: 8,
+               width: 32,
+               height: 24,
+               onPointer: () => this.setBlock(0x03),
+             },
+             {
+               x: 8,
+-              y: 52,
++              y: 40,
+               width: 24,
+               height: 24,
+-              onPointer: () => setTimeout(() => this.setPage(2), 0),
++              onPointer: () => setTimeout(() => this.setPage(pages.picker), 0),
+             },
+             {
+               label: 'Color Picker',
+               x: 32,
+-              y: 52,
++              y: 40,
+               width: 88,
+               height: 24,
+-              onPointer: () => setTimeout(() => this.setPage(2), 0),
++              onPointer: () => setTimeout(() => this.setPage(pages.picker), 0),
+             },
+             {
+               background: '#393',
+               label: 'Teleport',
+               x: 8,
+-              y: 84,
++              y: 72,
+               width: 52,
+               height: 24,
+               onPointer: () => this.setLocomotion('teleport'),
+             },
+             {
+               label: 'Fly',
+               x: 68,
+-              y: 84,
++              y: 72,
+               width: 52,
+               height: 24,
+               onPointer: () => this.setLocomotion('fly'),
+             },
++            {
++              label: 'Edit Avatar',
++              x: 16,
++              y: 104,
++              width: 96,
++              height: 16,
++              onPointer: () => this.setPage(pages.avatar),
++            },
+           ],
+           graphics: [
+             ({ ctx }) => {
+-              ctx.translate(8, 52);
++              ctx.translate(8, 40);
+               ctx.fillStyle = `#${color.getHexString()}`;
+               ctx.strokeStyle = '#000';
+               ctx.beginPath();
+@@ -161,8 +170,64 @@ class Menu extends Panel {
+             },
+           ],
+         },
++        {
++          buttons: [
++            {
++              background: '#393',
++              label: 'Head',
++              x: 8,
++              y: 8,
++              width: 48,
++              height: 24,
++              onPointer: () => this.setLayer('head'),
++            },
++            {
++              label: 'Hair',
++              x: 72,
++              y: 8,
++              width: 48,
++              height: 24,
++              onPointer: () => this.setLayer('hair'),
++            },
++            {
++              x: 8,
++              y: 40,
++              width: 24,
++              height: 24,
++              onPointer: () => setTimeout(() => this.setPage(pages.picker), 0),
++            },
++            {
++              label: 'Color Picker',
++              x: 32,
++              y: 40,
++              width: 88,
++              height: 24,
++              onPointer: () => setTimeout(() => this.setPage(pages.picker), 0),
++            },
++            {
++              label: 'Save Avatar',
++              x: 16,
++              y: 104,
++              width: 96,
++              height: 16,
++              onPointer: () => this.setPage(pages.menu),
++            },
++          ],
++          graphics: [
++            ({ ctx }) => {
++              ctx.translate(8, 40);
++              ctx.fillStyle = `#${color.getHexString()}`;
++              ctx.strokeStyle = '#000';
++              ctx.beginPath();
++              ctx.rect(0, 0, 24, 24);
++              ctx.fill();
++              ctx.stroke();
++            },
++          ],
++        },
+       ],
+     });
++    this.avatarLayer = 'head';
+     this.blockColor = color;
+     this.blockType = 0x03;
+     this.world = world;
+@@ -178,7 +243,8 @@ class Menu extends Panel {
+       pointer,
+       picker: { area, strip },
+     } = this;
+-    if (page.id === 2 && (primary || secondary)) {
++    const { pages } = Menu;
++    if (page.id === pages.picker && (primary || secondary)) {
+       for (let i = 0; i < 2; i += 1) {
+         const {
+           x,
+@@ -198,14 +264,16 @@ class Menu extends Panel {
+             imageData[1] / 0xFF,
+             imageData[2] / 0xFF
+           );
+-          if (i === 1) {
++          if (i === 0) {
++            this.setPage(page.back);
++          } else {
+             area.color.setRGB(
+               imageData[0] / 0xFF,
+               imageData[1] / 0xFF,
+               imageData[2] / 0xFF
+             );
++            this.draw();
+           }
+-          this.setPage(i === 0 ? 1 : 2);
+           break;
+         }
+       }
+@@ -216,13 +284,27 @@ class Menu extends Panel {
+     const {
+       pages: [/* toggle */, { buttons: [block, glass, light] }],
+     } = this;
++    const { pages } = Menu;
+     delete block.background;
+     delete glass.background;
+     delete light.background;
+     const buttons = { 0x01: block, 0x02: glass, 0x03: light };
+     buttons[type].background = '#393';
+     this.blockType = type;
+-    this.setPage(1);
++    this.setPage(pages.menu);
++  }
++
++  setLayer(layer) {
++    const {
++      pages: [/* toggle */, /* menu */, /* picker */, { buttons: [head, hair] }],
++    } = this;
++    const { pages } = Menu;
++    delete head.background;
++    delete hair.background;
++    const buttons = { head, hair };
++    buttons[layer].background = '#393';
++    this.avatarLayer = layer;
++    this.setPage(pages.avatar);
+   }
+ 
+   setLocomotion(type) {
+@@ -242,14 +324,21 @@ class Menu extends Panel {
+         },
+       ],
+     } = this;
++    const { pages } = Menu;
+     delete fly.background;
+     delete teleport.background;
+     const buttons = { fly, teleport };
+     buttons[type].background = '#393';
+     const locomotions = { fly: 0, teleport: 1 };
+     this.world.locomotion = locomotions[type];
+-    this.setPage(1);
++    this.setPage(pages.menu);
+   }
+ }
+ 
++Menu.pages = {
++  menu: 1,
++  picker: 2,
++  avatar: 3,
++};
++
+ export default Menu;"
+danielesteban/blocks,4,3622ba7,client/renderables/ui.js,modified,1,0,1,"@@ -193,6 +193,7 @@ class UI extends Mesh {
+   setPage(page) {
+     const { pages } = this;
+     this.page = {
++      back: this.page ? this.page.id : undefined,
+       id: page,
+       buttons: [],
+       graphics: [],"
+danielesteban/blocks,4,32f3cd8,client/core/player.js,modified,16,0,16,"@@ -164,6 +164,22 @@ class Player extends Object3D {
+     }
+   }
+ 
++  toggleSkinEditing() {
++    const { editingSkin, head, skin } = this;
++    if (editingSkin) {
++      this.remove(editingSkin);
++      editingSkin.dispose();
++      delete this.editingSkin;
++      return;
++    }
++    const mesh = new Head();
++    mesh.rotateY(Math.PI);
++    mesh.updateTexture(skin, true);
++    this.worldToLocal(head.localToWorld(mesh.position.set(0, 0, -1)));
++    this.add(mesh);
++    this.editingSkin = mesh;
++  }
++
+   fly({ delta, direction, movement }) {
+     const {
+       auxVector: vector,"
+danielesteban/blocks,4,32f3cd8,client/renderables/head.js,modified,26,7,33,"@@ -1,10 +1,11 @@
+ import {
+   BoxBufferGeometry,
+-  Texture,
++  CanvasTexture,
+   DoubleSide,
+   Mesh,
+   MeshBasicMaterial,
+   NearestFilter,
++  Texture,
+ } from '../core/three.js';
+ 
+ // Textured mesh for the player/peer head
+@@ -55,22 +56,40 @@ class Head extends Mesh {
+   }
+ 
+   dispose() {
+-    const { material } = this;
+-    material.forEach((material) => {
++    const {
++      material,
++      transparentMesh: { material: transparentMaterial },
++    } = this;
++    if (material.map) {
+       material.map.dispose();
+-      material.dispose();
+-    });
++    }
++    material.dispose();
++    if (transparentMaterial.map) {
++      transparentMaterial.map.dispose();
++    }
++    transparentMaterial.dispose();
+   }
+ 
+-  updateTexture(url) {
++  updateTexture(url, editable) {
+     const {
+       material,
+       transparentMesh: { material: transparentMaterial },
+     } = this;
+     const image = new Image();
+     image.src = url;
+     image.onload = () => {
+-      const opaque = new Texture(image);
++      let opaque;
++      if (editable) {
++        this.renderer = document.createElement('canvas');
++        this.renderer.width = image.width;
++        this.renderer.height = image.height;
++        this.context = this.renderer.getContext('2d');
++        this.context.imageSmoothingEnabled = false;
++        this.context.drawImage(image, 0, 0);
++        opaque = new CanvasTexture(this.renderer);
++      } else {
++        opaque = new Texture(image);
++      }
+       opaque.needsUpdate = true;
+       opaque.magFilter = NearestFilter;
+       opaque.minFilter = NearestFilter;"
+danielesteban/blocks,4,32f3cd8,client/renderables/menu.js,modified,12,6,18,"@@ -100,7 +100,10 @@ class Menu extends Panel {
+               y: 104,
+               width: 96,
+               height: 16,
+-              onPointer: () => this.setPage(pages.avatar),
++              onPointer: () => {
++                this.setPage(pages.skin);
++                world.player.toggleSkinEditing();
++              },
+             },
+           ],
+           graphics: [
+@@ -210,7 +213,10 @@ class Menu extends Panel {
+               y: 104,
+               width: 96,
+               height: 16,
+-              onPointer: () => this.setPage(pages.menu),
++              onPointer: () => {
++                this.setPage(pages.menu);
++                world.player.toggleSkinEditing();
++              },
+             },
+           ],
+           graphics: [
+@@ -227,7 +233,7 @@ class Menu extends Panel {
+         },
+       ],
+     });
+-    this.avatarLayer = 'head';
++    this.skinLayer = 'head';
+     this.blockColor = color;
+     this.blockType = 0x03;
+     this.world = world;
+@@ -303,8 +309,8 @@ class Menu extends Panel {
+     delete hair.background;
+     const buttons = { head, hair };
+     buttons[layer].background = '#393';
+-    this.avatarLayer = layer;
+-    this.setPage(pages.avatar);
++    this.skinLayer = layer;
++    this.setPage(pages.skin);
+   }
+ 
+   setLocomotion(type) {
+@@ -338,7 +344,7 @@ class Menu extends Panel {
+ Menu.pages = {
+   menu: 1,
+   picker: 2,
+-  avatar: 3,
++  skin: 3,
+ };
+ 
+ export default Menu;"
+danielesteban/blocks,4,5ae4596,client/core/player.js,modified,14,5,19,"@@ -164,22 +164,31 @@ class Player extends Object3D {
+     }
+   }
+ 
+-  toggleSkinEditing() {
++  editSkin() {
+     const { editingSkin, head, skin } = this;
+     if (editingSkin) {
+-      this.remove(editingSkin);
+-      editingSkin.dispose();
+-      delete this.editingSkin;
+       return;
+     }
+     const mesh = new Head();
+     mesh.rotateY(Math.PI);
+     mesh.updateTexture(skin, true);
+-    this.worldToLocal(head.localToWorld(mesh.position.set(0, 0, -1)));
++    this.worldToLocal(head.localToWorld(mesh.position.set(0, -0.15, -0.65)));
+     this.add(mesh);
+     this.editingSkin = mesh;
+   }
+ 
++  saveSkin() {
++    const { editingSkin } = this;
++    if (!editingSkin) {
++      return;
++    }
++    delete this.editingSkin;
++    this.skin = editingSkin.renderer.toDataURL();
++    this.remove(editingSkin);
++    editingSkin.dispose();
++    localStorage.setItem('blocks::skin', this.skin);
++  }
++
+   fly({ delta, direction, movement }) {
+     const {
+       auxVector: vector,"
+danielesteban/blocks,4,5ae4596,client/renderables/head.js,modified,40,0,40,"@@ -70,6 +70,16 @@ class Head extends Mesh {
+     transparentMaterial.dispose();
+   }
+ 
++  getLayer(layer) {
++    const { transparentMesh } = this;
++    switch (layer) {
++      case 'transparent':
++        return transparentMesh;
++      default:
++        return this;
++    }
++  }
++
+   updateTexture(url, editable) {
+     const {
+       material,
+@@ -111,6 +121,36 @@ class Head extends Mesh {
+     };
+   }
+ 
++  updatePixel({
++    color,
++    layer,
++    remove,
++    uv,
++  }) {
++    if (remove && layer !== 'transparent') {
++      return;
++    }
++    const {
++      context,
++      renderer,
++      material,
++      transparentMesh: { material: transparentMaterial },
++    } = this;
++    uv.x = (uv.x * 0.5) + (layer === 'transparent' ? 0.5 : 0);
++    uv.y = 1 - uv.y;
++    context.fillStyle = color;
++    context[remove ? 'clearRect' : 'fillRect'](
++      Math.floor(renderer.width * uv.x),
++      Math.floor(renderer.height * uv.y),
++      1,
++      1
++    );
++    material.map.needsUpdate = true;
++    material.needsUpdate = true;
++    transparentMaterial.map.needsUpdate = true;
++    transparentMaterial.needsUpdate = true;
++  }
++
+   static generateTexture() {
+     const renderer = document.createElement('canvas');
+     renderer.width = 64;"
+danielesteban/blocks,4,5ae4596,client/renderables/menu.js,modified,14,9,23,"@@ -102,7 +102,7 @@ class Menu extends Panel {
+               height: 16,
+               onPointer: () => {
+                 this.setPage(pages.skin);
+-                world.player.toggleSkinEditing();
++                world.player.editSkin();
+               },
+             },
+           ],
+@@ -182,15 +182,15 @@ class Menu extends Panel {
+               y: 8,
+               width: 48,
+               height: 24,
+-              onPointer: () => this.setLayer('head'),
++              onPointer: () => this.setLayer('opaque'),
+             },
+             {
+               label: 'Hair',
+               x: 72,
+               y: 8,
+               width: 48,
+               height: 24,
+-              onPointer: () => this.setLayer('hair'),
++              onPointer: () => this.setLayer('transparent'),
+             },
+             {
+               x: 8,
+@@ -215,7 +215,7 @@ class Menu extends Panel {
+               height: 16,
+               onPointer: () => {
+                 this.setPage(pages.menu);
+-                world.player.toggleSkinEditing();
++                world.player.saveSkin();
+               },
+             },
+           ],
+@@ -233,11 +233,16 @@ class Menu extends Panel {
+         },
+       ],
+     });
+-    this.skinLayer = 'head';
++    this.skinLayer = 'opaque';
+     this.blockColor = color;
+     this.blockType = 0x03;
+     this.world = world;
+     this.picker = { area, strip };
++
++    setTimeout(() => {
++      this.setPage(3);
++      this.world.player.editSkin();
++    }, 1000);
+   }
+ 
+   onPointer({ point, primary, secondary }) {
+@@ -302,12 +307,12 @@ class Menu extends Panel {
+ 
+   setLayer(layer) {
+     const {
+-      pages: [/* toggle */, /* menu */, /* picker */, { buttons: [head, hair] }],
++      pages: [/* toggle */, /* menu */, /* picker */, { buttons: [opaque, transparent] }],
+     } = this;
+     const { pages } = Menu;
+-    delete head.background;
+-    delete hair.background;
+-    const buttons = { head, hair };
++    delete opaque.background;
++    delete transparent.background;
++    const buttons = { opaque, transparent };
+     buttons[layer].background = '#393';
+     this.skinLayer = layer;
+     this.setPage(pages.skin);"
+danielesteban/blocks,4,5ae4596,client/scenes/world.js,modified,15,2,17,"@@ -81,7 +81,11 @@ class World extends Scene {
+       ) {
+         return;
+       }
+-      const hit = raycaster.intersectObjects(translocables)[0] || false;
++      const hit = (player.editingSkin ? (
++        raycaster.intersectObject(player.editingSkin.getLayer(menu.skinLayer))
++      ) : (
++        raycaster.intersectObjects(translocables)
++      ))[0] || false;
+       if (!hit) {
+         return;
+       }
+@@ -90,8 +94,17 @@ class World extends Scene {
+         origin: raycaster.ray.origin,
+       });
+       if (gripUp || triggerUp) {
+-        const { point, face: { normal } } = hit;
++        const { point, face: { normal }, uv } = hit;
+         const remove = grip || gripUp;
++        if (player.editingSkin) {
++          player.editingSkin.updatePixel({
++            color: `#${menu.blockColor.getHexString()}`,
++            layer: menu.skinLayer,
++            remove,
++            uv,
++          });
++          return;
++        }
+         point
+           .addScaledVector(normal, (remove ? -1 : 1) * 0.25)
+           .divideScalar(scale)"

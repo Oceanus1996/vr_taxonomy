@@ -1,0 +1,347 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+secondlife/viewer,4047,7507046,indra/llui/lltextbase.cpp,modified,1,0,1,"@@ -2228,6 +2228,7 @@ void LLTextBase::createUrlContextMenu(S32 x, S32 y, const std::string &in_url)
+     registrar.add(""Url.ReportAbuse"", boost::bind(&LLUrlAction::reportAbuse, url));
+     registrar.add(""Url.SendIM"", boost::bind(&LLUrlAction::sendIM, url));
+     registrar.add(""Url.ShowOnMap"", boost::bind(&LLUrlAction::showLocationOnMap, url));
++    registrar.add(""Url.ShowParcelOnMap"", boost::bind(&LLUrlAction::showParcelOnMap, url));
+     registrar.add(""Url.CopyLabel"", boost::bind(&LLUrlAction::copyLabelToClipboard, url));
+     registrar.add(""Url.CopyUrl"", boost::bind(&LLUrlAction::copyURLToClipboard, url));
+ "
+secondlife/viewer,4047,7507046,indra/llui/llurlaction.cpp,modified,18,0,18,"@@ -30,6 +30,7 @@
+ #include ""llview.h""
+ #include ""llwindow.h""
+ #include ""llurlregistry.h""
++#include ""v3dmath.h""
+ 
+ 
+ // global state for the callback functions
+@@ -128,6 +129,23 @@ void LLUrlAction::showLocationOnMap(std::string url)
+     }
+ }
+ 
++void LLUrlAction::showParcelOnMap(std::string url)
++{
++    LLSD path_array = LLURI(url).pathArray();
++    auto path_parts = path_array.size();
++
++    if (path_parts < 3) // no parcel id
++    {
++        LL_WARNS() << ""Global coordinates are missing in url: ["" << url << ""]"" << LL_ENDL;
++        return;
++    }
++
++    LLVector3d parcel_pos = LLUrlEntryParcel::getParcelPos(LLUUID(LLURI::unescape(path_array[2])));
++    std::ostringstream pos;
++    pos << parcel_pos.mdV[VX] << '/' << parcel_pos.mdV[VY] << '/' << parcel_pos.mdV[VZ];
++    executeSLURL(""secondlife:///app/worldmap_global/"" + pos.str());
++}
++
+ void LLUrlAction::copyURLToClipboard(std::string url)
+ {
+     LLView::getWindow()->copyTextToClipboard(utf8str_to_wstring(url));"
+secondlife/viewer,4047,7507046,indra/llui/llurlaction.h,modified,2,0,2,"@@ -63,6 +63,8 @@ class LLUrlAction
+     /// if the Url specifies an SL location, show it on a map
+     static void showLocationOnMap(std::string url);
+ 
++    static void showParcelOnMap(std::string url);
++
+     /// perform the appropriate action for left-clicking on a Url
+     static void clickAction(std::string url, bool trusted_content);
+ "
+secondlife/viewer,4047,7507046,indra/llui/llurlentry.cpp,modified,16,0,16,"@@ -41,6 +41,7 @@
+ #include ""lluicolortable.h""
+ #include ""message.h""
+ #include ""llexperiencecache.h""
++#include ""v3dmath.h""
+ 
+ #define APP_HEADER_REGEX ""((x-grid-location-info://[-\\w\\.]+/app)|(secondlife:///app))""
+ 
+@@ -1084,6 +1085,7 @@ LLUUID  LLUrlEntryParcel::sSessionID(LLUUID::null);
+ LLHost  LLUrlEntryParcel::sRegionHost;
+ bool    LLUrlEntryParcel::sDisconnected(false);
+ std::set<LLUrlEntryParcel*> LLUrlEntryParcel::sParcelInfoObservers;
++std::map<LLUUID, LLVector3d> LLUrlEntryParcel::sParcelPos;
+ 
+ ///
+ /// LLUrlEntryParcel Describes a Second Life parcel Url, e.g.,
+@@ -1176,6 +1178,20 @@ void LLUrlEntryParcel::processParcelInfo(const LLParcelData& parcel_data)
+             url_entry->onParcelInfoReceived(parcel_data.parcel_id.asString(), label);
+         }
+     }
++    if (sParcelPos.find(parcel_data.parcel_id) == sParcelPos.end())
++    {
++        sParcelPos[parcel_data.parcel_id] = LLVector3d(parcel_data.global_x, parcel_data.global_y, parcel_data.global_z);
++    }
++}
++
++// static
++LLVector3d LLUrlEntryParcel::getParcelPos(const LLUUID& parcel_id)
++{
++    if (sParcelPos.find(parcel_id) != sParcelPos.end())
++    {
++        return sParcelPos[parcel_id];
++    }
++    return LLVector3d();
+ }
+ 
+ //"
+secondlife/viewer,4047,7507046,indra/llui/llurlentry.h,modified,4,0,4,"@@ -41,6 +41,7 @@
+ #include <map>
+ 
+ class LLAvatarName;
++class LLVector3d;
+ 
+ typedef boost::signals2::signal<void (const std::string& url,
+                                       const std::string& label,
+@@ -434,6 +435,8 @@ class LLUrlEntryParcel : public LLUrlEntryBase
+     // Processes parcel label and triggers notifying observers.
+     static void processParcelInfo(const LLParcelData& parcel_data);
+ 
++    static LLVector3d getParcelPos(const LLUUID& parcel_id);
++
+     // Next setters are used to update agent and viewer connection information
+     // upon events like user login, viewer disconnect and user changing region host.
+     // These setters are made public to be accessible from newview and should not be
+@@ -447,6 +450,7 @@ class LLUrlEntryParcel : public LLUrlEntryBase
+     static LLHost                       sRegionHost;
+     static bool                         sDisconnected;
+     static std::set<LLUrlEntryParcel*>  sParcelInfoObservers;
++    static std::map<LLUUID, LLVector3d> sParcelPos;
+ };
+ 
+ ///"
+secondlife/viewer,4047,7507046,indra/newview/llfloaterworldmap.cpp,modified,46,0,46,"@@ -169,6 +169,52 @@ class LLWorldMapHandler : public LLCommandHandler
+ };
+ LLWorldMapHandler gWorldMapHandler;
+ 
++// handle secondlife:///app/worldmap_global/{GLOBAL_COORDS} URLs
++class LLWorldMapGlobalHandler : public LLCommandHandler
++{
++public:
++    LLWorldMapGlobalHandler() : LLCommandHandler(""worldmap_global"", UNTRUSTED_THROTTLE)
++    {}
++
++    virtual bool canHandleUntrusted(
++        const LLSD& params,
++        const LLSD& query_map,
++        LLMediaCtrl* web,
++        const std::string& nav_type)
++    {
++        if (nav_type == NAV_TYPE_CLICKED
++            || nav_type == NAV_TYPE_EXTERNAL)
++        {
++            // NAV_TYPE_EXTERNAL will be throttled
++            return true;
++        }
++
++        return false;
++    }
++
++    bool handle(const LLSD& params,
++                const LLSD& query_map,
++                const std::string& grid,
++                LLMediaCtrl* web)
++    {
++        if (params.size() < 3)
++        {
++            LL_WARNS() << ""Correct global coordinates are not provided."" << LL_ENDL;
++            return true;
++        }
++
++        LLVector3d parcel_global_pos = LLVector3d(params[0].asInteger(), params[1].asInteger(), params[2].asInteger());
++        LLFloaterWorldMap* worldmap_instance = LLFloaterWorldMap::getInstance();
++        if (!parcel_global_pos.isExactlyZero() && worldmap_instance)
++        {
++            worldmap_instance->trackLocation(parcel_global_pos);
++            LLFloaterReg::showInstance(""world_map"", ""center"");
++        }
++        return true;
++    }
++};
++LLWorldMapGlobalHandler gWorldMapGlobalHandler;
++
+ // SocialMap handler secondlife:///app/maptrackavatar/id
+ class LLMapTrackAvatarHandler : public LLCommandHandler
+ {"
+secondlife/viewer,4047,7507046,indra/newview/skins/default/xui/en/menu_url_parcel.xml,modified,1,1,2,"@@ -16,7 +16,7 @@
+      layout=""topleft""
+      name=""show_on_map"">
+         <menu_item_call.on_click
+-         function=""Url.ShowOnMap"" />
++         function=""Url.ShowParcelOnMap"" />
+     </menu_item_call>
+     <menu_item_separator
+      layout=""topleft"" />"
+secondlife/viewer,4047,590ad67,indra/llui/lltextbase.cpp,modified,1,0,1,"@@ -2228,6 +2228,7 @@ void LLTextBase::createUrlContextMenu(S32 x, S32 y, const std::string &in_url)
+     registrar.add(""Url.ReportAbuse"", boost::bind(&LLUrlAction::reportAbuse, url));
+     registrar.add(""Url.SendIM"", boost::bind(&LLUrlAction::sendIM, url));
+     registrar.add(""Url.ShowOnMap"", boost::bind(&LLUrlAction::showLocationOnMap, url));
++    registrar.add(""Url.ShowParcelOnMap"", boost::bind(&LLUrlAction::showParcelOnMap, url));
+     registrar.add(""Url.CopyLabel"", boost::bind(&LLUrlAction::copyLabelToClipboard, url));
+     registrar.add(""Url.CopyUrl"", boost::bind(&LLUrlAction::copyURLToClipboard, url));
+ "
+secondlife/viewer,4047,590ad67,indra/llui/llurlaction.cpp,modified,18,0,18,"@@ -30,6 +30,7 @@
+ #include ""llview.h""
+ #include ""llwindow.h""
+ #include ""llurlregistry.h""
++#include ""v3dmath.h""
+ 
+ 
+ // global state for the callback functions
+@@ -128,6 +129,23 @@ void LLUrlAction::showLocationOnMap(std::string url)
+     }
+ }
+ 
++void LLUrlAction::showParcelOnMap(std::string url)
++{
++    LLSD path_array = LLURI(url).pathArray();
++    auto path_parts = path_array.size();
++
++    if (path_parts < 3) // no parcel id
++    {
++        LL_WARNS() << ""Global coordinates are missing in url: ["" << url << ""]"" << LL_ENDL;
++        return;
++    }
++
++    LLVector3d parcel_pos = LLUrlEntryParcel::getParcelPos(LLUUID(LLURI::unescape(path_array[2])));
++    std::ostringstream pos;
++    pos << parcel_pos.mdV[VX] << '/' << parcel_pos.mdV[VY] << '/' << parcel_pos.mdV[VZ];
++    executeSLURL(""secondlife:///app/worldmap_global/"" + pos.str());
++}
++
+ void LLUrlAction::copyURLToClipboard(std::string url)
+ {
+     LLView::getWindow()->copyTextToClipboard(utf8str_to_wstring(url));"
+secondlife/viewer,4047,590ad67,indra/llui/llurlaction.h,modified,2,0,2,"@@ -63,6 +63,8 @@ class LLUrlAction
+     /// if the Url specifies an SL location, show it on a map
+     static void showLocationOnMap(std::string url);
+ 
++    static void showParcelOnMap(std::string url);
++
+     /// perform the appropriate action for left-clicking on a Url
+     static void clickAction(std::string url, bool trusted_content);
+ "
+secondlife/viewer,4047,590ad67,indra/llui/llurlentry.cpp,modified,16,0,16,"@@ -41,6 +41,7 @@
+ #include ""lluicolortable.h""
+ #include ""message.h""
+ #include ""llexperiencecache.h""
++#include ""v3dmath.h""
+ 
+ #define APP_HEADER_REGEX ""((x-grid-location-info://[-\\w\\.]+/app)|(secondlife:///app))""
+ 
+@@ -1084,6 +1085,7 @@ LLUUID  LLUrlEntryParcel::sSessionID(LLUUID::null);
+ LLHost  LLUrlEntryParcel::sRegionHost;
+ bool    LLUrlEntryParcel::sDisconnected(false);
+ std::set<LLUrlEntryParcel*> LLUrlEntryParcel::sParcelInfoObservers;
++std::map<LLUUID, LLVector3d> LLUrlEntryParcel::sParcelPos;
+ 
+ ///
+ /// LLUrlEntryParcel Describes a Second Life parcel Url, e.g.,
+@@ -1176,6 +1178,20 @@ void LLUrlEntryParcel::processParcelInfo(const LLParcelData& parcel_data)
+             url_entry->onParcelInfoReceived(parcel_data.parcel_id.asString(), label);
+         }
+     }
++    if (sParcelPos.find(parcel_data.parcel_id) == sParcelPos.end())
++    {
++        sParcelPos[parcel_data.parcel_id] = LLVector3d(parcel_data.global_x, parcel_data.global_y, parcel_data.global_z);
++    }
++}
++
++// static
++LLVector3d LLUrlEntryParcel::getParcelPos(const LLUUID& parcel_id)
++{
++    if (sParcelPos.find(parcel_id) != sParcelPos.end())
++    {
++        return sParcelPos[parcel_id];
++    }
++    return LLVector3d();
+ }
+ 
+ //"
+secondlife/viewer,4047,590ad67,indra/llui/llurlentry.h,modified,4,0,4,"@@ -41,6 +41,7 @@
+ #include <map>
+ 
+ class LLAvatarName;
++class LLVector3d;
+ 
+ typedef boost::signals2::signal<void (const std::string& url,
+                                       const std::string& label,
+@@ -434,6 +435,8 @@ class LLUrlEntryParcel : public LLUrlEntryBase
+     // Processes parcel label and triggers notifying observers.
+     static void processParcelInfo(const LLParcelData& parcel_data);
+ 
++    static LLVector3d getParcelPos(const LLUUID& parcel_id);
++
+     // Next setters are used to update agent and viewer connection information
+     // upon events like user login, viewer disconnect and user changing region host.
+     // These setters are made public to be accessible from newview and should not be
+@@ -447,6 +450,7 @@ class LLUrlEntryParcel : public LLUrlEntryBase
+     static LLHost                       sRegionHost;
+     static bool                         sDisconnected;
+     static std::set<LLUrlEntryParcel*>  sParcelInfoObservers;
++    static std::map<LLUUID, LLVector3d> sParcelPos;
+ };
+ 
+ ///"
+secondlife/viewer,4047,590ad67,indra/newview/llfloaterworldmap.cpp,modified,46,0,46,"@@ -169,6 +169,52 @@ class LLWorldMapHandler : public LLCommandHandler
+ };
+ LLWorldMapHandler gWorldMapHandler;
+ 
++// handle secondlife:///app/worldmap_global/{GLOBAL_COORDS} URLs
++class LLWorldMapGlobalHandler : public LLCommandHandler
++{
++public:
++    LLWorldMapGlobalHandler() : LLCommandHandler(""worldmap_global"", UNTRUSTED_THROTTLE)
++    {}
++
++    virtual bool canHandleUntrusted(
++        const LLSD& params,
++        const LLSD& query_map,
++        LLMediaCtrl* web,
++        const std::string& nav_type)
++    {
++        if (nav_type == NAV_TYPE_CLICKED
++            || nav_type == NAV_TYPE_EXTERNAL)
++        {
++            // NAV_TYPE_EXTERNAL will be throttled
++            return true;
++        }
++
++        return false;
++    }
++
++    bool handle(const LLSD& params,
++                const LLSD& query_map,
++                const std::string& grid,
++                LLMediaCtrl* web)
++    {
++        if (params.size() < 3)
++        {
++            LL_WARNS() << ""Correct global coordinates are not provided."" << LL_ENDL;
++            return true;
++        }
++
++        LLVector3d parcel_global_pos = LLVector3d(params[0].asInteger(), params[1].asInteger(), params[2].asInteger());
++        LLFloaterWorldMap* worldmap_instance = LLFloaterWorldMap::getInstance();
++        if (!parcel_global_pos.isExactlyZero() && worldmap_instance)
++        {
++            worldmap_instance->trackLocation(parcel_global_pos);
++            LLFloaterReg::showInstance(""world_map"", ""center"");
++        }
++        return true;
++    }
++};
++LLWorldMapGlobalHandler gWorldMapGlobalHandler;
++
+ // SocialMap handler secondlife:///app/maptrackavatar/id
+ class LLMapTrackAvatarHandler : public LLCommandHandler
+ {"
+secondlife/viewer,4047,590ad67,indra/newview/skins/default/xui/en/menu_url_parcel.xml,modified,1,1,2,"@@ -16,7 +16,7 @@
+      layout=""topleft""
+      name=""show_on_map"">
+         <menu_item_call.on_click
+-         function=""Url.ShowOnMap"" />
++         function=""Url.ShowParcelOnMap"" />
+     </menu_item_call>
+     <menu_item_separator
+      layout=""topleft"" />"

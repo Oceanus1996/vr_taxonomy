@@ -1,0 +1,263 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe,3574,87faa2dad1d19b44be7e24c73e5c9466d6f43085,src/core/scene/a-scene.js,modified,8,12,20,"@@ -50,30 +50,19 @@ module.exports.AScene = registerElement('a-scene', {
+         this.systems = {};
+         this.systemNames = [];
+         this.time = this.delta = 0;
+-        this.init();
+-      }
+-    },
+ 
+-    init: {
+-      value: function () {
+         this.behaviors = {tick: [], tock: []};
+         this.hasLoaded = false;
+         this.isPlaying = false;
+         this.originalHTML = this.innerHTML;
+         this.renderTarget = null;
+-        setupCanvas(this);
+-        this.setupRenderer();
+-        this.resize();
+-        this.addFullScreenStyles();
+-        initPostMessageAPI(this);
+ 
+         // Default components.
+         this.setAttribute('inspector', '');
+         this.setAttribute('keyboard-shortcuts', '');
+         this.setAttribute('screenshot', '');
+         this.setAttribute('vr-mode-ui', '');
+-      },
+-      writable: true
++      }
+     },
+ 
+     addFullScreenStyles: {
+@@ -99,6 +88,13 @@ module.exports.AScene = registerElement('a-scene', {
+         var resize;
+         var self = this;
+ 
++        // Renderer initialization
++        setupCanvas(this);
++        this.setupRenderer();
++        this.resize();
++        this.addFullScreenStyles();
++        initPostMessageAPI(this);
++
+         initMetaTags(this);
+         initWakelock(this);
+         this.initSystems();"
+aframevr/aframe,3574,87faa2dad1d19b44be7e24c73e5c9466d6f43085,tests/core/scene/a-scene.test.js,modified,29,24,53,"@@ -1,4 +1,4 @@
+-/* global AFRAME, assert, CustomEvent, process, sinon, setup, suite, teardown, test */
++/* global AFRAME, assert, CustomEvent, process, sinon, setup, suite, teardown, test, THREE */
+ var AScene = require('core/scene/a-scene').AScene;
+ var components = require('core/component').components;
+ var scenes = require('core/scene/scenes');
+@@ -36,37 +36,48 @@ suite('a-scene (without renderer)', function () {
+   });
+ 
+   suite('createdCallback', function () {
++    var sceneEl;
++    setup(function () {
++      sceneEl = document.createElement('a-scene');
++    });
+     test('initializes scene object', function () {
+-      assert.equal(this.el.object3D.type, 'Scene');
++      assert.equal(sceneEl.object3D.type, 'Scene');
+     });
+ 
+     test('does not initialize systems', function () {
+-      var sceneEl = document.createElement('a-scene');
+       assert.notOk(Object.keys(sceneEl.systems).length);
+     });
++
++    test('does not initialize renderer', function () {
++      sceneEl = document.createElement('a-scene');
++      // Mock renderer.
++      assert.ok(sceneEl.renderer);
++      // Mock renderer is not a real WebGLRenderer.
++      assert.notOk(sceneEl.renderer instanceof THREE.WebGLRenderer);
++    });
+   });
+ 
+   suite('attachedCallback', function () {
+-    test('initializes systems', function (done) {
+-      var self = this;
+-      self.el.addEventListener('loaded', function () {
+-        assert.ok(Object.keys(self.el.systems).length);
++    test('initializes scene', function (done) {
++      var sceneEl = this.el;
++      sceneEl.addEventListener('loaded', function () {
++        assert.ok(Object.keys(sceneEl.systems).length);
++        assert.ok(Object.keys(sceneEl.systems).length);
++        assert.ok(this.behaviors.tick);
++        assert.ok(this.behaviors.tock);
++        assert.equal(sceneEl.isPlaying, true);
++        assert.equal(sceneEl.hasLoaded, true);
++        assert.equal(sceneEl.renderTarget, null);
++        // Default components.
++        assert.ok(sceneEl.hasAttribute('inspector'));
++        assert.ok(sceneEl.hasAttribute('keyboard-shortcuts'));
++        assert.ok(sceneEl.hasAttribute('screenshot'));
++        assert.ok(sceneEl.hasAttribute('vr-mode-ui'));
+         done();
+       });
+     });
+   });
+ 
+-  suite('init', function () {
+-    test('initializes scene object', function () {
+-      var sceneEl = this.el;
+-      sceneEl.isPlaying = false;
+-      sceneEl.hasLoaded = true;
+-      sceneEl.init();
+-      assert.equal(sceneEl.isPlaying, false);
+-      assert.equal(sceneEl.hasLoaded, false);
+-    });
+-  });
+-
+   suite('vrdisplaydisconnect', function () {
+     test('tells A-Frame about entering VR when the headset is disconnected', function (done) {
+       var event;
+@@ -597,12 +608,6 @@ helpers.getSkipCISuite()('a-scene (with renderer)', function () {
+     });
+   });
+ 
+-  suite('attachedCallback', function () {
+-    test('sets up renderer', function () {
+-      assert.ok(this.el.renderer);
+-    });
+-  });
+-
+   suite('detachedCallback', function () {
+     test.skip('cancels request animation frame', function (done) {
+       var el = this.el;"
+aframevr/aframe,3574,088643491d7ad2fca503099fa5bf5f84c917c391,src/core/scene/a-scene.js,modified,8,12,20,"@@ -50,30 +50,19 @@ module.exports.AScene = registerElement('a-scene', {
+         this.systems = {};
+         this.systemNames = [];
+         this.time = this.delta = 0;
+-        this.init();
+-      }
+-    },
+ 
+-    init: {
+-      value: function () {
+         this.behaviors = {tick: [], tock: []};
+         this.hasLoaded = false;
+         this.isPlaying = false;
+         this.originalHTML = this.innerHTML;
+         this.renderTarget = null;
+-        setupCanvas(this);
+-        this.setupRenderer();
+-        this.resize();
+-        this.addFullScreenStyles();
+-        initPostMessageAPI(this);
+ 
+         // Default components.
+         this.setAttribute('inspector', '');
+         this.setAttribute('keyboard-shortcuts', '');
+         this.setAttribute('screenshot', '');
+         this.setAttribute('vr-mode-ui', '');
+-      },
+-      writable: true
++      }
+     },
+ 
+     addFullScreenStyles: {
+@@ -99,6 +88,13 @@ module.exports.AScene = registerElement('a-scene', {
+         var resize;
+         var self = this;
+ 
++        // Renderer initialization
++        setupCanvas(this);
++        this.setupRenderer();
++        this.resize();
++        this.addFullScreenStyles();
++        initPostMessageAPI(this);
++
+         initMetaTags(this);
+         initWakelock(this);
+         this.initSystems();"
+aframevr/aframe,3574,088643491d7ad2fca503099fa5bf5f84c917c391,tests/core/scene/a-scene.test.js,modified,29,24,53,"@@ -1,4 +1,4 @@
+-/* global AFRAME, assert, CustomEvent, process, sinon, setup, suite, teardown, test */
++/* global AFRAME, assert, CustomEvent, process, sinon, setup, suite, teardown, test, THREE */
+ var AScene = require('core/scene/a-scene').AScene;
+ var components = require('core/component').components;
+ var scenes = require('core/scene/scenes');
+@@ -36,37 +36,48 @@ suite('a-scene (without renderer)', function () {
+   });
+ 
+   suite('createdCallback', function () {
++    var sceneEl;
++    setup(function () {
++      sceneEl = document.createElement('a-scene');
++    });
+     test('initializes scene object', function () {
+-      assert.equal(this.el.object3D.type, 'Scene');
++      assert.equal(sceneEl.object3D.type, 'Scene');
+     });
+ 
+     test('does not initialize systems', function () {
+-      var sceneEl = document.createElement('a-scene');
+       assert.notOk(Object.keys(sceneEl.systems).length);
+     });
++
++    test('does not initialize renderer', function () {
++      sceneEl = document.createElement('a-scene');
++      // Mock renderer.
++      assert.ok(sceneEl.renderer);
++      // Mock renderer is not a real WebGLRenderer.
++      assert.notOk(sceneEl.renderer instanceof THREE.WebGLRenderer);
++    });
+   });
+ 
+   suite('attachedCallback', function () {
+-    test('initializes systems', function (done) {
+-      var self = this;
+-      self.el.addEventListener('loaded', function () {
+-        assert.ok(Object.keys(self.el.systems).length);
++    test('initializes scene', function (done) {
++      var sceneEl = this.el;
++      sceneEl.addEventListener('loaded', function () {
++        assert.ok(Object.keys(sceneEl.systems).length);
++        assert.ok(Object.keys(sceneEl.systems).length);
++        assert.ok(this.behaviors.tick);
++        assert.ok(this.behaviors.tock);
++        assert.equal(sceneEl.isPlaying, true);
++        assert.equal(sceneEl.hasLoaded, true);
++        assert.equal(sceneEl.renderTarget, null);
++        // Default components.
++        assert.ok(sceneEl.hasAttribute('inspector'));
++        assert.ok(sceneEl.hasAttribute('keyboard-shortcuts'));
++        assert.ok(sceneEl.hasAttribute('screenshot'));
++        assert.ok(sceneEl.hasAttribute('vr-mode-ui'));
+         done();
+       });
+     });
+   });
+ 
+-  suite('init', function () {
+-    test('initializes scene object', function () {
+-      var sceneEl = this.el;
+-      sceneEl.isPlaying = false;
+-      sceneEl.hasLoaded = true;
+-      sceneEl.init();
+-      assert.equal(sceneEl.isPlaying, false);
+-      assert.equal(sceneEl.hasLoaded, false);
+-    });
+-  });
+-
+   suite('vrdisplaydisconnect', function () {
+     test('tells A-Frame about entering VR when the headset is disconnected', function (done) {
+       var event;
+@@ -597,12 +608,6 @@ helpers.getSkipCISuite()('a-scene (with renderer)', function () {
+     });
+   });
+ 
+-  suite('attachedCallback', function () {
+-    test('sets up renderer', function () {
+-      assert.ok(this.el.renderer);
+-    });
+-  });
+-
+   suite('detachedCallback', function () {
+     test.skip('cancels request animation frame', function (done) {
+       var el = this.el;"

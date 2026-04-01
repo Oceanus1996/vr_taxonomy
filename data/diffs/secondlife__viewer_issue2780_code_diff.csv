@@ -1,0 +1,245 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+secondlife/viewer,2780,b84f3ff,indra/newview/llappviewer.cpp,modified,14,0,14,"@@ -4785,6 +4785,20 @@ void LLAppViewer::idle()
+ 
+     if (gTeleportDisplay)
+     {
++        if (gAgent.getTeleportState() == LLAgent::TELEPORT_ARRIVING)
++        {
++            // Teleported, but waiting for things to load, start processing surface data
++            {
++                LL_RECORD_BLOCK_TIME(FTM_NETWORK);
++                gVLManager.unpackData();
++            }
++            {
++                LL_RECORD_BLOCK_TIME(FTM_REGION_UPDATE);
++                const F32 max_region_update_time = .001f; // 1ms
++                LLWorld::getInstance()->updateRegions(max_region_update_time);
++            }
++        }
++
+         return;
+     }
+ "
+secondlife/viewer,2780,b84f3ff,indra/newview/llviewermessage.cpp,modified,2,1,3,"@@ -3147,7 +3147,8 @@ void send_agent_update(bool force_send, bool send_reliable)
+     LL_PROFILE_ZONE_SCOPED;
+     llassert(!gCubeSnapshot);
+ 
+-    if (gAgent.getTeleportState() != LLAgent::TELEPORT_NONE)
++    if (gAgent.getTeleportState() != LLAgent::TELEPORT_NONE
++        && gAgent.getTeleportState() != LLAgent::TELEPORT_ARRIVING)
+     {
+         // We don't care if they want to send an agent update, they're not allowed
+         // until the target simulator is ready to receive them"
+secondlife/viewer,2780,b84f3ff,indra/newview/llviewertexturelist.cpp,modified,12,2,14,"@@ -30,6 +30,7 @@
+ 
+ #include ""llviewertexturelist.h""
+ 
++#include ""llagent.h""
+ #include ""llgl.h"" // fot gathering stats from GL
+ #include ""llimagegl.h""
+ #include ""llimagebmp.h""
+@@ -815,10 +816,19 @@ void LLViewerTextureList::updateImages(F32 max_time)
+             clearFetchingRequests();
+             gPipeline.clearRebuildGroups();
+             cleared = true;
++            return;
+         }
+-        return;
++        // ARRIVING is a delay to let things decode, cache and process,
++        // so process textures like normal despite gTeleportDisplay
++        if (gAgent.getTeleportState() != LLAgent::TELEPORT_ARRIVING)
++        {
++            return;
++        }
++    }
++    else
++    {
++        cleared = false;
+     }
+-    cleared = false;
+ 
+     LLAppViewer::getTextureFetch()->setTextureBandwidth((F32)LLTrace::get_frame_recording().getPeriodMeanPerSec(LLStatViewer::TEXTURE_NETWORK_DATA_RECEIVED).value());
+ "
+secondlife/viewer,2780,45b0755,indra/newview/llappviewer.cpp,modified,14,0,14,"@@ -4785,6 +4785,20 @@ void LLAppViewer::idle()
+ 
+     if (gTeleportDisplay)
+     {
++        if (gAgent.getTeleportState() == LLAgent::TELEPORT_ARRIVING)
++        {
++            // Teleported, but waiting for things to load, start processing surface data
++            {
++                LL_RECORD_BLOCK_TIME(FTM_NETWORK);
++                gVLManager.unpackData();
++            }
++            {
++                LL_RECORD_BLOCK_TIME(FTM_REGION_UPDATE);
++                const F32 max_region_update_time = .001f; // 1ms
++                LLWorld::getInstance()->updateRegions(max_region_update_time);
++            }
++        }
++
+         return;
+     }
+ "
+secondlife/viewer,2780,45b0755,indra/newview/llviewermessage.cpp,modified,2,1,3,"@@ -3147,7 +3147,8 @@ void send_agent_update(bool force_send, bool send_reliable)
+     LL_PROFILE_ZONE_SCOPED;
+     llassert(!gCubeSnapshot);
+ 
+-    if (gAgent.getTeleportState() != LLAgent::TELEPORT_NONE)
++    if (gAgent.getTeleportState() != LLAgent::TELEPORT_NONE
++        && gAgent.getTeleportState() != LLAgent::TELEPORT_ARRIVING)
+     {
+         // We don't care if they want to send an agent update, they're not allowed
+         // until the target simulator is ready to receive them"
+secondlife/viewer,2780,45b0755,indra/newview/llviewertexturelist.cpp,modified,12,2,14,"@@ -30,6 +30,7 @@
+ 
+ #include ""llviewertexturelist.h""
+ 
++#include ""llagent.h""
+ #include ""llgl.h"" // fot gathering stats from GL
+ #include ""llimagegl.h""
+ #include ""llimagebmp.h""
+@@ -815,10 +816,19 @@ void LLViewerTextureList::updateImages(F32 max_time)
+             clearFetchingRequests();
+             gPipeline.clearRebuildGroups();
+             cleared = true;
++            return;
+         }
+-        return;
++        // ARRIVING is a delay to let things decode, cache and process,
++        // so process textures like normal despite gTeleportDisplay
++        if (gAgent.getTeleportState() != LLAgent::TELEPORT_ARRIVING)
++        {
++            return;
++        }
++    }
++    else
++    {
++        cleared = false;
+     }
+-    cleared = false;
+ 
+     LLAppViewer::getTextureFetch()->setTextureBandwidth((F32)LLTrace::get_frame_recording().getPeriodMeanPerSec(LLStatViewer::TEXTURE_NETWORK_DATA_RECEIVED).value());
+ "
+secondlife/viewer,2780,9a6129b,indra/newview/llappviewer.cpp,modified,14,0,14,"@@ -4968,6 +4968,20 @@ void LLAppViewer::idle()
+ 
+     if (gTeleportDisplay)
+     {
++        if (gAgent.getTeleportState() == LLAgent::TELEPORT_ARRIVING)
++        {
++            // Teleported, but waiting for things to load, start processing surface data
++            {
++                LL_RECORD_BLOCK_TIME(FTM_NETWORK);
++                gVLManager.unpackData();
++            }
++            {
++                LL_RECORD_BLOCK_TIME(FTM_REGION_UPDATE);
++                const F32 max_region_update_time = .001f; // 1ms
++                LLWorld::getInstance()->updateRegions(max_region_update_time);
++            }
++        }
++
+         return;
+     }
+ "
+secondlife/viewer,2780,9a6129b,indra/newview/llviewermessage.cpp,modified,2,1,3,"@@ -3197,7 +3197,8 @@ void send_agent_update(bool force_send, bool send_reliable)
+     LL_PROFILE_ZONE_SCOPED;
+     llassert(!gCubeSnapshot);
+ 
+-    if (gAgent.getTeleportState() != LLAgent::TELEPORT_NONE)
++    if (gAgent.getTeleportState() != LLAgent::TELEPORT_NONE
++        && gAgent.getTeleportState() != LLAgent::TELEPORT_ARRIVING)
+     {
+         // We don't care if they want to send an agent update, they're not allowed
+         // until the target simulator is ready to receive them"
+secondlife/viewer,2780,9a6129b,indra/newview/llviewertexturelist.cpp,modified,12,2,14,"@@ -30,6 +30,7 @@
+ 
+ #include ""llviewertexturelist.h""
+ 
++#include ""llagent.h""
+ #include ""llgl.h"" // fot gathering stats from GL
+ #include ""llimagegl.h""
+ #include ""llimagebmp.h""
+@@ -844,10 +845,19 @@ void LLViewerTextureList::updateImages(F32 max_time)
+             clearFetchingRequests();
+             gPipeline.clearRebuildGroups();
+             cleared = true;
++            return;
+         }
+-        return;
++        // ARRIVING is a delay to let things decode, cache and process,
++        // so process textures like normal despite gTeleportDisplay
++        if (gAgent.getTeleportState() != LLAgent::TELEPORT_ARRIVING)
++        {
++            return;
++        }
++    }
++    else
++    {
++        cleared = false;
+     }
+-    cleared = false;
+ 
+     LLAppViewer::getTextureFetch()->setTextureBandwidth((F32)LLTrace::get_frame_recording().getPeriodMeanPerSec(LLStatViewer::TEXTURE_NETWORK_DATA_RECEIVED).value());
+ "
+secondlife/viewer,2780,26208bf,indra/newview/llappviewer.cpp,modified,14,0,14,"@@ -4968,6 +4968,20 @@ void LLAppViewer::idle()
+ 
+     if (gTeleportDisplay)
+     {
++        if (gAgent.getTeleportState() == LLAgent::TELEPORT_ARRIVING)
++        {
++            // Teleported, but waiting for things to load, start processing surface data
++            {
++                LL_RECORD_BLOCK_TIME(FTM_NETWORK);
++                gVLManager.unpackData();
++            }
++            {
++                LL_RECORD_BLOCK_TIME(FTM_REGION_UPDATE);
++                const F32 max_region_update_time = .001f; // 1ms
++                LLWorld::getInstance()->updateRegions(max_region_update_time);
++            }
++        }
++
+         return;
+     }
+ "
+secondlife/viewer,2780,26208bf,indra/newview/llviewermessage.cpp,modified,2,1,3,"@@ -3197,7 +3197,8 @@ void send_agent_update(bool force_send, bool send_reliable)
+     LL_PROFILE_ZONE_SCOPED;
+     llassert(!gCubeSnapshot);
+ 
+-    if (gAgent.getTeleportState() != LLAgent::TELEPORT_NONE)
++    if (gAgent.getTeleportState() != LLAgent::TELEPORT_NONE
++        && gAgent.getTeleportState() != LLAgent::TELEPORT_ARRIVING)
+     {
+         // We don't care if they want to send an agent update, they're not allowed
+         // until the target simulator is ready to receive them"
+secondlife/viewer,2780,26208bf,indra/newview/llviewertexturelist.cpp,modified,12,2,14,"@@ -30,6 +30,7 @@
+ 
+ #include ""llviewertexturelist.h""
+ 
++#include ""llagent.h""
+ #include ""llgl.h"" // fot gathering stats from GL
+ #include ""llimagegl.h""
+ #include ""llimagebmp.h""
+@@ -844,10 +845,19 @@ void LLViewerTextureList::updateImages(F32 max_time)
+             clearFetchingRequests();
+             gPipeline.clearRebuildGroups();
+             cleared = true;
++            return;
+         }
+-        return;
++        // ARRIVING is a delay to let things decode, cache and process,
++        // so process textures like normal despite gTeleportDisplay
++        if (gAgent.getTeleportState() != LLAgent::TELEPORT_ARRIVING)
++        {
++            return;
++        }
++    }
++    else
++    {
++        cleared = false;
+     }
+-    cleared = false;
+ 
+     LLAppViewer::getTextureFetch()->setTextureBandwidth((F32)LLTrace::get_frame_recording().getPeriodMeanPerSec(LLStatViewer::TEXTURE_NETWORK_DATA_RECEIVED).value());
+ "

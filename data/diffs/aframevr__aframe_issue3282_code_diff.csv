@@ -1,0 +1,21 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe,3282,6cc26177d2c65affc15575041ab1bb41d89abc77,src/core/scene/a-scene.js,modified,12,1,13,"@@ -104,7 +104,18 @@ module.exports.AScene = registerElement('a-scene', {
+ 
+         resize = bind(this.resize, this);
+         window.addEventListener('load', resize);
+-        window.addEventListener('resize', resize);
++        window.addEventListener('resize', function () {
++          // Workaround for a Webkit bug (https://bugs.webkit.org/show_bug.cgi?id=170595)
++          // where the window does not contain the correct viewport size
++          // after an orientation change. The window size is correct if the operation
++          // is postponed a few milliseconds.
++          // self.resize can be called directly once the bug above is fixed.
++          if (this.isIOS) {
++            setTimeout(resize, 100);
++          } else {
++            resize();
++          }
++        });
+         this.play();
+ 
+         // Add to scene index."

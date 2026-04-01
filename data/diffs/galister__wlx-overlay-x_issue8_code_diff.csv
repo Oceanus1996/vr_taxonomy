@@ -1,0 +1,284 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch,gpt_bug_detection
+galister/wlx-overlay-x,8,8ddb37c2627b4afc995c3503c5058d0a62f88b3a,src/desktop/mod.rs,modified,6,5,11,"@@ -70,22 +70,23 @@ impl InteractionHandler for ScreenInteractionHandler {
+             }
+         }
+     }
+-    fn on_pointer(&mut self, hit: &PointerHit, pressed: bool) {
++    fn on_pointer(&mut self, session: &AppSession, hit: &PointerHit, pressed: bool) {
+         if let Ok(mut input) = INPUT.lock() {
+-            let pos = self.mouse_transform.transform_point2(hit.uv);
+-            input.mouse_move(pos);
+-
+             let btn = match hit.mode {
+                 POINTER_SHIFT => MOUSE_RIGHT,
+                 POINTER_ALT => MOUSE_MIDDLE,
+                 _ => MOUSE_LEFT,
+             };
+ 
+             if pressed {
+-                self.next_move = Instant::now() + Duration::from_millis(300);
++                self.next_move =
++                    Instant::now() + Duration::from_millis(session.click_freeze_time_ms);
+             }
+ 
+             input.send_button(btn, pressed);
++
++            let pos = self.mouse_transform.transform_point2(hit.uv);
++            input.mouse_move(pos);
+         }
+     }
+     fn on_scroll(&mut self, _hit: &PointerHit, delta: f32) {","{""has_bug"": true, ""bugs"": [{""line_start"": 66, ""line_end"": 66, ""description"": ""Logic error: The mouse move event is fired before the button press event, which can lead to unintended behavior."", ""buggy_code"": ""if self.next_move < Instant::now() {""}, {""line_start"": 89, ""line_end"": 89, ""description"": ""Logic error: The mouse move event is fired again after sending the button press event, which can cause issues with link interactions."", ""buggy_code"": ""input.mouse_move(pos);""}]}"
+galister/wlx-overlay-x,8,8ddb37c2627b4afc995c3503c5058d0a62f88b3a,src/gui/mod.rs,modified,7,2,9,"@@ -6,7 +6,7 @@ use stereokit::{SkDraw, StereoKitMultiThread, Tex, TextureFormat, TextureType};
+ use crate::{
+     interactions::InteractionHandler,
+     overlay::{OverlayBackend, OverlayRenderer, COLOR_TRANSPARENT},
+-    AppState,
++    AppSession, AppState,
+ };
+ 
+ pub mod font;
+@@ -232,7 +232,12 @@ impl<T1, T2> InteractionHandler for Canvas<T1, T2> {
+             self.hover_controls[hit.hand] = None;
+         }
+     }
+-    fn on_pointer(&mut self, hit: &crate::interactions::PointerHit, pressed: bool) {
++    fn on_pointer(
++        &mut self,
++        _session: &AppSession,
++        hit: &crate::interactions::PointerHit,
++        pressed: bool,
++    ) {
+         let idx = if pressed {
+             self.interactive_get_idx(hit.uv)
+         } else {","{""has_bug"": true, ""bugs"": [{""line_start"": 178, ""line_end"": 178, ""description"": ""Potential panic due to type mismatch when casting float to usize. If x, y, w, or h are negative or too large, it can cause an overflow or panic."", ""buggy_code"": ""let (x, y, w, h) = (x as usize, y as usize, w as usize, h as usize);""}, {""line_start"": 201, ""line_end"": 201, ""description"": ""Potential panic due to unwrap on an Option. If self.gl is None, this will cause a panic."", ""buggy_code"": ""app.gl.begin_sk(sk, &self.gl.as_ref().unwrap().tex_bg);""}, {""line_start"": 212, ""line_end"": 212, ""description"": ""Potential panic due to unwrap on an Option. If self.gl is None, this will cause a panic."", ""buggy_code"": ""app.gl.begin_sk(sk, &self.gl.as_ref().unwrap().tex_fg);""}]}"
+galister/wlx-overlay-x,8,8ddb37c2627b4afc995c3503c5058d0a62f88b3a,src/interactions.rs,modified,46,21,67,"@@ -1,4 +1,8 @@
+-use std::{collections::VecDeque, mem::MaybeUninit, time::{Instant, Duration}};
++use std::{
++    collections::VecDeque,
++    mem::MaybeUninit,
++    time::{Duration, Instant},
++};
+ 
+ use glam::{vec2, vec3, Affine3A, Vec2, Vec3};
+ use log::debug;
+@@ -24,7 +28,7 @@ pub const POINTER_ALT: u16 = 2;
+ pub trait InteractionHandler {
+     fn on_hover(&mut self, hit: &PointerHit);
+     fn on_left(&mut self, hand: usize);
+-    fn on_pointer(&mut self, hit: &PointerHit, pressed: bool);
++    fn on_pointer(&mut self, session: &AppSession, hit: &PointerHit, pressed: bool);
+     fn on_scroll(&mut self, hit: &PointerHit, delta: f32);
+ }
+ 
+@@ -51,8 +55,8 @@ pub struct PointerData {
+ 
+ #[derive(Debug, Clone, Copy)]
+ pub struct PointerState {
+-    click: bool,
+-    grab: bool,
++    pressed: bool,
++    grabbing: bool,
+     show_hide: bool,
+     scroll: f32,
+ }
+@@ -72,7 +76,8 @@ impl InputState {
+             pointers: [PointerData::new(session, 0), PointerData::new(session, 1)],
+         }
+     }
+-    pub fn update(&mut self, sk: &SkDraw, interactables: &mut [OverlayData]) {
++
++    pub fn update(&mut self, session: &AppSession, sk: &SkDraw, interactables: &mut [OverlayData]) {
+         let hmd_pose = sk.input_head();
+         self.hmd = Affine3A::from_rotation_translation(hmd_pose.orientation, hmd_pose.position);
+         for h in 0..2 {
+@@ -106,7 +111,7 @@ impl InputState {
+         }
+ 
+         for h in 0..2 {
+-            self.pointers[h].test_interactions(&self.hmd, sk, interactables);
++            self.pointers[h].test_interactions(session, &self.hmd, sk, interactables);
+         }
+     }
+ }
+@@ -129,23 +134,35 @@ impl PointerData {
+             next_push: Instant::now(),
+         }
+     }
++
+     fn update(&mut self, hmd: &Pose, sk: &SkDraw) {
+         let con = sk.input_controller(HANDS[self.hand]);
+         self.pose = con.aim;
+         self.pose3a =
+             Affine3A::from_rotation_translation(self.pose.orientation, self.pose.position);
+ 
+         self.before = self.now;
+-        self.now.click = if self.before.click { con.trigger > 0.5 } else { con.trigger > 0.6 };
+-        self.now.grab = if self.before.grab { con.grip > 0.5 } else { con.grip > 0.6 };
++        self.now.pressed = if self.before.pressed {
++            con.trigger > 0.5
++        } else {
++            con.trigger > 0.6
++        };
++
++        self.now.grabbing = if self.before.grabbing {
++            con.grip > 0.5
++        } else {
++            con.grip > 0.6
++        };
++
+         self.now.show_hide = if self.hand == 0 {
+             sk.input_controller_menu() == ButtonState::ACTIVE
+         } else {
+             false
+         };
+         self.now.scroll = con.stick.y;
+ 
+-        if self.before.click && !self.now.click {
++        // If unpressed (true -> false)
++        if self.before.pressed && !self.now.pressed {
+             while let Some(action) = self.release_actions.pop_front() {
+                 action();
+             }
+@@ -162,6 +179,7 @@ impl PointerData {
+ 
+     fn test_interactions(
+         &mut self,
++        session: &AppSession,
+         hmd3a: &Affine3A,
+         sk: &SkDraw,
+         interactables: &mut [OverlayData],
+@@ -175,7 +193,7 @@ impl PointerData {
+                 debug!(""Pointer {}: Grab lost on {}"", self.hand, grabbed.name);
+                 self.grabbed_idx = None;
+                 // ignore and continue
+-            } else if !self.now.grab {
++            } else if !self.now.grabbing {
+                 debug!(""Pointer {}: Dropped {}"", self.hand, grabbed.name);
+                 self.grabbed_idx = None;
+                 grabbed.on_drop();
+@@ -214,7 +232,7 @@ impl PointerData {
+                     sk.line_add(self.pose.position, *p, color, color, 0.002);
+                 }
+ 
+-                if self.now.click && !self.before.click {
++                if self.now.pressed && !self.before.pressed {
+                     debug!(""Pointer {}: on_curve {}"", self.hand, grabbed.name);
+                     grabbed.on_curve();
+                 }
+@@ -289,7 +307,7 @@ impl PointerData {
+             sk.hierarchy_pop();
+ 
+             // grab start
+-            if self.now.grab && !self.before.grab && overlay.grabbable {
++            if self.now.grabbing && !self.before.grabbing && overlay.grabbable {
+                 overlay.primary_pointer = Some(self.hand);
+                 let mat =
+                     Affine3A::from_rotation_translation(self.pose.orientation, self.pose.position);
+@@ -315,17 +333,17 @@ impl PointerData {
+                 overlay.backend.on_scroll(&hit_data, self.now.scroll);
+             }
+ 
+-            if self.now.click && !self.before.click {
++            if self.now.pressed && !self.before.pressed {
+                 overlay.primary_pointer = Some(self.hand);
+                 hit_data.primary = true;
+                 self.clicked_idx = Some(now_idx);
+-                overlay.backend.on_pointer(&hit_data, true);
+-            } else if !self.now.click && self.before.click {
++                overlay.backend.on_pointer(session, &hit_data, true);
++            } else if !self.now.pressed && self.before.pressed {
+                 if let Some(clicked_idx) = self.clicked_idx.take() {
+                     let clicked = &mut interactables[clicked_idx];
+-                    clicked.backend.on_pointer(&hit_data, false);
++                    clicked.backend.on_pointer(session, &hit_data, false);
+                 } else {
+-                    overlay.backend.on_pointer(&hit_data, false);
++                    overlay.backend.on_pointer(session, &hit_data, false);
+                 }
+             }
+         } else {
+@@ -339,10 +357,11 @@ impl PointerData {
+                 self.hovered_idx = None;
+             }
+ 
+-            if !self.now.click && self.before.click {
++            if !self.now.pressed && self.before.pressed {
+                 if let Some(clicked_idx) = self.clicked_idx.take() {
+                     let clicked = &mut interactables[clicked_idx];
+                     clicked.backend.on_pointer(
++                        session,
+                         &PointerHit {
+                             hand: self.hand,
+                             mode: self.mode,
+@@ -371,8 +390,8 @@ struct RayHit {
+ impl Default for PointerState {
+     fn default() -> Self {
+         Self {
+-            click: false,
+-            grab: false,
++            pressed: false,
++            grabbing: false,
+             show_hide: false,
+             scroll: 0.,
+         }
+@@ -384,6 +403,12 @@ pub struct DummyInteractionHandler;
+ impl InteractionHandler for DummyInteractionHandler {
+     fn on_left(&mut self, _hand: usize) {}
+     fn on_hover(&mut self, _hit: &crate::interactions::PointerHit) {}
+-    fn on_pointer(&mut self, _hit: &crate::interactions::PointerHit, _pressed: bool) {}
++    fn on_pointer(
++        &mut self,
++        _session: &AppSession,
++        _hit: &crate::interactions::PointerHit,
++        _pressed: bool,
++    ) {
++    }
+     fn on_scroll(&mut self, _hit: &crate::interactions::PointerHit, _delta: f32) {}
+ }","{""has_bug"": true, ""bugs"": [{""line_start"": 122, ""line_end"": 122, ""description"": ""Potential logic error: The calculation for 'hand' may lead to negative indices if 'session.primary_hand' is less than 'idx'."", ""buggy_code"": ""hand: session.primary_hand - idx,""}, {""line_start"": 148, ""line_end"": 148, ""description"": ""Logic error: The condition for setting 'pressed' may not accurately reflect the intended behavior for button presses, as it uses a threshold of 0.6 for unpressed state."", ""buggy_code"": ""con.trigger > 0.6""}, {""line_start"": 154, ""line_end"": 154, ""description"": ""Logic error: Similar to the previous bug, the condition for setting 'grabbing' may not accurately reflect the intended behavior for grip presses."", ""buggy_code"": ""con.grip > 0.6""}, {""line_start"": 188, ""line_end"": 188, ""description"": ""Potential null reference issue: If 'self.colors' does not have enough elements, accessing 'self.colors[self.mode as usize]' could lead to an out-of-bounds error."", ""buggy_code"": ""let color = self.colors[self.mode as usize];""}, {""line_start"": 204, ""line_end"": 204, ""description"": ""Potential logic error: The condition for checking 'next_push' may lead to unexpected behavior if the timing logic is not correctly implemented."", ""buggy_code"": ""if self.next_push < Instant::now() {""}]}"
+galister/wlx-overlay-x,8,8ddb37c2627b4afc995c3503c5058d0a62f88b3a,src/main.rs,modified,7,1,8,"@@ -115,6 +115,12 @@ pub struct AppState {
+     session: AppSession,
+ }
+ 
++impl AppState {
++    fn update_input(&mut self, sk: &SkDraw, interactables: &mut [OverlayData]) {
++        self.input.update(&self.session, sk, interactables);
++    }
++}
++
+ fn main() {
+     let sk = stereokit::Settings {
+         app_name: ""WlXrOverlay"".to_string(),
+@@ -187,7 +193,7 @@ fn main() {
+ 
+     sk.run(
+         |sk| {
+-            app.input.update(sk, overlays.as_mut_slice());
++            app.update_input(sk, overlays.as_mut_slice());
+ 
+             for overlay in overlays.iter_mut() {
+                 if overlay.want_visible && !overlay.visible {","{""has_bug"": true, ""bugs"": [{""line_start"": 172, ""line_end"": 172, ""description"": ""Off-by-one error: The loop iterates over wl.outputs.len(), but if wl.outputs is empty, it will not handle the case properly."", ""buggy_code"": ""for i in 0..wl.outputs.len() {""}, {""line_start"": 162, ""line_end"": 162, ""description"": ""Potential null reference issue: If INPUT.lock() fails, it should handle the error instead of proceeding with the assumption that it succeeded."", ""buggy_code"": ""if let Ok(mut uinput) = INPUT.lock() {""}, {""line_start"": 184, ""line_end"": 184, ""description"": ""Resource leak: The shader created with sk.shader_create_mem(PANEL_SHADER_BYTES) is not properly managed or released, which could lead to memory leaks."", ""buggy_code"": ""let panel_shader = sk.shader_create_mem(PANEL_SHADER_BYTES).unwrap();""}]}"
+galister/wlx-overlay-x,8,8ddb37c2627b4afc995c3503c5058d0a62f88b3a,src/overlay.rs,modified,8,3,11,"@@ -9,7 +9,7 @@ use stereokit::{
+ 
+ use crate::{
+     interactions::{DummyInteractionHandler, InteractionHandler},
+-    AppState,
++    AppSession, AppState,
+ };
+ 
+ pub const COLOR_WHITE: Color128 = Color128 {
+@@ -284,8 +284,13 @@ impl InteractionHandler for SplitOverlayBackend {
+     fn on_scroll(&mut self, hit: &crate::interactions::PointerHit, delta: f32) {
+         self.interaction.on_scroll(hit, delta);
+     }
+-    fn on_pointer(&mut self, hit: &crate::interactions::PointerHit, pressed: bool) {
+-        self.interaction.on_pointer(hit, pressed);
++    fn on_pointer(
++        &mut self,
++        session: &AppSession,
++        hit: &crate::interactions::PointerHit,
++        pressed: bool,
++    ) {
++        self.interaction.on_pointer(session, hit, pressed);
+     }
+ }
+ ","{""has_bug"": true, ""bugs"": [{""line_start"": 241, ""line_end"": 241, ""description"": ""Incomplete code leading to a potential compilation error. The function is not fully implemented."", ""buggy_code"": ""sel""}]}"

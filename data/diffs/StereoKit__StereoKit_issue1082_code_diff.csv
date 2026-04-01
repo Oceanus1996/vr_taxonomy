@@ -1,0 +1,53 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+StereoKit/StereoKit,1082,3f4d9be,StereoKitC/xr_backends/openxr_view.cpp,modified,5,8,13,"@@ -735,6 +735,11 @@ bool openxr_render_frame() {
+ 	// Timing also needs some work, may be best as some sort of anchor system
+ 	xr_time = frame_state.predictedDisplayTime;
+ 
++	// Execute any code that's dependent on the predicted time, such as
++	// updating the location of controller models. This often includes drawing,
++	// which means this must come before our render usage check.
++	input_step_late();
++
+ 	// If there's nothing to render, we may want to totally skip all projection
+ 	// layers entirely.
+ 	bool render_displays =
+@@ -802,14 +807,6 @@ bool openxr_render_frame() {
+ 			render_pipeline_surface_set_enabled(xr_displays[i].swapchain_color.render_surface, false);
+ 	}
+ 
+-	// Execute any code that's dependent on the predicted time, such as
+-	// updating the location of controller models.
+-	// 
+-	// Input can be costly to look at on some systems, so this happens _after_
+-	// swapchains are acquired, so they're in close time proximity to
+-	// xrWaitFrame. Theoretically better?
+-	input_step_late();
+-
+ 	render_pipeline_draw();
+ 
+ 	// Release the swapchains for all active displays"
+StereoKit/StereoKit,1082,9240e47,StereoKitC/xr_backends/openxr_view.cpp,modified,2,9,11,"@@ -735,7 +735,8 @@ bool openxr_render_frame() {
+ 	xr_time = frame_state.predictedDisplayTime;
+ 
+ 	// Execute any code that's dependent on the predicted time, such as
+-	// updating the location of controller models.
++	// updating the location of controller models. This often includes drawing,
++	// which means this must come before our render usage check.
+ 	input_update_poses(true);
+ 
+ 	// If there's nothing to render, we may want to totally skip all projection
+@@ -798,14 +799,6 @@ bool openxr_render_frame() {
+ 			render_pipeline_surface_set_enabled(xr_displays[i].swapchain_color.render_surface, false);
+ 	}
+ 
+-	// Execute any code that's dependent on the predicted time, such as
+-	// updating the location of controller models.
+-	// 
+-	// Input can be costly to look at on some systems, so this happens _after_
+-	// swapchains are acquired, so they're in close time proximity to
+-	// xrWaitFrame. Theoretically better?
+-	input_update_poses(true);
+-
+ 	render_pipeline_draw();
+ 
+ 	// Release the swapchains for all active displays"

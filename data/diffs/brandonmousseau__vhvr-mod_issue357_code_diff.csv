@@ -1,0 +1,65 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+brandonmousseau/vhvr-mod,357,d660f2a618a9214762d18093934488e9b59e3417,ValheimVRMod/Patches/EquipPatches.cs,modified,2,7,9,"@@ -160,18 +160,13 @@ static void Postfix(bool __result, string ___m_leftItem, GameObject ___m_leftIte
+             switch (EquipScript.getLeft()) {
+                 case EquipType.Bow:
+                     meshFilter.gameObject.AddComponent<BowLocalManager>();
+-                    var bow = Player.m_localPlayer.GetLeftItem();
+-                    if (!Attack.HaveAmmo(Player.m_localPlayer, bow))
+-                    {
+-                        return;
+-                    }
+-                    Attack.EquipAmmoItem(Player.m_localPlayer, bow);
+-                    
++                    EquipScript.equipAmmo();                   
+                     return;
+                 case EquipType.Crossbow:
+                     CrossbowManager crossbowManager = ___m_leftItemInstance.AddComponent<CrossbowManager>();
+                     crossbowManager.Initialize(Player.m_localPlayer.GetLeftItem(), ___m_leftItem);
+                     crossbowManager.gameObject.AddComponent<WeaponBlock>().weaponWield = crossbowManager;
++                    EquipScript.equipAmmo();
+                     return;
+                 case EquipType.Lantern:
+                     // TODO: implement a component that makes dverger lantern hangs downward regardless of hand orientation."
+brandonmousseau/vhvr-mod,357,d660f2a618a9214762d18093934488e9b59e3417,ValheimVRMod/Scripts/CrossbowMorphManager.cs,modified,5,6,11,"@@ -361,12 +361,11 @@ private bool createBolt()
+              var ammoItem = Player.m_localPlayer.GetAmmoItem();
+              
+              if (ammoItem == null || ammoItem.m_shared.m_itemType != ItemDrop.ItemData.ItemType.Ammo) {
+-                 // out of ammo
+-                 if (!Attack.HaveAmmo(Player.m_localPlayer, weapon))
+-                 {
+-                     return false;
+-                 }
+-                 Attack.EquipAmmoItem(Player.m_localPlayer, weapon);
++                bool hasAmmo = EquipScript.equipAmmo();
++                if (!hasAmmo)
++                {
++                    return false;
++                }
+              }
+              
+              bolt = Instantiate(ammoItem.m_shared.m_attack.m_attackProjectile, boltAttach.transform);"
+brandonmousseau/vhvr-mod,357,d660f2a618a9214762d18093934488e9b59e3417,ValheimVRMod/Utilities/EquipScript.cs,modified,18,0,18,"@@ -203,6 +203,24 @@ public static EquipType getLeftEquipType(ItemDrop.ItemData item)
+             return EquipType.None;
+         }
+ 
++        public static bool equipAmmo()
++        {
++            if (getLeft() != EquipType.Bow && getLeft() != EquipType.Crossbow)
++            {
++                LogUtils.LogWarning(""Attempting to equip ammo without bow or crossbow equipped"");
++                return false;
++            }
++                
++            ItemDrop.ItemData weapon = Player.m_localPlayer.GetLeftItem();
++            if (Attack.HaveAmmo(Player.m_localPlayer, weapon))
++            {
++                Attack.EquipAmmoItem(Player.m_localPlayer, weapon);
++                return true;
++            }
++
++            return false;
++        }
++
+         public static bool isThrowable(ItemDrop.ItemData item)
+         {
+             if (item != null)"

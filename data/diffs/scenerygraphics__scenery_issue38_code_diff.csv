@@ -1,0 +1,111 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+scenerygraphics/scenery,38,e9e4103610e931ea651330646ae8f7d835304bd5,src/main/kotlin/graphics/scenery/controls/GLFWMouseAndKeyHandler.kt,modified,22,1,23,"@@ -105,7 +105,7 @@ open class GLFWMouseAndKeyHandler(protected var hub: Hub?) : MouseAndKeyHandler,
+                 0,
+                 0,
+                 0, 0,
+-                floatArrayOf(xoffset.toFloat(), yoffset.toFloat(), 0.0f), 1.0f))
++                floatArrayOf(xoffset.toFloat()*scrollSpeedMultiplier, yoffset.toFloat()*scrollSpeedMultiplier, 0.0f), 1.0f))
+         }
+ 
+     }
+@@ -161,6 +161,12 @@ open class GLFWMouseAndKeyHandler(protected var hub: Hub?) : MouseAndKeyHandler,
+     /** behaviour expected modifier count */
+     private var behaviourMapExpectedModCount: Int = 0
+ 
++    /** store os name */
++    private var os = """"
++
++    /** scroll speed multiplier to combat OS idiosyncrasies */
++    private var scrollSpeedMultiplier = 1.0f
++
+     /**
+      * Utility function to search the current class path for JARs with natie libraries
+      *
+@@ -225,6 +231,21 @@ open class GLFWMouseAndKeyHandler(protected var hub: Hub?) : MouseAndKeyHandler,
+     }
+ 
+     init {
++        os = if(System.getProperty(""os.name"").toLowerCase().indexOf(""windows"") != -1) {
++            ""windows""
++        } else if(System.getProperty(""os.name"").toLowerCase().indexOf(""mac"") != -1) {
++            ""mac""
++        } else if(System.getProperty(""os.name"").toLowerCase().indexOf(""linux"") != -1) {
++            ""linux""
++        } else {
++            ""unknown""
++        }
++
++        scrollSpeedMultiplier = if(os == ""mac"") {
++            1.0f
++        } else {
++            10.0f
++        }
+ 
+         logger.debug(""Native JARs for JInput: ${getNativeJars(""jinput-platform"").joinToString("", "")}"")
+         extractLibrariesFromJar(getNativeJars(""jinput-platform""))"
+scenerygraphics/scenery,38,e9e4103610e931ea651330646ae8f7d835304bd5,src/main/kotlin/graphics/scenery/controls/JOGLMouseAndKeyHandler.kt,modified,23,2,25,"@@ -55,6 +55,12 @@ class JOGLMouseAndKeyHandler(protected var hub: Hub?) : graphics.scenery.control
+     /** OSX idiosyncrasy: Mask for right alt click */
+     private val OSX_ALT_RIGHT_CLICK = InputEvent.BUTTON3_MASK or InputEvent.BUTTON2_MASK or InputEvent.ALT_MASK or InputEvent.META_MASK
+ 
++    /** store os name */
++    private var os = """"
++
++    /** scroll speed multiplier to combat OS idiosyncrasies */
++    private var scrollSpeedMultiplier = 1.0f
++
+     /**
+      * Queries the windowing system for the current double click interval
+      *
+@@ -146,6 +152,21 @@ class JOGLMouseAndKeyHandler(protected var hub: Hub?) : graphics.scenery.control
+     }
+ 
+     init {
++        os = if(System.getProperty(""os.name"").toLowerCase().indexOf(""windows"") != -1) {
++            ""windows""
++        } else if(System.getProperty(""os.name"").toLowerCase().indexOf(""mac"") != -1) {
++            ""mac""
++        } else if(System.getProperty(""os.name"").toLowerCase().indexOf(""linux"") != -1) {
++            ""linux""
++        } else {
++            ""unknown""
++        }
++
++        scrollSpeedMultiplier = if(os == ""mac"") {
++            1.0f
++        } else {
++            10.0f
++        }
+ 
+         logger.debug(""Native JARs for JInput: ${getNativeJars(""jinput-platform"").joinToString("", "")}"")
+         extractLibrariesFromJar(getNativeJars(""jinput-platform""))
+@@ -486,9 +507,9 @@ class JOGLMouseAndKeyHandler(protected var hub: Hub?) : graphics.scenery.control
+         for (scroll in scrolls) {
+             if (scroll.buttons.matches(mask, pressedKeys)) {
+                 if(isHorizontal) {
+-                    scroll.behaviour.scroll(wheelRotation[0].toDouble(), isHorizontal, x, y)
++                    scroll.behaviour.scroll(wheelRotation[0].toDouble()*scrollSpeedMultiplier, isHorizontal, x, y)
+                 } else {
+-                    scroll.behaviour.scroll(wheelRotation[1].toDouble(), isHorizontal, x, y)
++                    scroll.behaviour.scroll(wheelRotation[1].toDouble()*scrollSpeedMultiplier, isHorizontal, x, y)
+                 }
+             }
+         }"
+scenerygraphics/scenery,38,e9e4103610e931ea651330646ae8f7d835304bd5,src/main/kotlin/graphics/scenery/controls/behaviours/FPSCameraControl.kt,modified,7,4,11,"@@ -109,11 +109,14 @@ open class FPSCameraControl(private val name: String, private val node: Camera,
+         xoffset *= 0.1f
+         yoffset *= 0.1f
+ 
+-        yaw = xoffset
+-        pitch = yoffset
++        yaw += xoffset
++        pitch += yoffset
+ 
+-        val rot = Quaternion().setFromEuler(pitch/180.0f*Math.PI.toFloat(), yaw/180.0f*Math.PI.toFloat(), 0.0f)
+-        rot.mult(node.rotation).normalize()
++        val yawR = Quaternion().setFromEuler(0.0f, yaw/180.0f*Math.PI.toFloat(), 0.0f)
++        val pitchR = Quaternion().setFromEuler(pitch/180.0f*Math.PI.toFloat(), 0.0f, 0.0f)
++        val rot = pitchR.mult(yawR).normalize()
++
++//        rot.mult(node.rotation).normalize()
+ 
+         node.rotation = rot
+     }"

@@ -1,0 +1,231 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+StereoKit/StereoKit,122,4ca733e,Examples/StereoKitTest/Demos/DemoText.cs,modified,3,3,6,"@@ -15,12 +15,12 @@ class DemoText : ITest
+ 
+ 	public void Initialize() {
+ 		/// :CodeSample: Text.MakeStyle Font.FromFile Text.Add
+-		/// In initialization, we can create the style from a font, a size, a 
+-		/// material, and a base color.
++		/// In initialization, we can create the style from a font, a size, 
++		/// and a base color. Overloads for MakeStyle can allow you to 
++		/// override the default font shader, or provide a specific Material.
+ 		style = Text.MakeStyle(
+ 			Font.FromFile(""C:/Windows/Fonts/Arial.ttf""), 
+ 			2 * U.cm,
+-			Default.MaterialFont.Copy(), 
+ 			Color.HSV(0.55f, 0.62f, 0.93f));
+ 		/// :End:
+ 	}"
+StereoKit/StereoKit,122,4ca733e,StereoKit/Native/NativeAPI.cs,modified,10,7,17,"@@ -1,4 +1,4 @@
+-﻿using System;
++using System;
+ using System.Runtime.InteropServices;
+ using System.Text;
+ 
+@@ -153,8 +153,6 @@ internal static class NativeAPI
+ 		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern IntPtr shader_create_mem  ([In] byte[] data, ulong data_size);
+ 		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern void   shader_set_id      (IntPtr shader, string id);
+ 		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern string shader_get_name    (IntPtr shader);
+-		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern int    shader_set_code    (IntPtr shader, [In] byte[] data, int data_size);
+-		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern int    shader_set_codefile(IntPtr shader, string filename);
+ 		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern void   shader_release     (IntPtr shader);
+ 
+ 		///////////////////////////////////////////
+@@ -198,11 +196,16 @@ internal static class NativeAPI
+ 
+ 		///////////////////////////////////////////
+ 
+-		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern TextStyle text_make_style(IntPtr font, float character_height, IntPtr material, Color color);
+-		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern void      text_add_at    (string text, in Matrix transform, int style, TextAlign position = TextAlign.Center, TextAlign align = TextAlign.Center, float off_x = 0, float off_y = 0, float off_z = 0);
+-		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern void      text_add_in    (string text, in Matrix transform, Vec2 size, TextFit fit, int style, TextAlign position = TextAlign.Center, TextAlign align = TextAlign.Center, float off_x = 0, float off_y = 0, float off_z = 0);
+-		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern Vec2      text_size      (string text, int style);
++		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern TextStyle text_make_style       (IntPtr font, float character_height, Color color);
++		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern TextStyle text_make_style_shader(IntPtr font, float character_height, IntPtr shader, Color color);
++		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern TextStyle text_make_style_mat   (IntPtr font, float character_height, IntPtr material, Color color);
++		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern void      text_add_at           (string text, in Matrix transform, int style, TextAlign position = TextAlign.Center, TextAlign align = TextAlign.Center, float off_x = 0, float off_y = 0, float off_z = 0);
++		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern void      text_add_in           (string text, in Matrix transform, Vec2 size, TextFit fit, int style, TextAlign position = TextAlign.Center, TextAlign align = TextAlign.Center, float off_x = 0, float off_y = 0, float off_z = 0);
++		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern Vec2      text_size             (string text, int style);
+ 
++		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern IntPtr    text_style_get_material(TextStyle style);
++
++		///////////////////////////////////////////
+ 
+ 		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern IntPtr solid_create          (ref Vec3 position, ref Quat rotation, SolidType type = SolidType.Normal);
+ 		[DllImport(dll, CharSet = cSet, CallingConvention = call)] public static extern void   solid_release         (IntPtr solid);"
+StereoKit/StereoKit,122,4ca733e,StereoKit/Native/NativeTypes.cs,modified,6,0,6,"@@ -494,6 +494,12 @@ public enum TextFit
+ 	public struct TextStyle
+ 	{
+ 		internal int id;
++
++		/// <summary>This provides a reference to the Material used by this
++		/// style, so you can override certain features! Note that if you're
++		/// creating TextStyles with manually provided Materials, this 
++		/// Material may not be unique to this style.</summary>
++		public Material Material { get => new Material(NativeAPI.text_style_get_material(this)); }
+ 	}
+ 
+ 	/// <summary>This describes the behavior of a 'Solid' physics object! the physics "
+StereoKit/StereoKit,122,4ca733e,StereoKit/Systems/Text.cs,modified,52,3,55,"@@ -7,20 +7,69 @@ public class Text
+ 		/// text style is a font plus size/color/material parameters, and are
+ 		/// used to keep text looking more consistent through the application
+ 		/// by encouraging devs to re-use styles throughout the project.
+-		/// </summary>
++		/// 
++		/// This overload will create a unique Material for this style based
++		/// on Default.ShaderFont.</summary>
++		/// <param name=""font"">Font asset you want attached to this style.
++		/// </param>
++		/// <param name=""characterHeight"">Height of a text glpyh in meters.
++		/// TODO: find what text glyph specifically!</param>
++		/// <param name=""colorGamma"">The gamma space color of the text
++		/// style. This will be embedded in the vertex color of the text
++		/// mesh.</param>
++		/// <returns>A text style id for use with text rendering functions.
++		/// </returns>
++		public static TextStyle MakeStyle(Font font, float characterHeight, Color colorGamma)
++			=> NativeAPI.text_make_style(font._fontInst, characterHeight, colorGamma);
++
++		/// <summary>Create a text style for use with other text functions! A
++		/// text style is a font plus size/color/material parameters, and are
++		/// used to keep text looking more consistent through the application
++		/// by encouraging devs to re-use styles throughout the project.
++		/// 
++		/// This overload will create a unique Material for this style based
++		/// on the provided Shader.</summary>
++		/// <param name=""font"">Font asset you want attached to this style.
++		/// </param>
++		/// <param name=""characterHeight"">Height of a text glpyh in meters.
++		/// TODO: find what text glyph specifically!</param>
++		/// <param name=""shader"">This style will create and use a unique
++		/// Material based on the Shader that you provide here.</param>
++		/// <param name=""colorGamma"">The gamma space color of the text
++		/// style. This will be embedded in the vertex color of the text
++		/// mesh.</param>
++		/// <returns>A text style id for use with text rendering functions.
++		/// </returns>
++		public static TextStyle MakeStyle(Font font, float characterHeight, Shader shader, Color colorGamma)
++			=> NativeAPI.text_make_style_shader(font._fontInst, characterHeight, shader._inst, colorGamma);
++
++		/// <summary>Create a text style for use with other text functions! A
++		/// text style is a font plus size/color/material parameters, and are
++		/// used to keep text looking more consistent through the application
++		/// by encouraging devs to re-use styles throughout the project.
++		/// 
++		/// This overload allows you to set the specific Material that is 
++		/// used. This can be helpful if you're keeping styles similar enough
++		/// to re-use the material and save on draw calls. If you don't know
++		/// what that means, then prefer using the overload that takes a 
++		/// Shader, or takes neither a Shader nor a Material!</summary>
+ 		/// <param name=""font"">Font asset you want attached to this style.
+ 		/// </param>
+ 		/// <param name=""characterHeight"">Height of a text glpyh in meters.
+ 		/// TODO: find what text glyph specifically!</param>
+ 		/// <param name=""material"">Which material should be used to render
+-		/// the text with?</param>
++		/// the text with? Note that this does NOT duplicate the material, so
++		/// some parameters of this Material instance will get overwritten, 
++		/// like the texture used for the glyph atlas. You should either use
++		/// a new Material, or a Material that was already used with this
++		/// same font.</param>
+ 		/// <param name=""colorGamma"">The gamma space color of the text
+ 		/// style. This will be embedded in the vertex color of the text
+ 		/// mesh.</param>
+ 		/// <returns>A text style id for use with text rendering functions.
+ 		/// </returns>
+ 		public static TextStyle MakeStyle(Font font, float characterHeight, Material material, Color colorGamma)
+-			=> NativeAPI.text_make_style(font._fontInst, characterHeight, material._inst, colorGamma);
++			=> NativeAPI.text_make_style_mat(font._fontInst, characterHeight, material._inst, colorGamma);
+ 
+ 		/// <summary>Renders text at the given location! Must be called every frame you want this text to be visible.</summary>
+ 		/// <param name=""text"">What text should be drawn?</param>"
+StereoKit/StereoKit,122,4ca733e,StereoKitC/stereokit.h,modified,8,4,12,"@@ -547,10 +547,14 @@ SK_MakeFlag(text_align_);
+ 
+ typedef int32_t text_style_t;
+ 
+-SK_API text_style_t text_make_style(font_t font, float character_height, material_t material, color128 color_gamma);
+-SK_API void         text_add_at    (const char *text, const sk_ref(matrix)  transform, text_style_t style sk_default(-1), text_align_ position sk_default(text_align_x_center | text_align_y_center), text_align_ align sk_default(text_align_x_center | text_align_y_center), float off_x sk_default(0), float off_y sk_default(0), float off_z sk_default(0));
+-SK_API void         text_add_in    (const char *text, const sk_ref(matrix)  transform, vec2 size, text_fit_ fit, text_style_t style sk_default(-1), text_align_ position sk_default(text_align_x_center | text_align_y_center), text_align_ align sk_default(text_align_x_center | text_align_y_center), float off_x sk_default(0), float off_y sk_default(0), float off_z sk_default(0));
+-SK_API vec2         text_size      (const char *text, text_style_t style sk_default(-1));
++SK_API text_style_t text_make_style       (font_t font, float character_height,                      color128 color_gamma);
++SK_API text_style_t text_make_style_shader(font_t font, float character_height, shader_t shader,     color128 color_gamma);
++SK_API text_style_t text_make_style_mat   (font_t font, float character_height, material_t material, color128 color_gamma);
++SK_API void         text_add_at           (const char *text, const sk_ref(matrix)  transform, text_style_t style sk_default(-1), text_align_ position sk_default(text_align_x_center | text_align_y_center), text_align_ align sk_default(text_align_x_center | text_align_y_center), float off_x sk_default(0), float off_y sk_default(0), float off_z sk_default(0));
++SK_API void         text_add_in           (const char *text, const sk_ref(matrix)  transform, vec2 size, text_fit_ fit, text_style_t style sk_default(-1), text_align_ position sk_default(text_align_x_center | text_align_y_center), text_align_ align sk_default(text_align_x_center | text_align_y_center), float off_x sk_default(0), float off_y sk_default(0), float off_z sk_default(0));
++SK_API vec2         text_size             (const char *text, text_style_t style sk_default(-1));
++
++SK_API material_t   text_style_get_material(text_style_t style);
+ 
+ ///////////////////////////////////////////
+ "
+StereoKit/StereoKit,122,4ca733e,StereoKitC/stereokit_ui.cpp,modified,1,1,2,"@@ -297,7 +297,7 @@ bool ui_init() {
+ 	skui_font_mat   = material_find(default_id_material_font);
+ 	material_set_queue_offset(skui_font_mat, -12);
+ 	skui_font       = font_find(default_id_font);
+-	skui_font_style = text_make_style(skui_font, skui_fontsize, skui_font_mat, color_to_gamma( skui_palette[4] ));
++	skui_font_style = text_make_style_mat(skui_font, skui_fontsize, skui_font_mat, color_to_gamma( skui_palette[4] ));
+ 	
+ 	skui_layers  .add({});
+ 	skui_id_stack.add({ HASH_FNV64_START });"
+StereoKit/StereoKit,122,4ca733e,StereoKitC/systems/defaults.cpp,modified,1,1,2,"@@ -172,7 +172,7 @@ bool defaults_init() {
+ 	sk_default_font = font_create(platform_default_font());
+ 	if (sk_default_font == nullptr)
+ 		return false;
+-	sk_default_text_style = text_make_style(sk_default_font, 20 * mm2m, sk_default_material_font, color128{ 1,1,1,1 });
++	sk_default_text_style = text_make_style_mat(sk_default_font, 20 * mm2m, sk_default_material_font, color128{ 1,1,1,1 });
+ 
+ 	font_set_id(sk_default_font, default_id_font);
+ "
+StereoKit/StereoKit,122,4ca733e,StereoKitC/systems/text.cpp,modified,37,1,38,"@@ -55,10 +55,40 @@ void text_buffer_ensure_capacity(text_buffer_t &buffer, size_t characters) {
+ 
+ ///////////////////////////////////////////
+ 
+-text_style_t text_make_style(font_t font, float character_height, material_t material, color128 color) {
++text_style_t text_make_style(font_t font, float character_height, color128 color) {
++	shader_t     shader   = shader_find        (default_id_shader_font);
++	material_t   material = material_create    (shader);
++	text_style_t result   = text_make_style_mat(font, character_height, material, color);
++
++	// The style now references the material if creation was successful, so
++	// we need to let go of things from here.
++	material_release(material);
++	shader_release  (shader);
++	return result;
++}
++
++///////////////////////////////////////////
++
++text_style_t text_make_style_shader(font_t font, float character_height, shader_t shader, color128 color) {
++	material_t   material = material_create(shader);
++	text_style_t result   = text_make_style_mat(font, character_height, material, color);
++
++	// The style now references the material if creation was successful, so
++	// we need to let go of it from here.
++	material_release(material);
++	return result;
++}
++
++///////////////////////////////////////////
++
++text_style_t text_make_style_mat(font_t font, float character_height, material_t material, color128 color) {
+ 	uint32_t       id     = (uint32_t)(font->header.id << 16 | material->header.id);
+ 	size_t         index  = 0;
+ 	text_buffer_t *buffer = nullptr;
++
++	if (font == nullptr) {
++		log_err(""text_make_style was given a null font!"");
++	}
+ 	
+ 	// Find or make a buffer for this style
+ 	for (size_t i = 0; i < text_buffers.count; i++) {
+@@ -97,6 +127,12 @@ text_style_t text_make_style(font_t font, float character_height, material_t mat
+ 
+ ///////////////////////////////////////////
+ 
++material_t text_style_get_material(text_style_t style) {
++	return text_buffers[text_styles[style].buffer_index].material;
++}
++
++///////////////////////////////////////////
++
+ vec2 text_line_size(text_style_t style, const char *text) {
+ 	font_t      font = text_styles[style].font;
+ 	const char *curr = text;"

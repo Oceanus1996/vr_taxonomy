@@ -1,0 +1,1515 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+mcxr-org/MCXR,88,a96ad784922597d131e71de247fd2c011f633c74,mcxr-play/src/main/java/net/sorenon/mcxr/play/compat/iris/mixin/MCXRIrisCompatMixinPlugin.java,removed,0,53,53,"@@ -1,53 +0,0 @@
+-package net.sorenon.mcxr.play.compat.iris.mixin;
+-
+-import net.fabricmc.loader.api.FabricLoader;
+-import net.fabricmc.loader.api.ModContainer;
+-import org.objectweb.asm.tree.ClassNode;
+-import org.spongepowered.asm.mixin.extensibility.IMixinConfigPlugin;
+-import org.spongepowered.asm.mixin.extensibility.IMixinInfo;
+-
+-import java.util.List;
+-import java.util.Set;
+-
+-public class MCXRIrisCompatMixinPlugin implements IMixinConfigPlugin {
+-
+-    private ModContainer iris = null;
+-
+-    @Override
+-    public void onLoad(String mixinPackage) {
+-        FabricLoader.getInstance().getModContainer(""iris"").ifPresent((container) -> this.iris = container);
+-    }
+-
+-    @Override
+-    public String getRefMapperConfig() {
+-        return null;
+-    }
+-
+-    @Override
+-    public boolean shouldApplyMixin(String targetClassName, String mixinClassName) {
+-        return iris != null;
+-    }
+-
+-    @Override
+-    public void acceptTargets(Set<String> myTargets, Set<String> otherTargets) {
+-
+-    }
+-
+-    @Override
+-    public List<String> getMixins() {
+-        if (iris == null) {
+-            return null;
+-        }
+-        return List.of(""MixinCameraUniforms"");
+-    }
+-
+-    @Override
+-    public void preApply(String targetClassName, ClassNode targetClass, String mixinClassName, IMixinInfo mixinInfo) {
+-
+-    }
+-
+-    @Override
+-    public void postApply(String targetClassName, ClassNode targetClass, String mixinClassName, IMixinInfo mixinInfo) {
+-
+-    }
+-}
+\ No newline at end of file"
+mcxr-org/MCXR,88,a96ad784922597d131e71de247fd2c011f633c74,mcxr-play/src/main/java/net/sorenon/mcxr/play/compat/iris/mixin/MixinCameraUniforms.java,removed,0,97,97,"@@ -1,97 +0,0 @@
+-package net.sorenon.mcxr.play.compat.iris.mixin;
+-
+-import com.mojang.math.Matrix4f;
+-import net.sorenon.mcxr.play.MCXRPlayClient;
+-import net.sorenon.mcxr.play.input.ControllerPoses;
+-import org.spongepowered.asm.mixin.Mixin;
+-import org.spongepowered.asm.mixin.Pseudo;
+-import org.spongepowered.asm.mixin.injection.At;
+-import org.spongepowered.asm.mixin.injection.Inject;
+-import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+-
+-@SuppressWarnings(""UnusedMixin"")
+-@Mixin(targets = ""net/coderbot/iris/shadow/ShadowMatrices"", remap = false)
+-@Pseudo
+-public class MixinCameraUniforms {
+-
+-//    @SuppressWarnings(""UnresolvedMixinReference"")
+-//    @Redirect(method = ""getUnshiftedCameraPosition"", at = @At(value = ""INVOKE"", target = ""Lnet/minecraft/client/Camera;getPosition()Lnet/minecraft/world/phys/Vec3;"", remap = true))
+-//    private static Vec3 mcxr$getPosition(Camera camera) {
+-//        return JOMLUtil.convert(MCXRPlayClient.viewSpacePoses.getGamePose().getPos());
+-//    }
+-
+-    @SuppressWarnings(""UnresolvedMixinReference"")
+-    @Inject(method = ""snapModelViewToGrid"", at = @At(""HEAD""), cancellable = true)
+-    private static void mcxr$snapModelViewToGrid(Matrix4f target,
+-                                                 float shadowIntervalSize,
+-                                                 double cameraX,
+-                                                 double cameraY,
+-                                                 double cameraZ,
+-                                                 CallbackInfo ci) {
+-//        System.out.println(""HOWDY"");
+-        if (MCXRPlayClient.MCXR_GAME_RENDERER.isXrMode()) {
+-            ci.cancel();
+-            var views = MCXRPlayClient.OPEN_XR_STATE.session.viewBuffer;
+-
+-            ControllerPoses left = new ControllerPoses();
+-            ControllerPoses right = new ControllerPoses();
+-
+-            left.updatePhysicalPose(views.get(0).pose(), MCXRPlayClient.stageTurn, MCXRPlayClient.getCameraScale());
+-            left.updateGamePose(MCXRPlayClient.xrOrigin);
+-            right.updatePhysicalPose(views.get(1).pose(), MCXRPlayClient.stageTurn, MCXRPlayClient.getCameraScale());
+-            right.updateGamePose(MCXRPlayClient.xrOrigin);
+-            var leftPos = left.getMinecraftPose().getPos();
+-            var rightPos = right.getMinecraftPose().getPos();
+-
+-            float x;
+-            if (Math.abs(leftPos.x() - (leftPos.x() % shadowIntervalSize)) > Math.abs(rightPos.x() - (rightPos.x() % shadowIntervalSize))) {
+-                x = leftPos.x();
+-            } else {
+-                x = rightPos.x();
+-            }
+-            float y;
+-            if (Math.abs(leftPos.y() - (leftPos.y() % shadowIntervalSize)) > Math.abs(rightPos.y() - (rightPos.y() % shadowIntervalSize))) {
+-                y = leftPos.y();
+-            } else {
+-                y = rightPos.y();
+-            }
+-            float z;
+-            if (Math.abs(leftPos.z() - (leftPos.z() % shadowIntervalSize)) > Math.abs(rightPos.z() - (rightPos.z() % shadowIntervalSize))) {
+-                z = leftPos.z();
+-            } else {
+-                z = rightPos.z();
+-            }
+-
+-            float deltaX = (x % shadowIntervalSize) - x;
+-            float deltaY = (y % shadowIntervalSize) - y;
+-            float deltaZ = (z % shadowIntervalSize) - z;
+-
+-            float offsetX = (float) cameraX + deltaX;
+-            float offsetY = (float) cameraY + deltaY;
+-            float offsetZ = (float) cameraZ + deltaZ;
+-
+-            // Calculate where we are within each grid ""cell""
+-            // These values will be in the range of (-shadowIntervalSize, shadowIntervalSize)
+-            //
+-            // It looks like it's intended for these to be within the range [0, shadowIntervalSize), however since the
+-            // expression (-2.0f % 32.0f) returns -2.0f, negative inputs will result in negative outputs.
+-//            float offsetX = (float) cameraX % shadowIntervalSize;
+-//            float offsetY = (float) cameraY % shadowIntervalSize;
+-//            float offsetZ = (float) cameraZ % shadowIntervalSize;
+-
+-            // Halve the size of each grid cell in order to move to the center of it.
+-            float halfIntervalSize = shadowIntervalSize / 2.0f;
+-
+-            // Shift by -halfIntervalSize
+-            //
+-            // It's clear that the intent of the algorithm was to place the values into the range:
+-            // [-shadowIntervalSize/2, shadowIntervalSize), however due to the previously-mentioned behavior with negatives,
+-            // it's possible that values will lie in the range (-3shadowIntervalSize/2, shadowIntervalSize/2).
+-            offsetX -= halfIntervalSize;
+-            offsetY -= halfIntervalSize;
+-            offsetZ -= halfIntervalSize;
+-
+-            target.multiply(Matrix4f.createTranslateMatrix(offsetX, offsetY, offsetZ));
+-        }
+-    }
+-}"
+mcxr-org/MCXR,88,a96ad784922597d131e71de247fd2c011f633c74,mcxr-play/src/main/java/net/sorenon/mcxr/play/compat/iris/mixin/MixinShadowRenderer.java,removed,0,30,30,"@@ -1,30 +0,0 @@
+-package net.sorenon.mcxr.play.compat.iris.mixin;
+-
+-import net.sorenon.mcxr.play.MCXRPlayClient;
+-import net.sorenon.mcxr.play.openxr.MCXRGameRenderer;
+-import net.sorenon.mcxr.play.rendering.RenderPass;
+-import org.spongepowered.asm.mixin.Mixin;
+-import org.spongepowered.asm.mixin.Pseudo;
+-import org.spongepowered.asm.mixin.Unique;
+-import org.spongepowered.asm.mixin.injection.At;
+-import org.spongepowered.asm.mixin.injection.Inject;
+-import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+-
+-@Mixin(targets = ""net/coderbot/iris/pipeline/ShadowRenderer"", remap = false)
+-@Pseudo
+-public class MixinShadowRenderer {
+-
+-    @Unique
+-    private static final MCXRGameRenderer XR_RENDERER = MCXRPlayClient.MCXR_GAME_RENDERER;
+-
+-    @SuppressWarnings(""UnresolvedMixinReference"")
+-    @Inject(method = ""renderShadows"", at = @At(value = ""HEAD""), cancellable = true)
+-    void mcxr$cancelRenderShadows(CallbackInfo ci) {
+-        if (XR_RENDERER.renderPass instanceof RenderPass.XrWorld renderPass && renderPass.viewIndex != 0) {
+-            ci.cancel();
+-        }
+-//        if (Minecraft.getInstance().options.keyShift.isDown()) {
+-//            ci.cancel();
+-//        }
+-    }
+-}"
+mcxr-org/MCXR,88,a96ad784922597d131e71de247fd2c011f633c74,mcxr-play/src/main/java/net/sorenon/mcxr/play/input/XrInput.java,modified,3,3,6,"@@ -70,7 +70,7 @@ public static void reinitialize(OpenXRSession session) throws XrException {
+             for (var entry : defaultBindings.entrySet()) {
+                 var bindingsSet = entry.getValue();
+ 
+-                XrActionSuggestedBinding.Buffer bindings = XrActionSuggestedBinding.malloc(bindingsSet.size(), stack);
++                XrActionSuggestedBinding.Buffer bindings = XrActionSuggestedBinding.calloc(bindingsSet.size(), stack);
+ 
+                 for (int i = 0; i < bindingsSet.size(); i++) {
+                     var binding = bindingsSet.get(i);
+@@ -80,7 +80,7 @@ public static void reinitialize(OpenXRSession session) throws XrException {
+                     );
+                 }
+ 
+-                XrInteractionProfileSuggestedBinding suggested_binds = XrInteractionProfileSuggestedBinding.malloc(stack).set(
++                XrInteractionProfileSuggestedBinding suggested_binds = XrInteractionProfileSuggestedBinding.calloc(stack).set(
+                         XR10.XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING,
+                         NULL,
+                         instance.getPath(entry.getKey()),
+@@ -98,7 +98,7 @@ public static void reinitialize(OpenXRSession session) throws XrException {
+                 }
+             }
+ 
+-            XrSessionActionSetsAttachInfo attach_info = XrSessionActionSetsAttachInfo.malloc(stack).set(
++            XrSessionActionSetsAttachInfo attach_info = XrSessionActionSetsAttachInfo.calloc(stack).set(
+                     XR10.XR_TYPE_SESSION_ACTION_SETS_ATTACH_INFO,
+                     NULL,
+                     stackPointers(vanillaGameplayActionSet.getHandle().address(), guiActionSet.getHandle().address(), handsActionSet.getHandle().address())"
+mcxr-org/MCXR,88,a96ad784922597d131e71de247fd2c011f633c74,mcxr-play/src/main/java/net/sorenon/mcxr/play/input/actions/MultiPoseAction.java,modified,9,16,25,"@@ -12,7 +12,7 @@
+ 
+ import java.nio.LongBuffer;
+ 
+-import static org.lwjgl.system.MemoryStack.stackMallocPointer;
++import static org.lwjgl.system.MemoryStack.stackCallocPointer;
+ import static org.lwjgl.system.MemoryStack.stackPush;
+ import static org.lwjgl.system.MemoryUtil.*;
+ 
+@@ -26,20 +26,19 @@ public class MultiPoseAction extends Action implements SessionAwareAction, Input
+     public boolean[] isActive;
+     public XrSpace[] spaces;
+ 
+-    private final LongBuffer subactionPaths;
+-
+     public MultiPoseAction(String name, String[] subactionPathsStr) {
+         super(name, XR10.XR_ACTION_TYPE_POSE_INPUT);
+         this.subactionPathsStr = ImmutableList.copyOf(subactionPathsStr);
+         this.amount = subactionPathsStr.length;
+-        this.subactionPaths = memCallocLong(amount);
+         this.isActive = new boolean[amount];
+     }
+ 
+     @Override
+     public void createHandle(XrActionSet actionSet, OpenXRInstance instance) throws XrException {
+         try (var stack = stackPush()) {
+ 
++            var subactionPaths = stack.callocLong(amount);
++
+             for (int i = 0; i < amount; i++) {
+                 var str = subactionPathsStr.get(i);
+                 subactionPaths.put(i, instance.getPath(str));
+@@ -50,7 +49,7 @@ public void createHandle(XrActionSet actionSet, OpenXRInstance instance) throws
+                 localizedName = I18n.get(localizedName);
+             }
+ 
+-            XrActionCreateInfo actionCreateInfo = XrActionCreateInfo.malloc(stack).set(
++            XrActionCreateInfo actionCreateInfo = XrActionCreateInfo.calloc(stack).set(
+                     XR10.XR_TYPE_ACTION_CREATE_INFO,
+                     NULL,
+                     memUTF8(""mcxr."" + this.name),
+@@ -59,7 +58,7 @@ public void createHandle(XrActionSet actionSet, OpenXRInstance instance) throws
+                     subactionPaths,
+                     memUTF8(localizedName)
+             );
+-            PointerBuffer pp = stackMallocPointer(1);
++            PointerBuffer pp = stackCallocPointer(1);
+             instance.check(XR10.xrCreateAction(actionSet, actionCreateInfo, pp), ""xrCreateAction"");
+             handle = new XrAction(pp.get(), actionSet);
+         }
+@@ -70,14 +69,14 @@ public void createHandleSession(OpenXRSession session) throws XrException {
+         try (var stack = stackPush()) {
+             spaces = new XrSpace[amount];
+             for (int i = 0; i < amount; i++) {
+-                XrActionSpaceCreateInfo action_space_info = XrActionSpaceCreateInfo.malloc(stack).set(
++                XrActionSpaceCreateInfo action_space_info = XrActionSpaceCreateInfo.calloc(stack).set(
+                         XR10.XR_TYPE_ACTION_SPACE_CREATE_INFO,
+                         NULL,
+                         handle,
+-                        subactionPaths.get(i),
++                        session.instance.getPath(subactionPathsStr.get(i)),
+                         OpenXRState.POSE_IDENTITY
+                 );
+-                PointerBuffer pp = stackMallocPointer(1);
++                PointerBuffer pp = stackCallocPointer(1);
+                 session.instance.check(XR10.xrCreateActionSpace(MCXRPlayClient.OPEN_XR_STATE.session.handle, action_space_info, pp), ""xrCreateActionSpace"");
+                 spaces[i] = new XrSpace(pp.get(0), session.handle);
+             }
+@@ -87,7 +86,7 @@ public void createHandleSession(OpenXRSession session) throws XrException {
+     @Override
+     public void sync(OpenXRSession session) {
+         for (int i = 0; i < amount; i++) {
+-            getInfo.subactionPath(subactionPaths.get(i));
++            getInfo.subactionPath(session.instance.getPath(subactionPathsStr.get(i)));
+             getInfo.action(handle);
+             session.instance.checkPanic(XR10.xrGetActionStatePose(session.handle, getInfo, state), ""xrGetActionStatePose"");
+             isActive[i] = state.isActive();
+@@ -102,10 +101,4 @@ public void destroyHandleSession() {
+             }
+         }
+     }
+-
+-    @Override
+-    public void close() {
+-        super.close();
+-        memFree(subactionPaths);
+-    }
+ }"
+mcxr-org/MCXR,88,a96ad784922597d131e71de247fd2c011f633c74,mcxr-play/src/main/java/net/sorenon/mcxr/play/input/actions/SingleInputAction.java,modified,3,3,6,"@@ -6,7 +6,7 @@
+ import org.lwjgl.PointerBuffer;
+ import org.lwjgl.openxr.*;
+ 
+-import static org.lwjgl.system.MemoryStack.stackMallocPointer;
++import static org.lwjgl.system.MemoryStack.stackCallocPointer;
+ import static org.lwjgl.system.MemoryStack.stackPush;
+ import static org.lwjgl.system.MemoryUtil.NULL;
+ import static org.lwjgl.system.MemoryUtil.memUTF8;
+@@ -32,7 +32,7 @@ public void createHandle(XrActionSet actionSet, OpenXRInstance instance) throws
+                 localizedName = I18n.get(localizedName);
+             }
+ 
+-            XrActionCreateInfo actionCreateInfo = XrActionCreateInfo.malloc(stack).set(
++            XrActionCreateInfo actionCreateInfo = XrActionCreateInfo.calloc(stack).set(
+                     XR10.XR_TYPE_ACTION_CREATE_INFO,
+                     NULL,
+                     memUTF8(""mcxr."" + this.name),
+@@ -41,7 +41,7 @@ public void createHandle(XrActionSet actionSet, OpenXRInstance instance) throws
+                     null,
+                     memUTF8(localizedName)
+             );
+-            PointerBuffer pp = stackMallocPointer(1);
++            PointerBuffer pp = stackCallocPointer(1);
+             instance.check(XR10.xrCreateAction(actionSet, actionCreateInfo, pp), ""xrCreateAction"");
+             handle = new XrAction(pp.get(), actionSet);
+         }"
+mcxr-org/MCXR,88,a96ad784922597d131e71de247fd2c011f633c74,mcxr-play/src/main/java/net/sorenon/mcxr/play/input/actions/Vec2fAction.java,modified,1,1,2,"@@ -7,7 +7,7 @@
+ 
+ public class Vec2fAction extends SingleInputAction<Vector2f> {
+ 
+-    private static final XrActionStateVector2f state = XrActionStateVector2f.malloc().type(XR10.XR_TYPE_ACTION_STATE_VECTOR2F);
++    private static final XrActionStateVector2f state = XrActionStateVector2f.calloc().type(XR10.XR_TYPE_ACTION_STATE_VECTOR2F);
+ 
+     public Vec2fAction(String name) {
+         super(name, XR10.XR_ACTION_TYPE_VECTOR2F_INPUT);"
+mcxr-org/MCXR,88,a96ad784922597d131e71de247fd2c011f633c74,mcxr-play/src/main/java/net/sorenon/mcxr/play/input/actionsets/ActionSet.java,modified,3,3,6,"@@ -15,7 +15,7 @@
+ import java.util.HashMap;
+ import java.util.List;
+ 
+-import static org.lwjgl.system.MemoryStack.stackMallocPointer;
++import static org.lwjgl.system.MemoryStack.stackCallocPointer;
+ import static org.lwjgl.system.MemoryStack.stackPush;
+ import static org.lwjgl.system.MemoryUtil.*;
+ 
+@@ -53,13 +53,13 @@ public final void createHandle(OpenXRInstance instance) throws XrException {
+                 localizedName = I18n.get(localizedName);
+             }
+ 
+-            XrActionSetCreateInfo actionSetCreateInfo = XrActionSetCreateInfo.malloc(stack).set(XR10.XR_TYPE_ACTION_SET_CREATE_INFO,
++            XrActionSetCreateInfo actionSetCreateInfo = XrActionSetCreateInfo.calloc(stack).set(XR10.XR_TYPE_ACTION_SET_CREATE_INFO,
+                     NULL,
+                     memUTF8(""mcxr."" + this.name),
+                     memUTF8(I18n.get(localizedName)),
+                     priority
+             );
+-            PointerBuffer pp = stackMallocPointer(1);
++            PointerBuffer pp = stackCallocPointer(1);
+             instance.check(XR10.xrCreateActionSet(instance.handle, actionSetCreateInfo, pp), ""xrCreateActionSet"");
+             handle = new XrActionSet(pp.get(0), instance.handle);
+ "
+mcxr-org/MCXR,88,a96ad784922597d131e71de247fd2c011f633c74,mcxr-play/src/main/java/net/sorenon/mcxr/play/mixin/FramebufferMixin.java,modified,1,1,2,"@@ -15,7 +15,7 @@ public class FramebufferMixin {
+ 
+     @ModifyConstant(method = ""createBuffers"", constant = @Constant(intValue = GL_RGBA8))
+     int increaseColorDepth(int value) {
+-        if (MCXRPlayClient.OPEN_XR_STATE.session != null && MCXRPlayClient.OPEN_XR_STATE.session.hdr) {
++        if (MCXRPlayClient.OPEN_XR_STATE.session != null && MCXRPlayClient.OPEN_XR_STATE.session.swapchain.hdr) {
+             return GL_RGBA16;
+         } else {
+             return GL_RGBA8;"
+mcxr-org/MCXR,88,a96ad784922597d131e71de247fd2c011f633c74,mcxr-play/src/main/java/net/sorenon/mcxr/play/mixin/rendering/GameRendererMixin.java,modified,20,14,34,"@@ -8,14 +8,12 @@
+ import net.minecraft.client.multiplayer.ClientLevel;
+ import net.minecraft.client.renderer.GameRenderer;
+ import net.sorenon.mcxr.play.MCXRPlayClient;
++import net.sorenon.mcxr.play.accessor.Matrix4fExt;
+ import net.sorenon.mcxr.play.openxr.MCXRGameRenderer;
+-import net.sorenon.mcxr.play.rendering.MCXRMainTarget;
+ import net.sorenon.mcxr.play.rendering.MCXRCamera;
+ import net.sorenon.mcxr.play.rendering.RenderPass;
+-import net.sorenon.mcxr.play.accessor.Matrix4fExt;
+ import org.joml.Quaternionf;
+ import org.objectweb.asm.Opcodes;
+-import org.spongepowered.asm.mixin.Final;
+ import org.spongepowered.asm.mixin.Mixin;
+ import org.spongepowered.asm.mixin.Shadow;
+ import org.spongepowered.asm.mixin.Unique;
+@@ -34,10 +32,6 @@ public abstract class GameRendererMixin {
+     @Shadow
+     public abstract float getRenderDistance();
+ 
+-    @Shadow
+-    @Final
+-    private Minecraft minecraft;
+-
+     @Shadow
+     private boolean renderHand;
+ 
+@@ -49,22 +43,34 @@ Camera replaceCamera() {
+         return new MCXRCamera();
+     }
+ 
+-    /**
+-     * Update the framebuffer dimensions in MCXRMainTarget so we know if framebuffers need resizing
+-     */
+     @Inject(method = ""resize"", at = @At(""HEAD""))
+     void onResized(int i, int j, CallbackInfo ci) {
+-        MCXRMainTarget MCXRMainTarget = (MCXRMainTarget) minecraft.getMainRenderTarget();
+-        MCXRMainTarget.minecraftFramebufferWidth = i;
+-        MCXRMainTarget.minecraftFramebufferHeight = j;
++        XR_RENDERER.reloadingDepth += 1;
++    }
++
++    @Inject(method = ""resize"", at = @At(""RETURN""))
++    void afterResized(int i, int j, CallbackInfo ci) {
++        XR_RENDERER.reloadingDepth -= 1;
+     }
+ 
++    @Unique
++    private boolean renderHandOld;
++
+     /**
+      * Cancels both vanilla and Iris hand rendering
++     * Note: If immersive portals is installed this can interfear
+      */
+     @Inject(method = ""renderLevel"", at = @At(""HEAD""))
+     void cancelRenderHand(CallbackInfo ci) {
+-        this.renderHand = XR_RENDERER.renderPass == RenderPass.VANILLA;
++        this.renderHandOld = this.renderHand;
++        if (XR_RENDERER.renderPass != RenderPass.VANILLA) {
++            this.renderHand = false;
++        }
++    }
++
++    @Inject(method = ""renderLevel"", at = @At(""RETURN""))
++    void restoreRenderHand(CallbackInfo ci) {
++        this.renderHand = this.renderHandOld;
+     }
+ 
+     @Inject(method = ""bobView"", at = @At(""HEAD""), cancellable = true)"
+mcxr-org/MCXR,88,a96ad784922597d131e71de247fd2c011f633c74,mcxr-play/src/main/java/net/sorenon/mcxr/play/mixin/rendering/GuiMixin.java,renamed,7,2,9,"@@ -14,7 +14,7 @@
+ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+ 
+ @Mixin(Gui.class)
+-public class InGameHudMixin {
++public class GuiMixin {
+ 
+     @Unique
+     private static final MCXRGameRenderer XR_RENDERER = MCXRPlayClient.MCXR_GAME_RENDERER;
+@@ -32,9 +32,14 @@ void cancelRenderVignette(Entity entity, CallbackInfo ci) {
+     }
+ 
+     @Inject(method = ""renderCrosshair"", at = @At(""HEAD""), cancellable = true)
+-    void cancelRenderCrosshair(PoseStack matrices, CallbackInfo ci){
++    void cancelRenderCrosshair(PoseStack matrices, CallbackInfo ci) {
+         if (XR_RENDERER.renderPass != RenderPass.VANILLA) {
+             ci.cancel();
+         }
+     }
++
++    @Inject(method = ""render"", at = @At(""HEAD""))
++    void irisGuiFix(CallbackInfo ci) {
++        RenderSystem.enableDepthTest();
++    }
+ }"
+mcxr-org/MCXR,88,a96ad784922597d131e71de247fd2c011f633c74,mcxr-play/src/main/java/net/sorenon/mcxr/play/mixin/rendering/LevelRendererMixin.java,modified,12,16,28,"@@ -1,31 +1,27 @@
+ package net.sorenon.mcxr.play.mixin.rendering;
+ 
+-import net.minecraft.client.Minecraft;
+ import net.minecraft.client.renderer.LevelRenderer;
+-import net.sorenon.mcxr.play.rendering.MCXRMainTarget;
+-import org.spongepowered.asm.mixin.Final;
++import net.sorenon.mcxr.play.MCXRPlayClient;
++import net.sorenon.mcxr.play.openxr.MCXRGameRenderer;
+ import org.spongepowered.asm.mixin.Mixin;
+-import org.spongepowered.asm.mixin.Shadow;
++import org.spongepowered.asm.mixin.Unique;
+ import org.spongepowered.asm.mixin.injection.At;
+ import org.spongepowered.asm.mixin.injection.Inject;
+ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+ 
+ @Mixin(LevelRenderer.class)
+ public class LevelRendererMixin {
+ 
+-    @Shadow @Final private Minecraft minecraft;
++    @Unique
++    private MCXRGameRenderer mcxrGameRenderer = MCXRPlayClient.MCXR_GAME_RENDERER;
+ 
+-    @Inject(method = ""graphicsChanged()V"", at = @At(""RETURN""))
+-    void onGraphicsChanged(CallbackInfo ci) {
+-        MCXRMainTarget MCXRMainTarget = (MCXRMainTarget) minecraft.getMainRenderTarget();
+-        MCXRMainTarget.minecraftFramebufferWidth = minecraft.getMainRenderTarget().width;
+-        MCXRMainTarget.minecraftFramebufferHeight = minecraft.getMainRenderTarget().height;
++    @Inject(method = ""graphicsChanged"", at = @At(""HEAD""))
++    void ongraphicsChanged(CallbackInfo ci) {
++        mcxrGameRenderer.reloadingDepth += 1;
+     }
+ 
+-//    @Inject(method = ""setupRender"", at = @At(""HEAD""), cancellable = true)
+-//    void cancelSetupRender(CallbackInfo ci) {
+-//        if (MCXRPlayClient.RENDERER.renderPass != RenderPass.VANILLA && MCXRPlayClient.RENDERER.eye != 0) {
+-//            ci.cancel();
+-//        }
+-//    }
++    @Inject(method = ""graphicsChanged"", at = @At(""RETURN""))
++    void aftergraphicsChanged(CallbackInfo ci) {
++        mcxrGameRenderer.reloadingDepth -= 1;
++    }
+ }"
+mcxr-org/MCXR,88,a96ad784922597d131e71de247fd2c011f633c74,mcxr-play/src/main/java/net/sorenon/mcxr/play/mixin/rendering/MinecraftMixin.java,modified,29,10,39,"@@ -1,6 +1,5 @@
+ package net.sorenon.mcxr.play.mixin.rendering;
+ 
+-import com.mojang.blaze3d.pipeline.MainTarget;
+ import com.mojang.blaze3d.pipeline.RenderTarget;
+ import com.mojang.blaze3d.platform.Window;
+ import com.mojang.blaze3d.systems.RenderSystem;
+@@ -9,7 +8,11 @@
+ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
+ import net.fabricmc.fabric.api.networking.v1.PacketByteBufs;
+ import net.minecraft.Util;
+-import net.minecraft.client.*;
++import net.minecraft.client.CloudStatus;
++import net.minecraft.client.Minecraft;
++import net.minecraft.client.Options;
++import net.minecraft.client.Timer;
++import net.minecraft.client.gui.GuiComponent;
+ import net.minecraft.client.gui.components.toasts.ToastComponent;
+ import net.minecraft.client.gui.screens.LoadingOverlay;
+ import net.minecraft.client.gui.screens.Overlay;
+@@ -32,7 +35,6 @@
+ import net.sorenon.mcxr.play.openxr.MCXRGameRenderer;
+ import net.sorenon.mcxr.play.openxr.OpenXRState;
+ import net.sorenon.mcxr.play.openxr.XrRuntimeException;
+-import net.sorenon.mcxr.play.rendering.MCXRMainTarget;
+ import net.sorenon.mcxr.play.rendering.RenderPass;
+ import org.jetbrains.annotations.Nullable;
+ import org.lwjgl.glfw.GLFW;
+@@ -42,12 +44,12 @@
+ import org.spongepowered.asm.mixin.injection.Inject;
+ import org.spongepowered.asm.mixin.injection.Redirect;
+ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
++import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+ 
+ import java.util.Queue;
+ import java.util.concurrent.CompletableFuture;
+ 
+ import static net.minecraft.client.gui.GuiComponent.GUI_ICONS_LOCATION;
+-import net.minecraft.client.gui.GuiComponent;
+ 
+ @Mixin(Minecraft.class)
+ public abstract class MinecraftMixin extends ReentrantBlockableEventLoop<Runnable> implements MinecraftExt {
+@@ -178,11 +180,6 @@ public MinecraftMixin(String string) {
+     @Unique
+     private static final MCXRGameRenderer XR_RENDERER = MCXRPlayClient.MCXR_GAME_RENDERER;
+ 
+-    @Redirect(method = ""<init>"", at = @At(value = ""NEW"", target = ""com/mojang/blaze3d/pipeline/MainTarget""))
+-    MainTarget createFramebuffer(int width, int height) {
+-        return new MCXRMainTarget(width, height);
+-    }
+-
+     @Inject(method = ""run"", at = @At(""HEAD""))
+     void start(CallbackInfo ci) {
+         MCXRPlayClient.INSTANCE.MCXRGuiManager.init();
+@@ -284,12 +281,18 @@ public void preRender(boolean tick, Runnable preTick) {
+     @Override
+     public void doRender(boolean tick, long frameStartTime, RenderPass renderPass) {
+         XR_RENDERER.renderPass = renderPass;
++
++        if (renderPass == RenderPass.GUI) {
++            MCXRPlayClient.INSTANCE.MCXRGuiManager.guiRenderTarget.bindWrite(true);
++        } else {
++            this.mainRenderTarget.bindWrite(true);
++        }
++
+         this.profiler.push(""render"");
+         PoseStack matrixStack = RenderSystem.getModelViewStack();
+         matrixStack.pushPose();
+         RenderSystem.applyModelViewMatrix();
+         RenderSystem.clear(16640, ON_OSX);
+-        this.mainRenderTarget.bindWrite(true);
+         FogRenderer.setupNoFog();
+         this.profiler.push(""display"");
+         RenderSystem.enableTexture();
+@@ -362,6 +365,22 @@ public void postRender() {
+ 
+         this.profiler.pop();
+     }
++
++    @Inject(method = ""getMainRenderTarget"", at = @At(""HEAD""), cancellable = true)
++    void swapWithGUI(CallbackInfoReturnable<RenderTarget> cir){
++        if (XR_RENDERER.guiMode) {
++            cir.setReturnValue(MCXRPlayClient.INSTANCE.MCXRGuiManager.guiRenderTarget);
++        }
++    }
++
++    @Inject(method = ""resizeDisplay"", at = @At(""HEAD""), cancellable = true)
++    void cancelResize(CallbackInfo ci) {
++        if (XR_RENDERER.isXrMode()) {
++            ci.cancel();
++        }
++    }
++
++    @Unique
+     private static void renderCursor(PoseStack matrices, Minecraft client) {
+         int mouseX = (int) ((client.mouseHandler.xpos()) * (double) client.getWindow().getGuiScaledWidth() / (double) client.getWindow().getWidth());
+         int mouseY = (int) ((client.mouseHandler.ypos()) * (double) client.getWindow().getGuiScaledHeight() / (double) client.getWindow().getHeight());"
+mcxr-org/MCXR,88,a96ad784922597d131e71de247fd2c011f633c74,mcxr-play/src/main/java/net/sorenon/mcxr/play/mixin/rendering/WindowFramebufferMixin.java,removed,0,20,20,"@@ -1,20 +0,0 @@
+-package net.sorenon.mcxr.play.mixin.rendering;
+-
+-import com.mojang.blaze3d.pipeline.MainTarget;
+-import net.sorenon.mcxr.play.rendering.MCXRMainTarget;
+-import org.spongepowered.asm.mixin.Mixin;
+-import org.spongepowered.asm.mixin.injection.At;
+-import org.spongepowered.asm.mixin.injection.Inject;
+-import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+-
+-@Mixin(MainTarget.class)
+-public class WindowFramebufferMixin {
+-
+-    @Inject(method = ""createFrameBuffer"", at = @At(""HEAD""), cancellable = true)
+-    void cancel(int width, int height, CallbackInfo ci){
+-        //noinspection ConstantConditions
+-        if ((Object)this instanceof MCXRMainTarget) {
+-            ci.cancel();
+-        }
+-    }
+-}"
+mcxr-org/MCXR,88,a96ad784922597d131e71de247fd2c011f633c74,mcxr-play/src/main/java/net/sorenon/mcxr/play/mixin/rendering/WindowMixin.java,modified,20,7,27,"@@ -4,7 +4,7 @@
+ import net.minecraft.client.Minecraft;
+ import net.sorenon.mcxr.play.MCXRGuiManager;
+ import net.sorenon.mcxr.play.MCXRPlayClient;
+-import net.sorenon.mcxr.play.rendering.MCXRMainTarget;
++import net.sorenon.mcxr.play.openxr.MCXRGameRenderer;
+ import org.lwjgl.glfw.GLFW;
+ import org.spongepowered.asm.mixin.Mixin;
+ import org.spongepowered.asm.mixin.Unique;
+@@ -20,6 +20,10 @@ public class WindowMixin {
+     @Unique
+     private final MCXRGuiManager FGM = MCXRPlayClient.INSTANCE.MCXRGuiManager;
+ 
++    @Unique
++    private final MCXRGameRenderer mcxrGameRenderer = MCXRPlayClient.MCXR_GAME_RENDERER;
++
++
+     @ModifyVariable(method = ""updateVsync"", ordinal = 0, at = @At(""HEAD""))
+     boolean overwriteVsync(boolean v) {
+         GLFW.glfwSwapInterval(0);
+@@ -29,16 +33,26 @@ boolean overwriteVsync(boolean v) {
+     @Inject(method = ""getScreenWidth"", at = @At(""HEAD""), cancellable = true)
+     void getFramebufferWidth(CallbackInfoReturnable<Integer> cir) {
+         if (isCustomFramebuffer()) {
+-            MCXRMainTarget MCXRMainTarget = (MCXRMainTarget) Minecraft.getInstance().getMainRenderTarget();
+-            cir.setReturnValue(MCXRMainTarget.viewWidth);
++            if (mcxrGameRenderer.reloadingDepth > 0) {
++                var swapchain = MCXRPlayClient.OPEN_XR_STATE.session.swapchain;
++                cir.setReturnValue(swapchain.getRenderWidth());
++            } else {
++                var mainTarget = Minecraft.getInstance().getMainRenderTarget();
++                cir.setReturnValue(mainTarget.viewWidth);
++            }
+         }
+     }
+ 
+     @Inject(method = ""getScreenHeight"", at = @At(""HEAD""), cancellable = true)
+     void getFramebufferHeight(CallbackInfoReturnable<Integer> cir) {
+         if (isCustomFramebuffer()) {
+-            MCXRMainTarget MCXRMainTarget = (MCXRMainTarget) Minecraft.getInstance().getMainRenderTarget();
+-            cir.setReturnValue(MCXRMainTarget.viewHeight);
++            if (mcxrGameRenderer.reloadingDepth > 0) {
++                var swapchain = MCXRPlayClient.OPEN_XR_STATE.session.swapchain;
++                cir.setReturnValue(swapchain.getRenderHeight());
++            } else {
++                var mainTarget = Minecraft.getInstance().getMainRenderTarget();
++                cir.setReturnValue(mainTarget.viewHeight);
++            }
+         }
+     }
+ 
+@@ -81,7 +95,6 @@ void preventPauseOnUnFocus(long window, boolean focused, CallbackInfo ci) {
+ 
+     @Unique
+     boolean isCustomFramebuffer() {
+-        MCXRMainTarget MCXRMainTarget = (MCXRMainTarget) Minecraft.getInstance().getMainRenderTarget();
+-        return MCXRMainTarget != null && MCXRMainTarget.isCustomFramebuffer();
++        return mcxrGameRenderer.overrideWindowSize || (mcxrGameRenderer.isXrMode() && mcxrGameRenderer.reloadingDepth > 0);
+     }
+ }"
+mcxr-org/MCXR,88,a96ad784922597d131e71de247fd2c011f633c74,mcxr-play/src/main/java/net/sorenon/mcxr/play/mixin/resources/GameRendererMixin.java,renamed,2,1,3,"@@ -1,4 +1,4 @@
+-package net.sorenon.mcxr.play.mixin;
++package net.sorenon.mcxr.play.mixin.resources;
+ 
+ import com.mojang.blaze3d.vertex.DefaultVertexFormat;
+ import com.mojang.datafixers.util.Pair;
+@@ -28,6 +28,7 @@ void loadGuiShader(ResourceManager manager, CallbackInfo ci) {
+         ArrayList<Pair<ShaderInstance, Consumer<ShaderInstance>>> loadingShaders = new ArrayList<>();
+         try {
+             loadingShaders.add(Pair.of(new ShaderInstance(manager, ""blit_screen_mcxr"", DefaultVertexFormat.BLIT_SCREEN), (shader) -> MCXRPlayClient.MCXR_GAME_RENDERER.blitShader = shader));
++            loadingShaders.add(Pair.of(new ShaderInstance(manager, ""blit_screen_mcxr_srgb"", DefaultVertexFormat.BLIT_SCREEN), (shader) -> MCXRPlayClient.MCXR_GAME_RENDERER.blitShaderSRGB = shader));
+             loadingShaders.add(Pair.of(new ShaderInstance(manager, ""gui_blit_screen_mcxr"", DefaultVertexFormat.BLIT_SCREEN), (shader) -> MCXRPlayClient.MCXR_GAME_RENDERER.guiBlitShader = shader));
+         } catch (IOException e) {
+             throw new RuntimeException(""[MCXR] Could not load custom shaders"", e);"
+mcxr-org/MCXR,88,a96ad784922597d131e71de247fd2c011f633c74,mcxr-play/src/main/java/net/sorenon/mcxr/play/mixin/resources/ResourceManagerReloadListenerMixin.java,added,24,0,24,"@@ -0,0 +1,24 @@
++package net.sorenon.mcxr.play.mixin.resources;
++
++import net.minecraft.server.packs.resources.ResourceManager;
++import net.minecraft.server.packs.resources.ResourceManagerReloadListener;
++import net.minecraft.util.profiling.ProfilerFiller;
++import net.sorenon.mcxr.play.MCXRPlayClient;
++import org.spongepowered.asm.mixin.Mixin;
++import org.spongepowered.asm.mixin.injection.At;
++import org.spongepowered.asm.mixin.injection.Inject;
++import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
++
++@Mixin(ResourceManagerReloadListener.class)
++public interface ResourceManagerReloadListenerMixin {
++
++    @Inject(method = ""method_29490"", at = @At(""HEAD""))
++    default void preReload(ProfilerFiller profilerFiller, ResourceManager resourceManager, CallbackInfo ci){
++        MCXRPlayClient.MCXR_GAME_RENDERER.reloadingDepth += 1;
++    }
++
++    @Inject(method = ""method_29490"", at = @At(""RETURN""))
++    default void postReload(ProfilerFiller profilerFiller, ResourceManager resourceManager, CallbackInfo ci){
++        MCXRPlayClient.MCXR_GAME_RENDERER.reloadingDepth -= 1;
++    }
++}"
+mcxr-org/MCXR,88,a96ad784922597d131e71de247fd2c011f633c74,mcxr-play/src/main/java/net/sorenon/mcxr/play/openxr/MCXRGameRenderer.java,modified,37,20,57,"@@ -1,5 +1,6 @@
+ package net.sorenon.mcxr.play.openxr;
+ 
++import com.mojang.blaze3d.pipeline.MainTarget;
+ import com.mojang.blaze3d.pipeline.RenderTarget;
+ import com.mojang.blaze3d.platform.GlConst;
+ import com.mojang.blaze3d.platform.GlStateManager;
+@@ -28,9 +29,8 @@
+ import net.sorenon.mcxr.play.MCXRPlayClient;
+ import net.sorenon.mcxr.play.PlayOptions;
+ import net.sorenon.mcxr.play.accessor.MinecraftExt;
+-import net.sorenon.mcxr.play.input.actionsets.VanillaGameplayActionSet;
++import net.sorenon.mcxr.play.input.XrInput;
+ import net.sorenon.mcxr.play.rendering.MCXRCamera;
+-import net.sorenon.mcxr.play.rendering.MCXRMainTarget;
+ import net.sorenon.mcxr.play.rendering.RenderPass;
+ import net.sorenon.mcxr.play.rendering.XrRenderTarget;
+ import org.apache.logging.log4j.LogManager;
+@@ -39,37 +39,42 @@
+ import org.joml.Vector3f;
+ import org.lwjgl.PointerBuffer;
+ import org.lwjgl.glfw.GLFW;
+-import net.sorenon.mcxr.play.input.XrInput;
+ import org.lwjgl.openxr.*;
+ import org.lwjgl.system.MemoryStack;
+ import org.lwjgl.system.Struct;
+ 
+ import java.nio.IntBuffer;
+ 
++import static net.minecraft.client.Minecraft.ON_OSX;
+ import static org.lwjgl.system.MemoryStack.stackCallocInt;
+ import static org.lwjgl.system.MemoryStack.stackPush;
+ 
+ public class MCXRGameRenderer {
+     private static final Logger LOGGER = LogManager.getLogger();
+     private Minecraft client;
+     private MinecraftExt clientExt;
+-    private MCXRMainTarget mainRenderTarget;
++    private MainTarget mainRenderTarget;
+     private MCXRCamera camera;
+ 
+     private OpenXRInstance instance;
+     private OpenXRSession session;
+ 
+     public RenderPass renderPass = RenderPass.VANILLA;
+     public ShaderInstance blitShader;
++    public ShaderInstance blitShaderSRGB;
+     public ShaderInstance guiBlitShader;
+ 
+     private boolean xrDisabled = false;
+     private boolean xrReady = true;
+ 
++    public boolean overrideWindowSize = false;
++    public int reloadingDepth = 0;
++    public boolean guiMode = false;
++
+     public void initialize(Minecraft client) {
+         this.client = client;
+         this.clientExt = (MinecraftExt) client;
+-        mainRenderTarget = (MCXRMainTarget) client.getMainRenderTarget();
++        mainRenderTarget = (MainTarget) client.getMainRenderTarget();
+         camera = (MCXRCamera) client.gameRenderer.getMainCamera();
+     }
+ 
+@@ -145,6 +150,7 @@ public void renderFrame(boolean xrDisabled) {
+ 
+     private Struct renderXrGame(long predictedDisplayTime, MemoryStack stack) {
+ //        try (MemoryStack stack = stackPush()) {
++        this.overrideWindowSize = true;
+ 
+         XrViewState viewState = XrViewState.calloc(stack).type(XR10.XR_TYPE_VIEW_STATE);
+         IntBuffer intBuf = stackCallocInt(1);
+@@ -241,13 +247,10 @@ private Struct renderXrGame(long predictedDisplayTime, MemoryStack stack) {
+         client.getProfiler().pop();
+ 
+         //Render GUI
+-        mainRenderTarget.setFramebuffer(FGM.guiRenderTarget);
+-        //Need to do this once framebuffer is gui
++        this.guiMode = true;
+         XrInput.postTick(predictedDisplayTime);
+-
+-        mainRenderTarget.clear(Minecraft.ON_OSX);
+         clientExt.doRender(true, frameStartTime, RenderPass.GUI);
+-        mainRenderTarget.resetFramebuffer();
++        this.guiMode = false;
+ 
+         FGM.guiPostProcessRenderTarget.bindWrite(true);
+         this.guiBlitShader.setSampler(""DiffuseSampler"", FGM.guiRenderTarget.getColorTextureId());
+@@ -256,6 +259,12 @@ private Struct renderXrGame(long predictedDisplayTime, MemoryStack stack) {
+         FGM.guiPostProcessRenderTarget.unbindWrite();
+ 
+         OpenXRSwapchain swapchain = session.swapchain;
++
++        if (swapchain.getRenderWidth() != mainRenderTarget.viewWidth || swapchain.getRenderHeight() != mainRenderTarget.viewHeight) {
++            mainRenderTarget.resize(swapchain.getRenderWidth(), swapchain.getRenderHeight(), ON_OSX);
++            client.gameRenderer.resize(swapchain.getRenderWidth(), swapchain.getRenderHeight());
++        }
++
+         int swapchainImageIndex = swapchain.acquireImage();
+ 
+         // Render view to the appropriate part of the swapchain image.
+@@ -278,7 +287,6 @@ private Struct renderXrGame(long predictedDisplayTime, MemoryStack stack) {
+             } else {
+                 swapchainFramebuffer = swapchain.rightFramebuffers[swapchainImageIndex];
+             }
+-            mainRenderTarget.setXrFramebuffer(swapchain.renderTarget);
+             RenderPass.XrWorld worldRenderPass = RenderPass.XrWorld.create();
+             worldRenderPass.fov = session.viewBuffer.get(viewIndex).fov();
+             worldRenderPass.eyePoses.updatePhysicalPose(session.viewBuffer.get(viewIndex).pose(), MCXRPlayClient.stageTurn, frameUserScale);
+@@ -288,25 +296,34 @@ private Struct renderXrGame(long predictedDisplayTime, MemoryStack stack) {
+             clientExt.doRender(true, frameStartTime, worldRenderPass);
+ 
+             swapchainFramebuffer.bindWrite(true);
+-            this.blitShader.setSampler(""DiffuseSampler"", swapchain.renderTarget.getColorTextureId());
+-            Uniform inverseScreenSize = this.blitShader.getUniform(""InverseScreenSize"");
++            ShaderInstance blitShader;
++            if (swapchain.sRGB) {
++                blitShader = this.blitShaderSRGB;
++            } else {
++                blitShader = this.blitShader;
++            }
++
++            blitShader.setSampler(""DiffuseSampler"", mainRenderTarget.getColorTextureId());
++            Uniform inverseScreenSize = blitShader.getUniform(""InverseScreenSize"");
+             if (inverseScreenSize != null) {
+-                inverseScreenSize.set(1f / swapchainFramebuffer.width, 1f / swapchainFramebuffer.height);
++                inverseScreenSize.set(1f / mainRenderTarget.width, 1f / mainRenderTarget.height);
+             }
+-            swapchain.renderTarget.setFilterMode(GlConst.GL_LINEAR);
++
++            mainRenderTarget.setFilterMode(GlConst.GL_LINEAR);
+             this.blit(swapchainFramebuffer, blitShader);
+             swapchainFramebuffer.unbindWrite();
+         }
+ 
+-        blitToBackbuffer(swapchain.renderTarget);
++        this.overrideWindowSize = false;
++
++        blitToBackbuffer(mainRenderTarget);
+ 
+         instance.checkPanic(XR10.xrReleaseSwapchainImage(
+                 swapchain.handle,
+                 XrSwapchainImageReleaseInfo.calloc(stack)
+                         .type(XR10.XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO)
+         ), ""xrReleaseSwapchainImage"");
+ 
+-        mainRenderTarget.resetFramebuffer();
+         camera.setPose(MCXRPlayClient.viewSpacePoses.getMinecraftPose());
+         clientExt.postRender();
+ 
+@@ -409,7 +426,7 @@ private Struct renderBlankLayer(long predictedDisplayTime, MemoryStack stack) {
+             projectionLayerView.subImage().imageArrayIndex(0);
+         }
+ 
+-        session.swapchain.leftFramebuffers[swapchainImageIndex].clear(Minecraft.ON_OSX);
++        session.swapchain.leftFramebuffers[swapchainImageIndex].clear(ON_OSX);
+ 
+         instance.checkPanic(XR10.xrReleaseSwapchainImage(
+                 session.swapchain.handle,
+@@ -474,8 +491,8 @@ public void blitToBackbuffer(RenderTarget framebuffer) {
+         matrixStack.setIdentity();
+         RenderSystem.applyModelViewMatrix();
+ 
+-        int width = mainRenderTarget.minecraftMainRenderTarget.width;
+-        int height = mainRenderTarget.minecraftMainRenderTarget.height;
++        int width = client.getWindow().getWidth();
++        int height = client.getWindow().getHeight();
+ 
+         GlStateManager._colorMask(true, true, true, true);
+         GlStateManager._disableDepthTest();"
+mcxr-org/MCXR,88,a96ad784922597d131e71de247fd2c011f633c74,mcxr-play/src/main/java/net/sorenon/mcxr/play/openxr/OpenXRInstance.java,modified,6,6,12,"@@ -42,7 +42,7 @@ public OpenXRInstance(XrInstance handle) {
+ 
+     public OpenXRSystem getSystem(int formFactor) throws XrException {
+         try (MemoryStack stack = stackPush()) {
+-            XrSystemGetInfo systemInfo = XrSystemGetInfo.malloc(stack);
++            XrSystemGetInfo systemInfo = XrSystemGetInfo.calloc(stack);
+             systemInfo.set(XR10.XR_TYPE_SYSTEM_GET_INFO, 0, formFactor);
+ 
+             LongBuffer lBuf = stack.longs(0);
+@@ -57,14 +57,14 @@ public OpenXRSystem getSystem(int formFactor) throws XrException {
+ 
+     public OpenXRSession createSession(OpenXRSystem system) throws XrException {
+         try (MemoryStack stack = stackPush()) {
+-            XrSessionCreateInfo sessionCreateInfo = XrSessionCreateInfo.malloc(stack).set(
++            XrSessionCreateInfo sessionCreateInfo = XrSessionCreateInfo.calloc(stack).set(
+                     XR10.XR_TYPE_SESSION_CREATE_INFO,
+                     system.createOpenGLBinding(stack).address(),
+                     0,
+                     system.handle
+             );
+ 
+-            PointerBuffer handlePointer = stack.mallocPointer(1);
++            PointerBuffer handlePointer = stack.callocPointer(1);
+             check(XR10.xrCreateSession(handle, sessionCreateInfo, handlePointer), ""xrCreateSession"");
+             return new OpenXRSession(new XrSession(handlePointer.get(0), handle), system);
+         }
+@@ -119,7 +119,7 @@ public XrEventDataBaseHeader nextEvent() {
+     public long getPath(String pathString) {
+         return paths.computeIfAbsent(pathString, s -> {
+             try (MemoryStack ignored = stackPush()) {
+-                LongBuffer buf = stackMallocLong(1);
++                LongBuffer buf = stackCallocLong(1);
+                 int xrResult = XR10.xrStringToPath(handle, pathString, buf);
+                 if (xrResult == XR10.XR_ERROR_PATH_FORMAT_INVALID) {
+                     throw new XrRuntimeException(xrResult, ""Invalid path:\"""" + pathString + ""\"""");
+@@ -134,7 +134,7 @@ public long getPath(String pathString) {
+     public void check(int result, String method) throws XrException {
+         if (result >= 0) return;
+ 
+-        ByteBuffer str = stackMalloc(XR10.XR_MAX_RESULT_STRING_SIZE);
++        ByteBuffer str = stackCalloc(XR10.XR_MAX_RESULT_STRING_SIZE);
+         if (XR10.xrResultToString(handle, result, str) >= 0) {
+             throw new XrException(result, method + "" returned "" + memUTF8(memAddress(str)));
+         }
+@@ -143,7 +143,7 @@ public void check(int result, String method) throws XrException {
+     public void checkPanic(int result, String method) {
+         if (result >= 0) return;
+ 
+-        ByteBuffer str = stackMalloc(XR10.XR_MAX_RESULT_STRING_SIZE);
++        ByteBuffer str = stackCalloc(XR10.XR_MAX_RESULT_STRING_SIZE);
+         if (XR10.xrResultToString(handle, result, str) >= 0) {
+             throw new XrRuntimeException(result, method + "" returned:"" + memUTF8(memAddress(str)));
+         }"
+mcxr-org/MCXR,88,a96ad784922597d131e71de247fd2c011f633c74,mcxr-play/src/main/java/net/sorenon/mcxr/play/openxr/OpenXRSession.java,modified,14,12,26,"@@ -9,6 +9,7 @@
+ import org.apache.logging.log4j.Logger;
+ import org.lwjgl.PointerBuffer;
+ import org.lwjgl.opengl.GL11;
++import org.lwjgl.opengl.GL21;
+ import org.lwjgl.opengl.GL30;
+ import org.lwjgl.opengl.GL31;
+ import org.lwjgl.openxr.*;
+@@ -37,7 +38,6 @@ public class OpenXRSession implements AutoCloseable {
+ 
+     public XrView.Buffer viewBuffer;
+     public OpenXRSwapchain swapchain;
+-    public boolean hdr = true;
+ 
+     public int state;
+     public boolean running;
+@@ -51,20 +51,20 @@ public OpenXRSession(XrSession handle, OpenXRSystem system) {
+ 
+     public void createXRReferenceSpaces() {
+         try (MemoryStack stack = stackPush()) {
+-            XrPosef identityPose = XrPosef.malloc(stack);
++            XrPosef identityPose = XrPosef.calloc(stack);
+             identityPose.set(
+-                    XrQuaternionf.malloc(stack).set(0, 0, 0, 1),
++                    XrQuaternionf.calloc(stack).set(0, 0, 0, 1),
+                     XrVector3f.calloc(stack)
+             );
+ 
+-            XrReferenceSpaceCreateInfo referenceSpaceCreateInfo = XrReferenceSpaceCreateInfo.malloc(stack);
++            XrReferenceSpaceCreateInfo referenceSpaceCreateInfo = XrReferenceSpaceCreateInfo.calloc(stack);
+             referenceSpaceCreateInfo.set(
+                     XR10.XR_TYPE_REFERENCE_SPACE_CREATE_INFO,
+                     NULL,
+                     XR10.XR_REFERENCE_SPACE_TYPE_STAGE,
+                     identityPose
+             );
+-            PointerBuffer pp = stack.mallocPointer(1);
++            PointerBuffer pp = stack.callocPointer(1);
+             instance.checkPanic(XR10.xrCreateReferenceSpace(handle, referenceSpaceCreateInfo, pp), ""xrCreateReferenceSpace"");
+             xrAppSpace = new XrSpace(pp.get(0), handle);
+ 
+@@ -76,7 +76,7 @@ public void createXRReferenceSpaces() {
+ 
+     public void createSwapchain() throws XrException {
+         try (MemoryStack stack = stackPush()) {
+-            IntBuffer intBuf = stack.mallocInt(1);
++            IntBuffer intBuf = stack.callocInt(1);
+             instance.checkPanic(XR10.xrEnumerateViewConfigurationViews(instance.handle, system.handle, viewConfigurationType, intBuf, null), ""xrEnumerateViewConfigurationViews"");
+             XrViewConfigurationView.Buffer viewConfigs = new XrViewConfigurationView.Buffer(
+                     OpenXRState.bufferStack(intBuf.get(0), XrViewConfigurationView.SIZEOF, XR10.XR_TYPE_VIEW_CONFIGURATION_VIEW)
+@@ -92,18 +92,20 @@ public void createSwapchain() throws XrException {
+                 throw new IllegalStateException(""Tried to create swapchain from "" + viewCountNumber + "" views"");
+             }
+             instance.checkPanic(XR10.xrEnumerateSwapchainFormats(handle, intBuf, null), ""xrEnumerateSwapchainFormats"");
+-            LongBuffer swapchainFormats = stack.mallocLong(intBuf.get(0));
++            LongBuffer swapchainFormats = stack.callocLong(intBuf.get(0));
+             instance.checkPanic(XR10.xrEnumerateSwapchainFormats(handle, intBuf, swapchainFormats), ""xrEnumerateSwapchainFormats"");
+ 
+-            //TODO support SRGB formats
+             long[] desiredSwapchainFormats = {
+                     GL11.GL_RGB10_A2,
+                     GL30.GL_RGBA16F,
+                     GL30.GL_RGB16F,
++                    //SRGB formats
++                    GL21.GL_SRGB8_ALPHA8,
++                    GL21.GL_SRGB8,
+                     // The two below should only be used as a fallback, as they are linear color formats without enough bits for color
+                     // depth, thus leading to banding.
+                     GL11.GL_RGBA8,
+-                    GL31.GL_RGBA8_SNORM
++                    GL31.GL_RGBA8_SNORM,
+             };
+ 
+             long chosenFormat = 0;
+@@ -131,7 +133,7 @@ public void createSwapchain() throws XrException {
+             }
+ 
+             XrViewConfigurationView viewConfig = viewConfigs.get(0);
+-            XrSwapchainCreateInfo swapchainCreateInfo = XrSwapchainCreateInfo.malloc(stack);
++            XrSwapchainCreateInfo swapchainCreateInfo = XrSwapchainCreateInfo.calloc(stack);
+ 
+             swapchainCreateInfo.set(
+                     XR10.XR_TYPE_SWAPCHAIN_CREATE_INFO,
+@@ -147,7 +149,7 @@ public void createSwapchain() throws XrException {
+                     1
+             );
+ 
+-            PointerBuffer handlePointer = stack.mallocPointer(1);
++            PointerBuffer handlePointer = stack.callocPointer(1);
+             instance.checkPanic(XR10.xrCreateSwapchain(handle, swapchainCreateInfo, handlePointer), ""xrCreateSwapchain"");
+             swapchain = new OpenXRSwapchain(new XrSwapchain(handlePointer.get(0), handle), this, (int) chosenFormat, swapchainCreateInfo.width(), swapchainCreateInfo.height());
+         }
+@@ -167,7 +169,7 @@ public boolean stateChanged(XrEventDataSessionStateChanged stateChangedEvent) {
+         switch (state) {
+             case XR10.XR_SESSION_STATE_READY: {
+                 try (MemoryStack stack = stackPush()) {
+-                    XrSessionBeginInfo sessionBeginInfo = XrSessionBeginInfo.malloc(stack);
++                    XrSessionBeginInfo sessionBeginInfo = XrSessionBeginInfo.calloc(stack);
+                     sessionBeginInfo.set(XR10.XR_TYPE_SESSION_BEGIN_INFO, 0, viewConfigurationType);
+                     instance.checkPanic(XR10.xrBeginSession(handle, sessionBeginInfo), ""xrBeginSession"");
+                 }"
+mcxr-org/MCXR,88,a96ad784922597d131e71de247fd2c011f633c74,mcxr-play/src/main/java/net/sorenon/mcxr/play/openxr/OpenXRState.java,modified,7,7,14,"@@ -26,8 +26,8 @@ public class OpenXRState {
+ 
+     public static Logger LOGGER = LogManager.getLogger(""MCXR"");
+ 
+-    public static final XrPosef POSE_IDENTITY = XrPosef.malloc().set(
+-            XrQuaternionf.malloc().set(0, 0, 0, 1),
++    public static final XrPosef POSE_IDENTITY = XrPosef.calloc().set(
++            XrQuaternionf.calloc().set(0, 0, 0, 1),
+             XrVector3f.calloc()
+     );
+ 
+@@ -93,7 +93,7 @@ public void tryInitialize() {
+ 
+     public OpenXRInstance createOpenXRInstance() throws XrException {
+         try (MemoryStack stack = stackPush()) {
+-            IntBuffer numExtensions = stack.mallocInt(1);
++            IntBuffer numExtensions = stack.callocInt(1);
+             checkPanic(XR10.xrEnumerateInstanceExtensionProperties((ByteBuffer) null, numExtensions, null));
+ 
+             XrExtensionProperties.Buffer properties = new XrExtensionProperties.Buffer(
+@@ -123,12 +123,12 @@ public OpenXRInstance createOpenXRInstance() throws XrException {
+                 throw new XrException(0, ""OpenXR runtime does not support OpenGL, try using SteamVR instead"");
+             }
+ 
+-            XrApplicationInfo applicationInfo = XrApplicationInfo.malloc(stack);
++            XrApplicationInfo applicationInfo = XrApplicationInfo.calloc(stack);
+             applicationInfo.apiVersion(XR10.XR_CURRENT_API_VERSION);
+             applicationInfo.applicationName(stack.UTF8(""[MCXR] Minecraft VR""));
+             applicationInfo.applicationVersion(1);
+ 
+-            XrInstanceCreateInfo createInfo = XrInstanceCreateInfo.malloc(stack);
++            XrInstanceCreateInfo createInfo = XrInstanceCreateInfo.calloc(stack);
+             createInfo.set(
+                     XR10.XR_TYPE_INSTANCE_CREATE_INFO,
+                     0,
+@@ -138,7 +138,7 @@ public OpenXRInstance createOpenXRInstance() throws XrException {
+                     extensions.flip()
+             );
+ 
+-            PointerBuffer instancePtr = stack.mallocPointer(1);
++            PointerBuffer instancePtr = stack.callocPointer(1);
+ 
+             int xrResult = XR10.xrCreateInstance(createInfo, instancePtr);
+             if (xrResult == XR10.XR_ERROR_RUNTIME_FAILURE) {
+@@ -186,7 +186,7 @@ private void checkPanic(int result) {
+         if (result >= 0) return;
+ 
+         if (instance != null) {
+-            ByteBuffer str = stackMalloc(XR10.XR_MAX_RESULT_STRING_SIZE);
++            ByteBuffer str = stackCalloc(XR10.XR_MAX_RESULT_STRING_SIZE);
+             if (XR10.xrResultToString(instance.handle, result, str) >= 0) {
+                 throw new XrRuntimeException(result, memUTF8Safe(str));
+             }"
+mcxr-org/MCXR,88,a96ad784922597d131e71de247fd2c011f633c74,mcxr-play/src/main/java/net/sorenon/mcxr/play/openxr/OpenXRSwapchain.java,modified,16,20,36,"@@ -1,10 +1,10 @@
+ package net.sorenon.mcxr.play.openxr;
+ 
+-import com.mojang.blaze3d.pipeline.TextureTarget;
+-import com.mojang.blaze3d.systems.RenderSystem;
+-import net.minecraft.client.Minecraft;
+ import net.sorenon.mcxr.play.PlayOptions;
+ import net.sorenon.mcxr.play.rendering.XrRenderTarget;
++import org.lwjgl.opengl.GL11;
++import org.lwjgl.opengl.GL21;
++import org.lwjgl.opengl.GL31;
+ import org.lwjgl.openxr.*;
+ import org.lwjgl.system.MemoryStack;
+ 
+@@ -26,9 +26,8 @@ public class OpenXRSwapchain implements AutoCloseable {
+     public final XrRenderTarget[] leftFramebuffers;
+     public final XrRenderTarget[] rightFramebuffers;
+ 
+-    public TextureTarget renderTarget;
+-
+-    //TODO make two swapchains path for GL4ES compat
++    public final boolean sRGB;
++    public final boolean hdr;
+ 
+     public OpenXRSwapchain(XrSwapchain handle, OpenXRSession session, int format, int width, int height) {
+         this.handle = handle;
+@@ -38,6 +37,9 @@ public OpenXRSwapchain(XrSwapchain handle, OpenXRSession session, int format, in
+         this.width = width;
+         this.height = height;
+ 
++        this.sRGB = format == GL21.GL_SRGB8_ALPHA8 || format == GL21.GL_SRGB8;
++        this.hdr = !sRGB && format != GL11.GL_RGBA8 && format != GL31.GL_RGBA8_SNORM;
++
+         try (MemoryStack stack = stackPush()) {
+             IntBuffer intBuf = stackInts(0);
+ 
+@@ -61,12 +63,17 @@ public OpenXRSwapchain(XrSwapchain handle, OpenXRSession session, int format, in
+                 leftFramebuffers[i] = new XrRenderTarget(width, height, arrayImages[i], 0);
+                 rightFramebuffers[i] = new XrRenderTarget(width, height, arrayImages[i], 1);
+             }
+-
+-            renderTarget = new TextureTarget((int) (width * PlayOptions.SSAA), (int) (height * PlayOptions.SSAA), true, Minecraft.ON_OSX);
+-            renderTarget.setClearColor(239 / 255f, 50 / 255f, 61 / 255f, 255 / 255f);
+         }
+     }
+ 
++    public int getRenderWidth() {
++        return (int) (width * PlayOptions.SSAA);
++    }
++
++    public int getRenderHeight() {
++        return (int) (height * PlayOptions.SSAA);
++    }
++
+     int acquireImage() {
+         try (MemoryStack stack = stackPush()) {
+             IntBuffer intBuf = stackCallocInt(1);
+@@ -87,16 +94,5 @@ int acquireImage() {
+     @Override
+     public void close() {
+         XR10.xrDestroySwapchain(handle);
+-        if (renderTarget != null) {
+-            RenderSystem.recordRenderCall(() -> {
+-                for (var fb : rightFramebuffers) {
+-                    fb.destroyBuffers();
+-                }
+-                for (var fb : leftFramebuffers) {
+-                    fb.destroyBuffers();
+-                }
+-                renderTarget.destroyBuffers();
+-            });
+-        }
+     }
+ }"
+mcxr-org/MCXR,88,a96ad784922597d131e71de247fd2c011f633c74,mcxr-play/src/main/java/net/sorenon/mcxr/play/openxr/OpenXRSystem.java,modified,1,1,2,"@@ -72,7 +72,7 @@ public Struct createOpenGLBinding(MemoryStack stack) {
+         Window window = Minecraft.getInstance().getWindow();
+         long windowHandle = window.getWindow();
+         if (Platform.get() == Platform.WINDOWS) {
+-            return XrGraphicsBindingOpenGLWin32KHR.malloc(stack).set(
++            return XrGraphicsBindingOpenGLWin32KHR.calloc(stack).set(
+                     KHROpenGLEnable.XR_TYPE_GRAPHICS_BINDING_OPENGL_WIN32_KHR,
+                     NULL,
+                     User32.GetDC(GLFWNativeWin32.glfwGetWin32Window(windowHandle)),"
+mcxr-org/MCXR,88,a96ad784922597d131e71de247fd2c011f633c74,mcxr-play/src/main/java/net/sorenon/mcxr/play/rendering/MCXRMainTarget.java,removed,0,151,151,"@@ -1,151 +0,0 @@
+-package net.sorenon.mcxr.play.rendering;
+-
+-import net.minecraft.client.Minecraft;
+-import net.sorenon.mcxr.play.mixin.accessor.RenderTargetAcc;
+-import com.mojang.blaze3d.pipeline.MainTarget;
+-import com.mojang.blaze3d.pipeline.RenderTarget;
+-
+-import java.util.logging.Level;
+-import java.util.logging.Logger;
+-
+-/**
+- * This class provides a system to change the main framebuffer that the game renders to while providing the illusion that
+- * it is always the same framebuffer. This limits compat issues while still providing a simple interface for changing the
+- * size and target of the main framebuffer.
+- * However, this class is also the main incompatibility issue with Canvas so a different way to achieve this is needed
+- */
+-//TODO Find a way to make this compatible with Canvas's PrimaryFrameBuffer / FabulousFrameBuffer?
+-public class MCXRMainTarget extends MainTarget {
+-
+-    public static final Logger LOGGER = Logger.getLogger(""MCXR"");
+-
+-    //The framebuffer used for rendering to the window
+-    public final MainTarget minecraftMainRenderTarget;
+-
+-    //The framebuffer that is affected by draw calls
+-    private RenderTarget currentFramebuffer;
+-
+-    //The current dimensions of all the vanilla framebuffers
+-    public int minecraftFramebufferWidth;
+-    public int minecraftFramebufferHeight;
+-
+-    public MCXRMainTarget(int width, int height) {
+-        super(width, height);
+-        minecraftMainRenderTarget = new MainTarget(width, height);
+-        setFramebuffer(minecraftMainRenderTarget);
+-        minecraftFramebufferWidth = width;
+-        minecraftFramebufferHeight = height;
+-    }
+-
+-    //Used to set the current framebuffer without resizing the dimensions of the other framebuffers
+-    //This is meant for the defaultFramebuffer and any framebuffers used in rendering gui
+-    public void setFramebuffer(RenderTarget framebuffer) {
+-        this.currentFramebuffer = framebuffer;
+-
+-        this.width = framebuffer.width;
+-        this.height = framebuffer.height;
+-        this.viewWidth = framebuffer.viewWidth;
+-        this.viewHeight = framebuffer.viewHeight;
+-        this.frameBufferId = framebuffer.frameBufferId;
+-//        this.clearColor[0] = framebuffer.clearColor[0];
+-//        this.clearColor[1] = framebuffer.clearColor[1];
+-//        this.clearColor[2] = framebuffer.clearColor[2];
+-//        this.clearColor[3] = framebuffer.clearColor[3];
+-        this.filterMode = framebuffer.filterMode;
+-
+-        RenderTargetAcc acc = ((RenderTargetAcc) this);
+-        acc.setColorTextureId(framebuffer.getColorTextureId());
+-        acc.setDepthBufferId(framebuffer.getDepthTextureId());
+-    }
+-
+-    public void setXrFramebuffer(RenderTarget framebuffer) {
+-        setFramebuffer(framebuffer);
+-        if (framebuffer.width != minecraftFramebufferWidth ||
+-                framebuffer.height != minecraftFramebufferHeight) {
+-            Minecraft.getInstance().gameRenderer.resize(framebuffer.width, framebuffer.height);
+-            LOGGER.log(Level.FINE, ""Resizing GameRenderer"");
+-        }
+-    }
+-
+-    public void resetFramebuffer() {
+-        setFramebuffer(minecraftMainRenderTarget);
+-    }
+-
+-    public RenderTarget getFramebuffer() {
+-        return currentFramebuffer;
+-    }
+-
+-    public RenderTarget getMinecraftMainRenderTarget() {
+-        return minecraftMainRenderTarget;
+-    }
+-
+-    public boolean isCustomFramebuffer() {
+-        return currentFramebuffer != minecraftMainRenderTarget;
+-    }
+-
+-    public void resize(int width, int height, boolean getError) {
+-        if (minecraftMainRenderTarget != null) {
+-            minecraftMainRenderTarget.resize(width, height, getError);
+-        }
+-    }
+-
+-    public void destroyBuffers() {
+-        minecraftMainRenderTarget.destroyBuffers();
+-    }
+-
+-    public void copyDepthFrom(RenderTarget framebuffer) {
+-        currentFramebuffer.copyDepthFrom(framebuffer);
+-    }
+-
+-    public void createBuffers(int width, int height, boolean getError) {
+-        currentFramebuffer.createBuffers(width, height, getError);
+-    }
+-
+-    public void setFilterMode(int i) {
+-        currentFramebuffer.setFilterMode(i);
+-    }
+-
+-    public void checkStatus() {
+-        currentFramebuffer.checkStatus();
+-    }
+-
+-    public void bindRead() {
+-        currentFramebuffer.bindRead();
+-    }
+-
+-    public void unbindRead() {
+-        currentFramebuffer.unbindRead();
+-    }
+-
+-    public void bindWrite(boolean setViewport) {
+-        currentFramebuffer.bindWrite(setViewport);
+-    }
+-
+-    public void unbindWrite() {
+-        currentFramebuffer.unbindWrite();
+-    }
+-
+-    public void setClearColor(float r, float g, float b, float a) {
+-        currentFramebuffer.setClearColor(r, g, b, a);
+-    }
+-
+-    public void blitToScreen(int width, int height) {
+-        currentFramebuffer.blitToScreen(width, height);
+-    }
+-
+-    public void blitToScreen(int width, int height, boolean bl) {
+-        currentFramebuffer.blitToScreen(width, height, bl);
+-    }
+-
+-    public void clear(boolean getError) {
+-        currentFramebuffer.clear(getError);
+-    }
+-
+-    public int getColorTextureId() {
+-        return currentFramebuffer.getColorTextureId();
+-    }
+-
+-    public int getDepthTextureId() {
+-        return currentFramebuffer.getDepthTextureId();
+-    }
+-}"
+mcxr-org/MCXR,88,a96ad784922597d131e71de247fd2c011f633c74,mcxr-play/src/main/java/net/sorenon/mcxr/play/rendering/VrFirstPersonRenderer.java,modified,4,5,9,"@@ -1,10 +1,7 @@
+ package net.sorenon.mcxr.play.rendering;
+ 
+ import com.mojang.blaze3d.pipeline.RenderTarget;
+-import com.mojang.blaze3d.vertex.DefaultVertexFormat;
+-import com.mojang.blaze3d.vertex.PoseStack;
+-import com.mojang.blaze3d.vertex.VertexConsumer;
+-import com.mojang.blaze3d.vertex.VertexFormat;
++import com.mojang.blaze3d.vertex.*;
+ import com.mojang.math.Matrix3f;
+ import com.mojang.math.Matrix4f;
+ import com.mojang.math.Quaternion;
+@@ -72,6 +69,8 @@ public class VrFirstPersonRenderer {
+     private final ModelPart[] slimArmModel = new ModelPart[2];
+     private final ModelPart[] armModel = new ModelPart[2];
+ 
++    private final MultiBufferSource.BufferSource customBufferSource = MultiBufferSource.immediate(new BufferBuilder(1000));
++
+     //private Item filledMap = Registry.ITEM.get(new ResourceLocation(""minecraft"", ""filled_map""));
+ 
+     public VrFirstPersonRenderer(MCXRGuiManager MCXRGuiManager) {
+@@ -113,7 +112,7 @@ public VrFirstPersonRenderer(MCXRGuiManager MCXRGuiManager) {
+     public void renderLast(WorldRenderContext context) {
+         Camera camera = context.camera();
+         Entity camEntity = camera.getEntity();
+-        MultiBufferSource.BufferSource consumers = (MultiBufferSource.BufferSource) context.consumers();
++        MultiBufferSource.BufferSource consumers = customBufferSource;
+         PoseStack matrices = context.matrixStack();
+         ClientLevel world = context.world();
+         assert consumers != null;"
+mcxr-org/MCXR,88,a96ad784922597d131e71de247fd2c011f633c74,mcxr-play/src/main/java/net/sorenon/mcxr/play/rendering/XrRenderTarget.java,modified,3,8,11,"@@ -10,7 +10,8 @@
+ 
+ import java.nio.IntBuffer;
+ 
+-import static org.lwjgl.opengl.GL30.*;
++import static org.lwjgl.opengl.GL30.GL_COLOR_ATTACHMENT0;
++import static org.lwjgl.opengl.GL30.GL_FRAMEBUFFER;
+ 
+ public class XrRenderTarget extends TextureTarget {
+ 
+@@ -42,7 +43,6 @@ public void createBuffers(int width, int height, boolean getError) {
+             this.width = width;
+             this.height = height;
+             this.frameBufferId = GlStateManager.glGenFramebuffers();
+-//            this.colorAttachment = TextureUtil.generateTextureId();
+             if (this.useDepth) {
+                 this.depthBufferId = TextureUtil.generateTextureId();
+                 GlStateManager._bindTexture(this.depthBufferId);
+@@ -54,13 +54,8 @@ public void createBuffers(int width, int height, boolean getError) {
+                 GlStateManager._texImage2D(3553, 0, 6402, this.width, this.height, 0, 6402, 5126, (IntBuffer) null);
+             }
+ 
+-            this.setFilterMode(9728);
+-//            GlStateManager._bindTexture(this.colorAttachment);
+-//            GlStateManager._texParameter(3553, 10242, 33071);
+-//            GlStateManager._texParameter(3553, 10243, 33071);
+-//            GlStateManager._texImage2D(3553, 0, 32856, this.textureWidth, this.textureHeight, 0, 6408, 5121, (IntBuffer)null);
+             GlStateManager._glBindFramebuffer(36160, this.frameBufferId);
+-//            GlStateManager._glFramebufferTexture2D(36160, 36064, 3553, this.colorAttachment, 0);
++
+             if (this.useDepth) {
+                 GlStateManager._glFramebufferTexture2D(36160, 36096, 3553, this.depthBufferId, 0);
+             }"
+mcxr-org/MCXR,88,a96ad784922597d131e71de247fd2c011f633c74,mcxr-play/src/main/resources/assets/minecraft/shaders/core/blit_screen_mcxr_srgb.fsh,added,23,0,23,"@@ -0,0 +1,23 @@
++#version 150
++
++#moj_import <mcxr_fxaa.glsl>
++
++uniform sampler2D DiffuseSampler;
++
++uniform vec4 ColorModulator;
++uniform vec2 InverseScreenSize;
++
++in vec2 texCoord;
++in vec4 vertexColor;
++
++out vec4 fragColor;
++
++void main() {
++    //TODO use a more modern aa alg (smaa?)
++    //TODO make aa configuarable
++    vec3 color = sample_fxaa(DiffuseSampler, texCoord, InverseScreenSize);
++    vec4 mcColor = vec4(color, texture(DiffuseSampler, texCoord).a) * vertexColor * ColorModulator;
++
++    // we are rendering to an SRGB texture so we can leave the colors in the SRGB color space
++    fragColor = mcColor;
++}
+\ No newline at end of file"
+mcxr-org/MCXR,88,a96ad784922597d131e71de247fd2c011f633c74,mcxr-play/src/main/resources/assets/minecraft/shaders/core/blit_screen_mcxr_srgb.json,added,23,0,23,"@@ -0,0 +1,23 @@
++{
++    ""blend"": {
++        ""func"": ""add"",
++        ""srcrgb"": ""srcalpha"",
++        ""dstrgb"": ""1-srcalpha""
++    },
++    ""vertex"": ""blit_screen_mcxr"",
++    ""fragment"": ""blit_screen_mcxr_srgb"",
++    ""attributes"": [
++        ""Position"",
++        ""UV"",
++        ""Color""
++    ],
++    ""samplers"": [
++        { ""name"": ""DiffuseSampler"" }
++    ],
++    ""uniforms"": [
++        { ""name"": ""ModelViewMat"", ""type"": ""matrix4x4"", ""count"": 16, ""values"": [ 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0 ] },
++        { ""name"": ""ProjMat"", ""type"": ""matrix4x4"", ""count"": 16, ""values"": [ 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0 ] },
++        { ""name"": ""ColorModulator"", ""type"": ""float"", ""count"": 4, ""values"": [ 1.0, 1.0, 1.0, 1.0 ] },
++        { ""name"": ""InverseScreenSize"", ""type"": ""float"", ""count"": 2, ""values"": [1.0, 1.0]  }
++    ]
++}"
+mcxr-org/MCXR,88,a96ad784922597d131e71de247fd2c011f633c74,mcxr-play/src/main/resources/fabric.mod.json,modified,1,2,3,"@@ -28,8 +28,7 @@
+     ]
+   },
+   ""mixins"": [
+-    ""mcxr-play.mixins.json"",
+-    ""mcxr-play.compat.iris.mixins.json""
++    ""mcxr-play.mixins.json""
+   ],
+   ""depends"": {
+     ""fabricloader"": "">=0.14.6"","
+mcxr-org/MCXR,88,a96ad784922597d131e71de247fd2c011f633c74,mcxr-play/src/main/resources/mcxr-play.compat.iris.mixins.json,removed,0,16,16,"@@ -1,16 +0,0 @@
+-{
+-  ""required"": true,
+-  ""minVersion"": ""0.8"",
+-  ""package"": ""net.sorenon.mcxr.play.compat.iris.mixin"",
+-  ""plugin"": ""net.sorenon.mcxr.play.compat.iris.mixin.MCXRIrisCompatMixinPlugin"",
+-  ""compatibilityLevel"": ""JAVA_17"",
+-  ""client"": [
+-    ""MixinShadowRenderer""
+-  ],
+-  ""injectors"": {
+-    ""defaultRequire"": 1
+-  },
+-  ""overwrites"": {
+-    ""conformVisibility"": true
+-  }
+-}"
+mcxr-org/MCXR,88,a96ad784922597d131e71de247fd2c011f633c74,mcxr-play/src/main/resources/mcxr-play.mixins.json,modified,8,8,16,"@@ -4,12 +4,17 @@
+   ""package"": ""net.sorenon.mcxr.play.mixin"",
+   ""compatibilityLevel"": ""JAVA_17"",
+   ""client"": [
++    ""ChatScreenMixin"",
++    ""EditBoxMixin"",
+     ""FramebufferMixin"",
+-    ""GameRendererMixin"",
++    ""resources.GameRendererMixin"",
+     ""KeyboardInputMixin"",
++    ""MultiPlayerScreenMixin"",
+     ""PauseScreenMixin"",
+     ""SystemDetailsMixin"",
+     ""TitleScreenMixin"",
++    ""TutorialToastMixin"",
++    ""resources.ResourceManagerReloadListenerMixin"",
+     ""accessor.CameraAcc"",
+     ""accessor.MouseHandlerAcc"",
+     ""accessor.RenderTargetAcc"",
+@@ -23,17 +28,12 @@
+     ""hands.PlayerMixin"",
+     ""hands.ThrownItemRendererMixin"",
+     ""rendering.GameRendererMixin"",
+-    ""rendering.InGameHudMixin"",
++    ""rendering.GuiMixin"",
+     ""rendering.LevelRendererMixin"",
+     ""rendering.Matrix4fMixin"",
+     ""rendering.MinecraftMixin"",
+-    ""rendering.WindowFramebufferMixin"",
+     ""rendering.WindowMixin"",
+-    ""roomscale.ClientPlayerEntityMixin"",
+-    ""ChatScreenMixin"",
+-    ""EditBoxMixin"",
+-    ""MultiPlayerScreenMixin"",
+-    ""TutorialToastMixin""
++    ""roomscale.ClientPlayerEntityMixin""
+   ],
+   ""injectors"": {
+     ""defaultRequire"": 1"

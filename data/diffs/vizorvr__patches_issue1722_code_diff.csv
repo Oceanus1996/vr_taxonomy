@@ -1,0 +1,477 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vizorvr/patches,1722,557e049,browser/plugins/three_scene.plugin.js,modified,2,0,2,"@@ -39,6 +39,8 @@
+ 		this.scene = new THREE.Scene()
+ 		this.scene.backReference = this
+ 
++		E2.app.player.scene = this.scene
++
+ 		// add two children:
+ 		// [0] is the main scene
+ 		this.sceneRoot = new THREE.Group()"
+vizorvr/patches,1722,557e049,browser/scripts/application.js,modified,0,7,7,"@@ -1847,13 +1847,6 @@ Application.prototype.onForkClicked = function() {
+ 	this.channel.fork()
+ }
+ 
+-Application.prototype.getScreenshot = function(width, height) {
+-	width = width || 1280
+-	height = height || 720
+-	var ssr = new ScreenshotRenderer(this.worldEditor.scene, this.worldEditor.vrCamera)
+-	return ssr.capture(width, height)
+-}
+-
+ Application.prototype.setupEditorBindings = function() {
+ 	var that = this
+ "
+vizorvr/patches,1722,557e049,browser/scripts/player.js,modified,17,2,19,"@@ -46,6 +46,8 @@ Player.prototype.play = function() {
+ 	this.current_state = this.state.PLAYING
+ 	this.last_time = (new Date()).getTime()
+ 
++	this.first_frame = true
++
+ 	E2.core.emit('player:playing')
+ 
+ 	if (!this.interval) {
+@@ -85,6 +87,11 @@ Player.prototype.stop = function() {
+ Player.prototype.on_anim_frame = function() {
+ 	this.interval = requestAnimFrame(this.on_anim_frame.bind(this))
+ 	this.on_update()
++
++	if (this.first_frame) {
++		E2.core.emit('player:firstFramePlayed')
++		this.first_frame = false
++	}
+ }
+ 
+ Player.prototype.on_update = function() {
+@@ -135,6 +142,9 @@ Player.prototype.load_from_object = function(obj, cb) {
+ 			if (cb)
+ 				cb(err)
+ 		})
++		.finally(function() {
++			E2.core.emit('assetsLoaded')
++		})
+ }
+ 
+ Player.prototype.load_from_url = function(url, cb) {
+@@ -194,8 +204,6 @@ Player.prototype.loadAndPlay = function(url, forcePlay) {
+ 	}
+ 
+ 	E2.app.player.load_from_url(url, function(err) {
+-		E2.core.emit('assetsLoaded')
+-
+ 		if (!err || forcePlay === true)
+ 			E2.app.player.play()
+ 
+@@ -208,6 +216,13 @@ Player.prototype.loadAndPlay = function(url, forcePlay) {
+ 	return dfd.promise
+ }
+ 
++Player.prototype.getScreenshot = function(width, height) {
++	width = width || 1280
++	height = height || 720
++	var ssr = new ScreenshotRenderer(this.scene, this.camera.vrControlCamera)
++	return ssr.capture(width, height)
++}
++
+ function CreatePlayer(cb) {
+ 	$(document).ajaxError(function(e, jqxhr, settings, ex) {
+ 		if(typeof(ex) === 'string') {"
+vizorvr/patches,1722,557e049,browser/scripts/threesixty.js,modified,25,15,40,"@@ -90,15 +90,12 @@ var vizor360 = new function() {
+ 		history.pushState({}, '', asset.path)
+ 
+ 		E2.track({
+-			event: 'ThreeSixty Loading Graph',
++			event: 'ThreeSixty Playing Graph',
+ 			path: asset.path
+ 		})
+ 
+-		E2.app.player.loadAndPlay(asset.url, true)
+-			.then(function(){
+-				$('#sharebutton').show()
+-				$('#edit').show()
+-			})
++		$('#sharebutton').show()
++		$('#edit').show()
+ 	}
+ 
+ 	// STEP 3
+@@ -111,10 +108,15 @@ var vizor360 = new function() {
+ 
+ 		E2.track({ event: 'ThreeSixty Uploading Graph' })
+ 
++		var previewImage = E2.app.player.getScreenshot(1280, 720)
++
+ 		$.ajax({
+ 			url: '/graph/v',
+ 			type: 'POST',
+-			data: graphData,
++			data: { 
++				previewImage: previewImage,
++				graph: graphData
++			},
+ 			dataType: 'json',
+ 			success: function(response) {
+ 				E2.track({
+@@ -164,14 +166,14 @@ var vizor360 = new function() {
+ 				// for the 360 template we are replacing
+ 				var nodes = graph.root.nodes;
+ 
+-				for (var i=0; i<nodes.length; i++) {
++				for (var i=0; i < nodes.length; i++) {
+ 					var node = nodes[i];
+ 
+ 					// Check if we have the correct node, the 360 graph
+ 					// has this node generating the texture
+ 					if (node.plugin === 'url_texture_generator') {
+-						node.state.url = imageUrl;
+-						urlReplaced = true;
++						node.state.url = imageUrl
++						urlReplaced = true
+ 					}
+ 				}
+ 
+@@ -181,12 +183,20 @@ var vizor360 = new function() {
+ 					var data = {
+ 						'path': name,
+ 						'graph': JSON.stringify(graph)
+-					};
++					}
+ 
+-					that.uploadGraph(data, function(asset) {
+-						updateProgressBar(55)
+-						dfd.resolve(asset, data)
+-					});
++					E2.app.player.stop()
++
++					E2.app.player.load_from_object(graph, function() {
++						E2.core.once('player:firstFramePlayed', function() {
++							that.uploadGraph(data.graph, function(asset) {
++								updateProgressBar(55)
++								dfd.resolve(asset, data)
++							})
++						})
++	
++						E2.app.player.play()
++					})
+ 				}
+ 			},
+ "
+vizorvr/patches,1722,557e049,browser/scripts/ui.js,modified,1,1,2,"@@ -525,7 +525,7 @@ VizorUI.prototype.openPublishGraphModal = function() {
+         graphname = graphname[1]
+ 
+ 	var graphdata = E2.app.player.core.serialise()
+-	var graphpreview = E2.app.getScreenshot(1280, 720)
++	var graphpreview = E2.app.player.getScreenshot(1280, 720)
+ 	var assetdata = _.clone(E2.app.graphStore.getGraphSize())	// {size, numAssets, numNodes, hasAudio}
+ 
+ "
+vizorvr/patches,1722,557e049,browser/test/functional/config.js,modified,2,2,4,"@@ -31,7 +31,7 @@ exports.config = {
+      */
+     options: {
+         logLevel: 'silent',
+-        waitforTimeout: 30000
++        waitforTimeout: 60000
+     },
+ 
+     /**
+@@ -66,7 +66,7 @@ exports.config = {
+      */
+     mochaOpts: {
+         reporter: 'spec',
+-        timeout: 30000,
++        timeout: 60000,
+         require: 'chai'
+     }
+ };"
+vizorvr/patches,1722,557e049,browser/test/functional/support/check/waitForPlayer.js,modified,1,1,2,"@@ -6,7 +6,7 @@ module.exports = function (done) {
+     this.browser
+ 	    .timeoutsAsyncScript(timeout)
+         .executeAsync(function(cb) {
+-            E2.core.once('player:playing', function() {
++            E2.core.once('player:firstFramePlayed', function() {
+             	setTimeout(cb, 0)
+             })
+         })"
+vizorvr/patches,1722,557e049,controllers/graphController.js,modified,101,104,205,"@@ -25,9 +25,9 @@ var hashids = new Hashids(secrets.sessionSecret)
+ var fs = require('fs')
+ var packageJson = JSON.parse(fs.readFileSync(__dirname+'/../package.json'))
+ 
+-function render404(res) {
+-	res.status(404).render('error', {
+-		message: 'Not found'
++function renderError(status, res, message) {
++	res.status(status).render('error', {
++		message: message || 'Not found'
+ 	})
+ }
+ 
+@@ -179,7 +179,7 @@ GraphController.prototype.userIndex = function(req, res, next) {
+ 			})
+ 
+ 			var data = {
+-				profile: user.toPublicJSON(),
++				profile: user ? user.toPublicJSON() : {},
+ 				graphs: list || []
+ 			}
+ 
+@@ -271,7 +271,7 @@ GraphController.prototype.edit = function(req, res, next) {
+ 	.then(function(graph) {
+ 		if (graph && (graph.editable === false || graph.private === true)) {
+ 			if (!isGraphOwner(req.user, graph))
+-				return render404(res)
++				return renderError(404, res)
+ 		}
+ 
+ 		EditLog.hasEditsByName(that.redisClient, req.params.path.substring(1))
+@@ -449,50 +449,6 @@ GraphController.prototype.upload = function(req, res, next) {
+ 	});
+ };
+ 
+-// POST /graph
+-GraphController.prototype.saveAnonymous = function(req, res, next) {
+-	var that = this
+-	var anonReq = { user: { username: 'v', isAnonymous: true } }
+-
+-	return this.graphAnalyser.analyseJson(req.body.graph)
+-	.then(function(analysis) {
+-		if (!analysis.numNodes) {
+-			return res.status(400)
+-				.json({ message: 'Invalid data' })
+-		}
+-
+-		return that.serialNumber.next('anonymousGraph')
+-		.then(function(serial) {
+-			var uid = makeHashid(serial)
+-			var path = that._makePath(anonReq, uid)
+-
+-			var gridFsGraphPath = '/graph'+path+'.json'
+-			var gridFsOriginalImagePath = '/previews'+path+'-preview-original.png'
+-
+-			return that._fs.writeString(gridFsGraphPath, req.body.graph)
+-			.then(function() {
+-				var url = that._fs.url(gridFsGraphPath);
+-
+-				var model = {
+-					path: path,
+-					url: url,
+-					hasAudio: false,
+-					stat: {
+-						size: analysis.size,
+-						numAssets: analysis.numAssets
+-					}
+-				}
+-
+-				return that._service.save(model, anonReq.user)
+-				.then(function(asset) {
+-					res.json(asset)
+-				})
+-			})
+-		})
+-	})
+-	.catch(next)
+-}
+-
+ // POST /graph/delete
+ GraphController.prototype.delete = function(req, res, next) {
+ 	var that = this
+@@ -527,13 +483,17 @@ GraphController.prototype.delete = function(req, res, next) {
+ 	.catch(next)
+ }
+ 
+-// POST /graph
+-GraphController.prototype.save = function(req, res, next) {
+-	var that = this;
+-	var path = this._makePath(req, req.body.path);
++GraphController.prototype._save = function(path, user, req, res, next) {
++	var that = this
++
+ 	var wantsPrivate = !req.body.isPublic
+ 	var gridFsGraphPath = '/graph'+path+'.json';
+ 
++	if (user.isAnonymous) {
++		wantsPrivate = false
++		req.body.editable = true
++	}
++
+ 	var gridFsOriginalImagePath = '/previews'+path+'-preview-original.png'
+ 
+ 	var previewImageSpecs = [{
+@@ -548,66 +508,103 @@ GraphController.prototype.save = function(req, res, next) {
+ 
+ 	var tags = that._parseTags(req.body.tags);
+ 
++	return that._fs.writeString(gridFsGraphPath, req.body.graph)
++	.then(function() {
++		if (!req.body.previewImage) {
++			return
++		}
++
++		// save original image (if we ever need to batch process any of these)
++		return that._fs.writeString(gridFsOriginalImagePath, req.body.previewImage.replace(/^data:image\/\w+;base64,/, """"), 'base64')
++		.then(function() {
++			// create preview images
++			return that.previewImageProcessor.process(path, req.body.previewImage, previewImageSpecs)
++			.then(function(processedImages) {
++				if (processedImages && processedImages.length === 2) {
++					// write small image
++					return that._fs.writeString(previewImageSpecs[0].gridFsPath, processedImages[0], 'base64')
++					.then(function() {
++						// write large image
++						that._fs.writeString(previewImageSpecs[1].gridFsPath, processedImages[1], 'base64')
++					})
++				}
++			})
++		})
++	})
++	.then(function() {
++		return that.graphAnalyser.analyseJson(req.body.graph)
++	})
++	.then(function(analysis) {
++		var url = that._fs.url(gridFsGraphPath);
++		var previewUrlSmall = that._fs.url(previewImageSpecs[0].gridFsPath)
++		var previewUrlLarge = that._fs.url(previewImageSpecs[1].gridFsPath)
++
++		var model = {
++			path: path,
++			tags: tags,
++			url: url,
++			private: wantsPrivate,
++			hasAudio: !!analysis.hasAudio,
++			editable: req.body.editable === false ? false : true,
++			stat: {
++				size: analysis.size,
++				numAssets: analysis.numAssets
++			},
++			previewUrlSmall: previewUrlSmall,
++			previewUrlLarge: previewUrlLarge
++		}
++
++		return that._service.save(model, user)
++		.then(function(asset) {
++			res.json(asset)
++		})
++		.catch(function(err) {
++			next(err)
++		})
++	})
++
++}
++
++// POST /graph
++GraphController.prototype.save = function(req, res, next) {
++	var that = this;
++	var path = this._makePath(req, req.body.path);
++
+ 	this._service.canWrite(req.user, path)
+ 	.then(function(can) {
+ 		if (!can) {
+ 			return res.status(403)
+ 				.json({ message: 'Sorry, permission denied' })
+ 		}
+ 
+-		return that._fs.writeString(gridFsGraphPath, req.body.graph)
+-		.then(function() {
+-			if (!req.body.previewImage) {
+-				return
+-			}
++		return that._save(path, req.user, req, res, next)
++	})
++	.catch(next)
++}
+ 
+-			// save original image (if we ever need to batch process any of these)
+-			return that._fs.writeString(gridFsOriginalImagePath, req.body.previewImage.replace(/^data:image\/\w+;base64,/, """"), 'base64')
+-			.then(function() {
+-				// create preview images
+-				return that.previewImageProcessor.process(path, req.body.previewImage, previewImageSpecs)
+-				.then(function(processedImages) {
+-					if (processedImages && processedImages.length === 2) {
+-						// write small image
+-						return that._fs.writeString(previewImageSpecs[0].gridFsPath, processedImages[0], 'base64')
+-						.then(function() {
+-							// write large image
+-							that._fs.writeString(previewImageSpecs[1].gridFsPath, processedImages[1], 'base64')
+-						})
+-					}
+-				})
+-			})
+-		})
+-		.then(function() {
+-			return that.graphAnalyser.analyseJson(req.body.graph)
+-		})
+-		.then(function(analysis) {
+-			var url = that._fs.url(gridFsGraphPath);
+-			var previewUrlSmall = that._fs.url(previewImageSpecs[0].gridFsPath)
+-			var previewUrlLarge = that._fs.url(previewImageSpecs[1].gridFsPath)
+-
+-			var model = {
+-				path: path,
+-				tags: tags,
+-				url: url,
+-				private: wantsPrivate,
+-				hasAudio: !!analysis.hasAudio,
+-				editable: req.body.editable === false ? false : true,
+-				stat: {
+-					size: analysis.size,
+-					numAssets: analysis.numAssets
+-				},
+-				previewUrlSmall: previewUrlSmall,
+-				previewUrlLarge: previewUrlLarge
+-			}
++// POST /graph
++GraphController.prototype.saveAnonymous = function(req, res, next) {
++	var that = this
++	var anonReq = { user: { username: 'v', isAnonymous: true } }
+ 
+-			return that._service.save(model, req.user)
+-			.then(function(asset) {
+-				res.json(asset)
+-			})
+-			.catch(function(err) {
+-				next(err)
+-			})
++	if (!req.body)
++		return renderError(400, res)
++
++	return this.graphAnalyser.analyseJson(req.body.graph)
++	.then(function(analysis) {
++		if (!analysis.numNodes) {
++			return res.status(400)
++				.json({ message: 'Invalid data' })
++		}
++
++		return that.serialNumber.next('anonymousGraph')
++		.then(function(serial) {
++			var uid = makeHashid(serial)
++			var path = that._makePath(anonReq, uid)
++
++			req.body.path = path
++
++			return that._save(path, anonReq.user, req, res, next)
+ 		})
+ 	})
+ 	.catch(next)"
+vizorvr/patches,1722,557e049,views/layouts/threesixty.handlebars,modified,9,2,11,"@@ -42,14 +42,21 @@
+ 
+     <script src=""/scripts/ui-site.js""></script>
+ 
+-    <script src=""/data/dist/0.8/player.min.js""></script>
++    <script src=""/scripts/player.min.js""></script>
++
++    <script src=""/scripts/hardware.js""></script>
++    <script src=""/vendor/borismus/webvr-polyfill.js""></script>
++    <script src=""/vendor/borismus/webvr-manager.js""></script>
++    <script src=""/scripts/webVRAdapter.js""></script>
++    
++    <script src=""/scripts/ui/playerUI.js""></script>
++
+     <script>
+         (function() {
+             {{{templateCache}}}
+         }.apply(window))
+     </script>
+ 
+-    <script src=""/scripts/ui/playerUI.js""></script>
+     <script src=""/scripts/threesixty.js""></script>
+     <script>{{> mixpanel}}</script>
+ </head>"

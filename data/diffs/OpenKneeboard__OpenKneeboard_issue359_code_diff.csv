@@ -1,0 +1,405 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+OpenKneeboard/OpenKneeboard,359,9075fa8,src/app/app-common/VRConfig.cpp,modified,3,1,4,"@@ -18,6 +18,7 @@
+  * USA.
+  */
+ #include <OpenKneeboard/VRConfig.h>
++
+ #include <OpenKneeboard/json.h>
+ 
+ namespace OpenKneeboard {
+@@ -36,7 +37,8 @@ OPENKNEEBOARD_DEFINE_SPARSE_JSON(
+ OPENKNEEBOARD_DEFINE_SPARSE_JSON(
+   VRRenderConfig::Quirks,
+   mOculusSDK_DiscardDepthInformation,
+-  mVarjo_OpenXR_D3D12_DoubleBuffer)
++  mVarjo_OpenXR_D3D12_DoubleBuffer,
++  mOpenXR_AlwaysUpdateSwapchain)
+ 
+ OPENKNEEBOARD_DEFINE_SPARSE_JSON(
+   VRRenderConfig::GazeTargetScale,"
+OpenKneeboard/OpenKneeboard,359,9075fa8,src/app/app-winui3/AdvancedSettingsPage.idl,modified,1,0,1,"@@ -33,6 +33,7 @@ namespace OpenKneeboardApp
+ 
+         Boolean Quirk_OculusSDK_DiscardDepthInformation;
+         Boolean Quirk_Varjo_OpenXR_D3D12_DoubleBuffer;
++        Boolean Quirk_OpenXR_AlwaysUpdateSwapchain;
+ 
+         Boolean CanChangeElevation { get; };
+         Int32 DesiredElevation;"
+OpenKneeboard/OpenKneeboard,359,9075fa8,src/app/app-winui3/AdvancedSettingsPage.xaml,modified,6,0,6,"@@ -276,6 +276,12 @@
+           <x:String>Run elevated</x:String>
+           <x:String>Run as normal user</x:String>
+         </ComboBox>
++        <ToggleSwitch
++					Header=""OpenXR: Always update swapchains""
++          OffContent=""Disabled - swapchains are only updated when changed""
++          OnContent=""Enabled - swapchains are updated on every game frame""
++          IsOn=""{x:Bind Quirk_OpenXR_AlwaysUpdateSwapchain}""
++        />
+         <ToggleSwitch
+ 					Header=""Oculus SDK: Discard depth information""
+           OffContent=""Disabled - incompatible with DCS"""
+OpenKneeboard/OpenKneeboard,359,9075fa8,src/app/app-winui3/AdvancedSettingsPage.xaml.cpp,modified,19,2,21,"@@ -23,6 +23,8 @@
+ #include ""AdvancedSettingsPage.g.cpp""
+ // clang-format on
+ 
++#include ""Globals.h""
++
+ #include <OpenKneeboard/AppSettings.h>
+ #include <OpenKneeboard/Elevation.h>
+ #include <OpenKneeboard/Filesystem.h>
+@@ -32,13 +34,13 @@
+ #include <OpenKneeboard/RuntimeFiles.h>
+ #include <OpenKneeboard/TroubleshootingStore.h>
+ #include <OpenKneeboard/VRConfig.h>
++
+ #include <OpenKneeboard/config.h>
+ #include <OpenKneeboard/scope_guard.h>
+ #include <OpenKneeboard/utf8.h>
+ #include <OpenKneeboard/weak_wrap.h>
+-#include <winrt/Microsoft.UI.Xaml.Controls.h>
+ 
+-#include ""Globals.h""
++#include <winrt/Microsoft.UI.Xaml.Controls.h>
+ 
+ using namespace OpenKneeboard;
+ using namespace winrt::Microsoft::UI::Xaml;
+@@ -278,6 +280,21 @@ void AdvancedSettingsPage::Quirk_Varjo_OpenXR_D3D12_DoubleBuffer(
+   gKneeboard->SetVRSettings(vrc);
+ }
+ 
++bool AdvancedSettingsPage::Quirk_OpenXR_AlwaysUpdateSwapchain() const noexcept {
++  return gKneeboard->GetVRSettings().mQuirks.mOpenXR_AlwaysUpdateSwapchain;
++}
++
++void AdvancedSettingsPage::Quirk_OpenXR_AlwaysUpdateSwapchain(
++  bool value) noexcept {
++  auto vrc = gKneeboard->GetVRSettings();
++  auto& vrcValue = vrc.mQuirks.mOpenXR_AlwaysUpdateSwapchain;
++  if (value == vrcValue) {
++    return;
++  }
++  vrcValue = value;
++  gKneeboard->SetVRSettings(vrc);
++}
++
+ bool AdvancedSettingsPage::CanChangeElevation() const noexcept {
+   return !IsShellElevated();
+ }"
+OpenKneeboard/OpenKneeboard,359,9075fa8,src/app/app-winui3/AdvancedSettingsPage.xaml.h,modified,5,2,7,"@@ -23,11 +23,11 @@
+ #include ""pch.h""
+ // clang-format on
+ 
+-#include <OpenKneeboard/Events.h>
+-
+ #include ""AdvancedSettingsPage.g.h""
+ #include ""WithPropertyChangedEvent.h""
+ 
++#include <OpenKneeboard/Events.h>
++
+ using namespace winrt::Microsoft::UI::Xaml;
+ 
+ namespace winrt::OpenKneeboardApp::implementation {
+@@ -97,6 +97,9 @@ struct AdvancedSettingsPage
+   bool Quirk_Varjo_OpenXR_D3D12_DoubleBuffer() const noexcept;
+   void Quirk_Varjo_OpenXR_D3D12_DoubleBuffer(bool value) noexcept;
+ 
++  bool Quirk_OpenXR_AlwaysUpdateSwapchain() const noexcept;
++  void Quirk_OpenXR_AlwaysUpdateSwapchain(bool value) noexcept;
++
+   bool CanChangeElevation() const noexcept;
+ 
+   int32_t DesiredElevation() const noexcept;"
+OpenKneeboard/OpenKneeboard,359,9075fa8,src/injectables/OpenXRKneeboard.cpp,modified,10,6,16,"@@ -20,20 +20,21 @@
+ 
+ #include ""OpenXRKneeboard.h""
+ 
++#include ""OpenXRD3D11Kneeboard.h""
++#include ""OpenXRD3D12Kneeboard.h""
++#include ""OpenXRNext.h""
++#include ""OpenXRVulkanKneeboard.h""
++
+ #include <OpenKneeboard/config.h>
+ #include <OpenKneeboard/dprint.h>
+ #include <OpenKneeboard/handles.h>
+ #include <OpenKneeboard/tracing.h>
+ #include <OpenKneeboard/version.h>
+-#include <loader_interfaces.h>
+ 
+ #include <memory>
+ #include <string>
+ 
+-#include ""OpenXRD3D11Kneeboard.h""
+-#include ""OpenXRD3D12Kneeboard.h""
+-#include ""OpenXRNext.h""
+-#include ""OpenXRVulkanKneeboard.h""
++#include <loader_interfaces.h>
+ 
+ #define VK_USE_PLATFORM_WIN32_KHR
+ #include <vulkan/vulkan.h>
+@@ -197,7 +198,10 @@ XrResult OpenXRKneeboard::xrEndFrame(
+     if (renderParams.mIsLookingAtKneeboard) {
+       topMost = layerIndex;
+     }
+-    if (mRenderCacheKeys.at(layerIndex) != renderParams.mCacheKey) {
++    const auto needsRender
++      = (mRenderCacheKeys.at(layerIndex) != renderParams.mCacheKey)
++      || config.mVR.mQuirks.mOpenXR_AlwaysUpdateSwapchain;
++    if (needsRender) {
+       if (!this->Render(swapchain, snapshot, layerIndex, renderParams)) {
+         dprint(""Render failed."");
+         OPENKNEEBOARD_BREAK;"
+OpenKneeboard/OpenKneeboard,359,9075fa8,src/lib/include/OpenKneeboard/VRConfig.h,modified,4,3,7,"@@ -19,11 +19,11 @@
+  */
+ #pragma once
+ 
++#include ""bitflags.h""
++
+ #include <cstdint>
+ #include <numbers>
+ 
+-#include ""bitflags.h""
+-
+ #ifdef OPENKNEEBOARD_JSON_SERIALIZE
+ #include <OpenKneeboard/json_fwd.h>
+ #endif
+@@ -45,9 +45,10 @@ struct VRRenderConfig {
+   struct Quirks final {
+     bool mOculusSDK_DiscardDepthInformation {true};
+     bool mVarjo_OpenXR_D3D12_DoubleBuffer {true};
++    bool mOpenXR_AlwaysUpdateSwapchain {false};
+     constexpr auto operator<=>(const Quirks&) const noexcept = default;
+   };
+-  Quirks mQuirks;
++  Quirks mQuirks {};
+   bool mEnableGazeInputFocus {true};
+   bool mEnableGazeZoom {true};
+ "
+OpenKneeboard/OpenKneeboard,359,67f6d94,src/injectables/OpenXRKneeboard.cpp,modified,40,4,44,"@@ -135,17 +135,25 @@ OpenXRNext* OpenXRKneeboard::GetOpenXR() {
+ XrResult OpenXRKneeboard::xrEndFrame(
+   XrSession session,
+   const XrFrameEndInfo* frameEndInfo) {
++  TraceLoggingThreadActivity<gTraceProvider> activity;
++  TraceLoggingWriteStart(activity, ""xrEndFrame"");
+   if (frameEndInfo->layerCount == 0) {
++    TraceLoggingWriteStop(
++      activity, ""xrEndFrame"", TraceLoggingValue(""No layers"", ""Result""));
+     return mOpenXR->xrEndFrame(session, frameEndInfo);
+   }
+ 
+   auto d3d11 = this->GetD3D11Device();
+   if (!d3d11) {
++    TraceLoggingWriteStop(
++      activity, ""xrEndFrame"", TraceLoggingValue(""No D3D11"", ""Result""));
+     return mOpenXR->xrEndFrame(session, frameEndInfo);
+   }
+ 
+   auto snapshot = mSHM.MaybeGet(d3d11.get(), SHM::ConsumerKind::OpenXR);
+   if (!snapshot.IsValid()) {
++    TraceLoggingWriteStop(
++      activity, ""xrEndFrame"", TraceLoggingValue(""No snapshot"", ""Result""));
+     // Don't spam: expected, if OpenKneeboard isn't running
+     return mOpenXR->xrEndFrame(session, frameEndInfo);
+   }
+@@ -170,6 +178,11 @@ XrResult OpenXRKneeboard::xrEndFrame(
+   for (uint8_t layerIndex = 0; layerIndex < layerCount; ++layerIndex) {
+     auto layer = *snapshot.GetLayerConfig(layerIndex);
+     if (!layer.IsValid()) {
++      TraceLoggingWriteStop(
++        activity,
++        ""xrEndFrame"",
++        TraceLoggingValue(layerIndex, ""LayerNumber""),
++        TraceLoggingValue(""Invalid layer config"", ""Result""));
+       return mOpenXR->xrEndFrame(session, frameEndInfo);
+     }
+ 
+@@ -188,6 +201,11 @@ XrResult OpenXRKneeboard::xrEndFrame(
+       if (!swapchain) {
+         dprintf(""Failed to create swapchain for layer {}"", layerIndex);
+         OPENKNEEBOARD_BREAK;
++        TraceLoggingWriteStop(
++          activity,
++          ""xrEndFrame"",
++          TraceLoggingValue(layerIndex, ""LayerNumber""),
++          TraceLoggingValue(""Failed to create swapchain"", ""Result""));
+         return mOpenXR->xrEndFrame(session, frameEndInfo);
+       }
+       dprintf(""Created swapchain for layer {}"", layerIndex);
+@@ -198,13 +216,27 @@ XrResult OpenXRKneeboard::xrEndFrame(
+     if (renderParams.mIsLookingAtKneeboard) {
+       topMost = layerIndex;
+     }
+-    const auto needsRender
+-      = (mRenderCacheKeys.at(layerIndex) != renderParams.mCacheKey)
+-      || config.mVR.mQuirks.mOpenXR_AlwaysUpdateSwapchain;
++    const auto staleCacheKey
++      = (mRenderCacheKeys.at(layerIndex) != renderParams.mCacheKey);
++    const auto alwaysRender = config.mVR.mQuirks.mOpenXR_AlwaysUpdateSwapchain;
++    const auto needsRender = staleCacheKey || alwaysRender;
++
+     if (needsRender) {
++      TraceLoggingWriteTagged(
++        activity,
++        ""xrEndFrame_Render"",
++        TraceLoggingValue(layerIndex, ""LayerNumber""),
++        TraceLoggingValue(alwaysRender, ""AlwaysRender""),
++        TraceLoggingValue(mRenderCacheKeys.at(layerIndex), ""PreviousCacheKey""),
++        TraceLoggingValue(renderParams.mCacheKey, ""CurrentCacheKey""));
+       if (!this->Render(swapchain, snapshot, layerIndex, renderParams)) {
+         dprint(""Render failed."");
+         OPENKNEEBOARD_BREAK;
++        TraceLoggingWriteStop(
++          activity,
++          ""xrEndFrame"",
++          TraceLoggingValue(layerIndex, ""LayerNumber""),
++          TraceLoggingValue(""Render failed"", ""Result""));
+         return mOpenXR->xrEndFrame(session, frameEndInfo);
+       }
+       mRenderCacheKeys.at(layerIndex) = renderParams.mCacheKey;
+@@ -244,10 +276,14 @@ XrResult OpenXRKneeboard::xrEndFrame(
+   nextFrameEndInfo.layers = nextLayers.data();
+   nextFrameEndInfo.layerCount = static_cast<uint32_t>(nextLayers.size());
+ 
+-  auto nextResult = mOpenXR->xrEndFrame(session, &nextFrameEndInfo);
++  const auto nextResult = mOpenXR->xrEndFrame(session, &nextFrameEndInfo);
+   if (nextResult != XR_SUCCESS) {
+     OPENKNEEBOARD_BREAK;
+   }
++  TraceLoggingWriteStop(
++    activity,
++    ""xrEndFrame"",
++    TraceLoggingValue(static_cast<const int64_t>(nextResult), ""XrResult""));
+   return nextResult;
+ }
+ "
+OpenKneeboard/OpenKneeboard,359,4c2db42,src/app/app-winui3/AdvancedSettingsPage.idl,modified,0,1,1,"@@ -33,7 +33,6 @@ namespace OpenKneeboardApp
+ 
+         Boolean Quirk_OculusSDK_DiscardDepthInformation;
+         Boolean Quirk_Varjo_OpenXR_D3D12_DoubleBuffer;
+-        Boolean Quirk_OpenXR_AlwaysUpdateSwapchain;
+ 
+         Boolean CanChangeElevation { get; };
+         Int32 DesiredElevation;"
+OpenKneeboard/OpenKneeboard,359,4c2db42,src/app/app-winui3/AdvancedSettingsPage.xaml,modified,0,6,6,"@@ -276,12 +276,6 @@
+           <x:String>Run elevated</x:String>
+           <x:String>Run as normal user</x:String>
+         </ComboBox>
+-        <ToggleSwitch
+-					Header=""OpenXR: Always update swapchains""
+-          OffContent=""Disabled - swapchains are only updated when changed""
+-          OnContent=""Enabled - swapchains are updated on every game frame""
+-          IsOn=""{x:Bind Quirk_OpenXR_AlwaysUpdateSwapchain}""
+-        />
+         <ToggleSwitch
+ 					Header=""Oculus SDK: Discard depth information""
+           OffContent=""Disabled - incompatible with DCS"""
+OpenKneeboard/OpenKneeboard,359,4c2db42,src/app/app-winui3/AdvancedSettingsPage.xaml.cpp,modified,2,19,21,"@@ -23,8 +23,6 @@
+ #include ""AdvancedSettingsPage.g.cpp""
+ // clang-format on
+ 
+-#include ""Globals.h""
+-
+ #include <OpenKneeboard/AppSettings.h>
+ #include <OpenKneeboard/Elevation.h>
+ #include <OpenKneeboard/Filesystem.h>
+@@ -34,14 +32,14 @@
+ #include <OpenKneeboard/RuntimeFiles.h>
+ #include <OpenKneeboard/TroubleshootingStore.h>
+ #include <OpenKneeboard/VRConfig.h>
+-
+ #include <OpenKneeboard/config.h>
+ #include <OpenKneeboard/scope_guard.h>
+ #include <OpenKneeboard/utf8.h>
+ #include <OpenKneeboard/weak_wrap.h>
+-
+ #include <winrt/Microsoft.UI.Xaml.Controls.h>
+ 
++#include ""Globals.h""
++
+ using namespace OpenKneeboard;
+ using namespace winrt::Microsoft::UI::Xaml;
+ using namespace winrt::Microsoft::UI::Xaml::Controls;
+@@ -280,21 +278,6 @@ void AdvancedSettingsPage::Quirk_Varjo_OpenXR_D3D12_DoubleBuffer(
+   gKneeboard->SetVRSettings(vrc);
+ }
+ 
+-bool AdvancedSettingsPage::Quirk_OpenXR_AlwaysUpdateSwapchain() const noexcept {
+-  return gKneeboard->GetVRSettings().mQuirks.mOpenXR_AlwaysUpdateSwapchain;
+-}
+-
+-void AdvancedSettingsPage::Quirk_OpenXR_AlwaysUpdateSwapchain(
+-  bool value) noexcept {
+-  auto vrc = gKneeboard->GetVRSettings();
+-  auto& vrcValue = vrc.mQuirks.mOpenXR_AlwaysUpdateSwapchain;
+-  if (value == vrcValue) {
+-    return;
+-  }
+-  vrcValue = value;
+-  gKneeboard->SetVRSettings(vrc);
+-}
+-
+ bool AdvancedSettingsPage::CanChangeElevation() const noexcept {
+   return !IsShellElevated();
+ }"
+OpenKneeboard/OpenKneeboard,359,4c2db42,src/app/app-winui3/AdvancedSettingsPage.xaml.h,modified,2,5,7,"@@ -23,11 +23,11 @@
+ #include ""pch.h""
+ // clang-format on
+ 
++#include <OpenKneeboard/Events.h>
++
+ #include ""AdvancedSettingsPage.g.h""
+ #include ""WithPropertyChangedEvent.h""
+ 
+-#include <OpenKneeboard/Events.h>
+-
+ using namespace winrt::Microsoft::UI::Xaml;
+ 
+ namespace winrt::OpenKneeboardApp::implementation {
+@@ -97,9 +97,6 @@ struct AdvancedSettingsPage
+   bool Quirk_Varjo_OpenXR_D3D12_DoubleBuffer() const noexcept;
+   void Quirk_Varjo_OpenXR_D3D12_DoubleBuffer(bool value) noexcept;
+ 
+-  bool Quirk_OpenXR_AlwaysUpdateSwapchain() const noexcept;
+-  void Quirk_OpenXR_AlwaysUpdateSwapchain(bool value) noexcept;
+-
+   bool CanChangeElevation() const noexcept;
+ 
+   int32_t DesiredElevation() const noexcept;"
+OpenKneeboard/OpenKneeboard,359,89ee48b,src/app/app-winui3/AdvancedSettingsPage.xaml.cpp,modified,4,2,6,"@@ -23,6 +23,8 @@
+ #include ""AdvancedSettingsPage.g.cpp""
+ // clang-format on
+ 
++#include ""Globals.h""
++
+ #include <OpenKneeboard/AppSettings.h>
+ #include <OpenKneeboard/Elevation.h>
+ #include <OpenKneeboard/Filesystem.h>
+@@ -32,13 +34,13 @@
+ #include <OpenKneeboard/RuntimeFiles.h>
+ #include <OpenKneeboard/TroubleshootingStore.h>
+ #include <OpenKneeboard/VRConfig.h>
++
+ #include <OpenKneeboard/config.h>
+ #include <OpenKneeboard/scope_guard.h>
+ #include <OpenKneeboard/utf8.h>
+ #include <OpenKneeboard/weak_wrap.h>
+-#include <winrt/Microsoft.UI.Xaml.Controls.h>
+ 
+-#include ""Globals.h""
++#include <winrt/Microsoft.UI.Xaml.Controls.h>
+ 
+ using namespace OpenKneeboard;
+ using namespace winrt::Microsoft::UI::Xaml;"
+OpenKneeboard/OpenKneeboard,359,89ee48b,src/app/app-winui3/AdvancedSettingsPage.xaml.h,modified,2,2,4,"@@ -23,11 +23,11 @@
+ #include ""pch.h""
+ // clang-format on
+ 
+-#include <OpenKneeboard/Events.h>
+-
+ #include ""AdvancedSettingsPage.g.h""
+ #include ""WithPropertyChangedEvent.h""
+ 
++#include <OpenKneeboard/Events.h>
++
+ using namespace winrt::Microsoft::UI::Xaml;
+ 
+ namespace winrt::OpenKneeboardApp::implementation {"

@@ -1,0 +1,811 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vrc-get/vrc-get,1749,1558e20fbb00306857af50cf45afbf8b26c2c12e,vrc-get-gui/locales/zh_hans.json5,modified,4,1,5,"@@ -172,7 +172,7 @@
+     ""projects:toast:project removed"": ""项目删除成功。"",
+ 
+   // Manage Projects
+-    ""projects:manage:tooltip:back to projects"": ""返回项目"",
++    ""projects:manage:tooltip:back to projects"": ""返回项目列表"",
+     ""projects:menuitem:change launch options"": ""更改启动选项"",
+     ""projects:menuitem:backup"": ""生成备份"",
+     ""projects:menuitem:forget unity path"": ""清除 Unity 版本设置"",
+@@ -278,6 +278,9 @@
+     ""projects:manage:button:apply changes"": ""应用更改"",
+     ""projects:manage:button:apply"": ""应用"",
+ 
++    ""projects:manage:dialog:missing dependencies"": ""软件包依赖缺失。"",
++    ""projects:manage:dialog:missing dependencies description"": ""需要安装以下软件包，但我们无法在已添加的软件包存储库里找到它们。<br/>请添加包含这些软件包的软件包存储库。<br/>你可以前往 <ExternalLink href='https://vpm-catalog.vercel.app/'>VPM Catalog</ExternalLink> 来找到相应的软件包存储库。"",
++
+ 
+ // Packages Page
+     ""packages"": ""软件包"","
+vrc-get/vrc-get,1749,71cdcc52644db3f001433a0213e7d46b49419254,CHANGELOG-gui.md,modified,3,0,3,"@@ -14,6 +14,9 @@ The format is based on [Keep a Changelog].
+ - Removed `-debugCodeOptimization` from default unity arguments `#1742`
+ - Projects that failes to resolve will also be added to Project List now `#1748`
+   - Previsously project dir is created but not added to list
++- Dialog is shown when some installing packages are not found `#1749`
++  - The new dialog also suggest you to google & add repository for the package
++  - Previously the first package we could not found are shown on the error toast but now collect and show missing packages as many as possible
+ 
+ ### Deprecated
+ "
+vrc-get/vrc-get,1749,71cdcc52644db3f001433a0213e7d46b49419254,vrc-get-gui/app/(main)/projects/manage/use-package-change.tsx,modified,56,4,60,"@@ -1,3 +1,4 @@
++import { ExternalLink } from ""@/components/ExternalLink"";
+ import { Button } from ""@/components/ui/button"";
+ import {
+ 	DialogDescription,
+@@ -14,9 +15,11 @@ import type {
+ 	TauriRemoveReason,
+ } from ""@/lib/bindings"";
+ import { commands } from ""@/lib/bindings"";
++import { isHandleable } from ""@/lib/errors"";
+ import { tc, tt } from ""@/lib/i18n"";
+ import { toastInfo, toastSuccess, toastThrownError } from ""@/lib/toast"";
+ import { compareVersion, toVersionString } from ""@/lib/version"";
++import { CircleAlert } from ""lucide-react"";
+ import type React from ""react"";
+ import { useCallback, useMemo, useState } from ""react"";
+ import type { PackageRowInfo } from ""./collect-package-row-info"";
+@@ -59,6 +62,10 @@ type InstallStatus =
+ 	| {
+ 			status: ""creatingChanges"";
+ 	  }
++	| {
++			status: ""missing-dependencies"";
++			dependencies: string[];
++	  }
+ 	| {
+ 			status: ""promptingChanges"";
+ 			changes: TauriPendingProjectChanges;
+@@ -106,9 +113,16 @@ export function usePackageChangeDialog({
+ 					requested: operation,
+ 				});
+ 			} catch (e) {
+-				console.error(e);
+-				toastThrownError(e);
+-				setInstallStatus({ status: ""normal"" });
++				if (isHandleable(e) && e.body.type === ""MissingDependencies"") {
++					setInstallStatus({
++						status: ""missing-dependencies"",
++						dependencies: e.body.dependencies,
++					});
++				} else {
++					console.error(e);
++					toastThrownError(e);
++					setInstallStatus({ status: ""normal"" });
++				}
+ 			}
+ 		},
+ 		[],
+@@ -228,6 +242,15 @@ export function usePackageChangeDialog({
+ 			);
+ 			break;
+ 		}
++		case ""missing-dependencies"": {
++			dialogForState = (
++				<MissingDependenciesDialog
++					dependencies={installStatus.dependencies}
++					onClose={() => setInstallStatus({ status: ""normal"" })}
++				/>
++			);
++			break;
++		}
+ 	}
+ 
+ 	return {
+@@ -328,7 +351,9 @@ function ProjectChangesDialog({
+ 						size={""sm""}
+ 						onClick={() => commands.utilOpenUrl(url)}
+ 					>
+-						{tc(""projects:manage:button:see changelog"")}
++						<ExternalLink>
++							{tc(""projects:manage:button:see changelog"")}
++						</ExternalLink>
+ 					</Button>
+ 				);
+ 			}
+@@ -504,3 +529,30 @@ function comparePackageChangeByName(
+ ): number {
+ 	return aName.localeCompare(bName);
+ }
++
++function MissingDependenciesDialog({
++	dependencies,
++	onClose,
++}: { dependencies: string[]; onClose: () => void }) {
++	return (
++		<DialogOpen>
++			<DialogTitle className={""text-destructive""}>
++				<CircleAlert className=""size-6 inline"" />{"" ""}
++				{tc(""projects:manage:dialog:missing dependencies"")}
++			</DialogTitle>
++			<DialogDescription>
++				<p className={""whitespace-normal""}>
++					{tc(""projects:manage:dialog:missing dependencies description"")}
++				</p>
++				<ul className={""list-disc ml-4""}>
++					{dependencies.map((dep) => (
++						<li key={dep}>{dep}</li>
++					))}
++				</ul>
++			</DialogDescription>
++			<DialogFooter>
++				<Button onClick={onClose}>{tc(""general:button:close"")}</Button>
++			</DialogFooter>
++		</DialogOpen>
++	);
++}"
+vrc-get/vrc-get,1749,71cdcc52644db3f001433a0213e7d46b49419254,vrc-get-gui/components/ExternalLink.tsx,added,36,0,36,"@@ -0,0 +1,36 @@
++import { commands } from ""@/lib/bindings"";
++import { cn } from ""@/lib/utils"";
++import { ExternalLink as LucideExternalLink } from ""lucide-react"";
++import type React from ""react"";
++
++export function ExternalLink({
++	children,
++	className,
++	href,
++}: {
++	children: React.ReactNode;
++	className?: string;
++	href?: string;
++}): React.JSX.Element {
++	const body = (
++		<>
++			{children}
++			<LucideExternalLink
++				className={""inline ml-1 size-[1.1em] align-text-top""}
++			/>
++		</>
++	);
++	if (href) {
++		return (
++			<button
++				className={cn(className, ""underline"")}
++				type={""button""}
++				onClick={() => commands.utilOpenUrl(href)}
++			>
++				{body}
++			</button>
++		);
++	} else {
++		return <span className={className}>{body}</span>;
++	}
++}"
+vrc-get/vrc-get,1749,71cdcc52644db3f001433a0213e7d46b49419254,vrc-get-gui/lib/bindings.ts,modified,5,1,6,"@@ -263,12 +263,16 @@ async deepLinkInstallVcc() : Promise<void> {
+ export type AddRepositoryInfo = { url: string; headers: { [key in string]: string } }
+ export type AsyncCallResult<P, R> = { type: ""Result""; value: R } | { type: ""Started"" } | { type: ""UnusedProgress""; progress: P }
+ export type CheckForUpdateResponse = { version: number; current_version: string; latest_version: string; update_description: string | null }
++/**
++ * Errors that is expected to be handled on the GUI side
++ */
++export type HandleableRustError = { type: ""MissingDependencies""; dependencies: string[] }
+ export type InstallUpgradeProgress = { type: ""DownloadProgress""; received: number; total: number | null } | { type: ""DownloadComplete"" }
+ export type LocalizableRustError = { id: string; args: { [key in string]: string } }
+ export type LogEntry = { time: string; level: LogLevel; target: string; message: string; gui_toast: boolean }
+ export type LogLevel = ""Error"" | ""Warn"" | ""Info"" | ""Debug"" | ""Trace""
+ export type OpenOptions = ""ErrorIfNotExists"" | ""CreateFolderIfNotExists"" | ""OpenParentIfNotExists""
+-export type RustError = { type: ""Unrecoverable""; message: string } | ({ type: ""Localizable"" } & LocalizableRustError)
++export type RustError = { type: ""Unrecoverable""; message: string } | ({ type: ""Localizable"" } & LocalizableRustError) | { type: ""Handleable""; message: string; body: HandleableRustError }
+ export type SetupPages = ""Appearance"" | ""UnityHub"" | ""ProjectPath"" | ""Backups"" | ""SystemSetting""
+ export type TauriAddProjectWithPickerResult = ""NoFolderSelected"" | ""InvalidSelection"" | ""AlreadyAdded"" | ""Successful""
+ export type TauriAddRepositoryResult = ""BadUrl"" | ""Success"""
+vrc-get/vrc-get,1749,71cdcc52644db3f001433a0213e7d46b49419254,vrc-get-gui/lib/errors.ts,added,24,0,24,"@@ -0,0 +1,24 @@
++import type { RustError } from ""@/lib/bindings"";
++
++export function isHandleable(
++	t: unknown,
++): t is RustError & { type: ""Handleable"" } {
++	return (
++		typeof t === ""object"" &&
++		t !== null &&
++		// about type field
++		""type"" in t &&
++		typeof t.type === ""string"" &&
++		t.type === ""Handleable"" &&
++		// message field
++		""message"" in t &&
++		typeof t.message === ""string"" &&
++		// body field
++		""body"" in t &&
++		typeof t.body === ""object"" &&
++		t.body !== null &&
++		// body.type field
++		""type"" in t.body &&
++		typeof t.body.type === ""string""
++	);
++}"
+vrc-get/vrc-get,1749,71cdcc52644db3f001433a0213e7d46b49419254,vrc-get-gui/lib/i18n.ts,modified,7,1,8,"@@ -1,3 +1,4 @@
++import { ExternalLink } from ""@/components/ExternalLink"";
+ import globalInfo from ""@/lib/global-info"";
+ import deJson from ""@/locales/de.json5"";
+ import enJson from ""@/locales/en.json5"";
+@@ -45,9 +46,14 @@ function VGTrans(props: TransProps<string>) {
+ 		throw new BailoutToCSRError(""VGTrans"");
+ 	}
+ 
++	const components = {
++		...props.components,
++		ExternalLink: React.createElement(ExternalLink),
++	};
++
+ 	const { t } = useTranslation();
+ 
+-	return React.createElement(Trans, { ...props, t });
++	return React.createElement(Trans, { ...props, t, components });
+ }
+ 
+ export function tc("
+vrc-get/vrc-get,1749,71cdcc52644db3f001433a0213e7d46b49419254,vrc-get-gui/lib/toast.ts,modified,1,0,1,"@@ -40,6 +40,7 @@ export function toastThrownError(error: unknown) {
+ 			if (error instanceof Error) {
+ 				toastError(error.message);
+ 			} else if (""message"" in error && typeof error.message === ""string"") {
++				// some non-Error errors like Handleable errors from rust
+ 				toastError(error.message);
+ 			} else {
+ 				toastError(JSON.stringify(error));"
+vrc-get/vrc-get,1749,71cdcc52644db3f001433a0213e7d46b49419254,vrc-get-gui/locales/en.json5,modified,4,1,5,"@@ -287,8 +287,11 @@
+     ""projects:manage:button:apply changes"": ""Apply Changes"",
+     ""projects:manage:button:apply"": ""Apply"",
+ 
++    ""projects:manage:dialog:missing dependencies"": ""Some packages are not found."",
++    ""projects:manage:dialog:missing dependencies description"": ""The following packages are requested to install, but unable to find appropriate version of the packages.<br/>Please search and add repositories that contain the packages. You may check <ExternalLink href='https://vpm-catalog.vercel.app/'>VPM Catalog</ExternalLink> to find the appropriate repositories."",
+ 
+-// Packages Page
++
++    // Packages Page
+     ""packages"": ""Packages"",
+     ""vpm repositories:source:official"": ""Official"",
+     ""vpm repositories:source:curated"": ""Curated"","
+vrc-get/vrc-get,1749,71cdcc52644db3f001433a0213e7d46b49419254,vrc-get-gui/src/commands.rs,modified,75,5,80,"@@ -11,7 +11,9 @@ use tauri::ipc::Invoke;
+ pub use uri_custom_scheme::handle_vrc_get_scheme;
+ use vrc_get_vpm::environment::VccDatabaseConnection;
+ use vrc_get_vpm::io::{DefaultEnvironmentIo, DefaultProjectIo};
+-use vrc_get_vpm::unity_project::AddPackageErr;
++use vrc_get_vpm::unity_project::{
++    AddPackageErr, MigrateUnity2022Error, MigrateVpmError, ReinstalPackagesError, ResolvePackageErr,
++};
+ use vrc_get_vpm::version::Version;
+ use vrc_get_vpm::PackageManifest;
+ 
+@@ -260,6 +262,10 @@ enum RustError {
+     },
+     #[allow(dead_code)]
+     Localizable(Box<LocalizableRustError>),
++    Handleable {
++        message: String,
++        body: HandleableRustError,
++    },
+ }
+ 
+ #[derive(Debug, Clone, Serialize, specta::Type)]
+@@ -268,13 +274,32 @@ struct LocalizableRustError {
+     args: indexmap::IndexMap<String, String>,
+ }
+ 
++/// Errors that is expected to be handled on the GUI side
++#[derive(Debug, Clone, Serialize, specta::Type)]
++#[serde(tag = ""type"")]
++enum HandleableRustError {
++    MissingDependencies { dependencies: Vec<Box<str>> },
++}
++
+ impl RustError {
+     fn unrecoverable<T: Display>(value: T) -> Self {
+         error!(""{value}"");
+         Self::Unrecoverable {
+             message: value.to_string(),
+         }
+     }
++
++    fn handleable(message: String, body: HandleableRustError) -> Self {
++        error!(gui_toast = false; ""{message}"");
++        Self::Handleable { message, body }
++    }
++
++    fn handleable_missing_dependencies(message: String, dependencies: Vec<Box<str>>) -> Self {
++        Self::handleable(
++            message,
++            HandleableRustError::MissingDependencies { dependencies },
++        )
++    }
+ }
+ 
+ macro_rules! impl_from_error {
+@@ -296,15 +321,60 @@ impl_from_error!(
+     tauri_plugin_updater::Error,
+     vrc_get_vpm::environment::AddRepositoryErr,
+     vrc_get_vpm::unity_project::RemovePackageErr,
+-    vrc_get_vpm::unity_project::MigrateVpmError,
+-    vrc_get_vpm::unity_project::MigrateUnity2022Error,
+-    vrc_get_vpm::unity_project::ReinstalPackagesError,
+     fs_extra::error::Error,
+ );
+ 
++impl From<MigrateVpmError> for RustError {
++    fn from(value: MigrateVpmError) -> Self {
++        match value {
++            MigrateVpmError::AddPackageErr(add_err) => add_err.into(),
++            value => RustError::unrecoverable(value),
++        }
++    }
++}
++
++impl From<MigrateUnity2022Error> for RustError {
++    fn from(value: MigrateUnity2022Error) -> Self {
++        match value {
++            MigrateUnity2022Error::AddPackageErr(add_err) => add_err.into(),
++            value => RustError::unrecoverable(value),
++        }
++    }
++}
++
++impl From<ReinstalPackagesError> for RustError {
++    fn from(value: ReinstalPackagesError) -> Self {
++        let message = value.to_string();
++        match value {
++            ReinstalPackagesError::DependenciesNotFound { dependencies } => {
++                RustError::handleable_missing_dependencies(message, dependencies)
++            }
++            _ => RustError::unrecoverable(message),
++        }
++    }
++}
++
+ impl From<AddPackageErr> for RustError {
+     fn from(value: AddPackageErr) -> Self {
+-        RustError::unrecoverable(value)
++        let message = value.to_string();
++        match value {
++            AddPackageErr::DependenciesNotFound { dependencies } => {
++                RustError::handleable_missing_dependencies(message, dependencies)
++            }
++            _ => RustError::unrecoverable(message),
++        }
++    }
++}
++
++impl From<ResolvePackageErr> for RustError {
++    fn from(value: ResolvePackageErr) -> Self {
++        let message = value.to_string();
++        match value {
++            ResolvePackageErr::DependenciesNotFound { dependencies } => {
++                RustError::handleable_missing_dependencies(message, dependencies)
++            }
++            _ => RustError::unrecoverable(message),
++        }
+     }
+ }
+ "
+vrc-get/vrc-get,1749,71cdcc52644db3f001433a0213e7d46b49419254,vrc-get-vpm/src/unity_project/add_package.rs,modified,22,6,28,"@@ -1,4 +1,5 @@
+ use crate::io::ProjectIo;
++use crate::unity_project::package_resolution::MissingDependencies;
+ use crate::unity_project::pending_project_changes::RemoveReason;
+ use crate::unity_project::vpm_manifest::VpmManifest;
+ use crate::unity_project::{package_resolution, PendingProjectChanges};
+@@ -10,7 +11,7 @@ use std::fmt;
+ #[derive(Debug)]
+ #[non_exhaustive]
+ pub enum AddPackageErr {
+-    DependencyNotFound { dependency_name: Box<str> },
++    DependenciesNotFound { dependencies: Vec<Box<str>> },
+     UpgradingNonLockedPackage { package_name: Box<str> },
+     DowngradingNonLockedPackage { package_name: Box<str> },
+     UpgradingWithDowngrade { package_name: Box<str> },
+@@ -19,10 +20,18 @@ pub enum AddPackageErr {
+ impl fmt::Display for AddPackageErr {
+     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+         match self {
+-            AddPackageErr::DependencyNotFound { dependency_name } => write!(
+-                f,
+-                ""Package {dependency_name} (maybe dependencies of the package) not found""
+-            ),
++            AddPackageErr::DependenciesNotFound { dependencies } => {
++                write!(f, ""Following dependencies are not found: "")?;
++                let mut first = true;
++                for dep in dependencies {
++                    if !first {
++                        write!(f, "", "")?;
++                    }
++                    write!(f, ""{}"", dep)?;
++                    first = false;
++                }
++                Ok(())
++            }
+             AddPackageErr::UpgradingNonLockedPackage { package_name } => write!(
+                 f,
+                 ""Package {package_name} is not locked, so it cannot be upgraded""
+@@ -267,6 +276,7 @@ impl<IO: ProjectIo> UnityProject<IO> {
+ 
+         debug!(""Resolving dependencies"");
+ 
++        let mut missing_dependencies = MissingDependencies::new();
+         let result = package_resolution::collect_adding_packages(
+             self.manifest.dependencies().map(|(name, original_range)| {
+                 if let Some(new_range) = changes.get_dependencies(name) {
+@@ -282,7 +292,13 @@ impl<IO: ProjectIo> UnityProject<IO> {
+             env,
+             adding_packages,
+             allow_prerelease,
+-        )?;
++            &mut missing_dependencies,
++        );
++        if !missing_dependencies.is_empty() {
++            return Err(AddPackageErr::DependenciesNotFound {
++                dependencies: missing_dependencies.into_vec(),
++            });
++        }
+ 
+         debug!(""Resolving finished"");
+ "
+vrc-get/vrc-get,1749,71cdcc52644db3f001433a0213e7d46b49419254,vrc-get-vpm/src/unity_project/package_resolution.rs,modified,33,9,42,"@@ -1,5 +1,5 @@
+ use crate::traits::PackageCollection;
+-use crate::unity_project::{AddPackageErr, LockedDependencyInfo};
++use crate::unity_project::LockedDependencyInfo;
+ use crate::version::{DependencyRange, PrereleaseAcceptance, UnityVersion, Version, VersionRange};
+ use crate::{PackageInfo, PackageManifest, VersionSelector};
+ use std::collections::{HashMap, HashSet, VecDeque};
+@@ -396,6 +396,30 @@ pub struct PackageResolutionResult<'env> {
+     pub found_legacy_packages: Vec<Box<str>>,
+ }
+ 
++pub struct MissingDependencies {
++    pub dependencies: HashSet<Box<str>>,
++}
++
++impl MissingDependencies {
++    pub fn new() -> Self {
++        Self {
++            dependencies: HashSet::new(),
++        }
++    }
++
++    pub fn is_empty(&self) -> bool {
++        self.dependencies.is_empty()
++    }
++
++    pub fn add(&mut self, dependency: &str) {
++        self.dependencies.insert(dependency.into());
++    }
++
++    pub fn into_vec(self) -> Vec<Box<str>> {
++        self.dependencies.into_iter().collect()
++    }
++}
++
+ #[allow(clippy::too_many_arguments)]
+ pub(crate) fn collect_adding_packages<'a, 'env>(
+     dependencies: impl Iterator<Item = (&'a str, &'a DependencyRange)>,
+@@ -406,7 +430,8 @@ pub(crate) fn collect_adding_packages<'a, 'env>(
+     env: &'env impl PackageCollection,
+     packages: Vec<PackageInfo<'env>>,
+     allow_prerelease: bool,
+-) -> Result<PackageResolutionResult<'env>, AddPackageErr> {
++    missing_dependencies: &mut MissingDependencies,
++) -> PackageResolutionResult<'env> {
+     let mut context = ResolutionContext::<'env, '_>::new(allow_prerelease, packages);
+ 
+     // first, add dependencies
+@@ -524,16 +549,15 @@ pub(crate) fn collect_adding_packages<'a, 'env>(
+                             .or_else(|| finder.find(None, PrereleaseAcceptance::Minimum));
+                     }
+ 
+-                    let found = found.ok_or_else(|| AddPackageErr::DependencyNotFound {
+-                        dependency_name: dependency.clone(),
+-                    })?;
+-
+-                    // remove existing if existing
+-                    context.pending_queue.add_pending_package(found);
++                    if let Some(found) = found {
++                        context.pending_queue.add_pending_package(found);
++                    } else {
++                        missing_dependencies.add(dependency);
++                    }
+                 }
+             }
+         }
+     }
+ 
+-    Ok(context.build_result())
++    context.build_result()
+ }"
+vrc-get/vrc-get,1749,71cdcc52644db3f001433a0213e7d46b49419254,vrc-get-vpm/src/unity_project/reinstall.rs,modified,25,11,36,"@@ -1,14 +1,15 @@
+ use std::fmt;
+ 
+ use crate::io::ProjectIo;
++use crate::unity_project::package_resolution::MissingDependencies;
+ use crate::unity_project::{pending_project_changes, PendingProjectChanges};
+ use crate::{PackageCollection, UnityProject, VersionSelector};
+ 
+ #[derive(Debug)]
+ #[non_exhaustive]
+ pub enum ReinstalPackagesError {
+     NotInstalled { package_name: Box<str> },
+-    DependencyNotFound { dependency_name: Box<str> },
++    DependenciesNotFound { dependencies: Vec<Box<str>> },
+ }
+ 
+ impl fmt::Display for ReinstalPackagesError {
+@@ -17,10 +18,18 @@ impl fmt::Display for ReinstalPackagesError {
+             ReinstalPackagesError::NotInstalled { package_name } => {
+                 write!(f, ""Package {} is not installed"", package_name)
+             }
+-            ReinstalPackagesError::DependencyNotFound { dependency_name } => write!(
+-                f,
+-                ""Package {dependency_name} (maybe dependencies of the package) not found""
+-            ),
++            ReinstalPackagesError::DependenciesNotFound { dependencies } => {
++                write!(f, ""Following dependencies are not found: "")?;
++                let mut first = true;
++                for dep in dependencies {
++                    if !first {
++                        write!(f, "", "")?;
++                    }
++                    write!(f, ""{}"", dep)?;
++                    first = false;
++                }
++                Ok(())
++            }
+         }
+     }
+ }
+@@ -34,6 +43,7 @@ impl<IO: ProjectIo> UnityProject<IO> {
+         packages: &[&str],
+     ) -> Result<PendingProjectChanges<'env>, ReinstalPackagesError> {
+         let mut changes = pending_project_changes::Builder::new();
++        let mut missing_dependencies = MissingDependencies::new();
+ 
+         for &package in packages {
+             let Some(locked) = self.manifest.get_locked(package) else {
+@@ -42,16 +52,20 @@ impl<IO: ProjectIo> UnityProject<IO> {
+                 });
+             };
+ 
+-            let Some(pkg) = env.find_package_by_name(
++            if let Some(pkg) = env.find_package_by_name(
+                 locked.name(),
+                 VersionSelector::specific_version(locked.version()),
+-            ) else {
+-                return Err(ReinstalPackagesError::DependencyNotFound {
+-                    dependency_name: locked.name().into(),
+-                });
++            ) {
++                changes.install_already_locked(pkg);
++            } else {
++                missing_dependencies.add(locked.name());
+             };
++        }
+ 
+-            changes.install_already_locked(pkg);
++        if !missing_dependencies.is_empty() {
++            return Err(ReinstalPackagesError::DependenciesNotFound {
++                dependencies: missing_dependencies.into_vec(),
++            });
+         }
+ 
+         Ok(changes.build_resolve(self).await)"
+vrc-get/vrc-get,1749,71cdcc52644db3f001433a0213e7d46b49419254,vrc-get-vpm/src/unity_project/resolve.rs,modified,61,56,117,"@@ -4,47 +4,40 @@ use std::fmt;
+ use itertools::Itertools;
+ 
+ use crate::io::ProjectIo;
++use crate::unity_project::package_resolution::MissingDependencies;
+ use crate::unity_project::{
+-    package_resolution, pending_project_changes, AddPackageErr, LockedDependencyInfo,
+-    PendingProjectChanges,
++    package_resolution, pending_project_changes, LockedDependencyInfo, PendingProjectChanges,
+ };
+ use crate::version::{DependencyRange, PrereleaseAcceptance};
+ use crate::{PackageCollection, UnityProject, VersionSelector};
+ 
+ #[derive(Debug)]
+ #[non_exhaustive]
+ pub enum ResolvePackageErr {
+-    DependencyNotFound { dependency_name: Box<str> },
++    DependenciesNotFound { dependencies: Vec<Box<str>> },
+ }
+ 
+ impl fmt::Display for ResolvePackageErr {
+     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+         match self {
+-            ResolvePackageErr::DependencyNotFound { dependency_name } => write!(
+-                f,
+-                ""Package {dependency_name} (maybe dependencies of the package) not found""
+-            ),
++            ResolvePackageErr::DependenciesNotFound { dependencies } => {
++                write!(f, ""Following dependencies are not found: "")?;
++                let mut first = true;
++                for dep in dependencies {
++                    if !first {
++                        write!(f, "", "")?;
++                    }
++                    write!(f, ""{}"", dep)?;
++                    first = false;
++                }
++                Ok(())
++            }
+         }
+     }
+ }
+ 
+ impl std::error::Error for ResolvePackageErr {}
+ 
+-impl From<AddPackageErr> for ResolvePackageErr {
+-    fn from(value: AddPackageErr) -> Self {
+-        match value {
+-            AddPackageErr::DependencyNotFound { dependency_name } => {
+-                Self::DependencyNotFound { dependency_name }
+-            }
+-            AddPackageErr::UpgradingNonLockedPackage { .. }
+-            | AddPackageErr::DowngradingNonLockedPackage { .. }
+-            | AddPackageErr::UpgradingWithDowngrade { .. } => {
+-                panic!(""{value:?} should not be happened"")
+-            }
+-        }
+-    }
+-}
+-
+ impl<IO: ProjectIo> UnityProject<IO> {
+     /// Returns whether the project should be resolved.
+     ///
+@@ -118,53 +111,60 @@ impl<IO: ProjectIo> UnityProject<IO> {
+     pub async fn resolve_request<'env>(
+         &self,
+         env: &'env impl PackageCollection,
+-    ) -> Result<PendingProjectChanges<'env>, AddPackageErr> {
++    ) -> Result<PendingProjectChanges<'env>, ResolvePackageErr> {
+         let mut changes = pending_project_changes::Builder::new();
++        let mut missing_dependencies = MissingDependencies::new();
+ 
+         // first, process locked dependencies
+         for dep in self.manifest.all_locked() {
+-            let pkg = env
++            if let Some(pkg) = env
+                 .find_package_by_name(dep.name(), VersionSelector::specific_version(dep.version()))
+-                .ok_or_else(|| AddPackageErr::DependencyNotFound {
+-                    dependency_name: dep.name().into(),
+-                })?;
+-
+-            changes.install_already_locked(pkg);
++            {
++                changes.install_already_locked(pkg);
++            } else {
++                missing_dependencies.add(dep.name());
++            }
+         }
+ 
+         // then, process packages in dependencies but not in locked.
+         // This usually happens with template projects.
+-        self.add_just_dependency(env, &mut changes)?;
++        self.add_just_dependency(env, &mut changes, &mut missing_dependencies)?;
+ 
+         // finally, process dependencies of unlocked packages.
+-        self.resolve_unlocked(env, &mut changes)?;
++        self.resolve_unlocked(env, &mut changes, &mut missing_dependencies)?;
+ 
+-        Ok(changes.build_resolve(self).await)
++        if missing_dependencies.is_empty() {
++            Ok(changes.build_resolve(self).await)
++        } else {
++            Err(ResolvePackageErr::DependenciesNotFound {
++                dependencies: missing_dependencies.into_vec(),
++            })
++        }
+     }
+ 
+     fn add_just_dependency<'env>(
+         &self,
+         env: &'env impl PackageCollection,
+         changes: &mut pending_project_changes::Builder<'env>,
+-    ) -> Result<(), AddPackageErr> {
++        missing_dependencies: &mut MissingDependencies,
++    ) -> Result<(), ResolvePackageErr> {
+         let mut to_install = vec![];
+         let mut install_names = HashSet::new();
+ 
+         for (name, range) in self.manifest.dependencies() {
+             if self.manifest.get_locked(name).is_none() {
+-                to_install.push(
+-                    env.find_package_by_name(
+-                        name,
+-                        VersionSelector::range_for(
+-                            self.unity_version(),
+-                            &range.as_range(),
+-                            PrereleaseAcceptance::allow_or_minimum(range.as_range().contains_pre()),
+-                        ),
+-                    )
+-                    .ok_or_else(|| AddPackageErr::DependencyNotFound {
+-                        dependency_name: name.into(),
+-                    })?,
+-                );
++                if let Some(pkg) = env.find_package_by_name(
++                    name,
++                    VersionSelector::range_for(
++                        self.unity_version(),
++                        &range.as_range(),
++                        PrereleaseAcceptance::allow_or_minimum(range.as_range().contains_pre()),
++                    ),
++                ) {
++                    to_install.push(pkg);
++                } else {
++                    missing_dependencies.add(name);
++                }
+                 install_names.insert(name);
+             }
+         }
+@@ -184,7 +184,8 @@ impl<IO: ProjectIo> UnityProject<IO> {
+             env,
+             to_install,
+             allow_prerelease,
+-        )?;
++            missing_dependencies,
++        );
+ 
+         for x in result.new_packages {
+             changes.install_to_locked(x);
+@@ -207,7 +208,8 @@ impl<IO: ProjectIo> UnityProject<IO> {
+         &self,
+         env: &'env impl PackageCollection,
+         changes: &mut pending_project_changes::Builder<'env>,
+-    ) -> Result<(), AddPackageErr> {
++        missing_dependencies: &mut MissingDependencies,
++    ) -> Result<(), ResolvePackageErr> {
+         if self.unlocked_packages().is_empty() {
+             // if there are no unlocked packages, early return
+             return Ok(());
+@@ -264,26 +266,28 @@ impl<IO: ProjectIo> UnityProject<IO> {
+ 
+         let unlocked_dependencies = unlocked_dependencies_versions
+             .into_iter()
+-            .map(|(pkg_name, packages)| {
++            .filter_map(|(pkg_name, packages)| {
+                 let ranges = packages
+                     .iter()
+                     .map(|(range, _)| range)
+                     .copied()
+                     .collect::<Vec<_>>();
+                 let allow_prerelease = packages.iter().any(|(_, pre)| *pre);
+-                env.find_package_by_name(
++                if let Some(pkg) = env.find_package_by_name(
+                     pkg_name,
+                     VersionSelector::ranges_for(
+                         self.unity_version,
+                         &ranges,
+                         PrereleaseAcceptance::allow_or_minimum(allow_prerelease),
+                     ),
+-                )
+-                .ok_or_else(|| AddPackageErr::DependencyNotFound {
+-                    dependency_name: pkg_name.clone(),
+-                })
++                ) {
++                    Some(pkg)
++                } else {
++                    missing_dependencies.add(pkg_name);
++                    None
++                }
+             })
+-            .collect::<Result<Vec<_>, _>>()?;
++            .collect::<Vec<_>>();
+ 
+         let allow_prerelease = unlocked_dependencies
+             .iter()
+@@ -298,7 +302,8 @@ impl<IO: ProjectIo> UnityProject<IO> {
+             env,
+             unlocked_dependencies,
+             allow_prerelease,
+-        )?;
++            missing_dependencies,
++        );
+ 
+         for x in result.new_packages {
+             changes.install_to_locked(x);"
+vrc-get/vrc-get,1749,71cdcc52644db3f001433a0213e7d46b49419254,vrc-get-vpm/tests/add_package_to_project.rs,modified,3,2,5,"@@ -885,8 +885,9 @@ fn not_found_err() {
+             .expect_err(""should fail"");
+ 
+         match &err {
+-            AddPackageErr::DependencyNotFound { dependency_name } => {
+-                assert_eq!(dependency_name.as_ref(), ""com.vrchat.base"");
++            AddPackageErr::DependenciesNotFound { dependencies } => {
++                assert_eq!(dependencies.len(), 1);
++                assert_eq!(dependencies[0].as_ref(), ""com.vrchat.base"");
+             }
+             _ => panic!(""unexpected error: {:?}"", err),
+         }"

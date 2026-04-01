@@ -1,0 +1,50 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+StereoKit/StereoKit,583,889029e,StereoKitC/tools/file_picker.cpp,modified,3,1,4,"@@ -242,7 +242,7 @@ void platform_file_picker_sz(picker_mode_ mode, void *callback_data, void (*on_c
+ 
+ 	file_picker_open_folder(fp_path.folder);
+ 
+-	fp_win_pose  = ui_popup_pose({0,-0.1f,0});
++	fp_win_pose  = matrix_transform_pose( matrix_invert(render_get_cam_root()), ui_popup_pose({0,-0.1f,0}));
+ 	fp_call_data = callback_data;
+ 	fp_callback  = on_confirm;
+ 	fp_mode = mode;
+@@ -360,6 +360,7 @@ void file_picker_finish() {
+ void file_picker_update() {
+ 	if (fp_show) {
+ 		ui_push_id(""_skp"");
++		hierarchy_push(render_get_cam_root());
+ 		ui_window_begin(fp_title, fp_win_pose, { .46f,0 }, ui_win_normal, ui_system_get_move_type());
+ 
+ 		// Show the current directory address bar!
+@@ -476,6 +477,7 @@ void file_picker_update() {
+ 		ui_pop_enabled();
+ 
+ 		ui_window_end();
++		hierarchy_pop();
+ 		ui_pop_id();
+ 	}
+ "
+StereoKit/StereoKit,583,889029e,StereoKitC/tools/virtual_keyboard.cpp,modified,1,1,2,"@@ -42,7 +42,7 @@ void virtualkeyboard_open(bool32_t open, text_context_ type) {
+ 
+ 	// Position the keyboard in front of the user if this just opened
+ 	if (open && !keyboard_open) {
+-		keyboard_pose = ui_popup_pose({0,-0.1f,0});
++		keyboard_pose = matrix_transform_pose(matrix_invert(render_get_cam_root()), ui_popup_pose({0,-0.1f,0}));
+ 	}
+ 
+ 	// Reset the keyboard to its default state"
+StereoKit/StereoKit,583,889029e,StereoKitC/ui/stereokit_ui.cpp,modified,2,5,7,"@@ -2030,12 +2030,9 @@ pose_t ui_popup_pose(vec3 shift) {
+ 	vec3 dir = at - input_head()->position;
+ 	at = input_head()->position + dir * 0.7f;
+ 
+-	matrix to_local = matrix_invert(render_get_cam_root());
+-	vec3   local_at = matrix_transform_pt(to_local, at);
+-
+ 	return pose_t {
+-		local_at + shift,
+-		quat_lookat(vec3_zero, matrix_transform_dir(to_local, -dir)) };
++		at + shift,
++		quat_lookat(vec3_zero, -dir) };
+ }
+ 
+ ///////////////////////////////////////////"

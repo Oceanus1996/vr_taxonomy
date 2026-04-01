@@ -1,0 +1,60 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vrcx-team/VRCX,89,e9f65f4868d6b65b98db2d60a9275d5298d15819,VRCX.cs,modified,29,2,31,"@@ -75,12 +75,39 @@ public bool IsGameRunning()
+ 
+         public void StartGame(string arguments)
+         {
++            // try stream first
++            try
++            {
++                using (var key = Registry.ClassesRoot.OpenSubKey(@""steam\shell\open\command""))
++                {
++                    // ""C:\Program Files (x86)\Steam\steam.exe"" -- ""%1""
++                    var match = Regex.Match(key.GetValue(string.Empty) as string, ""^\""(.+?)\\\\steam.exe\"""");
++                    if (match.Success)
++                    {
++                        var path = match.Groups[1].Value;
++                        var _arguments = Uri.EscapeDataString(arguments);
++                        Process.Start(new ProcessStartInfo
++                        {
++                            WorkingDirectory = path,
++                            FileName = path + ""\\steam.exe"",
++                            UseShellExecute = false,
++                            Arguments = $""-- \""steam://rungameid/438100//{_arguments}\""""
++                        }).Close();
++                        return;
++                    }
++                }
++            }
++            catch
++            {
++            }
++
++            // fallback
+             try
+             {
+                 using (var key = Registry.ClassesRoot.OpenSubKey(@""VRChat\shell\open\command""))
+                 {
+                     // ""C:\Program Files (x86)\Steam\steamapps\common\VRChat\launch.bat"" ""C:\Program Files (x86)\Steam\steamapps\common\VRChat"" ""%1""
+-                    var match = Regex.Match(key.GetValue(string.Empty) as string, ""^\""(.+\\\\VRChat)\\\\launch.bat\"""");
++                    var match = Regex.Match(key.GetValue(string.Empty) as string, ""^\""(.+?)\\\\launch.bat\"""");
+                     if (match.Success)
+                     {
+                         var path = match.Groups[1].Value;
+@@ -89,7 +116,7 @@ public void StartGame(string arguments)
+                             WorkingDirectory = path,
+                             FileName = path + ""\\VRChat.exe"",
+                             UseShellExecute = false,
+-                            Arguments = arguments
++                            Arguments = $""\""{arguments}\""""
+                         }).Close();
+                     }
+                 }"
+vrcx-team/VRCX,89,e9f65f4868d6b65b98db2d60a9275d5298d15819,html/src/app.js,modified,1,1,2,"@@ -7259,7 +7259,7 @@ CefSharp.BindObjectAsync(
+     };
+ 
+     $app.methods.locationToLaunchArg = function (location) {
+-        return `""vrchat://launch?id=${location}""`;
++        return `vrchat://launch?id=${location}`;
+     }
+ 
+     $app.methods.launchGame = function (...args) {"

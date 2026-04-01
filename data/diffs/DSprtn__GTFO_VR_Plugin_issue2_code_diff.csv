@@ -1,0 +1,238 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+DSprtn/GTFO_VR_Plugin,2,e68fafac7d3b122f58b07c7100da92d1f7bad00f,GTFO_VR/Core/GTFO_VR_Plugin.cs,modified,1,1,2,"@@ -75,7 +75,7 @@ private void SetupIL2CPPClassInjections()
+             ClassInjector.RegisterTypeInIl2Cpp<BhapticsElevatorSequence>();
+             ClassInjector.RegisterTypeInIl2Cpp<Snapturn>();
+             ClassInjector.RegisterTypeInIl2Cpp<Watch>();
+-            ClassInjector.RegisterTypeInIl2Cpp<VRHammer>();
++            ClassInjector.RegisterTypeInIl2Cpp<VRMeleeWeapon>();
+             ClassInjector.RegisterTypeInIl2Cpp<DividedBarShaderController>();
+             ClassInjector.RegisterTypeInIl2Cpp<MovementVignette>();
+             ClassInjector.RegisterTypeInIl2Cpp<RadialMenu>();"
+DSprtn/GTFO_VR_Plugin,2,e68fafac7d3b122f58b07c7100da92d1f7bad00f,GTFO_VR/Core/PlayerBehaviours/Bhaptics/BhapticsIntegration.cs,modified,4,4,8,"@@ -146,8 +146,8 @@ public void Setup(LocalPlayerAgent player)
+             PlayerReloadEvents.OnPlayerReloaded += PlayWeaponReloadedHaptics;
+             PlayerTriggerReloadEvents.OnTriggerWeaponReloaded += PlayTriggerWeaponReloadHaptics;
+             HeldItemEvents.OnItemCharging += HammerChargingHaptics;
+-            HammerEvents.OnHammerSmack += HammerSmackHaptics;
+-            HammerEvents.OnHammerFullyCharged += HammerFullyChargedHaptics;
++            VRMeleeWeaponEvents.OnHammerSmack += HammerSmackHaptics;
++            VRMeleeWeaponEvents.OnHammerFullyCharged += HammerFullyChargedHaptics;
+             FocusStateEvents.OnFocusStateChange += FocusStateChangedHaptics;
+             PlayerInteractionEvents.OnPlayerInteracted += PlayerInteractedHaptics;
+             PlayerInteractionEvents.OnBioscanSetState += PlayerBioscanSetStateHaptics;
+@@ -655,8 +655,8 @@ private void OnDestroy()
+             PlayerReloadEvents.OnPlayerReloaded -= PlayWeaponReloadedHaptics;
+             PlayerTriggerReloadEvents.OnTriggerWeaponReloaded -= PlayTriggerWeaponReloadHaptics;
+             HeldItemEvents.OnItemCharging -= HammerChargingHaptics;
+-            HammerEvents.OnHammerSmack -= HammerSmackHaptics;
+-            HammerEvents.OnHammerFullyCharged -= HammerFullyChargedHaptics;
++            VRMeleeWeaponEvents.OnHammerSmack -= HammerSmackHaptics;
++            VRMeleeWeaponEvents.OnHammerFullyCharged -= HammerFullyChargedHaptics;
+             FocusStateEvents.OnFocusStateChange -= FocusStateChangedHaptics;
+             PlayerInteractionEvents.OnPlayerInteracted -= PlayerInteractedHaptics;
+             PlayerInteractionEvents.OnBioscanSetState -= PlayerBioscanSetStateHaptics;"
+DSprtn/GTFO_VR_Plugin,2,e68fafac7d3b122f58b07c7100da92d1f7bad00f,GTFO_VR/Core/PlayerBehaviours/Haptics.cs,modified,2,2,4,"@@ -22,7 +22,7 @@ public void Setup()
+             PlayerReloadEvents.OnPlayerReloaded += PlayWeaponReloadHaptics;
+             GlueGunEvents.OnPressureUpdate += GlueGunPressureHaptics;
+             HeldItemEvents.OnItemCharging += HammerChargingHaptics;
+-            HammerEvents.OnHammerSmack += HammerSmackHaptics;
++            VRMeleeWeaponEvents.OnHammerSmack += HammerSmackHaptics;
+         }
+ 
+         public static float GetFireHapticStrength(Weapon weapon, float intensityFactor = 1f)
+@@ -187,7 +187,7 @@ private void OnDestroy()
+             PlayerReloadEvents.OnPlayerReloaded -= PlayWeaponReloadHaptics;
+             GlueGunEvents.OnPressureUpdate -= GlueGunPressureHaptics;
+             HeldItemEvents.OnItemCharging -= HammerChargingHaptics;
+-            HammerEvents.OnHammerSmack -= HammerSmackHaptics;
++            VRMeleeWeaponEvents.OnHammerSmack -= HammerSmackHaptics;
+         }
+     }
+ }
+\ No newline at end of file"
+DSprtn/GTFO_VR_Plugin,2,e68fafac7d3b122f58b07c7100da92d1f7bad00f,GTFO_VR/Core/PlayerBehaviours/VRMeleeWeapon.cs,renamed,12,9,21,"@@ -9,9 +9,9 @@ namespace GTFO_VR.Core.PlayerBehaviours
+     /// <summary>
+     /// Disable animations, tweak hitbox size and position
+     /// </summary>
+-    public class VRHammer : MonoBehaviour
++    public class VRMeleeWeapon : MonoBehaviour
+     {
+-        public VRHammer(IntPtr value) : base(value)
++        public VRMeleeWeapon(IntPtr value) : base(value)
+         {
+         }
+ 
+@@ -21,17 +21,20 @@ public VRHammer(IntPtr value) : base(value)
+         private Transform m_animatorRoot;
+         private Light m_chargeupIndicatorLight;
+ 
++
++        // ToDO - Change melee Z Offset, change hitbox size mult? Change melee weapon rotation offset
++
+         public void Setup(MeleeWeaponFirstPerson weapon)
+         {
+             m_weapon = weapon;
+             m_animatorRoot = m_weapon.ModelData.m_damageRefAttack.parent;
+-            m_chargeupIndicatorLight = new GameObject(""VR_Hammer_Chargeup_Light"").AddComponent<Light>();
++            m_chargeupIndicatorLight = new GameObject(""VR_Weapon_Chargeup_Light"").AddComponent<Light>();
+             m_chargeupIndicatorLight.color = Color.white;
+ 
+             m_chargeupIndicatorLight.enabled = false;
+             m_chargeupIndicatorLight.shadows = LightShadows.None;
+-            HammerEvents.OnHammerFullyCharged += HammerFullyCharged;
+-            HammerEvents.OnHammerHalfCharged += HammerHalfCharged;
++            VRMeleeWeaponEvents.OnHammerFullyCharged += HammerFullyCharged;
++            VRMeleeWeaponEvents.OnHammerHalfCharged += HammerHalfCharged;
+         }
+ 
+         private void HammerHalfCharged()
+@@ -47,7 +50,7 @@ private void HammerHalfCharged()
+                 m_chargeupIndicatorLight.intensity = .75f;
+                 m_chargeupIndicatorLight.enabled = true;
+             }
+-            Invoke(nameof(VRHammer.TurnChargeLightOff), 0.10f);
++            Invoke(nameof(VRMeleeWeapon.TurnChargeLightOff), 0.10f);
+         }
+ 
+         private void HammerFullyCharged()
+@@ -63,7 +66,7 @@ private void HammerFullyCharged()
+                 m_chargeupIndicatorLight.intensity = 1.75f;
+                 m_chargeupIndicatorLight.enabled = true;
+             }
+-            Invoke(nameof(VRHammer.TurnChargeLightOff), 0.15f);
++            Invoke(nameof(VRMeleeWeapon.TurnChargeLightOff), 0.15f);
+         }
+ 
+         private void TurnChargeLightOff()
+@@ -116,8 +119,8 @@ private void LateUpdate()
+ 
+         private void OnDestroy()
+         {
+-            HammerEvents.OnHammerHalfCharged -= HammerHalfCharged;
+-            HammerEvents.OnHammerFullyCharged -= HammerFullyCharged;
++            VRMeleeWeaponEvents.OnHammerHalfCharged -= HammerHalfCharged;
++            VRMeleeWeaponEvents.OnHammerFullyCharged -= HammerFullyCharged;
+         }
+     }
+ }
+\ No newline at end of file"
+DSprtn/GTFO_VR_Plugin,2,e68fafac7d3b122f58b07c7100da92d1f7bad00f,GTFO_VR/Core/PlayerBehaviours/VRRendering.cs,modified,1,1,2,"@@ -107,7 +107,7 @@ private void FixHeadAttachedFlashlightPos(EVREye eye)
+                 {
+                     var vr = SteamVR.instance;
+                     int i = (int)eye;
+-                    inv.m_flashlightCLight.m_position = HMD.Hmd.transform.TransformPoint(m_fpsCamera.m_owner.Inventory.m_flashlightCameraOffset - vr.eyes[i].pos);
++                    inv.m_flashlightCLight.m_position = HMD.Hmd.transform.TransformPoint(m_fpsCamera.m_owner.Inventory.m_flashlightCameraOffset + vr.eyes[i].pos);
+                 } else
+                 {
+                     var lightAlign = inv.m_currentGearPartFlashlight.m_lightAlign;"
+DSprtn/GTFO_VR_Plugin,2,e68fafac7d3b122f58b07c7100da92d1f7bad00f,GTFO_VR/Core/WeaponArchetypeVRData.cs,modified,6,2,8,"@@ -67,8 +67,12 @@ public static void Setup()
+             weaponArchetypes = new Dictionary<string, VRWeaponData>
+             {
+                 { ""Default"", new VRWeaponData(new Vector3(0f, 0f, 0f), false) },
+-                { ""Melee"", new VRWeaponData(new Vector3(0f, -.25f, 0f), Quaternion.Euler(new Vector3(45f - VRConfig.configWeaponRotationOffset.Value, 0, 0)), false, 1.15f) },
+-                
++
++                { ""Hammer"", new VRWeaponData(new Vector3(0f, -.25f, 0f), Quaternion.Euler(new Vector3(45f - VRConfig.configWeaponRotationOffset.Value, 0, 0)), false, 1.15f) },
++                { ""Knife"", new VRWeaponData(new Vector3(0f, -.25f, 0f), Quaternion.Euler(new Vector3(45f - VRConfig.configWeaponRotationOffset.Value, 0, 0)), false, 1.15f) },
++                { ""Spear"", new VRWeaponData(new Vector3(0f, -.25f, 0f), Quaternion.Euler(new Vector3(45f - VRConfig.configWeaponRotationOffset.Value, 0, 0)), false, 1.15f) },
++                { ""Bat"", new VRWeaponData(new Vector3(0f, -.25f, 0f), Quaternion.Euler(new Vector3(45f - VRConfig.configWeaponRotationOffset.Value, 0, 0)), false, 1.15f) },
++
+                 { ""Mine deployer"", new VRWeaponData(new Vector3(0f, 0f, -.05f), false) },
+                 { ""Bio Tracker"", new VRWeaponData(new Vector3(0f, 0f, -.05f), false, 1.3f) },
+ "
+DSprtn/GTFO_VR_Plugin,2,e68fafac7d3b122f58b07c7100da92d1f7bad00f,GTFO_VR/Detours/HammerAttackCheckDetour.cs,modified,1,1,2,"@@ -32,7 +32,7 @@ public unsafe static void HookAll()
+ 
+         private unsafe static bool OurAttackCheck(IntPtr thisPtr, IntPtr attackData, float sphereRad, float elapsedTime, out IntPtr hits)
+         {
+-            bool result = OriginalHammerMethod(thisPtr, attackData, sphereRad * VRHammer.hammerSizeMult, elapsedTime, out hits);
++            bool result = OriginalHammerMethod(thisPtr, attackData, sphereRad * VRMeleeWeapon.hammerSizeMult, elapsedTime, out hits);
+ 
+             if ((!VRConfig.configUseOldHammer.Value || !VRConfig.configUseControllers.Value) && Controllers.mainControllerPose.GetVelocity().magnitude < 0.4f)
+             {"
+DSprtn/GTFO_VR_Plugin,2,e68fafac7d3b122f58b07c7100da92d1f7bad00f,GTFO_VR/Events/VRMeleeWeaponEvents.cs,renamed,1,1,2,"@@ -7,7 +7,7 @@
+ 
+ namespace GTFO_VR.Events
+ {
+-    class HammerEvents
++    class VRMeleeWeaponEvents
+     {
+         public static event Action<float> OnHammerSmack;
+         public static event Action OnHammerFullyCharged;"
+DSprtn/GTFO_VR_Plugin,2,e68fafac7d3b122f58b07c7100da92d1f7bad00f,GTFO_VR/GTFO_VR.csproj,modified,2,2,4,"@@ -43,7 +43,7 @@
+     <Compile Include=""Core\PlayerBehaviours\MovementVignette.cs"" />
+     <Compile Include=""Core\UI\RadialItem.cs"" />
+     <Compile Include=""Core\UI\RadialMenu.cs"" />
+-    <Compile Include=""Core\PlayerBehaviours\VRHammer.cs"" />
++    <Compile Include=""Core\PlayerBehaviours\VRMeleeWeapon.cs"" />
+     <Compile Include=""Core\UI\WeaponAmmoHologram.cs"" />
+     <Compile Include=""Core\UI\WeaponRadialMenu.cs"" />
+     <Compile Include=""Core\VRConfig.cs"" />
+@@ -62,7 +62,7 @@
+     <Compile Include=""Events\ChatMsgEvents.cs"" />
+     <Compile Include=""Events\ElevatorEvents.cs"" />
+     <Compile Include=""Events\FocusStateEvents.cs"" />
+-    <Compile Include=""Events\HammerEvents.cs"" />
++    <Compile Include=""Events\VRMeleeWeaponEvents.cs"" />
+     <Compile Include=""Events\InventoryAmmoEvents.cs"" />
+     <Compile Include=""Events\PlayerInteractionEvents.cs"" />
+     <Compile Include=""Events\PlayerLocomotionEvents.cs"" />"
+DSprtn/GTFO_VR_Plugin,2,e68fafac7d3b122f58b07c7100da92d1f7bad00f,GTFO_VR/Injections/Gameplay/InjectVRHammer.cs,modified,9,9,18,"@@ -22,7 +22,7 @@ static class InjectVRHammer
+ 
+         static void Postfix(MeleeWeaponFirstPerson __instance)
+         {
+-            __instance.gameObject.AddComponent<VRHammer>().Setup(__instance);
++            __instance.gameObject.AddComponent<VRMeleeWeapon>().Setup(__instance);
+         }
+     }
+ 
+@@ -39,18 +39,18 @@ static void Postfix(MWS_ChargeUp __instance)
+             if (Controllers.mainControllerPose.GetVelocity().magnitude > 0.5f)
+             {
+                
+-                Collider[] enemyColliders = Physics.OverlapSphere(__instance.m_weapon.ModelData.m_damageRefAttack.position, VRHammer.hammerSizeMult * .75f, LayerManager.MASK_ENEMY_DAMAGABLE);
++                Collider[] enemyColliders = Physics.OverlapSphere(__instance.m_weapon.ModelData.m_damageRefAttack.position, VRMeleeWeapon.hammerSizeMult * .75f, LayerManager.MASK_ENEMY_DAMAGABLE);
+                 bool shouldReleaseCharge = enemyColliders.Length > 0;
+                 if (GTFO_VR_Plugin.DEBUG_ENABLED)
+                 {
+                     if(VRConfig.configDebugShowHammerHitbox.Value)
+                     {
+-                        DebugDraw3D.DrawSphere(__instance.m_weapon.ModelData.m_damageRefAttack.position, VRHammer.hammerSizeMult * .75f, ColorExt.Blue(0.2f));
+-                        DebugDraw3D.DrawSphere(__instance.m_weapon.ModelData.m_damageRefAttack.position, VRHammer.hammerSizeMult * .25f, ColorExt.Red(0.2f));
++                        DebugDraw3D.DrawSphere(__instance.m_weapon.ModelData.m_damageRefAttack.position, VRMeleeWeapon.hammerSizeMult * .75f, ColorExt.Blue(0.2f));
++                        DebugDraw3D.DrawSphere(__instance.m_weapon.ModelData.m_damageRefAttack.position, VRMeleeWeapon.hammerSizeMult * .25f, ColorExt.Red(0.2f));
+                     }
+                 }
+                 if(Controllers.mainControllerPose.GetVelocity().magnitude > 1.6f) {
+-                    Collider[] staticColliders = Physics.OverlapSphere(__instance.m_weapon.ModelData.m_damageRefAttack.position, VRHammer.hammerSizeMult * .25f, LayerManager.MASK_MELEE_ATTACK_TARGETS_WITH_STATIC);
++                    Collider[] staticColliders = Physics.OverlapSphere(__instance.m_weapon.ModelData.m_damageRefAttack.position, VRMeleeWeapon.hammerSizeMult * .25f, LayerManager.MASK_MELEE_ATTACK_TARGETS_WITH_STATIC);
+                     shouldReleaseCharge = shouldReleaseCharge || staticColliders.Length > 0;
+                 }
+ 
+@@ -115,11 +115,11 @@ static void Postfix(MeleeWeaponFirstPerson __instance, MeleeWeaponDamageData dat
+             data.sourcePos = data.hitPos - data.hitNormal * velocity.magnitude;
+             if(isPush)
+             {
+-                HammerEvents.HammerSmacked(0f);
++                VRMeleeWeaponEvents.HammerSmacked(0f);
+             }
+             else
+             {
+-                HammerEvents.HammerSmacked(__instance.m_damageToDeal / __instance.MeleeArchetypeData.ChargedAttackDamage);
++                VRMeleeWeaponEvents.HammerSmacked(__instance.m_damageToDeal / __instance.MeleeArchetypeData.ChargedAttackDamage);
+             }
+         }
+     }
+@@ -144,12 +144,12 @@ private static void Prefix(MWS_ChargeUp __instance)
+             float progress = Mathf.Min(__instance.m_elapsed / __instance.m_maxDamageTime, 1f);
+             if (progress >= 1 && !fullChargeEventFired)
+             {
+-                HammerEvents.HammerFullyCharged();
++                VRMeleeWeaponEvents.HammerFullyCharged();
+                 fullChargeEventFired = true;
+             }
+             if (progress >= .5f && !halfChargeEventFired)
+             {
+-                HammerEvents.HammerHalfCharged();
++                VRMeleeWeaponEvents.HammerHalfCharged();
+                 halfChargeEventFired = true;
+             }
+         }"

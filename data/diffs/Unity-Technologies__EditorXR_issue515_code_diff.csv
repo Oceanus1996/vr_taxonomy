@@ -1,0 +1,109 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+Unity-Technologies/EditorXR,515,17d6648f011f958fba8684fa7928a01109556844,Menus/SpatialUI/SpatialMenu/Scripts/SpatialMenuUI.cs,modified,49,5,54,"@@ -258,9 +258,14 @@ public bool beingMoved
+             }
+         }
+ 
+-        void Start()
++        void Awake()
+         {
++            m_Visible = true;
+             visible = false;
++        }
++
++        void Start()
++        {
+             m_ReturnToPreviousBackgroundMaterial = MaterialUtils.GetMaterialClone(m_ReturnToPreviousBackgroundRenderer);
+             m_ReturnToPreviousBackgroundRenderer.material = m_ReturnToPreviousBackgroundMaterial;
+             m_ReturnToPreviousBackgroundMaterial.SetFloat(""_Blur"", 0);
+@@ -383,6 +388,13 @@ void DisplayHomeSectionContents()
+             m_HomeSectionDescription.gameObject.SetActive(true);
+ 
+             m_CurrentlyDisplayedMenuElements.Clear();
++            var deleteOldChildren = m_SubMenuContainer.GetComponentsInChildren<Transform>().Where( x => x != m_SubMenuContainer);
++            foreach (var child in deleteOldChildren)
++            {
++                if (child != null && child.gameObject != null)
++                    ObjectUtils.Destroy(child.gameObject);
++            }
++
+             var homeMenuElementParent = (RectTransform)m_HomeMenuLayoutGroup.transform;
+             foreach (var data in spatialMenuData)
+             {
+@@ -474,24 +486,56 @@ public void HighlightElementInCurrentlyDisplayedMenuSection(int elementOrderPosi
+ 
+         public void SelectCurrentlyHighlightedElement(Node node)
+         {
++            // In the case of a ray-based selection, don't process the selection of a currently highlighted element assigned via another input-mode
++            if (m_SpatialInterfaceInputMode == SpatialInterfaceInputMode.Ray)
++            {
++                var rayHoveringButton = false;
++                for (int i = 0; i < m_CurrentlyDisplayedMenuElements.Count; ++i)
++                {
++                    if (m_CurrentlyDisplayedMenuElements[i] != null)
++                    {
++                        rayHoveringButton = m_CurrentlyDisplayedMenuElements[i].hoveringNode != Node.None;
++                        if (rayHoveringButton)
++                            break;
++                    }
++                }
++
++                if (rayHoveringButton)
++                    return;
++            }
++
+             if (m_CurrentlyHighlightedMenuElement != null)
+             {
+                 // Spatial/cyclical/trackpad/thumbstick selection will set this reference
+                 m_CurrentlyHighlightedMenuElement.selected(node);
++                for (int i = 0; i < m_CurrentlyDisplayedMenuElements.Count; ++i)
++                {
++                    if (m_CurrentlyDisplayedMenuElements[i] != null)
++                        m_CurrentlyDisplayedMenuElements[i].highlighted = false;
++                }
+             }
+             else
+             {
+                 // Search for an element that is being hovered,
+                 // if no currentlyHighlightedMenuElement was assigned via a spatial/cyclical input means
++                var highlightedButtonFound = false;
+                 for (int i = 0; i < m_CurrentlyDisplayedMenuElements.Count; ++i)
+                 {
+                     if (m_CurrentlyDisplayedMenuElements[i] != null)
+                     {
+-                        var highlighted = m_CurrentlyDisplayedMenuElements[i].highlighted;
+-                        if (highlighted)
++                        if (!highlightedButtonFound)
++                        {
++                            var highlighted = m_CurrentlyDisplayedMenuElements[i].highlighted;
++                            if (highlighted)
++                            {
++                                highlightedButtonFound = true;
++                                m_CurrentlyDisplayedMenuElements[i].selected(node);
++                                m_CurrentlyDisplayedMenuElements[i].highlighted = false;
++                            }
++                        }
++                        else
+                         {
+-                            m_CurrentlyDisplayedMenuElements[i].selected(node);
+-                            return;
++                            m_CurrentlyDisplayedMenuElements[i].highlighted = false;
+                         }
+                     }
+                 }"
+Unity-Technologies/EditorXR,515,17d6648f011f958fba8684fa7928a01109556844,Menus/SpatialUI/SpatialMenu/SpatialMenu.cs,modified,1,0,1,"@@ -144,6 +144,7 @@ SpatialMenuState spatialMenuState
+                 if (s_SpatialMenuState == value)
+                     return;
+ 
++                RefreshProviderData();
+                 s_SpatialMenuState = value;
+                 s_SpatialMenuUI.spatialMenuState = s_SpatialMenuState;
+                 switch (s_SpatialMenuState)"
+Unity-Technologies/EditorXR,515,17d6648f011f958fba8684fa7928a01109556844,Scripts/Input/OVRTouchInputToEvents.cs,modified,1,1,2,"@@ -15,7 +15,7 @@ sealed class OVRTouchInputToEvents : BaseInputToEvents
+ #if ENABLE_OVR_INPUT
+         const uint k_ControllerCount = 2;
+         const int k_AxisCount = (int)VRInputDevice.VRControl.Analog9 + 1;
+-        const float k_DeadZone = 0.001f;
++        const float k_DeadZone = 0.05f;
+ 
+         float[,] m_LastAxisValues = new float[k_ControllerCount, k_AxisCount];
+         Vector3[] m_LastPositionValues = new Vector3[k_ControllerCount];"

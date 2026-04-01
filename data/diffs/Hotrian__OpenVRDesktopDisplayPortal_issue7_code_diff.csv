@@ -1,0 +1,670 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+Hotrian/OpenVRDesktopDisplayPortal,7,579f015e0fdf88a54732cf9474450a5c1417ae4b,Assets/Editor/HOTK/HOTK_OverlayInspector.cs,modified,2,1,3,"@@ -23,7 +23,8 @@ public override void OnInspectorGUI()
+         if (overlay.ShowSettingsAppearance)
+         {
+             EditorGUILayout.PropertyField(serializedObject.FindProperty(""OverlayTexture""), new GUIContent() {text = ""Texture""});
+-            
++            EditorGUILayout.PropertyField(serializedObject.FindProperty(""Framerate""), new GUIContent() { text = ""Framerate"" });
++
+             EditorGUILayout.PropertyField(serializedObject.FindProperty(""AnimateOnGaze""));
+             if (overlay.AnimateOnGaze == HOTK_Overlay.AnimationType.Alpha || overlay.AnimateOnGaze == HOTK_Overlay.AnimationType.AlphaAndScale)
+             {"
+Hotrian/OpenVRDesktopDisplayPortal,7,579f015e0fdf88a54732cf9474450a5c1417ae4b,Assets/HOTK/Example Content/HOTK_DisplayMirror.unity,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,7,579f015e0fdf88a54732cf9474450a5c1417ae4b,Assets/HOTK/Example Content/UI Scripts/ApplicationDropdownScript.cs,added,22,0,22,"@@ -0,0 +1,22 @@
++﻿using UnityEngine;
++
++public class ApplicationDropdownScript : MonoBehaviour
++{
++    public DesktopPortalController Controller;
++
++    public void Awake()
++    {
++        if (Controller != null)
++        {
++            Controller.StopRefreshing();
++        }
++    }
++
++    public void OnDestroy()
++    {
++        if (Controller != null)
++        {
++            Controller.StartRefreshing();
++        }
++    }
++}
+\ No newline at end of file"
+Hotrian/OpenVRDesktopDisplayPortal,7,579f015e0fdf88a54732cf9474450a5c1417ae4b,Assets/HOTK/Example Content/UI Scripts/ApplicationDropdownScript.cs.meta,added,12,0,12,"@@ -0,0 +1,12 @@
++fileFormatVersion: 2
++guid: 52a19dc37fbbd5d4a8b7f60a7607e4ed
++timeCreated: 1469099213
++licenseType: Free
++MonoImporter:
++  serializedVersion: 2
++  defaultReferences: []
++  executionOrder: 0
++  icon: {instanceID: 0}
++  userData: 
++  assetBundleName: 
++  assetBundleVariant: "
+Hotrian/OpenVRDesktopDisplayPortal,7,579f015e0fdf88a54732cf9474450a5c1417ae4b,Assets/HOTK/Example Content/UI Scripts/DropdownSaveLoadController.cs,modified,12,2,14,"@@ -124,14 +124,24 @@ public void OnLoadPressed(bool startup = false) // Loads an existing save
+         Debug.Log(startup ? ""Loading last used settings "" + Dropdown.options[Dropdown.value].text : ""Loading saved settings "" + Dropdown.options[Dropdown.value].text);
+         PortalSettingsSaver.Current = Dropdown.options[Dropdown.value].text;
+         if (!startup) PortalSettingsSaver.SaveProgramSettings();
+-
++        // Disable X and Y sliders so only one call to update the overlay occurs
+         XSlider.Slider.value = settings.X;
+         YSlider.Slider.value = settings.Y;
+         ZSlider.Slider.value = settings.Z;
+ 
++        RXSlider.IgnoreNextUpdate();
++        RYSlider.IgnoreNextUpdate();
++        RZSlider.IgnoreNextUpdate();
+         RXSlider.Slider.value = settings.RX;
+         RYSlider.Slider.value = settings.RY;
+         RZSlider.Slider.value = settings.RZ;
++        RXSlider.OnSliderChanged();
++        RYSlider.OnSliderChanged();
++        RZSlider.OnSliderChanged();
++
++        if (RXSlider.InputField != null) RXSlider.InputField.text = settings.RX.ToString();
++        if (RYSlider.InputField != null) RYSlider.InputField.text = settings.RY.ToString();
++        if (RZSlider.InputField != null) RZSlider.InputField.text = settings.RZ.ToString();
+ 
+         DeviceDropdown.SetToOption(settings.Device.ToString());
+         PointDropdown.SetToOption(settings.Point.ToString());
+@@ -212,7 +222,7 @@ public void OnSavePressed()
+             settings.SaveFileVersion = PortalSettings.CurrentSaveVersion;
+ 
+             settings.X = OverlayToSave.AnchorOffset.x; settings.Y = OverlayToSave.AnchorOffset.y; settings.Z = OverlayToSave.AnchorOffset.z;
+-            settings.RX = OverlayToSave.transform.eulerAngles.x; settings.RY = OverlayToSave.transform.eulerAngles.y; settings.RZ = OverlayToSave.transform.eulerAngles.z;
++            settings.RX = RXSlider.Slider.value; settings.RY = RYSlider.Slider.value; settings.RZ = RZSlider.Slider.value;
+ 
+             settings.Device = OverlayToSave.AnchorDevice;
+             settings.Point = OverlayToSave.AnchorPoint;"
+Hotrian/OpenVRDesktopDisplayPortal,7,579f015e0fdf88a54732cf9474450a5c1417ae4b,Assets/HOTK/Example Content/UI Scripts/DropdownSaveLoadController.cs.meta,modified,2,2,4,"@@ -1,11 +1,11 @@
+ fileFormatVersion: 2
+ guid: 7c3fc6c1d4abf7948b2c42b19221d52b
+-timeCreated: 1469043885
++timeCreated: 1469082410
+ licenseType: Free
+ MonoImporter:
+   serializedVersion: 2
+   defaultReferences: []
+-  executionOrder: 0
++  executionOrder: 100
+   icon: {instanceID: 0}
+   userData: 
+   assetBundleName: "
+Hotrian/OpenVRDesktopDisplayPortal,7,579f015e0fdf88a54732cf9474450a5c1417ae4b,Assets/HOTK/Example Content/UI Scripts/RotationMatchInputField.cs,modified,16,10,26,"@@ -5,43 +5,49 @@
+ [RequireComponent(typeof(InputField))]
+ public class RotationMatchInputField : MonoBehaviour
+ {
++    public static InputField XInput;
++    public static InputField YInput;
++    public static InputField ZInput;
++
+     public HOTK_Overlay Overlay;
+     public RotationAxis Axis;
+ 
+-    public Slider Slider;
++    public RotationMatchSlider Slider;
+     public InputField InputField
+     {
+         get { return _inputField ?? (_inputField = GetComponent<InputField>()); }
+     }
+ 
+     private InputField _inputField;
+-
+-    public void OnEnable()
++    
++    public void Awake()
+     {
+-        if (Overlay == null) return;
+         switch (Axis)
+         {
+             case RotationAxis.X:
+-                InputField.text = Overlay.transform.eulerAngles.x.ToString();
++                XInput = InputField;
+                 break;
+             case RotationAxis.Y:
+-                InputField.text = Overlay.transform.eulerAngles.y.ToString();
++                YInput = InputField;
+                 break;
+             case RotationAxis.Z:
+-                InputField.text = Overlay.transform.eulerAngles.z.ToString();
++                ZInput = InputField;
+                 break;
+             default:
+                 throw new ArgumentOutOfRangeException();
+         }
++
++        if (Slider == null) return;
++        InputField.text = Slider.Slider.value.ToString();
+     }
+ 
+     public void OnInputChanged()
+     {
+         float f;
+         if (!float.TryParse(InputField.text, out f)) return;
+-        if (Slider != null) Slider.value = f;
++        if (Slider != null) { Slider.IgnoreNextUpdate(); Slider.Slider.value = f; }
+         if (Overlay == null) return;
+-        float dx = Overlay.transform.eulerAngles.x, dy = Overlay.transform.eulerAngles.y, dz = Overlay.transform.eulerAngles.z;
++        float dx = int.Parse(XInput.text), dy = int.Parse(YInput.text), dz = int.Parse(ZInput.text);
+         switch (Axis)
+         {
+             case RotationAxis.X:
+@@ -56,7 +62,7 @@ public void OnInputChanged()
+             default:
+                 throw new ArgumentOutOfRangeException();
+         }
+-        Overlay.transform.eulerAngles = new Vector3(dx, dy, dz);
++        Overlay.transform.rotation = Quaternion.Euler(dx, dy, dz);
+     }
+ 
+     public enum RotationAxis"
+Hotrian/OpenVRDesktopDisplayPortal,7,579f015e0fdf88a54732cf9474450a5c1417ae4b,Assets/HOTK/Example Content/UI Scripts/RotationMatchInputField.cs.meta,modified,2,2,4,"@@ -1,11 +1,11 @@
+ fileFormatVersion: 2
+ guid: f4957f9e17c74a542bde3d0b7cfe81ad
+-timeCreated: 1466666396
++timeCreated: 1469082467
+ licenseType: Free
+ MonoImporter:
+   serializedVersion: 2
+   defaultReferences: []
+-  executionOrder: 0
++  executionOrder: -8000
+   icon: {instanceID: 0}
+   userData: 
+   assetBundleName: "
+Hotrian/OpenVRDesktopDisplayPortal,7,579f015e0fdf88a54732cf9474450a5c1417ae4b,Assets/HOTK/Example Content/UI Scripts/RotationMatchSlider.cs,modified,37,2,39,"@@ -5,6 +5,10 @@
+ [RequireComponent(typeof(Slider))]
+ public class RotationMatchSlider : MonoBehaviour
+ {
++    public static Slider XSlider;
++    public static Slider YSlider;
++    public static Slider ZSlider;
++
+     public HOTK_Overlay Overlay;
+     public RotationAxis Axis;
+ 
+@@ -16,11 +20,42 @@ public Slider Slider
+ 
+     private Slider _slider;
+ 
++    public void Awake()
++    {
++        switch (Axis)
++        {
++            case RotationAxis.X:
++                XSlider = Slider;
++                break;
++            case RotationAxis.Y:
++                YSlider = Slider;
++                break;
++            case RotationAxis.Z:
++                ZSlider = Slider;
++                break;
++            default:
++                throw new ArgumentOutOfRangeException();
++        }
++    }
++
++    private bool _ignoreNextUpdate;
++    public void IgnoreNextUpdate()
++    {
++        _ignoreNextUpdate = true;
++    }
++
+     public void OnSliderChanged()
+     {
++        if (_ignoreNextUpdate)
++        {
++            _ignoreNextUpdate = false;
++            return;
++        }
+         if (InputField != null) InputField.text = Slider.value.ToString();
+         if (Overlay == null) return;
+-        float dx = Overlay.transform.eulerAngles.x, dy = Overlay.transform.eulerAngles.y, dz = Overlay.transform.eulerAngles.z;
++        float dx = XSlider.value,
++              dy = YSlider.value,
++              dz = ZSlider.value;
+         switch (Axis)
+         {
+             case RotationAxis.X:
+@@ -35,7 +70,7 @@ public void OnSliderChanged()
+             default:
+                 throw new ArgumentOutOfRangeException();
+         }
+-        Overlay.transform.eulerAngles = new Vector3(dx, dy, dz);
++        Overlay.transform.rotation = Quaternion.Euler(dx, dy, dz);
+     }
+ 
+     public enum RotationAxis"
+Hotrian/OpenVRDesktopDisplayPortal,7,579f015e0fdf88a54732cf9474450a5c1417ae4b,Assets/HOTK/Example Content/UI Scripts/RotationMatchSlider.cs.meta,modified,2,2,4,"@@ -1,11 +1,11 @@
+ fileFormatVersion: 2
+ guid: bba5d7dc33dad6c418240d1b91b0c3ab
+-timeCreated: 1466665700
++timeCreated: 1469082467
+ licenseType: Free
+ MonoImporter:
+   serializedVersion: 2
+   defaultReferences: []
+-  executionOrder: 0
++  executionOrder: -4000
+   icon: {instanceID: 0}
+   userData: 
+   assetBundleName: "
+Hotrian/OpenVRDesktopDisplayPortal,7,579f015e0fdf88a54732cf9474450a5c1417ae4b,Assets/HOTK/HOTK_Overlay.cs,modified,21,10,31,"@@ -47,7 +47,7 @@ public class HOTK_Overlay : MonoBehaviour
+     public AttachmentPoint AnchorPoint = AttachmentPoint.Center;
+     [Tooltip(""Controls the offset for the Overlay."")]
+     public Vector3 AnchorOffset = Vector3.zero;
+-    public FramerateMode Framerate = FramerateMode._60FPS;
++    public FramerateMode Framerate = FramerateMode._30FPS;
+     #endregion
+ 
+     #region Interal Vars
+@@ -82,6 +82,8 @@ private MeshRenderer MeshRenderer
+         get { return _meshRenderer ?? (_meshRenderer = GetComponent<MeshRenderer>()); }
+     }
+     private MeshRenderer _meshRenderer;
++
++    private bool _justUpdated;
+     #endregion
+     
+     /// <summary>
+@@ -105,9 +107,15 @@ public void Update()
+         CheckHighQualityChanged(ref changed);
+         // Update our Overlay if anything has changed
+         if (changed)
++        {
++            _justUpdated = true;
+             UpdateOverlay();
++        }
+         else
++        {
++            _justUpdated = false;
+             UpdateTexture();
++        }
+     }
+ 
+     public void Start()
+@@ -708,6 +716,7 @@ public void RefreshTexture()
+     private void UpdateTexture(bool refresh = false)
+     {
+         if (!(OverlayTexture is RenderTexture) && !refresh) return; // This covers the null check for OverlayTexture
++        if (_justUpdated) return;
+         if (refresh && OverlayTexture == null) return;
+         var overlay = OpenVR.Overlay;
+         if (overlay == null) return;
+@@ -839,15 +848,17 @@ public enum AnimationType
+ 
+     public enum FramerateMode
+     {
+-        _1FPS,
+-        _2FPS,
+-        _5FPS,
+-        _10FPS,
+-        _30FPS,
+-        _60FPS,
+-        _90FPS,
+-        _120FPS,
+-        AsFastAsPossible
++        _1FPS = 1,
++        _2FPS = 2,
++        _5FPS = 5,
++        _10FPS = 10,
++        _15FPS = 15,
++        _24FPS = 24,
++        _30FPS = 30,
++        _60FPS = 60,
++        _90FPS = 90,
++        _120FPS = 120,
++        AsFastAsPossible = 9999
+     }
+     #endregion
+ }
+\ No newline at end of file"
+Hotrian/OpenVRDesktopDisplayPortal,7,579f015e0fdf88a54732cf9474450a5c1417ae4b,Assets/HOTK/HOTK_TrackedDeviceManager.cs,modified,0,6,6,"@@ -40,12 +40,6 @@ public uint HMDIndex
+     private uint _rightIndex = OpenVR.k_unTrackedDeviceIndexInvalid;
+     private uint _hmdIndex = OpenVR.k_unTrackedDeviceIndexInvalid;
+ 
+-    public void Awake()
+-    {
+-        FindHMD();
+-        FindControllers();
+-    }
+-
+     public void Update()
+     {
+         FindHMD();"
+Hotrian/OpenVRDesktopDisplayPortal,7,579f015e0fdf88a54732cf9474450a5c1417ae4b,Assets/HOTK/Portal/DesktopPortalController.cs,modified,128,37,165,"@@ -2,12 +2,15 @@
+ using UnityEngine;
+ using System.Collections;
+ using System.Collections.Generic;
++using System.Diagnostics;
+ using System.Drawing;
+ using System.Drawing.Imaging;
+ using System.IO;
+ using System.Runtime.Serialization.Formatters.Binary;
+ using ScreenCapture;
+ using UnityEngine.UI;
++using Color = UnityEngine.Color;
++using Debug = UnityEngine.Debug;
+ using Image = UnityEngine.UI.Image;
+ 
+ public class DesktopPortalController : MonoBehaviour
+@@ -27,6 +30,10 @@ public class DesktopPortalController : MonoBehaviour
+     public Dropdown ApplicationDropdown;
+     public GameObject DisplayQuad;
+ 
++    public Text FPSCounter;
++    public Text ResolutionDisplay;
++
++
+     Dictionary<string, IntPtr> Windows = new Dictionary<string, IntPtr>();
+     List<string> Titles = new List<string>();
+ 
+@@ -42,7 +49,12 @@ public class DesktopPortalController : MonoBehaviour
+     Bitmap bitmap;
+     Texture2D texture;
+     MemoryStream stream;
+-    
++
++    private bool _showFPS;
++    private Stopwatch FPSTimer = new Stopwatch();
++    private int _currentWindowWidth;
++    private int _currentWindowHeight;
++
+     public void Start ()
+     {
+         var ins = SteamVR.instance;
+@@ -65,6 +77,48 @@ public void Start ()
+             SaveLoad.Load();
+ 
+             StartCoroutine(""UpdateUI"");
++            StartCoroutine(""ReloadWindowList"");
++        }
++    }
++
++    public void EnableFPSCounter()
++    {
++        FPSCounter.gameObject.SetActive(true);
++        ResolutionDisplay.gameObject.SetActive(true);
++       _showFPS = true;
++    }
++
++    private int _FPSCount;
++    public void Update()
++    {
++        if (_showFPS)
++        {
++            if (FPSTimer.IsRunning)
++            {
++                if (FPSTimer.ElapsedMilliseconds >= 1000)
++                {
++                    FPSTimer.Reset();
++                    FPSCounter.text = ""FPS: "" + _FPSCount;
++                    var val = Overlay.Framerate != HOTK_Overlay.FramerateMode.AsFastAsPossible ? (int)Overlay.Framerate : -1;
++                    if (val != -1)
++                    {
++                        if (_FPSCount < val)
++                        {
++                            FPSCounter.color = _FPSCount < val/2 ? Color.red : Color.yellow;
++                        }
++                        else FPSCounter.color = Color.white;
++                    }
++                    else FPSCounter.color = Color.white;
++
++                    _FPSCount = 0;
++                    FPSTimer.Start();
++                }
++            }
++            else
++            {
++                FPSTimer.Start();
++            }
++            _FPSCount++;
+         }
+     }
+ 
+@@ -86,30 +140,44 @@ IEnumerator UpdateUI()
+         }
+     }
+ 
+-    public void RefreshWindowList()
++    IEnumerator ReloadWindowList()
++    {
++        while (Application.isPlaying)
++        {
++            RefreshWindowList();
++            yield return new WaitForSeconds(10f);
++        }
++    }
++
++    public void StopRefreshing()
++    {
++        StopCoroutine(""ReloadWindowList"");
++    }
++
++    public void StartRefreshing()
++    {
++        StopCoroutine(""ReloadWindowList"");
++        StartCoroutine(""ReloadWindowList"");
++    }
++
++    private void RefreshWindowList()
+     {
+         var windows = Win32Stuff.FindWindowsWithSize();
+         Windows.Clear();
+         Titles.Clear();
+-        string title;
+-        int count = 0;
+-        int copy = 0;
+-        bool found;
++        var count = 0;
+         foreach (var w in windows)
+         {
+-            title = Win32Stuff.GetWindowText(w);
++            var title = Win32Stuff.GetWindowText(w);
+             if (title.Length > 0)
+             {
+-                copy = 0;
+-                found = false;
++                var copy = 0;
++                var found = false;
+                 while (!found)
+                 {
+                     try
+                     {
+-                        if (copy == 0)
+-                            Windows.Add(title, w);
+-                        else
+-                            Windows.Add(string.Format(""{0} ({1})"", title, copy), w);
++                        Windows.Add(copy == 0 ? title : string.Format(""{0} ({1})"", title, copy), w);
+ 
+                         found = true;
+                     }
+@@ -119,25 +187,42 @@ public void RefreshWindowList()
+                     }
+                 }
+ 
+-
+-                if (copy == 0)
+-                    Titles.Add(title);
+-                else
+-                    Titles.Add(string.Format(""{0} ({1})"", title, copy));
++                Titles.Add(copy == 0 ? title : string.Format(""{0} ({1})"", title, copy));
+                 count++;
+             }
+         }
+ 
+-        Debug.Log(""Found "" + count + "" windows"");
+-
+         ApplicationDropdown.ClearOptions();
+         ApplicationDropdown.AddOptions(Titles);
+ 
+-        ApplicationDropdown.captionText.text = count + "" window(s) detected"";
++        bool foundCurrent = false;
++        if (!string.IsNullOrEmpty(SelectedWindowTitle))
++        {
++            for (var i = 0; i < ApplicationDropdown.options.Count; i++)
++            {
++                if (ApplicationDropdown.options[i].text != SelectedWindowTitle) continue;
++                _reselecting = true;
++                ApplicationDropdown.value = i;
++                foundCurrent = true;
++                break;
++            }
++        }
++        
++        if (!foundCurrent)
++        {
++            ApplicationDropdown.captionText.text = count + "" window(s) detected"";
++            Debug.Log(""Found "" + count + "" windows"");
++        }
+     }
+ 
++    private bool _reselecting;
+     public void OptionChanged()
+     {
++        if (_reselecting)
++        {
++            _reselecting = false;
++            return;
++        }
+         StopCoroutine(""Capture"");
+         StopCoroutine(""CaptureWindow"");
+         SelectedWindowTitle = ApplicationDropdown.captionText.text;
+@@ -148,7 +233,7 @@ public void OptionChanged()
+         {
+             SelectedWindow = window;
+             SelectedWindowFullPath = Win32Stuff.GetFilePath(SelectedWindow);
+-            int pos = SelectedWindowFullPath.LastIndexOfAny(new char[] { Path.PathSeparator, Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }) + 1;
++            int pos = SelectedWindowFullPath.LastIndexOfAny(new char[] {Path.PathSeparator, Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar}) + 1;
+             SelectedWindowPath = SelectedWindowFullPath.Substring(0, pos);
+             SelectedWindowEXE = SelectedWindowFullPath.Substring(pos);
+             SelectedWindowSettings = LoadConfig(SelectedWindowFullPath);
+@@ -178,7 +263,7 @@ public void ToggleDirectMode()
+     }
+ 
+     // Update is called once per frame
+-    IEnumerator CaptureDesktop()
++    /*IEnumerator CaptureDesktop()
+     {
+         Overlay.OverlayTexture = texture;
+         DisplayMaterial.mainTexture = texture;
+@@ -190,10 +275,11 @@ IEnumerator CaptureDesktop()
+             texture.LoadImage(stream.ToArray());
+             yield return new WaitForEndOfFrame();
+         }
+-    }
++    }*/
+ 
+     CaptureScreen.SIZE size;
+     Win32Stuff.WINDOWINFO info;
++
+     IEnumerator CaptureWindow()
+     {
+         Overlay.OverlayTexture = texture;
+@@ -222,7 +308,13 @@ IEnumerator CaptureWindow()
+                 bitmap.Save(stream, ImageFormat.Png);
+                 stream.Seek(0, SeekOrigin.Begin);
+                 texture.LoadImage(stream.ToArray());
+-                DisplayQuad.transform.localScale = new Vector3(size.cx / 100f, size.cy / 100f, 1f);
++                if (_currentWindowWidth != size.cx || _currentWindowHeight != size.cy)
++                {
++                    _currentWindowWidth = size.cx;
++                    _currentWindowHeight = size.cy;
++                    ResolutionDisplay.text = string.Format(""( {0} x {1} )"", size.cx, size.cy);
++                    DisplayQuad.transform.localScale = new Vector3(size.cx / 100f, size.cy / 100f, 1f);
++                }
+                 Overlay.RefreshTexture();
+                 switch (Overlay.Framerate)
+                 {
+@@ -238,18 +330,24 @@ IEnumerator CaptureWindow()
+                     case HOTK_Overlay.FramerateMode._10FPS:
+                         yield return new WaitForSeconds(FramerateFractions[3]);
+                         break;
+-                    case HOTK_Overlay.FramerateMode._30FPS:
++                    case HOTK_Overlay.FramerateMode._15FPS:
+                         yield return new WaitForSeconds(FramerateFractions[4]);
+                         break;
+-                    case HOTK_Overlay.FramerateMode._60FPS:
++                    case HOTK_Overlay.FramerateMode._24FPS:
+                         yield return new WaitForSeconds(FramerateFractions[5]);
+                         break;
+-                    case HOTK_Overlay.FramerateMode._90FPS:
++                    case HOTK_Overlay.FramerateMode._30FPS:
+                         yield return new WaitForSeconds(FramerateFractions[6]);
+                         break;
+-                    case HOTK_Overlay.FramerateMode._120FPS:
++                    case HOTK_Overlay.FramerateMode._60FPS:
+                         yield return new WaitForSeconds(FramerateFractions[7]);
+                         break;
++                    case HOTK_Overlay.FramerateMode._90FPS:
++                        yield return new WaitForSeconds(FramerateFractions[8]);
++                        break;
++                    case HOTK_Overlay.FramerateMode._120FPS:
++                        yield return new WaitForSeconds(FramerateFractions[9]);
++                        break;
+                     case HOTK_Overlay.FramerateMode.AsFastAsPossible:
+                         yield return new WaitForEndOfFrame();
+                         break;
+@@ -263,14 +361,7 @@ IEnumerator CaptureWindow()
+     // Cache these fractions so they aren't constantly recalculated
+     private static readonly float[] FramerateFractions = new[]
+     {
+-        1f,
+-        1f/2f,
+-        1f/5f,
+-        1f/10f,
+-        1f/30f,
+-        1f/60f,
+-        1f/90f,
+-        1f/120f
++        1f, 1f/2f, 1f/5f, 1f/10f, 1/15f, 1/24f, 1f/30f, 1f/60f, 1f/90f, 1f/120f
+     };
+ 
+     public void WindowSettingConfirmed(string Setting)"
+Hotrian/OpenVRDesktopDisplayPortal,7,579f015e0fdf88a54732cf9474450a5c1417ae4b,Library/CrashedAssetImports.txt,added,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,7,579f015e0fdf88a54732cf9474450a5c1417ae4b,Library/CurrentLayout.dwlt,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,7,579f015e0fdf88a54732cf9474450a5c1417ae4b,Library/CurrentMaximizeLayout.dwlt,added,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,7,579f015e0fdf88a54732cf9474450a5c1417ae4b,Library/EditorUserBuildSettings.asset,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,7,579f015e0fdf88a54732cf9474450a5c1417ae4b,Library/InspectorExpandedItems.asset,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,7,579f015e0fdf88a54732cf9474450a5c1417ae4b,Library/ScriptAssemblies/Assembly-CSharp-Editor.dll,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,7,579f015e0fdf88a54732cf9474450a5c1417ae4b,Library/ScriptAssemblies/Assembly-CSharp-Editor.dll.mdb,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,7,579f015e0fdf88a54732cf9474450a5c1417ae4b,Library/ScriptAssemblies/Assembly-CSharp-firstpass.dll,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,7,579f015e0fdf88a54732cf9474450a5c1417ae4b,Library/ScriptAssemblies/Assembly-CSharp-firstpass.dll.mdb,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,7,579f015e0fdf88a54732cf9474450a5c1417ae4b,Library/ScriptAssemblies/Assembly-CSharp.dll,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,7,579f015e0fdf88a54732cf9474450a5c1417ae4b,Library/ScriptAssemblies/Assembly-CSharp.dll.mdb,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,7,579f015e0fdf88a54732cf9474450a5c1417ae4b,Library/assetDatabase3,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,7,579f015e0fdf88a54732cf9474450a5c1417ae4b,Library/expandedItems,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,7,579f015e0fdf88a54732cf9474450a5c1417ae4b,Library/metadata/00/00000000000000004000000000000000,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,7,579f015e0fdf88a54732cf9474450a5c1417ae4b,Library/metadata/00/00000000000000006100000000000000,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,7,579f015e0fdf88a54732cf9474450a5c1417ae4b,Library/metadata/00/00000000000000009000000000000000,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,7,579f015e0fdf88a54732cf9474450a5c1417ae4b,Library/metadata/48/48b5bcc676d3b6b48aa4f2d01cb6b7e0,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,7,579f015e0fdf88a54732cf9474450a5c1417ae4b,Library/metadata/52/52a19dc37fbbd5d4a8b7f60a7607e4ed,added,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,7,579f015e0fdf88a54732cf9474450a5c1417ae4b,Library/metadata/52/52a19dc37fbbd5d4a8b7f60a7607e4ed.info,added,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,7,579f015e0fdf88a54732cf9474450a5c1417ae4b,Library/metadata/7c/7c3fc6c1d4abf7948b2c42b19221d52b,added,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,7,579f015e0fdf88a54732cf9474450a5c1417ae4b,Library/metadata/7c/7c3fc6c1d4abf7948b2c42b19221d52b.info,added,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,7,579f015e0fdf88a54732cf9474450a5c1417ae4b,Library/metadata/89/89651f47f29678549a9fa0eb1af24d38,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,7,579f015e0fdf88a54732cf9474450a5c1417ae4b,Library/metadata/8b/8b72d788cb25ab84196f8ec5f7785a56,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,7,579f015e0fdf88a54732cf9474450a5c1417ae4b,Library/metadata/a8/a83a63eed410b4c4388f43d3b035fb8c,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,7,579f015e0fdf88a54732cf9474450a5c1417ae4b,Library/metadata/bb/bba5d7dc33dad6c418240d1b91b0c3ab,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,7,579f015e0fdf88a54732cf9474450a5c1417ae4b,Library/metadata/d0/d06e6722c08b8c04bb397e32d3db40a0,added,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,7,579f015e0fdf88a54732cf9474450a5c1417ae4b,Library/metadata/d0/d06e6722c08b8c04bb397e32d3db40a0.info,added,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,7,579f015e0fdf88a54732cf9474450a5c1417ae4b,Library/metadata/da/da0c905fbebc3da4b967b90ef4a69758,added,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,7,579f015e0fdf88a54732cf9474450a5c1417ae4b,Library/metadata/da/da0c905fbebc3da4b967b90ef4a69758.info,added,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,7,579f015e0fdf88a54732cf9474450a5c1417ae4b,Library/metadata/de/def2782dd412c1f499fdd7e389f5c97b,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,7,579f015e0fdf88a54732cf9474450a5c1417ae4b,Library/metadata/f4/f4957f9e17c74a542bde3d0b7cfe81ad,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,7,579f015e0fdf88a54732cf9474450a5c1417ae4b,OpenVRDesktopDisplayPortal-master.CSharp.csproj,modified,1,0,1,"@@ -74,6 +74,7 @@
+   <ItemGroup>
+     <Compile Include=""Assets\HOTK\Example Content\DesktopCameraScript.cs"" />
+     <Compile Include=""Assets\HOTK\Example Content\UI Scripts\AlphaMatchInputField.cs"" />
++    <Compile Include=""Assets\HOTK\Example Content\UI Scripts\ApplicationDropdownScript.cs"" />
+     <Compile Include=""Assets\HOTK\Example Content\UI Scripts\AttachUIToScreen.cs"" />
+     <Compile Include=""Assets\HOTK\Example Content\UI Scripts\ButtonHideWhenNotController.cs"" />
+     <Compile Include=""Assets\HOTK\Example Content\UI Scripts\ButtonSwapControllers.cs"" />"
+Hotrian/OpenVRDesktopDisplayPortal,7,579f015e0fdf88a54732cf9474450a5c1417ae4b,ProjectSettings/QualitySettings.asset,modified,0,0,0,

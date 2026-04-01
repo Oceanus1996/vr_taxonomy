@@ -1,0 +1,129 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+Unity-Technologies/EditorXR,432,d059a37e13ced58c6d1cc6a58ed0e123af25a3b2,Scripts/UI/InputField.cs,modified,51,18,69,"@@ -5,52 +5,59 @@
+ 
+ using System;
+ using System.Collections;
++using System.Collections.Generic;
+ using UnityEditor.Experimental.EditorVR.Extensions;
+ using UnityEditor.Experimental.EditorVR.Utilities;
++using UnityEditor.Experimental.EditorVR.Workspaces;
+ using UnityEngine;
+ using UnityEngine.Events;
+ using UnityEngine.EventSystems;
+ using UnityEngine.UI;
+ 
+ namespace UnityEditor.Experimental.EditorVR.UI
+ {
+-    abstract class InputField : Selectable, ISelectionFlags, IUsesViewerScale
++    abstract class InputField : Selectable, ISelectionFlags, IUsesViewerScale, IAllWorkspaces
+     {
+-        const float k_MoveKeyboardTime = 0.2f;
+-
+         public SelectionFlags selectionFlags
+         {
+             get { return m_SelectionFlags; }
+             set { m_SelectionFlags = value; }
+         }
+ 
+-        [SerializeField]
+-        [FlagsProperty]
+-        protected SelectionFlags m_SelectionFlags = SelectionFlags.Ray | SelectionFlags.Direct;
+-
+-        public Func<KeyboardUI> spawnKeyboard;
+-        protected KeyboardUI m_Keyboard;
+-
+         [Serializable]
+         public class OnChangeEvent : UnityEvent<string>
+         {
+         }
+ 
+-        public OnChangeEvent onValueChanged { get { return m_OnValueChanged; } }
++        const float k_MoveKeyboardTime = 0.2f;
+ 
+         [SerializeField]
+-        private OnChangeEvent m_OnValueChanged = new OnChangeEvent();
++        [FlagsProperty]
++        SelectionFlags m_SelectionFlags = SelectionFlags.Ray | SelectionFlags.Direct;
+ 
+         [SerializeField]
+-        protected Text m_TextComponent;
++        OnChangeEvent m_OnValueChanged = new OnChangeEvent();
+ 
+         [SerializeField]
+-        private int m_CharacterLimit = 10;
++        Text m_TextComponent;
+ 
+-        private bool m_KeyboardOpen;
++        [SerializeField]
++        int m_CharacterLimit = 10;
++
++        [HideInInspector]
++        [SerializeField] // Serialized so that this remains set after cloning
++        protected string m_Text = string.Empty;
++
++        bool m_KeyboardOpen;
+ 
+         Coroutine m_MoveKeyboardCoroutine;
+ 
++        protected KeyboardUI m_Keyboard;
++
++        public Func<KeyboardUI> spawnKeyboard { private get; set; }
++
++        public OnChangeEvent onValueChanged { get { return m_OnValueChanged; } }
++
+         public virtual string text
+         {
+             get { return m_Text; }
+@@ -66,9 +73,7 @@ public virtual string text
+             }
+         }
+ 
+-        [HideInInspector]
+-        [SerializeField] // Serialized so that this remains set after cloning
+-        protected string m_Text = string.Empty;
++        public List<IWorkspace> allWorkspaces { private get; set; }
+ 
+         protected override void OnEnable()
+         {
+@@ -102,6 +107,13 @@ public override void OnSelect(BaseEventData eventData)
+             // Don't do base functionality
+         }
+ 
++        protected override void OnDisable()
++        {
++            // hide the keyboard if there are 0 open inspectors or the selection is null
++            if (m_KeyboardOpen && (Selection.activeObject == null || !FindAnyOpenInspector()))
++                CloseKeyboard(true);
++        }
++
+         protected void SendOnValueChangedAndUpdateLabel()
+         {
+             SendOnValueChanged();
+@@ -120,6 +132,27 @@ protected virtual void UpdateLabel()
+                 m_TextComponent.text = m_Text;
+         }
+ 
++        /// <summary>
++        /// Check if any Inspector workspaces are still open
++        /// </summary>
++        protected bool FindAnyOpenInspector()
++        {
++            if (allWorkspaces == null || allWorkspaces.Count == 0)
++                return false;
++
++            var found = false;
++            foreach (var w in allWorkspaces)
++            {
++                if (w is InspectorWorkspace)
++                {
++                    found = true;
++                    break;
++                }
++            }
++
++            return found;
++        }
++
+         /// <summary>
+         /// Open a keyboard for this input field
+         /// </summary>"

@@ -1,0 +1,216 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+SlimeVR/SlimeVR-Server,744,8da9e63,gui/src/components/commons/Dropdown.tsx,modified,34,12,46,"@@ -1,6 +1,11 @@
+ import classNames from 'classnames';
+ import { useEffect, useState } from 'react';
+-import { Control, Controller } from 'react-hook-form';
++import {
++  Control,
++  Controller,
++  UseFormGetValues,
++  useWatch,
++} from 'react-hook-form';
+ import { a11yClick } from '../utils/a11y';
+ 
+ export interface DropdownItem {
+@@ -17,6 +22,7 @@ export function Dropdown({
+   display = 'fit',
+   placeholder,
+   control,
++  getValues,
+   name,
+   items = [],
+ }: {
+@@ -26,13 +32,29 @@ export function Dropdown({
+   display?: 'fit' | 'block';
+   placeholder: string;
+   control: Control<any>;
++  getValues: UseFormGetValues<any>;
+   name: string;
+   items: DropdownItem[];
+ }) {
++  const itemRefs: Record<string, HTMLLIElement> = {};
+   const [isOpen, setOpen] = useState(false);
++  const formValue = {
++    ...{ value: useWatch({ control, name }) as string },
++    ...{ value: getValues(name) as string },
++  };
+   useEffect(() => {
+     if (!isOpen) return;
+ 
++    const curItem = itemRefs[formValue.value];
++    const dropdownParent = curItem
++      ? (curItem.closest('.dropdown-scroll') as HTMLElement | null)
++      : null;
++    if (curItem && dropdownParent) {
++      dropdownParent.scroll({
++        top: curItem.offsetTop - dropdownParent.offsetHeight / 2,
++      });
++    }
++
+     function onWheelEvent() {
+       if (isOpen && !document.querySelector('div.dropdown-scroll:hover')) {
+         setOpen(false);
+@@ -55,9 +77,9 @@ export function Dropdown({
+       const isInDropdownScroll = document
+         .querySelector('div.dropdown-scroll')
+         ?.contains(event.target as HTMLDivElement);
+-      const isInDropdown = document
+-        .querySelector('div.dropdown')
+-        ?.contains(event.target as HTMLDivElement);
++      const isInDropdown = !!(event.target as HTMLDivElement).closest(
++        '.dropdown'
++      );
+       if (isOpen && !isInDropdownScroll && !isInDropdown) {
+         setOpen(false);
+       }
+@@ -151,21 +173,19 @@ export function Dropdown({
+                   alignment === 'left' && 'left-0'
+                 )}
+               >
+-                <ul className=""py-1 text-sm flex flex-col "">
++                <ul className=""py-1 text-sm flex flex-col"">
+                   {items.map((item) => (
+                     <li
+                       className={classNames(
+                         'py-2 px-4 min-w-max cursor-pointer',
+                         variant == 'primary' &&
+-                          'hover:bg-background-50 text-background-20 hover:text-background-10',
++                          'checked-hover:bg-background-50 text-background-20 ' +
++                            'checked-hover:text-background-10',
+                         variant == 'secondary' &&
+-                          'hover:bg-background-60 text-background-20 hover:text-background-10',
+-                        variant == 'tertiary' &&
+-                          value !== item.value &&
+-                          'bg-accent-background-30 hover:bg-accent-background-20',
++                          'checked-hover:bg-background-60 text-background-20 ' +
++                            'checked-hover:text-background-10',
+                         variant == 'tertiary' &&
+-                          value === item.value &&
+-                          'bg-accent-background-20'
++                          'bg-accent-background-30 checked-hover:bg-accent-background-20'
+                       )}
+                       onClick={() => {
+                         onChange(item.value);
+@@ -176,8 +196,10 @@ export function Dropdown({
+                         onChange(item.value);
+                         setOpen(false);
+                       }}
++                      ref={(ref) => (ref ? (itemRefs[item.value] = ref) : {})}
+                       key={item.value}
+                       tabIndex={0}
++                      data-checked={item.value === value}
+                     >
+                       {item.label}
+                     </li>"
+SlimeVR/SlimeVR-Server,744,8da9e63,gui/src/components/commons/LangSelector.tsx,modified,6,3,9,"@@ -15,9 +15,11 @@ export function LangSelector({
+   const { changeLocales } = useContext(LangContext);
+   const { l10n } = useLocalization();
+   const { config, setConfig } = useConfig();
+-  const { control, watch, handleSubmit } = useForm<{ lang: string }>({
+-    defaultValues: { lang: config?.lang || 'en' },
+-  });
++  const { control, watch, handleSubmit, getValues } = useForm<{ lang: string }>(
++    {
++      defaultValues: { lang: config?.lang || 'en' },
++    }
++  );
+ 
+   const languagesItems = useMemo(
+     () => langs.map(({ key, name }) => ({ label: name, value: key })),
+@@ -37,6 +39,7 @@ export function LangSelector({
+   return (
+     <Dropdown
+       control={control}
++      getValues={getValues}
+       name=""lang""
+       placeholder={l10n.getString(
+         'settings-general-interface-lang-placeholder'"
+SlimeVR/SlimeVR-Server,744,8da9e63,gui/src/components/settings/SettingsLayout.tsx,modified,2,1,3,"@@ -38,7 +38,7 @@ export function SettingSelectorMobile() {
+       },
+     ];
+ 
+-  const { control, watch, handleSubmit, setValue } = useForm<{
++  const { control, watch, handleSubmit, setValue, getValues } = useForm<{
+     link: string;
+   }>({
+     defaultValues: { link: links[0].value.url },
+@@ -65,6 +65,7 @@ export function SettingSelectorMobile() {
+     <div className=""fixed top-12 z-50 px-4 w-full"">
+       <Dropdown
+         control={control}
++        getValues={getValues}
+         display=""block""
+         items={links.map(({ label, value: { url: value } }) => ({
+           label,"
+SlimeVR/SlimeVR-Server,744,8da9e63,gui/src/components/settings/SettingsPageLayout.tsx,modified,12,2,14,"@@ -17,9 +17,19 @@ export function SettingsPageLayout({
+     if (!pageRef.current || !typedState || !typedState.scrollTo) {
+       return;
+     }
+-    const elem = pageRef.current.querySelector(`#${typedState.scrollTo}`);
++    const elem = pageRef.current.querySelector(
++      `#${typedState.scrollTo}`
++    ) as HTMLElement | null;
+     if (elem) {
+-      elem.scrollIntoView({ behavior: 'smooth', block: 'start' });
++      // stupid way of doing this, just get the closest overflow-y-auto
++      // usually its just the parentElem
++      const closestScroll = elem.closest(
++        '.overflow-y-auto'
++      ) as HTMLElement | null;
++      if (closestScroll) {
++        // The 45 is just enough padding for making the scroll look perfect
++        closestScroll.scroll({ top: elem.offsetTop - 45, behavior: 'smooth' });
++      }
+     }
+   }, [state]);
+ "
+SlimeVR/SlimeVR-Server,744,8da9e63,gui/src/components/settings/pages/Serial.tsx,modified,6,3,9,"@@ -51,9 +51,10 @@ export function Serial() {
+ 
+   const [tryFactoryReset, setTryFactoryReset] = useState(false);
+ 
+-  const { control, watch, handleSubmit, reset } = useForm<SerialForm>({
+-    defaultValues: { port: 'Auto' },
+-  });
++  const { control, watch, handleSubmit, reset, getValues } =
++    useForm<SerialForm>({
++      defaultValues: { port: 'Auto' },
++    });
+ 
+   const { port } = watch();
+ 
+@@ -234,6 +235,7 @@ export function Serial() {
+                 {isMobile && (
+                   <Dropdown
+                     control={control}
++                    getValues={getValues}
+                     name=""port""
+                     display=""block""
+                     placeholder={l10n.getString(
+@@ -250,6 +252,7 @@ export function Serial() {
+               {!isMobile && (
+                 <Dropdown
+                   control={control}
++                  getValues={getValues}
+                   name=""port""
+                   display=""fit""
+                   placeholder={l10n.getString('settings-serial-serial_select')}"
+SlimeVR/SlimeVR-Server,744,8da9e63,gui/tailwind.config.ts,modified,6,0,6,"@@ -230,6 +230,9 @@ const config = {
+         'trans-flag': `linear-gradient(135deg, ${colors['trans-blue'][800]} 40%, ${colors['trans-blue'][700]} 40% 70%, ${colors['trans-blue'][600]} 70% 100%)`,
+       },
+     },
++    data: {
++      checked: 'checked=true'
++    }
+   },
+   plugins: [
+     forms,
+@@ -250,6 +253,9 @@ const config = {
+         '.text-standard-bold': textConfig(rem(12), 700),
+       });
+     }),
++    plugin(function({ addVariant }) {
++      addVariant('checked-hover', ['&:hover', '&[data-checked=true]'])
++    })
+   ],
+ } satisfies Config
+ "

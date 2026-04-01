@@ -1,0 +1,219 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe-inspector,794,464e82c52abb26672ba4b7411df2c1d9b0bf13b9,examples/index.html,modified,8,1,9,"@@ -6,6 +6,13 @@
+     <!--<script>window.AFRAME_SAMPLE_ASSETS_ROOT = ""./sample-assets/"";</script>-->
+     <script src=""https://cdn.jsdelivr.net/gh/aframevr/aframe@master/dist/aframe-master.min.js""></script>
+     <script src=""https://unpkg.com/aframe-environment-component@1.4.0/dist/aframe-environment-component.min.js""></script>
++    <script>
++    AFRAME.registerComponent('models-array', {
++      schema: {
++        models: {type: 'array', oneOf: ['one', 'two', 'three', 'four']}
++      }
++    })
++    </script>
+   </head>
+   <body>
+     <a-scene debug=""true"">
+@@ -30,7 +37,7 @@
+       <a-entity id=""shortOrangeBox"" mixin=""short orange box"" position=""-5 2 0""></a-entity>
+       <a-entity id=""shortYellowBox"" mixin=""short yellow box"" position=""5 2 0""></a-entity>
+       <a-entity id=""redBox"" geometry=""primitive: box"" material=""color: #f00"" position=""-4 1 0"" animation=""property: object3D.rotation.y; to: 360; loop: true; easing: linear; dur: 9600""></a-entity>
+-      <a-entity id=""yellowSphere"" geometry=""primitive: sphere"" material=""color: #ff0; roughness: 1"" position=""-2 2 -2""></a-entity>
++      <a-entity id=""yellowSphere"" geometry=""primitive: sphere"" material=""color: #ff0; roughness: 1"" position=""-2 2 -2"" models-array=""models:one,two""></a-entity>
+       <a-box src=""https://aframe.io/sample-assets/assets/images/bricks/brick_bump.jpg"" position=""-5 5 -2"" width=""1"" color=""#F16745""></a-box>
+       <a-box id=""aBox"" position=""0 2 0"" height=""2"" color=""#FFC65D""></a-box>
+ "
+aframevr/aframe-inspector,794,464e82c52abb26672ba4b7411df2c1d9b0bf13b9,src/components/components/AddComponent.js,modified,11,16,27,"@@ -8,11 +8,18 @@ export default class AddComponent extends React.Component {
+     entity: PropTypes.object
+   };
+ 
++  constructor(props) {
++    super(props);
++    this.state = { value: null };
++  }
++
+   /**
+    * Add blank component.
+    * If component is instanced, generate an ID.
+    */
+   addComponent = (value) => {
++    this.setState({ value: null });
++
+     let componentName = value.value;
+ 
+     var entity = this.props.entity;
+@@ -78,27 +85,15 @@ export default class AddComponent extends React.Component {
+           className=""addComponent""
+           classNamePrefix=""select""
+           options={this.options}
+-          simpleValue
+-          clearable={true}
++          isClearable={false}
++          isSearchable
+           placeholder=""Add component...""
+-          noResultsText=""No components found""
++          noOptionsMessage={() => 'No components found'}
+           onChange={this.addComponent}
+           optionRenderer={this.renderOption}
+-          searchable={true}
++          value={this.state.value}
+         />
+       </div>
+     );
+   }
+ }
+-
+-/* eslint-disable no-unused-vars */
+-/**
+- * Check if component has multiplicity.
+- */
+-function isComponentInstanced(entity, componentName) {
+-  for (var component in entity.components) {
+-    if (component.substring(0, component.indexOf('__')) === componentName) {
+-      return true;
+-    }
+-  }
+-}"
+aframevr/aframe-inspector,794,464e82c52abb26672ba4b7411df2c1d9b0bf13b9,src/components/components/Mixins.js,modified,4,3,7,"@@ -68,11 +68,12 @@ export default class Mixin extends React.Component {
+               id=""mixinSelect""
+               classNamePrefix=""select""
+               options={this.getMixinOptions()}
+-              isMulti={true}
++              isMulti
++              isClearable={false}
++              isSearchable
+               placeholder=""Add mixin...""
+-              noResultsText=""No mixins found""
++              noOptionsMessage={() => 'No mixins found'}
+               onChange={this.updateMixins.bind(this)}
+-              simpleValue
+               value={this.state.mixins}
+             />
+           </span>"
+aframevr/aframe-inspector,794,464e82c52abb26672ba4b7411df2c1d9b0bf13b9,src/components/components/PropertyRow.js,modified,7,1,8,"@@ -72,7 +72,13 @@ export default class PropertyRow extends React.Component {
+     };
+ 
+     if (props.schema.oneOf && props.schema.oneOf.length > 0) {
+-      return <SelectWidget {...widgetProps} options={props.schema.oneOf} />;
++      return (
++        <SelectWidget
++          {...widgetProps}
++          options={props.schema.oneOf}
++          isMulti={props.schema.type === 'array'}
++        />
++      );
+     }
+     if (type === 'map' || isMap) {
+       return <TextureWidget {...widgetProps} />;"
+aframevr/aframe-inspector,794,464e82c52abb26672ba4b7411df2c1d9b0bf13b9,src/components/viewport/CameraToolbar.js,modified,2,2,4,"@@ -90,9 +90,9 @@ export default class CameraToolbar extends React.Component {
+           id=""cameraSelect""
+           classNamePrefix=""select""
+           options={options}
+-          simpleValue
+-          value={getOption(this.state.selectedCamera)}
++          isClearable={false}
+           isSearchable={false}
++          value={getOption(this.state.selectedCamera)}
+           onChange={this.onChange.bind(this)}
+         />
+       </div>"
+aframevr/aframe-inspector,794,464e82c52abb26672ba4b7411df2c1d9b0bf13b9,src/components/widgets/SelectWidget.js,modified,32,13,45,"@@ -4,34 +4,53 @@ import Select from 'react-select';
+ 
+ export default class SelectWidget extends React.Component {
+   static propTypes = {
+-    componentname: PropTypes.string.isRequired,
+-    entity: PropTypes.object,
++    isMulti: PropTypes.bool,
+     name: PropTypes.string.isRequired,
+     onChange: PropTypes.func,
+     options: PropTypes.array.isRequired,
+-    value: PropTypes.string
++    value: PropTypes.oneOfType([PropTypes.string, PropTypes.array]).isRequired
++  };
++
++  static defaultProps = {
++    isMulti: false
+   };
+ 
+   constructor(props) {
+     super(props);
+-    const value = this.props.value || '';
+-    this.state = { value: { value: value, label: value } };
++    if (this.props.isMulti) {
++      const value = this.props.value;
++      this.state = {
++        value: value.map((choice) => ({ value: choice, label: choice }))
++      };
++    } else {
++      const value = this.props.value;
++      this.state = { value: { value: value, label: value } };
++    }
+   }
+ 
+   onChange = (value) => {
+     this.setState({ value: value }, () => {
+       if (this.props.onChange) {
+-        this.props.onChange(this.props.name, value.value);
++        this.props.onChange(
++          this.props.name,
++          this.props.isMulti ? value.map((option) => option.value) : value.value
++        );
+       }
+     });
+   };
+ 
+   componentDidUpdate(prevProps) {
+     const props = this.props;
+     if (props.value !== prevProps.value) {
+-      this.setState({
+-        value: { value: props.value, label: props.value }
+-      });
++      if (this.props.isMulti) {
++        this.setState({
++          value: props.value.map((choice) => ({ value: choice, label: choice }))
++        });
++      } else {
++        this.setState({
++          value: { value: props.value, label: props.value }
++        });
++      }
+     }
+   }
+ 
+@@ -45,13 +64,13 @@ export default class SelectWidget extends React.Component {
+         className=""select-widget""
+         classNamePrefix=""select""
+         options={options}
+-        simpleValue
+-        clearable={true}
++        isMulti={this.props.isMulti}
++        isClearable={false}
++        isSearchable
+         placeholder=""""
+         value={this.state.value}
+-        noResultsText=""No value found""
++        noOptionsMessage={() => 'No value found'}
+         onChange={this.onChange}
+-        searchable={true}
+       />
+     );
+   }"
+aframevr/aframe-inspector,794,464e82c52abb26672ba4b7411df2c1d9b0bf13b9,src/style/select.styl,modified,0,6,6,"@@ -37,9 +37,6 @@
+ .select__option
+   cursor pointer
+ 
+-.select__clear-indicator
+-  display none
+-
+ .select__label
+   font-size 11px
+ 
+@@ -63,9 +60,6 @@
+ .select__multi-value__label
+   color $primary
+ 
+-.select__value-container--is-multi > :last-child
+-  display none
+-
+ .select__multi-value__remove:hover
+   color #fff
+   background $bg"

@@ -1,0 +1,85 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+doodlum/skyrim-community-shaders,895,895bf3d32bc5681abb790c9227e0fa281beefe86,CMakeLists.txt,modified,1,1,2,"@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.21)
+ 
+ project(
+ 	CommunityShaders
+-	VERSION 1.1.7
++	VERSION 1.1.8
+ 	LANGUAGES CXX
+ )
+ "
+doodlum/skyrim-community-shaders,895,895bf3d32bc5681abb790c9227e0fa281beefe86,src/Features/CloudShadows.cpp,modified,20,11,31,"@@ -17,18 +17,9 @@ void CloudShadows::CheckResourcesSide(int side)
+ 	context->ClearRenderTargetView(cubemapCloudOccRTVs[side], black);
+ }
+ 
+-void CloudShadows::ModifySky(RE::BSRenderPass* Pass)
++void CloudShadows::SkyShaderHacks()
+ {
+-	auto shadowState = RE::BSGraphics::RendererShadowState::GetSingleton();
+-
+-	GET_INSTANCE_MEMBER(cubeMapRenderTarget, shadowState);
+-
+-	if (cubeMapRenderTarget != RE::RENDER_TARGETS_CUBEMAP::kREFLECTIONS)
+-		return;
+-
+-	auto skyProperty = static_cast<const RE::BSSkyShaderProperty*>(Pass->shaderProperty);
+-
+-	if (skyProperty->uiSkyObjectType == RE::BSSkyShaderProperty::SkyObject::SO_CLOUDS) {
++	if (overrideSky) {
+ 		auto renderer = RE::BSGraphics::Renderer::GetSingleton();
+ 		auto& context = State::GetSingleton()->context;
+ 
+@@ -60,6 +51,24 @@ void CloudShadows::ModifySky(RE::BSRenderPass* Pass)
+ 
+ 		auto cubemapDepth = renderer->GetDepthStencilData().depthStencils[RE::RENDER_TARGETS_DEPTHSTENCIL::kCUBEMAP_REFLECTIONS];
+ 		context->PSSetShaderResources(17, 1, &cubemapDepth.depthSRV);
++
++		overrideSky = false;
++	}
++}
++
++void CloudShadows::ModifySky(RE::BSRenderPass* Pass)
++{
++	auto shadowState = RE::BSGraphics::RendererShadowState::GetSingleton();
++
++	GET_INSTANCE_MEMBER(cubeMapRenderTarget, shadowState);
++
++	if (cubeMapRenderTarget != RE::RENDER_TARGETS_CUBEMAP::kREFLECTIONS)
++		return;
++
++	auto skyProperty = static_cast<const RE::BSSkyShaderProperty*>(Pass->shaderProperty);
++
++	if (skyProperty->uiSkyObjectType == RE::BSSkyShaderProperty::SkyObject::SO_CLOUDS) {
++		overrideSky = true;
+ 	}
+ }
+ "
+doodlum/skyrim-community-shaders,895,895bf3d32bc5681abb790c9227e0fa281beefe86,src/Features/CloudShadows.h,modified,3,0,3,"@@ -16,6 +16,9 @@ struct CloudShadows : Feature
+ 	virtual inline std::string_view GetShaderDefineName() override { return ""CLOUD_SHADOWS""; }
+ 	virtual inline bool HasShaderDefine(RE::BSShader::Type) override { return true; }
+ 
++	bool overrideSky = false;
++	void SkyShaderHacks();
++
+ 	Texture2D* texCubemapCloudOcc = nullptr;
+ 	ID3D11RenderTargetView* cubemapCloudOccRTVs[6] = { nullptr };
+ 	ID3D11BlendState* cloudShadowBlendState = nullptr;"
+doodlum/skyrim-community-shaders,895,895bf3d32bc5681abb790c9227e0fa281beefe86,src/State.cpp,modified,5,0,5,"@@ -12,6 +12,7 @@
+ #include ""Util.h""
+ 
+ #include ""Deferred.h""
++#include ""Features/CloudShadows.h""
+ #include ""Features/TerrainBlending.h""
+ #include ""TruePBR.h""
+ 
+@@ -26,6 +27,10 @@ void State::Draw()
+ 		if (terrainBlending->loaded)
+ 			terrainBlending->TerrainShaderHacks();
+ 
++		auto cloudShadows = CloudShadows::GetSingleton();
++		if (cloudShadows->loaded)
++			cloudShadows->SkyShaderHacks();
++
+ 		TruePBR::GetSingleton()->SetShaderResouces();
+ 
+ 		if (auto accumulator = RE::BSGraphics::BSShaderAccumulator::GetCurrentAccumulator()) {"

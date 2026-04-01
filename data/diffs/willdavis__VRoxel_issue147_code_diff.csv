@@ -1,0 +1,163 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+willdavis/VRoxel,147,52b101054a5150566747675e915201411f56f613,Assets/Scenes/Resources/terrain.png.meta,modified,20,6,26,"@@ -3,7 +3,7 @@ guid: 42d4851bba10f734799a933ffa2096f2
+ TextureImporter:
+   internalIDToNameTable: []
+   externalObjects: {}
+-  serializedVersion: 10
++  serializedVersion: 11
+   mipmaps:
+     mipMapMode: 0
+     enableMipMap: 1
+@@ -31,12 +31,12 @@ TextureImporter:
+   maxTextureSize: 2048
+   textureSettings:
+     serializedVersion: 2
+-    filterMode: -1
++    filterMode: 0
+     aniso: -1
+     mipBias: -100
+-    wrapU: -1
+-    wrapV: -1
+-    wrapW: -1
++    wrapU: 1
++    wrapV: 1
++    wrapW: 1
+   nPOTScale: 1
+   lightmap: 0
+   compressionQuality: 50
+@@ -57,8 +57,9 @@ TextureImporter:
+   maxTextureSizeSet: 0
+   compressionQualitySet: 0
+   textureFormatSet: 0
++  applyGammaDecoding: 1
+   platformSettings:
+-  - serializedVersion: 2
++  - serializedVersion: 3
+     buildTarget: DefaultTexturePlatform
+     maxTextureSize: 2048
+     resizeAlgorithm: 0
+@@ -69,6 +70,19 @@ TextureImporter:
+     allowsAlphaSplitting: 0
+     overridden: 0
+     androidETC2FallbackOverride: 0
++    forceMaximumCompressionQuality_BC6H_BC7: 0
++  - serializedVersion: 3
++    buildTarget: Standalone
++    maxTextureSize: 2048
++    resizeAlgorithm: 0
++    textureFormat: -1
++    textureCompression: 1
++    compressionQuality: 50
++    crunchedCompression: 0
++    allowsAlphaSplitting: 0
++    overridden: 0
++    androidETC2FallbackOverride: 0
++    forceMaximumCompressionQuality_BC6H_BC7: 1
+   spriteSheet:
+     serializedVersion: 2
+     sprites: []"
+willdavis/VRoxel,147,65551d7251ba2aa8f600f304b8e94a7f7a4ce022,Assets/Scenes/Data/Chunk.asset,modified,1,0,1,"@@ -16,4 +16,5 @@ MonoBehaviour:
+   sizeScale: 1
+   material: {fileID: 2100000, guid: 7c8819ba9885214409d65f8fdb2753b0, type: 2}
+   textureScale: 0.0625
++  textureOffset: 0.002
+   collidable: 1"
+willdavis/VRoxel,147,65551d7251ba2aa8f600f304b8e94a7f7a4ce022,Assets/VRoxel/Core/Chunks/BuildChunkMesh.cs,modified,14,8,22,"@@ -19,6 +19,12 @@ public struct BuildChunkMesh : IJob
+         public float worldScale;
+         public float textureScale;
+ 
++        /// <summary>
++        /// The offset to use when sampling textures from the terrain atlas.
++        /// This helps prevent visible lines between the voxels
++        /// </summary>
++        public float textureOffset;
++
+         /// <summary>
+         /// Flags if chunk faces on the edge of the world should render
+         /// </summary>
+@@ -227,20 +233,20 @@ public void AddFaceUV(int dir, Block block)
+                     return;
+             }
+ 
+-            faceUV.x = textureScale * texture.x + textureScale - 0.01f;
+-            faceUV.y = textureScale * texture.y + 0.01f;
++            faceUV.x = textureScale * texture.x + textureScale - textureOffset;
++            faceUV.y = textureScale * texture.y + textureOffset;
+             uvs.Add(faceUV);
+ 
+-            faceUV.x = textureScale * texture.x + textureScale - 0.01f;
+-            faceUV.y = textureScale * texture.y + textureScale - 0.01f;
++            faceUV.x = textureScale * texture.x + textureScale - textureOffset;
++            faceUV.y = textureScale * texture.y + textureScale - textureOffset;
+             uvs.Add(faceUV);
+ 
+-            faceUV.x = textureScale * texture.x + 0.01f;
+-            faceUV.y = textureScale * texture.y + textureScale - 0.01f;
++            faceUV.x = textureScale * texture.x + textureOffset;
++            faceUV.y = textureScale * texture.y + textureScale - textureOffset;
+             uvs.Add(faceUV);
+ 
+-            faceUV.x = textureScale * texture.x + 0.01f;
+-            faceUV.y = textureScale * texture.y + 0.01f;
++            faceUV.x = textureScale * texture.x + textureOffset;
++            faceUV.y = textureScale * texture.y + textureOffset;
+             uvs.Add(faceUV);
+         }
+ "
+willdavis/VRoxel,147,65551d7251ba2aa8f600f304b8e94a7f7a4ce022,Assets/VRoxel/Core/Data/ChunkConfiguration.cs,modified,6,0,6,"@@ -30,6 +30,12 @@ public class ChunkConfiguration : ScriptableObject
+         [Range(0,1)]
+         public float textureScale = 1f;
+ 
++        /// <summary>
++        /// The offset to use when sampling textures from the terrain atlas.
++        /// This helps prevent visible lines around the textures.
++        /// </summary>
++        public float textureOffset = 0f;
++
+         /// <summary>
+         /// Flags if the Chunk needs a collision mesh
+         /// </summary>"
+willdavis/VRoxel,147,65551d7251ba2aa8f600f304b8e94a7f7a4ce022,Assets/VRoxel/Core/MeshGenerator.cs,modified,4,1,5,"@@ -100,10 +100,13 @@ public JobHandle BuildMesh(Chunk chunk,
+             job.chunkSize = new int3(chunk.size.x, chunk.size.y, chunk.size.z);
+             job.chunkOffset = new int3(chunk.offset.x, chunk.offset.y, chunk.offset.z);
+             job.worldSize = new int3(m_world.size.x, m_world.size.y, m_world.size.z);
+-            job.textureScale = chunk.configuration.textureScale;
+             job.renderWorldEdges = m_world.renderWorldEdges;
+             job.worldScale = m_world.scale;
+ 
++            // configure texture settings for the mesh
++            job.textureScale = chunk.configuration.textureScale;
++            job.textureOffset = chunk.configuration.textureOffset;
++
+             job.cubeFaces = m_cubeFaces;
+             job.cubeVertices = m_cubeVertices;
+             job.directions = m_directions;"
+willdavis/VRoxel,147,40cc79a428cd1511f665df93a41e16cc4724afaf,Assets/VRoxel/Core/Chunks/BuildChunkMesh.cs,modified,8,8,16,"@@ -227,20 +227,20 @@ public void AddFaceUV(int dir, Block block)
+                     return;
+             }
+ 
+-            faceUV.x = textureScale * texture.x + textureScale;
+-            faceUV.y = textureScale * texture.y;
++            faceUV.x = textureScale * texture.x + textureScale - 0.01f;
++            faceUV.y = textureScale * texture.y + 0.01f;
+             uvs.Add(faceUV);
+ 
+-            faceUV.x = textureScale * texture.x + textureScale;
+-            faceUV.y = textureScale * texture.y + textureScale;
++            faceUV.x = textureScale * texture.x + textureScale - 0.01f;
++            faceUV.y = textureScale * texture.y + textureScale - 0.01f;
+             uvs.Add(faceUV);
+ 
+-            faceUV.x = textureScale * texture.x;
+-            faceUV.y = textureScale * texture.y + textureScale;
++            faceUV.x = textureScale * texture.x + 0.01f;
++            faceUV.y = textureScale * texture.y + textureScale - 0.01f;
+             uvs.Add(faceUV);
+ 
+-            faceUV.x = textureScale * texture.x;
+-            faceUV.y = textureScale * texture.y;
++            faceUV.x = textureScale * texture.x + 0.01f;
++            faceUV.y = textureScale * texture.y + 0.01f;
+             uvs.Add(faceUV);
+         }
+ "

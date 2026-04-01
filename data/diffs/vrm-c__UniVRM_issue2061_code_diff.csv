@@ -1,0 +1,55 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vrm-c/UniVRM,2061,46d6df75525584e2a8e9e097ac8d08c8fa3b2555,Assets/VRMShaders/VRM10/MToon10/Runtime/MToonOutlineRenderFeature.cs,modified,7,6,13,"@@ -1,23 +1,24 @@
+ ﻿#if MTOON_URP
++using UnityEngine.Rendering;
+ using UnityEngine.Rendering.Universal;
+ 
+ namespace VRMShaders.VRM10.MToon10.Runtime
+ {
+     public sealed class MToonOutlineRenderFeature : ScriptableRendererFeature
+     {
+-        private MToonOutlineRenderPass _pass;
++        private MToonOutlineRenderPass _opaquePass;
++        private MToonOutlineRenderPass _transparentPass;
+ 
+         public override void Create()
+         {
+-            _pass = new MToonOutlineRenderPass
+-            {
+-                renderPassEvent = RenderPassEvent.AfterRenderingOpaques
+-            };
++            _opaquePass = new MToonOutlineRenderPass(RenderPassEvent.AfterRenderingOpaques, RenderQueueRange.opaque);
++            _transparentPass = new MToonOutlineRenderPass(RenderPassEvent.BeforeRenderingTransparents, RenderQueueRange.transparent);
+         }
+ 
+         public override void AddRenderPasses(ScriptableRenderer renderer, ref RenderingData renderingData)
+         {
+-            renderer.EnqueuePass(_pass);
++            renderer.EnqueuePass(_opaquePass);
++            renderer.EnqueuePass(_transparentPass);
+         }
+     }
+ }"
+vrm-c/UniVRM,2061,46d6df75525584e2a8e9e097ac8d08c8fa3b2555,Assets/VRMShaders/VRM10/MToon10/Runtime/MToonOutlineRenderPass.cs,modified,9,0,9,"@@ -9,6 +9,14 @@ public sealed class MToonOutlineRenderPass : ScriptableRenderPass
+         private const string ProfilerTag = nameof(MToonOutlineRenderPass);
+         private readonly ProfilingSampler _profilingSampler = new ProfilingSampler(ProfilerTag);
+ 
++        private readonly RenderQueueRange _renderQueueRange;
++        
++        public MToonOutlineRenderPass(RenderPassEvent renderPassEvent, RenderQueueRange renderQueueRange)
++        {
++            _renderQueueRange = renderQueueRange;
++            this.renderPassEvent = renderPassEvent;
++        }
++
+         public override void Execute(ScriptableRenderContext context, ref RenderingData renderingData)
+         {
+             var cmd = CommandBufferPool.Get();
+@@ -27,6 +35,7 @@ public override void Execute(ScriptableRenderContext context, ref RenderingData
+                                     PerObjectData.ShadowMask
+                 };
+                 var filteringSettings = FilteringSettings.defaultValue;
++                filteringSettings.renderQueueRange = _renderQueueRange;
+                 var renderStateBlock = new RenderStateBlock(RenderStateMask.Nothing);
+                 context.DrawRenderers(renderingData.cullResults, ref drawingSettings, ref filteringSettings,
+                     ref renderStateBlock);"

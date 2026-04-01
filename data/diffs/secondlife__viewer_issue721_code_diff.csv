@@ -1,0 +1,227 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+secondlife/viewer,721,8cf4a71,indra/newview/app_settings/settings.xml,modified,2,13,15,"@@ -10421,7 +10421,7 @@
+         <key>Type</key>
+         <string>S32</string>
+         <key>Value</key>
+-        <integer>1024</integer>
++        <integer>2048</integer>
+     </map>
+ 	<key>RenderHeroProbeDistance</key>
+ 	<map>
+@@ -10432,18 +10432,7 @@
+ 		<key>Type</key>
+ 		<string>F32</string>
+ 		<key>Value</key>
+-		<real>16</real>
+-	</map>
+-	<key>RenderHeroProbeNearClipOffset</key>
+-	<map>
+-		<key>Comment</key>
+-		<string>Distance offset in meters for hero probes to near clip.</string>
+-		<key>Persist</key>
+-		<integer>1</integer>
+-		<key>Type</key>
+-		<string>F32</string>
+-		<key>Value</key>
+-		<real>2.1</real>
++		<real>8</real>
+ 	</map>
+     <key>RenderReflectionProbeVolumes</key>
+     <map>"
+secondlife/viewer,721,8cf4a71,indra/newview/app_settings/shaders/class1/deferred/terrainF.glsl,modified,2,0,2,"@@ -39,9 +39,11 @@ in vec4 vary_texcoord0;
+ in vec4 vary_texcoord1;
+ 
+ vec2 encode_normal(vec3 n);
++void mirrorClip(vec3 position);
+ 
+ void main()
+ {
++    mirrorClip(pos);
+     /// Note: This should duplicate the blending functionality currently used for the terrain rendering.
+     
+     vec4 color0 = texture(detail_0, vary_texcoord0.xy);"
+secondlife/viewer,721,8cf4a71,indra/newview/app_settings/shaders/class1/interface/radianceGenF.glsl,modified,1,1,2,"@@ -130,7 +130,7 @@ vec4 prefilterEnvMap(vec3 R)
+ 	float totalWeight = 0.0;
+ 	float envMapDim = float(textureSize(reflectionProbes, 0).s);
+     float roughness = mipLevel/max_probe_lod;
+-    int numSamples = max(int(32*roughness), 1);
++    int numSamples = max(int(PROBE_FILTER_SAMPLES*roughness), 1);
+ 
+     float numMips = max_probe_lod+1;
+ "
+secondlife/viewer,721,8cf4a71,indra/newview/app_settings/shaders/class3/environment/waterF.glsl,modified,3,0,3,"@@ -35,6 +35,8 @@ vec3 scaleSoftClipFragLinear(vec3 l);
+ void calcAtmosphericVarsLinear(vec3 inPositionEye, vec3 norm, vec3 light_dir, out vec3 sunlit, out vec3 amblit, out vec3 atten, out vec3 additive);
+ vec4 applyWaterFogViewLinear(vec3 pos, vec4 color);
+ 
++void mirrorClip(vec3 pos);
++
+ // PBR interface
+ vec2 BRDF(float NoV, float roughness);
+ 
+@@ -129,6 +131,7 @@ vec3 getPositionWithNDC(vec3 ndc);
+ 
+ void main() 
+ {
++    mirrorClip(vary_position);
+     vN = vary_normal;
+     vT = vary_tangent;
+     vB = cross(vN, vT);"
+secondlife/viewer,721,8cf4a71,indra/newview/llheroprobemanager.cpp,modified,14,38,52,"@@ -167,7 +167,7 @@ void LLHeroProbeManager::update()
+ 
+             mCurrentClipPlane.setVec(hero_pos, face_normal);
+             mMirrorPosition = mNearestHero->getPositionAgent();
+-            mMirrorNormal   = LLVector3(0, 0, 1);
++            mMirrorNormal   = face_normal;
+         
+ 
+             probe_pos.load3(point.mV);
+@@ -217,7 +217,7 @@ void LLHeroProbeManager::update()
+ void LLHeroProbeManager::updateProbeFace(LLReflectionMap* probe, U32 face, F32 near_clip)
+ {
+     // hacky hot-swap of camera specific render targets
+-    gPipeline.mRT = &gPipeline.mAuxillaryRT;
++    gPipeline.mRT = &gPipeline.mHeroProbeRT;
+ 
+     probe->update(mRenderTarget.getWidth(), face, true, near_clip);
+     
+@@ -252,32 +252,8 @@ void LLHeroProbeManager::updateProbeFace(LLReflectionMap* probe, U32 face, F32 n
+         static LLStaticHashedString znear(""znear"");
+         static LLStaticHashedString zfar(""zfar"");
+ 
+-        LLRenderTarget *screen_rt = &gPipeline.mAuxillaryRT.screen;
+-        LLRenderTarget *depth_rt  = &gPipeline.mAuxillaryRT.deferredScreen;
+-
+-        // perform a gaussian blur on the super sampled render before downsampling
+-        {
+-            gGaussianProgram.bind();
+-            gGaussianProgram.uniform1f(resScale, 1.f / mProbeResolution);
+-            S32 diffuseChannel = gGaussianProgram.enableTexture(LLShaderMgr::DEFERRED_DIFFUSE, LLTexUnit::TT_TEXTURE);
+-
+-            // horizontal
+-            gGaussianProgram.uniform2f(direction, 1.f, 0.f);
+-            gGL.getTexUnit(diffuseChannel)->bind(screen_rt);
+-            mRenderTarget.bindTarget();
+-            gPipeline.mScreenTriangleVB->setBuffer();
+-            gPipeline.mScreenTriangleVB->drawArrays(LLRender::TRIANGLES, 0, 3);
+-            mRenderTarget.flush();
+-
+-            // vertical
+-            gGaussianProgram.uniform2f(direction, 0.f, 1.f);
+-            gGL.getTexUnit(diffuseChannel)->bind(&mRenderTarget);
+-            screen_rt->bindTarget();
+-            gPipeline.mScreenTriangleVB->setBuffer();
+-            gPipeline.mScreenTriangleVB->drawArrays(LLRender::TRIANGLES, 0, 3);
+-            screen_rt->flush();
+-        }
+-
++        LLRenderTarget *screen_rt = &gPipeline.mHeroProbeRT.screen;
++        LLRenderTarget *depth_rt  = &gPipeline.mHeroProbeRT.deferredScreen;
+ 
+         S32 mips = log2((F32)mProbeResolution) + 0.5f;
+ 
+@@ -338,14 +314,14 @@ void LLHeroProbeManager::updateProbeFace(LLReflectionMap* probe, U32 face, F32 n
+ 
+         {
+             //generate radiance map (even if this is not the irradiance map, we need the mip chain for the irradiance map)
+-            gRadianceGenProgram.bind();
++            gHeroRadianceGenProgram.bind();
+             mVertexBuffer->setBuffer();
+ 
+-            S32 channel = gRadianceGenProgram.enableTexture(LLShaderMgr::REFLECTION_PROBES, LLTexUnit::TT_CUBE_MAP_ARRAY);
++            S32 channel = gHeroRadianceGenProgram.enableTexture(LLShaderMgr::REFLECTION_PROBES, LLTexUnit::TT_CUBE_MAP_ARRAY);
+             mTexture->bind(channel);
+-            gRadianceGenProgram.uniform1i(sSourceIdx, sourceIdx);
+-            gRadianceGenProgram.uniform1f(LLShaderMgr::REFLECTION_PROBE_MAX_LOD, mMaxProbeLOD);
+-            gRadianceGenProgram.uniform1f(LLShaderMgr::REFLECTION_PROBE_STRENGTH, mHeroProbeStrength);
++            gHeroRadianceGenProgram.uniform1i(sSourceIdx, sourceIdx);
++            gHeroRadianceGenProgram.uniform1f(LLShaderMgr::REFLECTION_PROBE_MAX_LOD, mMaxProbeLOD);
++            gHeroRadianceGenProgram.uniform1f(LLShaderMgr::REFLECTION_PROBE_STRENGTH, mHeroProbeStrength);
+             
+             U32 res = mMipChain[0].getWidth();
+ 
+@@ -357,10 +333,10 @@ void LLHeroProbeManager::updateProbeFace(LLReflectionMap* probe, U32 face, F32 n
+                 static LLStaticHashedString sWidth(""u_width"");
+                 static LLStaticHashedString sStrength(""probe_strength"");
+ 
+-                gRadianceGenProgram.uniform1f(sRoughness, (F32)i / (F32)(mMipChain.size() - 1));
+-                gRadianceGenProgram.uniform1f(sMipLevel, i);
+-                gRadianceGenProgram.uniform1i(sWidth, mProbeResolution);
+-                gRadianceGenProgram.uniform1f(sStrength, 1);
++                gHeroRadianceGenProgram.uniform1f(sRoughness, (F32) i / (F32) (mMipChain.size() - 1));
++                gHeroRadianceGenProgram.uniform1f(sMipLevel, i);
++                gHeroRadianceGenProgram.uniform1i(sWidth, mProbeResolution);
++                gHeroRadianceGenProgram.uniform1f(sStrength, 1);
+ 
+                 for (int cf = 0; cf < 6; ++cf)
+                 { // for each cube face
+@@ -383,7 +359,7 @@ void LLHeroProbeManager::updateProbeFace(LLReflectionMap* probe, U32 face, F32 n
+                 }
+             }
+ 
+-            gRadianceGenProgram.unbind();
++            gHeroRadianceGenProgram.unbind();
+         }
+ 
+         mMipChain[0].flush();"
+secondlife/viewer,721,8cf4a71,indra/newview/llviewershadermgr.cpp,modified,15,1,16,"@@ -84,7 +84,8 @@ LLGLSLShader	gOcclusionCubeProgram;
+ LLGLSLShader	gGlowCombineProgram;
+ LLGLSLShader	gReflectionMipProgram;
+ LLGLSLShader    gGaussianProgram;
+-LLGLSLShader	gRadianceGenProgram;
++LLGLSLShader    gRadianceGenProgram;
++LLGLSLShader    gHeroRadianceGenProgram;
+ LLGLSLShader	gIrradianceGenProgram;
+ LLGLSLShader	gGlowCombineFXAAProgram;
+ LLGLSLShader	gTwoTextureCompareProgram;
+@@ -2801,8 +2802,21 @@ BOOL LLViewerShaderMgr::loadShadersInterface()
+         gRadianceGenProgram.mShaderFiles.push_back(make_pair(""interface/radianceGenV.glsl"", GL_VERTEX_SHADER));
+         gRadianceGenProgram.mShaderFiles.push_back(make_pair(""interface/radianceGenF.glsl"", GL_FRAGMENT_SHADER));
+         gRadianceGenProgram.mShaderLevel = mShaderLevel[SHADER_INTERFACE];
++        gRadianceGenProgram.addPermutation(""PROBE_FILTER_SAMPLES"", ""32"");
+         success = gRadianceGenProgram.createShader(NULL, NULL);
+     }
++	
++    if (success && gGLManager.mHasCubeMapArray)
++    {
++        gHeroRadianceGenProgram.mName = ""Hero Radiance Gen Shader"";
++        gHeroRadianceGenProgram.mShaderFiles.clear();
++        gHeroRadianceGenProgram.mShaderFiles.push_back(make_pair(""interface/radianceGenV.glsl"", GL_VERTEX_SHADER));
++        gHeroRadianceGenProgram.mShaderFiles.push_back(make_pair(""interface/radianceGenF.glsl"", GL_FRAGMENT_SHADER));
++        gHeroRadianceGenProgram.mShaderLevel = mShaderLevel[SHADER_INTERFACE];
++        gHeroRadianceGenProgram.addPermutation(""HERO_PROBES"", ""1"");
++        gHeroRadianceGenProgram.addPermutation(""PROBE_FILTER_SAMPLES"", ""4"");
++        success                              = gHeroRadianceGenProgram.createShader(NULL, NULL);
++    }
+ 
+     if (success && gGLManager.mHasCubeMapArray)
+     {"
+secondlife/viewer,721,8cf4a71,indra/newview/llviewershadermgr.h,modified,1,0,1,"@@ -153,6 +153,7 @@ extern LLGLSLShader			gGlowCombineProgram;
+ extern LLGLSLShader			gReflectionMipProgram;
+ extern LLGLSLShader         gGaussianProgram;
+ extern LLGLSLShader         gRadianceGenProgram;
++extern LLGLSLShader         gHeroRadianceGenProgram;
+ extern LLGLSLShader         gIrradianceGenProgram;
+ extern LLGLSLShader			gGlowCombineFXAAProgram;
+ extern LLGLSLShader			gDebugProgram;"
+secondlife/viewer,721,8cf4a71,indra/newview/pipeline.cpp,modified,5,0,5,"@@ -785,6 +785,11 @@ bool LLPipeline::allocateScreenBuffer(U32 resX, U32 resY, U32 samples)
+         mRT = &mAuxillaryRT;
+         U32 res = mReflectionMapManager.mProbeResolution * 4;  //multiply by 4 because probes will be 16x super sampled
+         allocateScreenBuffer(res, res, samples);
++
++		res = mHeroProbeManager.mProbeResolution; // We also scale the hero probe RT to the probe res since we don't super sample it.
++        mRT = &mHeroProbeRT;
++        allocateScreenBuffer(res, res, samples);
++
+         mRT = &mMainRT;
+         gCubeSnapshot = FALSE;
+     }"
+secondlife/viewer,721,8cf4a71,indra/newview/pipeline.h,modified,3,0,3,"@@ -699,6 +699,9 @@ class LLPipeline
+     // used by reflection probes and dynamic texture bakes
+     RenderTargetPack mAuxillaryRT;
+ 
++	// Auxillary render target pack scaled to the hero probe's per-face size.
++    RenderTargetPack mHeroProbeRT;
++
+     // currently used render target pack
+     RenderTargetPack* mRT;
+ "

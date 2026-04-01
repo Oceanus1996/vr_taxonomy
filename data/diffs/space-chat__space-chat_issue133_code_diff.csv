@@ -1,0 +1,388 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+space-chat/space-chat,133,3484121,.gitignore,modified,1,1,2,"@@ -6,4 +6,4 @@ indicokey.js
+ reference
+ app/a-frame
+ public/bundle.js
+-public/bundle.js.map
+\ No newline at end of file
++public/bundle.js.map"
+space-chat/space-chat,133,3484121,app/components/Avatars.js,modified,1,1,2,"@@ -17,7 +17,7 @@ const positionOfAvatar = (index, totalCount, center, out) => {
+   const angle = (index / totalCount) * 2 * Math.PI
+       , hand = [0, 0, 0]
+   vec3.rotateY(hand, cameraToCenter, [0, 0, 0], angle)
+-  console.log(""hand"", hand)
++  // console.log(""hand"", hand)
+   return vec3.sub(out, center, hand)
+ }
+ "
+space-chat/space-chat,133,3484121,app/components/Knots.jsx,modified,141,0,141,"@@ -0,0 +1,141 @@
++import React, { Component } from 'react'
++import AssetLoader from './AssetLoader'
++import Avatars from './Avatars'
++import ParticleSystem from 'aframe-particle-system-component'
++import { vecToStr } from '../utils'
++
++import { initScene, makeKnots, animate
++	   , setAmbientLightA, setAmbientLightB
++	   , makeRotatingLightX, makeRotatingLightY
++	   , updateKnotColor, updateLightColor, updateLightRotationRate } from './knots.js'
++
++const Avatar = (props) => {
++	return (
++		<a-entity position={vecToStr(props.position)}>
++			<a-torus radius=""1"" opacity=""0.7"" metalness=""1"" spherical-env-map=""#tiedye"" />
++		</a-entity>
++	)
++}
++
++export default class Knots extends Component {
++
++	constructor(props) {
++		super()
++
++		this.state = {
++			numKnots: 60,
++			colorA: '#ff6600', // yellow
++			colorB: '#993300' , // burnt orange
++			colorC: '#FFFFFF',
++			colorD: '#FFFFFF',
++			rate: 0.0005
++		}
++	}
++
++	componentDidMount() {
++		initScene()
++		makeKnots(this.state.numKnots)
++		setAmbientLightA(this.state.colorA)
++		setAmbientLightB(this.state.colorB)
++		makeRotatingLightX()
++		makeRotatingLightY()
++		animate()
++	}
++
++	componentWillReceiveProps() {
++		// hashes for translating emotion to color values
++		let emotionColorsA = {
++			anger: '#ff0000',     // red
++	    		surprise: '#CC0033',  // pink
++	    		sadness: '#3366ff',   // blue
++	    		fear: '#333300',      // dark olive gray
++	    		joy: '#FFFFFF'        // white
++		}
++
++		let emotionColorsB = {
++			anger: '#FF6600', // orange    
++			surprise: '#ffcc66', // pink
++			sadness: '#003366', // dark blue
++			fear: '#666633', // olive green
++			joy: '#FFFFFF' // burnt orange
++		}
++
++		let emotionColorsC = {
++			anger: '#ff0000', // red    
++			surprise: '#FF6600', // pink
++			sadness: '#00cc00', // green
++			fear: '#330000', // dark green
++			joy: '#FFFFFF' // white
++		}
++
++		let emotionColorsD = {
++			anger: '#FF6600', // orange    
++			surprise: '#FF66FF', // pink
++			sadness: '#330000', // brown
++			fear: '#330000', // brown
++			joy: '#FFFFFF' // white
++		}
++
++		// translate emotion to color and set color on state
++		let emotion = this.props.currEmotion
++
++		let nextColorA = emotionColorsA[emotion]
++		let nextColorB = emotionColorsB[emotion]
++		let nextColorC = emotionColorsC[emotion]
++		let nextColorD = emotionColorsD[emotion]
++		let prevColorA = this.state.colorA
++		let prevColorB = this.state.colorB
++		let prevColorC = this.state.colorC
++		let prevColorD = this.state.colorD
++
++		let colorA = prevColorA !== nextColorA ? nextColorA : prevColorA
++		let colorB = prevColorB !== nextColorB ? nextColorB : prevColorB
++		let colorC = prevColorC !== nextColorC ? nextColorC : prevColorC
++		let colorD = prevColorD !== nextColorD ? nextColorD : prevColorD
++
++		// translate emotional intensity to rotation rate and set rate on state
++		let intensity = this.props.primaryIntensity || 0.5
++
++		// 0   1
++		let prevRate = this.state.rate
++		let nextRate = (1 - intensity) / 1000 + 0.003
++		// let nextRate = (1 - intensity) * -4000 <-- flips sense of numbers
++
++		let rate = prevRate !== nextRate ? nextRate : prevRate
++
++		this.setState({ colorA: colorA, colorB: colorB, colorC: colorC, colorD: colorD, rate: rate })
++
++		updateKnotColor(this.state.colorA, this.state.colorB)
++		updateLightColor(this.state.colorC, this.state.colorD)
++		updateLightRotationRate(this.state.rate)
++	}
++
++	render() {
++		let roster = {
++		    a: {},
++		    b: {},
++		    c: {},
++		    d: {},
++		    e: {},
++		    f: {},
++		}
++
++		return (
++			<div>
++				<a-scene fog=""type: exponential; color: purple"">
++					<AssetLoader />
++					<Avatars Avatar={Avatar} roster={roster} />
++
++					{/* Camera */}
++					<a-entity id=""camera"" position=""0 0 -10"" mouse-cursor="""">
++						<a-camera fov=""45"" user-height=""0"" />
++					</a-entity>
++
++					{/* Skysphere */}
++					<a-sky id=""sky"" src=""#tiedye""></a-sky>
++
++				</a-scene>
++			</div>
++	  	)
++	}
++}"
+space-chat/space-chat,133,3484121,app/components/Room.jsx,modified,2,1,3,"@@ -26,6 +26,7 @@ import Knots from './Knots.jsx'
+ import Cubes from './Cubes.jsx'
+ import { joinRoom, sendMessage, receiveMessage, receiveSentiment, closeSocket, openSocket } from '../sockets.js'
+ 
++
+ const propTypes = {
+   // props injected by SpeechRecognition
+   transcript: PropTypes.string,
+@@ -126,7 +127,7 @@ class Room extends Component {
+         sceneComponent = <Bubbles currEmotion={currEmotion} sentimentScore={sentimentScore} primaryPersonality={primaryPersonality} sky={this.state.bubbleSky}/>
+         break
+       case 'knots':
+-        sceneComponent = <Knots currEmotion={currEmotion} sentimentScore={sentimentScore} primaryPersonality={primaryPersonality} />
++        sceneComponent = <Knots currEmotion={currEmotion} sentimentScore={sentimentScore} primaryIntensity={primaryIntensity} />
+         break
+       case 'space':
+         sceneComponent = <Scene currEmotion={currEmotion} sentimentScore={sentimentScore} primaryPersonality={primaryPersonality} />"
+space-chat/space-chat,133,3484121,app/components/knots.js,added,187,0,187,"@@ -0,0 +1,187 @@
++// This component controls sphere rendering and animations of Knots.jsx. 
++// Adapted from: (1) https://github.com/mrdoob/three.js/blob/master/examples/webgl_effects_anaglyph.html (2) https://github.com/aframevr/aframe/blob/master/examples/showcase/dynamic-lights/index.html 
++
++let knots = []
++let lightX
++let lightY
++// let colorA = '#CC0033'
++//let colorB = 'green'  
++let windowHalfX = window.innerWidth / 2;
++let windowHalfY = window.innerHeight / 2;
++let width = window.innerWidth || 2;
++let height = window.innerHeight || 2;
++let mouseX = 0;
++let mouseY = 0;
++// let movementPath = 'spin' // need to write movement path
++let tickSpeed = 0.005
++
++const initScene = () => {
++  // let camera = document.getElementById('camera')
++  // camera.setAttribute('fov', 60) //field of view
++  // camera.setAttribute('aspect', window.innerWidth / window.innerHeight) //aspect
++  // camera.setAttribute('near', 0.01) //near
++  // camera.setAttribute('far', 1000) //far
++  // camera.setAttribute('position', { z: 3 })
++  // camera.setAttribute('focalLength', 3)
++
++  window.addEventListener('resize', onWindowResize, false);
++  document.addEventListener('mousemove', onDocumentMouseMove, false)
++}
++
++// helper function to generate random coords
++const getRandCoord = () => {
++  let coord = Math.random() * 60;
++  return Math.random() < 0.5 ? coord + 4 : coord * -1 - 4;
++}
++
++// create one random knot
++const createKnot = () => {
++
++  let knot = document.createElement('a-torus-knot')
++
++  knot.setAttribute('radius', `${Math.random() * 10}`)
++  knot.setAttribute('radiusTubular', `${Math.random() * 8}`)
++  knot.setAttribute('p', `${Math.round(Math.random() * 10)}`)
++  knot.setAttribute('q', `${Math.round(Math.random() * 10)}`)
++
++  // knot.setAttribute('color', `${colorA}`)
++
++  knot.setAttribute('metalness', `${(Math.random() * 0.7) + 0.5}`)
++  knot.setAttribute('roughness', `${Math.random()}`)
++  knot.setAttribute('segments-radial', '10')
++  knot.setAttribute('spherical-env-map', '#tiedye')
++
++  knot.setAttribute('position', {
++    x: `${getRandCoord()}`,
++    y: `${getRandCoord()}`,
++    z: `${getRandCoord()}`,
++  })
++
++  // give each knot a unique id
++  knots.push(knot)
++  knot.setAttribute('id', `knot-${knots.length}`)
++  console.log('knot id is', knot, '-', knots.length)
++
++  // set random knot into scene
++  document.querySelector('a-scene').appendChild(knot)
++
++}
++
++// create multiple random knots
++const makeKnots = (numKnots) => {
++  while (numKnots >= 0) {
++    createKnot()
++    numKnots--
++  }
++  console.log('knots is', knots)
++}
++
++const updateKnotColor = (colorA, colorB) => {
++  knots.forEach(knot => knot.setAttribute('color', `${colorA}`))
++
++  for (let i = 0; i < knots.length; i += 2) {
++    let knot = knots[i];
++    knot.setAttribute('color', `${colorB}`)
++  }
++}
++
++const setAmbientLightA = (colorA) => {
++  console.log('light A being created')
++
++    let lightA = document.createElement('a-light')
++
++    lightA.setAttribute('position', '0 0 0')
++    lightA.setAttribute('angle', '90')
++    lightA.setAttribute('radius', '60')
++    lightA.setAttribute('position', '-3 -4 1')
++    lightA.setAttribute('type', 'ambient')
++    lightA.setAttribute('intensity', '2')
++    lightA.setAttribute('distance', '200')
++    lightA.setAttribute('opacity', '0.5')
++    lightA.setAttribute('color', `${colorA}`)
++    lightA.setAttribute('id', 'lightA')
++
++    document.querySelector('a-scene').appendChild(lightA)
++}
++
++const setAmbientLightB = (colorB) => {
++  console.log('light B being created')
++
++    let lightB = document.createElement('a-light')
++
++    lightB.setAttribute('position', '0 0 0')
++    lightB.setAttribute('angle', '90')
++    lightB.setAttribute('radius', '60')
++    lightB.setAttribute('position', '-3 -4 1')
++    lightB.setAttribute('type', 'ambient')
++    lightB.setAttribute('intensity', '2')
++    lightB.setAttribute('distance', '200')
++    lightB.setAttribute('opacity', '0.5')
++    lightB.setAttribute('color', `${colorB}`)
++    lightB.setAttribute('id', 'lightB')
++
++    document.querySelector('a-scene').appendChild(lightB)
++}
++
++const updateLightColor = (colorC, colorD) => {
++  document.getElementById('lightA').setAttribute('color', `${colorC}`)
++  document.getElementById('lightB').setAttribute('color', `${colorD}`)
++}
++
++const makeRotatingLightX = () => {
++  console.log('lightX is being created')
++  lightX = document.createElement('a-light')
++  lightX.setAttribute('geometry', 'primitive: sphere; radius: 1.5')
++  lightX.setAttribute('material', 'shader: flat; opacity: 0')
++  lightX.setAttribute('light', 'color: #0033cc; distance: 120; intensity: 3; type: point')
++  document.querySelector('a-scene').appendChild(lightX)
++}
++
++const makeRotatingLightY = () => {
++  console.log('lightY is being created')
++  lightY = document.createElement('a-light')
++  lightY.setAttribute('geometry', 'primitive: sphere; radius: 2')
++  lightY.setAttribute('material', 'shader: flat; opacity: 0')
++  lightY.setAttribute('light', `color: #ff6600; distance: 120; intensity: 2; type: point`)
++  document.querySelector('a-scene').appendChild(lightY)
++}
++
++const updateLightRotationRate = (rate) => {
++  tickSpeed = rate
++}
++
++const render = (timeStamp) => {
++  //let camera = document.getElementById('camera')
++  let timer = tickSpeed * timeStamp // change tickSpeed for rotating light speed
++  //let curr = camera.getAttribute('position') || { x: 1, y: 1 }
++  //let addx = curr.x + ((mouseX - curr.x) * .05)
++  //let addy = curr.y + ((- mouseY - curr.y) * .05)
++  //camera.setAttribute('position', { x: addx, y: addy, z: 5 })
++
++  // circleZ animation path for lightX
++  lightX.setAttribute('position', { x: 18 * Math.sin(timer + (2 * Math.PI)) })
++  lightX.setAttribute('position', { z: 24 * Math.cos(timer + 3 + (2 * Math.PI)) })
++
++  // circleY animation path for lightY
++  lightY.setAttribute('position', { x: 25 * Math.sin(timer + (2 * Math.PI)) })
++  lightY.setAttribute('position', { y: 17 * Math.cos(timer + 2 * (2 * Math.PI)) })
++}
++
++const animate = (timeStamp) => {
++  requestAnimationFrame(animate)
++  render(timeStamp)
++}
++
++const onWindowResize = () => {
++  var camera = document.getElementById('camera')
++  windowHalfX = window.innerWidth / 2
++  windowHalfY = window.innerHeight / 2
++  camera.setAttribute('aspect', window.innerWidth / window.innerHeight)
++}
++
++const onDocumentMouseMove = (event) => {
++  mouseX = (event.clientX - windowHalfX) / 100
++  mouseY = (event.clientY - windowHalfY) / 100
++}
++
++module.exports = { initScene, animate, makeKnots, setAmbientLightA, setAmbientLightB, makeRotatingLightX, makeRotatingLightY, updateKnotColor, updateLightColor, updateLightRotationRate }"
+space-chat/space-chat,133,3484121,yarn.lock,modified,7,3,10,"@@ -68,9 +68,9 @@ acorn@^5.0.0:
+   version ""5.0.3""
+   resolved ""https://registry.yarnpkg.com/acorn/-/acorn-5.0.3.tgz#c460df08491463f028ccb82eab3730bf01087b3d""
+ 
+-aframe-sun-sky@^3.0.3:
+-  version ""3.0.3""
+-  resolved ""https://registry.yarnpkg.com/aframe-sun-sky/-/aframe-sun-sky-3.0.3.tgz#73d0ae364d2665e95109cc6497a919407d503be6""
++aframe-particle-system-component@^1.0.10:
++  version ""1.0.10""
++  resolved ""https://registry.yarnpkg.com/aframe-particle-system-component/-/aframe-particle-system-component-1.0.10.tgz#dc2174072f4ef7d1757a1bfd3d86be4e8768bb30""
+ 
+ aframe@^0.5.0:
+   version ""0.5.0""
+@@ -2270,6 +2270,10 @@ getpass@^0.1.1:
+   dependencies:
+     assert-plus ""^1.0.0""
+ 
++gl-matrix@^2.3.2:
++  version ""2.3.2""
++  resolved ""https://registry.yarnpkg.com/gl-matrix/-/gl-matrix-2.3.2.tgz#aac808c74af7d5db05fe04cb60ca1a0fcb174d74""
++
+ glob-base@^0.3.0:
+   version ""0.3.0""
+   resolved ""https://registry.yarnpkg.com/glob-base/-/glob-base-0.3.0.tgz#dbb164f6221b1c0b1ccf82aea328b497df0ea3c4"""

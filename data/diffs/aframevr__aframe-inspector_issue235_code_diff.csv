@@ -1,0 +1,179 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch,gpt_bug_detection
+aframevr/aframe-inspector,235,f66112fc4166f38713cea487304c09974056a2b0,src/actions/entity.js,modified,1,1,2,"@@ -111,7 +111,7 @@ export function cloneEntity (entity) {
+     copy.id = getUniqueId(entity.id);
+   }
+   copy.addEventListener('loaded', function () {
+-    Events.emit('sceneModified');
++    Events.emit('domModified');
+     editor.selectEntity(copy);
+   });
+   insertAfter(copy, entity);","{""has_bug"": true, ""bugs"": [{""line_start"": 18, ""line_end"": 18, ""description"": ""Potential null reference when accessing entity.components[componentName].name if componentName does not exist."", ""buggy_code"": ""var isSingle = isSingleProperty(components[entity.components[componentName].name].schema);""}, {""line_start"": 33, ""line_end"": 33, ""description"": ""Removing the entire component instead of just the property when value is null or undefined for single properties."", ""buggy_code"": ""entity.removeAttribute(componentName);""}, {""line_start"": 87, ""line_end"": 87, ""description"": ""Missing force parameter when calling removeEntity, which may lead to unintended confirmation prompt."", ""buggy_code"": ""removeEntity(editor.selectedEntity);""}, {""line_start"": 60, ""line_end"": 60, ""description"": ""Logic error in the while loop condition; should check for nextEntity.isEntity instead of nextEntity.isEditor."", ""buggy_code"": ""while (nextEntity && (!nextEntity.isEntity || nextEntity.isEditor)) {""}, {""line_start"": 70, ""line_end"": 70, ""description"": ""Logic error in the while loop condition; should check for prevEntity.isEntity instead of prevEntity.isEditor."", ""buggy_code"": ""while (prevEntity && (!prevEntity.isEntity || prevEntity.isEditor)) {""}]}"
+aframevr/aframe-inspector,235,f66112fc4166f38713cea487304c09974056a2b0,src/components/Main.js,modified,5,7,12,"@@ -28,14 +28,12 @@ export default class Main extends React.Component {
+ 
+   componentDidMount () {
+     // Create an observer to notify the changes in the scene
+-    var target = document.querySelector('a-scene');
++    this.sceneEl = document.querySelector('a-scene');
+     var observer = new MutationObserver(function (mutations) {
+-      mutations.forEach(function (mutation) {
+-        Events.emit('sceneModified');
+-      });
++      Events.emit('domModified', mutations);
+     });
+     var config = {attributes: true, childList: true, characterData: true};
+-    observer.observe(target, config);
++    observer.observe(this.sceneEl, config);
+ 
+     Events.on('openTexturesModal', function (textureOnClose) {
+       this.setState({isModalTexturesOpen: true, textureOnClose: textureOnClose});
+@@ -66,9 +64,9 @@ export default class Main extends React.Component {
+   }
+ 
+   render () {
+-    var scene = document.querySelector('a-scene');
++    var scene = this.sceneEl;
+     var textureDialogOpened = this.state.isModalTexturesOpen;
+-    let editButton = <a className='toggle-edit' onClick={this.toggleEdit}>{(this.state.editorEnabled ? 'Back to Scene' : 'Inspect Scene')}</a>
++    let editButton = <a className='toggle-edit' onClick={this.toggleEdit}>{(this.state.editorEnabled ? 'Back to Scene' : 'Inspect Scene')}</a>;
+ 
+     return (
+       <div>","{""has_bug"": true, ""bugs"": [{""line_start"": 49, ""line_end"": 50, ""description"": ""Potential null reference issue. 'textureOnClose' is not initialized in the state, leading to possible undefined behavior when calling it."", ""buggy_code"": ""if (this.state.textureOnClose) {\n  this.state.textureOnClose(value);\n}""}, {""line_start"": 31, ""line_end"": 31, ""description"": ""Null reference issue. If 'a-scene' is not found in the DOM, 'this.sceneEl' will be null, leading to a crash when trying to observe it."", ""buggy_code"": ""this.sceneEl = document.querySelector('a-scene');""}, {""line_start"": 60, ""line_end"": 62, ""description"": ""Logic error. If 'editor.close()' or 'editor.open()' fails or throws an error, it is not handled, which could lead to unexpected behavior."", ""buggy_code"": ""editor.close();\neditor.open();""}]}"
+aframevr/aframe-inspector,235,f66112fc4166f38713cea487304c09974056a2b0,src/components/scenegraph/SceneGraph.js,modified,1,1,2,"@@ -56,7 +56,7 @@ export default class SceneGraph extends React.Component {
+         this.rebuildOptions();
+       }
+     });
+-    Events.on('sceneModified', this.rebuildOptions);
++    Events.on('domModified', this.rebuildOptions);
+   }
+ 
+   setValue = value => {","{""has_bug"": true, ""bugs"": [{""line_start"": 78, ""line_end"": 78, ""description"": ""Setting value to null when not found can lead to issues with rendering and selection logic."", ""buggy_code"": ""this.setState({value: null, selectedIndex: -1});""}, {""line_start"": 170, ""line_end"": 171, ""description"": ""Accessing 'id' and 'tagName' directly on 'value' may lead to null/undefined reference errors if 'value' is not an entity."", ""buggy_code"": ""return value.id.toUpperCase().indexOf(filterText) > -1 ||""}, {""line_start"": 174, ""line_end"": 174, ""description"": ""Using 'value' directly in className comparison may lead to incorrect behavior if 'value' is null."", ""buggy_code"": ""let className = 'option' + (option.value === this.state.value ? ' active' : '');""}]}"
+aframevr/aframe-inspector,235,f66112fc4166f38713cea487304c09974056a2b0,src/lib/editor.js,modified,13,1,14,"@@ -177,6 +177,19 @@ Editor.prototype = {
+       this.createNewEntity(definition);
+     }.bind(this));
+ 
++    Events.on('domModified', (mutations) => {
++      var self = this;
++      mutations.forEach((mutation) => {
++        if (mutation.type === 'childList') {
++          mutation.removedNodes.forEach(function(removedNode){
++            if (self.selectedEntity === removedNode) {
++              self.selectEntity(null);
++            }
++          });
++        }
++      });
++    });
++
+ /*
+     window.addEventListener('resize', Events.emit('windowResize'), false);
+ 
+@@ -212,7 +225,6 @@ Editor.prototype = {
+     if (this.selected === object) {
+       return;
+     }
+-
+     this.selected = object;
+     Events.emit('objectSelected', object);
+   },","{""has_bug"": true, ""bugs"": [{""line_start"": 62, ""line_end"": 62, ""description"": ""The sceneHelpers visibility is set to true, which may cause the previous selection box to remain visible when clicking a helper."", ""buggy_code"": ""this.sceneHelpers.visible = true; // false;""}, {""line_start"": 236, ""line_end"": 236, ""description"": ""The line is incomplete and missing a closing quote, which will cause a syntax error."", ""buggy_code"": ""document.querySelector('a-scene""}]}"
+aframevr/aframe-inspector,235,f66112fc4166f38713cea487304c09974056a2b0,src/lib/viewport/index.js,modified,4,2,6,"@@ -290,8 +290,10 @@ function Viewport (editor) {
+     selectionBox.visible = false;
+     transformControls.detach();
+     if (object !== null) {
+-      selectionBox.update(object);
+-      selectionBox.visible = true;
++      if (object.el.getObject3D('mesh')) {
++        selectionBox.update(object);
++        selectionBox.visible = true;
++      }
+ 
+       transformControls.attach(object);
+     }","{""has_bug"": true, ""bugs"": [{""line_start"": 28, ""line_end"": 30, ""description"": ""The previous active camera element is not being reset when a new camera is activated, which may lead to incorrect behavior when switching cameras."", ""buggy_code"": ""if (event.detail.cameraEl !== editor.editorCameraEl) {\n    prevActivedCameraEl = event.detail.cameraEl;\n}""}, {""line_start"": 145, ""line_end"": 145, ""description"": ""The selection box visibility is not being reset when a new object is selected, which can lead to the previous selection box remaining visible."", ""buggy_code"": ""selectionBox.visible = false;""}, {""line_start"": 121, ""line_end"": 123, ""description"": ""The code does not handle the case where the object's position changes after a transformation, which may lead to unexpected behavior."", ""buggy_code"": ""// @todo""}, {""line_start"": 127, ""line_end"": 129, ""description"": ""The code does not handle the case where the object's rotation changes after a transformation, which may lead to unexpected behavior."", ""buggy_code"": ""// @todo""}, {""line_start"": 133, ""line_end"": 135, ""description"": ""The code does not handle the case where the object's scale changes after a transformation, which may lead to unexpected behavior."", ""buggy_code"": ""// @todo""}, {""line_start"": 164, ""line_end"": 166, ""description"": ""The selection box is updated with the selected entity, but it does not account for the case where the selected entity is not a mesh, which may lead to incorrect behavior."", ""buggy_code"": ""if (editor.selectedEntity.object3DMap['mesh']) {\n    selectionBox.update(editor.selected);\n}""}]}"
+aframevr/aframe-inspector,235,f5218827965ec3c052f28f57769e674912488869,src/actions/entity.js,modified,1,1,2,"@@ -111,7 +111,7 @@ export function cloneEntity (entity) {
+     copy.id = getUniqueId(entity.id);
+   }
+   copy.addEventListener('loaded', function () {
+-    Events.emit('sceneModified');
++    Events.emit('domModified');
+     editor.selectEntity(copy);
+   });
+   insertAfter(copy, entity);","{""has_bug"": true, ""bugs"": [{""line_start"": 18, ""line_end"": 18, ""description"": ""Potential null reference when accessing entity.components[componentName].name if componentName is not valid."", ""buggy_code"": ""var isSingle = isSingleProperty(components[entity.components[componentName].name].schema);""}, {""line_start"": 33, ""line_end"": 33, ""description"": ""Removing the attribute without checking if it exists may lead to unintended behavior if the component does not have the property."", ""buggy_code"": ""entity.removeAttribute(componentName);""}, {""line_start"": 50, ""line_end"": 50, ""description"": ""Potential null reference if findClosestEntity returns null, leading to an attempt to select a non-existent entity."", ""buggy_code"": ""var closest = findClosestEntity(entity);""}, {""line_start"": 88, ""line_end"": 88, ""description"": ""Missing force parameter when calling removeEntity, which may lead to unintended confirmation prompts."", ""buggy_code"": ""removeEntity(editor.selectedEntity);""}, {""line_start"": 115, ""line_end"": 115, ""description"": ""Duplicate event listener for 'loaded' event may cause unexpected behavior if the event fires multiple times."", ""buggy_code"": ""editor.selectEntity(copy);""}]}"
+aframevr/aframe-inspector,235,f5218827965ec3c052f28f57769e674912488869,src/components/Main.js,modified,5,7,12,"@@ -28,14 +28,12 @@ export default class Main extends React.Component {
+ 
+   componentDidMount () {
+     // Create an observer to notify the changes in the scene
+-    var target = document.querySelector('a-scene');
++    this.sceneEl = document.querySelector('a-scene');
+     var observer = new MutationObserver(function (mutations) {
+-      mutations.forEach(function (mutation) {
+-        Events.emit('sceneModified');
+-      });
++      Events.emit('domModified', mutations);
+     });
+     var config = {attributes: true, childList: true, characterData: true};
+-    observer.observe(target, config);
++    observer.observe(this.sceneEl, config);
+ 
+     Events.on('openTexturesModal', function (textureOnClose) {
+       this.setState({isModalTexturesOpen: true, textureOnClose: textureOnClose});
+@@ -66,9 +64,9 @@ export default class Main extends React.Component {
+   }
+ 
+   render () {
+-    var scene = document.querySelector('a-scene');
++    var scene = this.sceneEl;
+     var textureDialogOpened = this.state.isModalTexturesOpen;
+-    let editButton = <a className='toggle-edit' onClick={this.toggleEdit}>{(this.state.editorEnabled ? 'Back to Scene' : 'Inspect Scene')}</a>
++    let editButton = <a className='toggle-edit' onClick={this.toggleEdit}>{(this.state.editorEnabled ? 'Back to Scene' : 'Inspect Scene')}</a>;
+ 
+     return (
+       <div>","{""has_bug"": true, ""bugs"": [{""line_start"": 49, ""line_end"": 50, ""description"": ""Potential null reference issue. 'textureOnClose' is not initialized in the state, leading to possible undefined behavior when trying to call it."", ""buggy_code"": ""if (this.state.textureOnClose) {\n  this.state.textureOnClose(value);\n}""}, {""line_start"": 31, ""line_end"": 31, ""description"": ""Possible null reference issue. If 'a-scene' is not found in the DOM, 'this.sceneEl' will be null, leading to errors when trying to observe it."", ""buggy_code"": ""this.sceneEl = document.querySelector('a-scene');""}, {""line_start"": 60, ""line_end"": 62, ""description"": ""Logic error. If 'editor.close()' fails or has side effects, it may not properly handle the state transition when toggling the editor mode."", ""buggy_code"": ""if (this.state.editorEnabled) {\n  editor.close();\n} else {\n  editor.open();\n}""}]}"
+aframevr/aframe-inspector,235,f5218827965ec3c052f28f57769e674912488869,src/components/scenegraph/SceneGraph.js,modified,1,1,2,"@@ -56,7 +56,7 @@ export default class SceneGraph extends React.Component {
+         this.rebuildOptions();
+       }
+     });
+-    Events.on('sceneModified', this.rebuildOptions);
++    Events.on('domModified', this.rebuildOptions);
+   }
+ 
+   setValue = value => {","{""has_bug"": true, ""bugs"": [{""line_start"": 78, ""line_end"": 78, ""description"": ""Setting value to null when not found can lead to issues with the selection box remaining visible."", ""buggy_code"": ""this.setState({value: null, selectedIndex: -1});""}, {""line_start"": 170, ""line_end"": 171, ""description"": ""Accessing 'id' and 'tagName' directly on value may lead to null/undefined reference errors if value is not an entity."", ""buggy_code"": ""return value.id.toUpperCase().indexOf(filterText) > -1 ||""}, {""line_start"": 174, ""line_end"": 174, ""description"": ""Using 'option.value' directly for className comparison may lead to incorrect behavior if value is not properly set."", ""buggy_code"": ""let className = 'option' + (option.value === this.state.value ? ' active' : '');""}]}"
+aframevr/aframe-inspector,235,f5218827965ec3c052f28f57769e674912488869,src/lib/editor.js,modified,13,1,14,"@@ -177,6 +177,19 @@ Editor.prototype = {
+       this.createNewEntity(definition);
+     }.bind(this));
+ 
++    Events.on('domModified', (mutations) => {
++      var self = this;
++      mutations.forEach((mutation) => {
++        if (mutation.type === 'childList') {
++          mutation.removedNodes.forEach(function(removedNode){
++            if (self.selectedEntity === removedNode) {
++              self.selectEntity(null);
++            }
++          });
++        }
++      });
++    });
++
+ /*
+     window.addEventListener('resize', Events.emit('windowResize'), false);
+ 
+@@ -212,7 +225,6 @@ Editor.prototype = {
+     if (this.selected === object) {
+       return;
+     }
+-
+     this.selected = object;
+     Events.emit('objectSelected', object);
+   },","{""has_bug"": true, ""bugs"": [{""line_start"": 62, ""line_end"": 62, ""description"": ""The sceneHelpers visibility is set to true, which may cause previous selection boxes to remain visible when switching selections."", ""buggy_code"": ""this.sceneHelpers.visible = true; // false;""}, {""line_start"": 236, ""line_end"": 236, ""description"": ""The clear function is incomplete and lacks a closing quote for the query selector, which will cause a syntax error."", ""buggy_code"": ""document.querySelector('a-scene""}]}"
+aframevr/aframe-inspector,235,f5218827965ec3c052f28f57769e674912488869,src/lib/viewport/index.js,modified,4,2,6,"@@ -290,8 +290,10 @@ function Viewport (editor) {
+     selectionBox.visible = false;
+     transformControls.detach();
+     if (object !== null) {
+-      selectionBox.update(object);
+-      selectionBox.visible = true;
++      if (object.el.getObject3D('mesh')) {
++        selectionBox.update(object);
++        selectionBox.visible = true;
++      }
+ 
+       transformControls.attach(object);
+     }","{""has_bug"": true, ""bugs"": [{""line_start"": 28, ""line_end"": 30, ""description"": ""The previous active camera element is not being reset when a new camera is activated, which may lead to incorrect behavior when switching cameras."", ""buggy_code"": ""if (event.detail.cameraEl !== editor.editorCameraEl) {\n    prevActivedCameraEl = event.detail.cameraEl;\n}""}, {""line_start"": 145, ""line_end"": 145, ""description"": ""The commented-out code for object selection does not handle the case where the selection box should be hidden when a new object is selected, which may lead to the selection box remaining visible incorrectly."", ""buggy_code"": ""selectionBox.visible = false;""}, {""line_start"": 121, ""line_end"": 123, ""description"": ""The code does not handle the case where the object's position changes after a transformation, which may lead to unexpected behavior if the transformation is not properly tracked."", ""buggy_code"": ""// @todo""}, {""line_start"": 127, ""line_end"": 129, ""description"": ""The code does not handle the case where the object's rotation changes after a transformation, which may lead to unexpected behavior if the transformation is not properly tracked."", ""buggy_code"": ""// @todo""}, {""line_start"": 133, ""line_end"": 135, ""description"": ""The code does not handle the case where the object's scale changes after a transformation, which may lead to unexpected behavior if the transformation is not properly tracked."", ""buggy_code"": ""// @todo""}, {""line_start"": 190, ""line_end"": 203, ""description"": ""The click handling logic does not account for the case where the selection box should be hidden when clicking on a helper, which may lead to the selection box remaining visible incorrectly."", ""buggy_code"": ""if (onDownPosition.distanceTo(onUpPosition) === 0) {\n    var intersects = getIntersects(onUpPosition, objects);\n    if (intersects.length > 0) {\n        var object = intersects[ 0 ].object;\n        if (object.userData.object !== undefined) {\n            // helper\n            editor.selectEntity(object.userData.object.el);\n        } else {\n            editor.selectEntity(object.el);\n        }\n    } else {\n        editor.selectEntity(null);\n    }\n}""}]}"

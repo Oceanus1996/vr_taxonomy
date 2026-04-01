@@ -1,0 +1,88 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe,4689,da2389961f3bc5c22e6218d4c0d61e676f265577,docs/components/hand-tracking-controls.md,modified,0,1,1,"@@ -26,7 +26,6 @@ Use `hand-tracking-controls` to integrate [hand tracked input][webxrhandinput] i
+ | modelColor          | Color of hand material.                                                                | white         |
+ | modelStyle           | Mesh representing the hand or dots matching the joints        | mesh
+ 
+-
+ ## Events
+ 
+ | Event Name    | Description                                                    |"
+aframevr/aframe,4689,da2389961f3bc5c22e6218d4c0d61e676f265577,src/components/hand-tracking-controls.js,modified,9,5,14,"@@ -43,6 +43,10 @@ var BONE_MAPPING = [
+   'pinky_null'
+ ];
+ 
++var PINCH_START_DISTANCE = 0.015;
++var PINCH_END_DISTANCE = 0.03;
++var PINCH_POSITION_INTERPOLATION = 0.5;
++
+ /**
+  * Controls for hand tracking
+  */
+@@ -217,22 +221,22 @@ module.exports.Component = registerComponent('hand-tracking-controls', {
+ 
+       var distance = indexTipPosition.distanceTo(thumbTipPosition);
+ 
+-      if (distance < 0.01 && this.isPinched === false) {
++      if (distance < PINCH_START_DISTANCE && this.isPinched === false) {
+         this.isPinched = true;
+-        this.pinchEventDetail.position.copy(indexTipPose.transform.position);
++        this.pinchEventDetail.position.copy(indexTipPosition).lerp(thumbTipPosition, PINCH_POSITION_INTERPOLATION);
+         this.pinchEventDetail.position.y += 1.5;
+         this.el.emit('pinchstarted', this.pinchEventDetail);
+       }
+ 
+-      if (distance > 0.03 && this.isPinched === true) {
++      if (distance > PINCH_END_DISTANCE && this.isPinched === true) {
+         this.isPinched = false;
+-        this.pinchEventDetail.position.copy(indexTipPose.transform.position);
++        this.pinchEventDetail.position.copy(indexTipPosition).lerp(thumbTipPosition, PINCH_POSITION_INTERPOLATION);
+         this.pinchEventDetail.position.y += 1.5;
+         this.el.emit('pinchended', this.pinchEventDetail);
+       }
+ 
+       if (this.isPinched) {
+-        this.pinchEventDetail.position.copy(indexTipPose.transform.position);
++        this.pinchEventDetail.position.copy(indexTipPosition).lerp(thumbTipPosition, PINCH_POSITION_INTERPOLATION);
+         this.pinchEventDetail.position.y += 1.5;
+         this.el.emit('pinchmoved', this.pinchEventDetail);
+       }"
+aframevr/aframe,4689,da2389961f3bc5c22e6218d4c0d61e676f265577,tests/components/hand-tracking-controls.test.js,modified,17,0,17,"@@ -8,6 +8,8 @@ suite('tracked-controls-webxr', function () {
+   var standingMatrix = new THREE.Matrix4();
+   var index = {transform: {position: {x: 0, y: 0, z: 0}}};
+   var thumb = {transform: {position: {x: 0, y: 0, z: 0}}};
++  var indexPosition = new THREE.Vector3();
++  var thumbPosition = new THREE.Vector3();
+ 
+   setup(function (done) {
+     standingMatrix.identity();
+@@ -53,6 +55,13 @@ suite('tracked-controls-webxr', function () {
+       el.components['hand-tracking-controls'].checkIfControllerPresent();
+       el.components['hand-tracking-controls'].detectPinch();
+       assert.equal(emitSpy.getCalls()[0].args[0], 'pinchstarted');
++      indexPosition.copy(index.transform.position);
++      indexPosition.y += 1.5;
++      thumbPosition.copy(thumb.transform.position);
++      thumbPosition.y += 1.5;
++      const indexThumbDistance = indexPosition.distanceTo(thumbPosition);
++      assert.isAtMost(emitSpy.getCalls()[0].args[1].position.distanceTo(indexPosition), indexThumbDistance);
++      assert.isAtMost(emitSpy.getCalls()[0].args[1].position.distanceTo(thumbPosition), indexThumbDistance);
+     });
+ 
+     test('pinchended', function () {
+@@ -61,8 +70,16 @@ suite('tracked-controls-webxr', function () {
+       el.components['hand-tracking-controls'].checkIfControllerPresent();
+       el.components['hand-tracking-controls'].isPinched = true;
+       thumb.transform.position.z = 10;
++      thumbPosition.copy(thumb.transform.position);
+       el.components['hand-tracking-controls'].detectPinch();
+       assert.equal(emitSpy.getCalls()[0].args[0], 'pinchended');
++      indexPosition.copy(index.transform.position);
++      indexPosition.y += 1.5;
++      thumbPosition.copy(thumb.transform.position);
++      thumbPosition.y += 1.5;
++      const indexThumbDistance = indexPosition.distanceTo(thumbPosition);
++      assert.isAtMost(emitSpy.getCalls()[0].args[1].position.distanceTo(indexPosition), indexThumbDistance);
++      assert.isAtMost(emitSpy.getCalls()[0].args[1].position.distanceTo(thumbPosition), indexThumbDistance);
+     });
+   });
+ });"

@@ -1,0 +1,60 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vizorvr/patches,1671,66a1686,browser/vendor/three/TransformControls.js,modified,31,0,31,"@@ -104,6 +104,25 @@
+ 	GizmoLineMaterial.prototype = Object.create( THREE.LineBasicMaterial.prototype );
+ 	GizmoLineMaterial.prototype.constructor = GizmoLineMaterial;
+ 
++	function fixRenderOrder(mesh) {
++		// 1 above default, so that these meshes get always rendered
++		// on top of anything else
++		mesh.renderOrder = 1
++	}
++
++	function fixGizmoArray(gizmos) {
++		Object.keys(gizmos).forEach(function(key) {
++			for (var i = 0; i < gizmos[key].length; ++i) {
++				var gizmo = gizmos[key][i]
++				for (var j = 0; j < gizmo.length; ++j) {
++					if (gizmo[j] instanceof THREE.Mesh || gizmo[j] instanceof THREE.Line) {
++						fixRenderOrder(gizmo[j])
++					}
++				}
++			}
++		})
++	}
++
+ 
+ 	var pickerMaterial = new GizmoMaterial( { visible: false, transparent: false } );
+ 
+@@ -343,6 +362,10 @@
+ 
+ 		};
+ 
++		// move gizmos on top of other render elements by default
++		fixGizmoArray(this.handleGizmos)
++		fixGizmoArray(this.pickerGizmos)
++
+ 		this.setActivePlane = function ( axis, eye ) {
+ 
+ 			var tempMatrix = new THREE.Matrix4();
+@@ -460,6 +483,10 @@
+ 
+ 		};
+ 
++		// move gizmos on top of other render elements by default
++		fixGizmoArray(this.handleGizmos)
++		fixGizmoArray(this.pickerGizmos)
++
+ 		this.setActivePlane = function ( axis ) {
+ 
+ 			if ( axis === ""E"" ) this.activePlane = this.planes[ ""XYZE"" ];
+@@ -602,6 +629,10 @@
+ 
+ 		};
+ 
++		// move gizmos on top of other render elements by default
++		fixGizmoArray(this.handleGizmos)
++		fixGizmoArray(this.pickerGizmos)
++
+ 		this.setActivePlane = function ( axis, eye ) {
+ 
+ 			var tempMatrix = new THREE.Matrix4();"

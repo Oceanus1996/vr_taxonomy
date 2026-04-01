@@ -1,0 +1,67 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+microsoft/mixed-reality-extension-unity,130,eb4fd610088adb90442fc23bda63339fd90acf12,MRETestBed/Assets/Standard Assets/Characters/FirstPersonCharacter/Scripts/FirstPersonController.cs,modified,10,4,14,"@@ -19,7 +19,7 @@ public class FirstPersonController : MonoBehaviour
+ 
+         private Camera m_Camera;
+         private float m_YRotation;
+-        private Vector2 m_Input;
++        private Vector3 m_Input;
+         private Vector3 m_MoveDir = Vector3.zero;
+         private CharacterController m_CharacterController;
+         private CollisionFlags m_CollisionFlags;
+@@ -45,11 +45,12 @@ private void FixedUpdate()
+             float speed;
+             GetInput(out speed);
+             // always move along the camera forward as it is the direction that it being aimed at
+-            Vector3 desiredMove = m_Camera.transform.forward * m_Input.y + m_Camera.transform.right * m_Input.x;
++            Vector3 desiredMove = m_Camera.transform.forward * m_Input.y
++                                + m_Camera.transform.right * m_Input.x
++                                + m_Camera.transform.up * m_Input.z;
+ 
+             m_MoveDir = desiredMove * speed;
+ 
+-
+             if (!m_CharacterController.isGrounded)
+             {
+                 m_MoveDir += Physics.gravity * m_GravityMultiplier * Time.fixedDeltaTime;
+@@ -64,17 +65,22 @@ private void GetInput(out float speed)
+             // Read input
+             float horizontal = CrossPlatformInputManager.GetAxis(""Horizontal"");
+             float vertical = CrossPlatformInputManager.GetAxis(""Vertical"");
++            float upordown = 0.0f;
+ 
+             bool waswalking = m_IsWalking;
+ 
+ #if !MOBILE_INPUT
+             // On standalone builds, walk/run speed is modified by a key press.
+             // keep track of whether or not the character is walking or running
+             m_IsWalking = !Input.GetKey(KeyCode.LeftShift);
++
++            // add also additional possibility for up-down with keys
++            upordown = (Input.GetKey(KeyCode.Q)) ? m_WalkSpeed : ((Input.GetKey(KeyCode.Z)) ? -m_WalkSpeed : 0.0f);
+ #endif
++
+             // set the desired speed to be walking or running
+             speed = m_IsWalking ? m_WalkSpeed : m_RunSpeed;
+-            m_Input = new Vector2(horizontal, vertical);
++            m_Input = new Vector3(horizontal, vertical, upordown);
+ 
+             // normalize input if it exceeds 1 in combined length:
+             if (m_Input.sqrMagnitude > 1)"
+microsoft/mixed-reality-extension-unity,130,eb4fd610088adb90442fc23bda63339fd90acf12,MRETestBed/Assets/Standard Assets/Characters/FirstPersonCharacter/Scripts/MouseLook.cs,modified,6,2,8,"@@ -32,11 +32,15 @@ public void LookRotation(Transform character, Transform camera)
+         {
+             float yRot = CrossPlatformInputManager.GetAxis(""Mouse X"") * XSensitivity;
+             float xRot = CrossPlatformInputManager.GetAxis(""Mouse Y"") * YSensitivity;
+-
++            float keyYRot = 0f;
++#if !MOBILE_INPUT
++            keyYRot = (Input.GetKey(KeyCode.X)) ? -0.1f : ((Input.GetKey(KeyCode.C)) ? 0.1f : 0.0f);
++#endif
+             m_CharacterTargetRot *= Quaternion.Euler (0f, yRot, 0f);
+             m_CameraTargetRot *= Quaternion.Euler (-xRot, 0f, 0f);
++            m_CharacterTargetRot *= Quaternion.Euler(0f, keyYRot, 0f);
+ 
+-            if(clampVerticalRotation)
++            if (clampVerticalRotation)
+                 m_CameraTargetRot = ClampRotationAroundXAxis (m_CameraTargetRot);
+ 
+             if(smooth)"

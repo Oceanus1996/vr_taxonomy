@@ -1,0 +1,540 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vizorvr/patches,913,9733a74,browser/plugins/three_loader_scene.plugin.js,modified,6,3,9,"@@ -17,6 +17,9 @@
+ 		this.input_slots = [].concat(this.input_slots)
+ 
+ 		this.defaultObject = new THREE.Object3D(new THREE.BoxGeometry(), new THREE.MeshBasicMaterial({color: 0x777777}))
++		this.defaultObject.backReference = this
++
++		this.object3d = this.defaultObject
+ 
+ 		THREE.Loader.Handlers.add(/\.dds$/i, new THREE.DDSLoader())
+ 
+@@ -41,7 +44,7 @@
+ 
+ 		this.loader
+ 		.then(function(asset) {
+-			that.object3d = asset
++			that.object3d = asset.clone()
+ 			that.postLoadFixUp()
+ 		})
+ 		.finally(function() {
+@@ -136,8 +139,6 @@
+ 				removeObjects.push({parent: n.parent, object: n})
+ 			}
+ 
+-			n.backReference = that
+-
+ 			var geom = n.geometry
+ 
+ 			if (geom) {
+@@ -169,6 +170,8 @@
+ 		for (var i = 0; i < removeObjects.length; ++i) {
+ 			removeObjects[i].parent.remove(removeObjects[i].object)
+ 		}
++
++		this.object3d.backReference = this
+ 	}
+ 
+ 	ThreeLoaderScenePlugin.prototype.update_state = function() {"
+vizorvr/patches,913,9733a74,browser/scripts/worldEditor/worldEditor.js,modified,11,30,41,"@@ -191,26 +191,6 @@ WorldEditor.prototype.updateScene = function(scene, camera) {
+ 	this.vrCamera = camera
+ 
+ 	this.updateHelperHandles(scene, camera)
+-
+-	// if there's a pending selection (something was pasted),
+-	// set selection accordingly
+-	if (this.pendingSelection !== undefined) {
+-		if (--this.pendingSelection.waitTime < 0) {
+-			var selectNodes = []
+-
+-			for(var i = 0; i < this.pendingSelection.selection.length; ++i) {
+-				this.pendingSelection.selection[i].plugin.object3d.traverse(function(n) {
+-					if (n.backReference) {
+-						selectNodes.push(n)
+-					}
+-				})
+-			}
+-
+-			this.setSelection(selectNodes)
+-
+-			delete this.pendingSelection
+-		}
+-	}
+ }
+ 
+ WorldEditor.prototype.getEditorSceneTree = function() {
+@@ -289,15 +269,15 @@ WorldEditor.prototype.onPaste = function(nodes) {
+ 
+ 	E2.app.markConnectionAsSelected(connection)
+ 
+-	// set a pending selection object for the pasted objects
+-	// we have to wait for one update to pass before actually
+-	// setting the selection, because mesh creation itself is
+-	// deferred in AbstractThreeMeshPlugin
+-	var pendingSelection = {waitTime: 1, selection: []}
+-
++	// select the meshes in world editor
++	var selectNodes = []
+ 	function collectMeshes(node) {
+ 		if (node.plugin && node.plugin.object3d) {
+-			pendingSelection.selection.push(node)
++			node.plugin.object3d.traverse(function(n) {
++				if (n.backReference) {
++					selectNodes.push(n)
++				}
++			})
+ 		}
+ 
+ 		if (node.plugin.graph) {
+@@ -312,9 +292,9 @@ WorldEditor.prototype.onPaste = function(nodes) {
+ 		collectMeshes(node)
+ 	}
+ 
+-	this.pendingSelection = pendingSelection
++	this.setSelection(selectNodes)
+ 
+-	// TODO: if this.pendingSelection.length === 0, we didn't paste any objects
++	// TODO: if selectNodes.length === 0, we didn't paste any objects
+ 	// and we could warn the user somehow
+ }
+ 
+@@ -559,7 +539,8 @@ WorldEditor.prototype.setCameraView = function(camera) {
+ 
+ WorldEditor.prototype.toggleCameraOrthographic = function() {
+ 	// save selected object
+-	var selectedObject = this.cameraSelector.transformControls.object
++	var activePlugin = this.cameraSelector.transformControls.plugin
++	var selectedObject = activePlugin ? activePlugin.object3d : undefined
+ 	if (selectedObject !== undefined) {
+ 		this.cameraSelector.transformControls.detach()
+ 	}"
+vizorvr/patches,913,9733a74,browser/vendor/three/TransformControls.js,modified,14,16,30,"@@ -648,7 +648,6 @@
+ 
+ 		domElement = ( domElement !== undefined ) ? domElement : document;
+ 
+-		this.object = undefined;
+ 		this.visible = false;
+ 		this.translationSnap = null;
+ 		this.rotationSnap = null;
+@@ -761,7 +760,7 @@
+ 		this.calculateObjectCenter = function() {
+ 			var bbox = new THREE.Box3()
+ 
+-			this.object.traverse( function(n) {
++			this.plugin.object3d.traverse( function(n) {
+ 				if (!n.boundingBox && n.calculateBoundingBox) {
+ 					n.calculateBoundingBox()
+ 				}
+@@ -792,7 +791,6 @@
+ 		this.attach = function ( object ) {
+ 
+ 			this.plugin = object.backReference
+-			this.object = this.plugin.object3d
+ 			this.visible = true
+ 
+ 			this.updateTransformLock()
+@@ -804,7 +802,6 @@
+ 
+ 		this.detach = function () {
+ 
+-			this.object = undefined;
+ 			this.plugin = undefined
+ 			this.visible = false;
+ 			this.axis = null;
+@@ -856,11 +853,11 @@
+ 
+ 		this.update = function () {
+ 
+-			if ( scope.object === undefined ) return;
++			if ( scope.plugin === undefined ) return;
+ 
+-			scope.object.updateMatrixWorld();
+-			worldPosition.setFromMatrixPosition( scope.object.matrixWorld );
+-			worldRotation.setFromRotationMatrix( tempMatrix.extractRotation( scope.object.matrixWorld ) );
++			scope.plugin.object3d.updateMatrixWorld();
++			worldPosition.setFromMatrixPosition( scope.plugin.object3d.matrixWorld );
++			worldRotation.setFromRotationMatrix( tempMatrix.extractRotation( scope.plugin.object3d.matrixWorld ) );
+ 
+ 			camera.updateMatrixWorld();
+ 			camPosition.setFromMatrixPosition( camera.matrixWorld );
+@@ -869,7 +866,7 @@
+ 			scale = worldPosition.distanceTo( camPosition ) / 6 * scope.size;
+ 
+ 			var centerPosition = (scope.objectCenter || worldPosition).clone()
+-			centerPosition.applyMatrix4(scope.object.matrixWorld)
++			centerPosition.applyMatrix4(scope.plugin.object3d.matrixWorld)
+ 
+ 			this.position.copy( centerPosition );
+ 			this.scale.set( scale, scale, scale );
+@@ -896,7 +893,7 @@
+ 
+ 		function onPointerHover( event ) {
+ 
+-			if ( scope.object === undefined || _dragging === true || ( event.button !== undefined && event.button !== 0 ) ) return;
++			if ( scope.plugin === undefined || _dragging === true || ( event.button !== undefined && event.button !== 0 ) ) return;
+ 
+ 			var pointer = event.changedTouches ? event.changedTouches[ 0 ] : event;
+ 
+@@ -924,7 +921,7 @@
+ 
+ 		function onPointerDown( event ) {
+ 
+-			if ( scope.object === undefined || _dragging === true || ( event.button !== undefined && event.button !== 0 ) ) return;
++			if ( scope.plugin === undefined || _dragging === true || ( event.button !== undefined && event.button !== 0 ) ) return;
+ 
+ 			if ( !_gizmo[ _mode ].isEnabled ) {
+ 				return
+@@ -943,6 +940,11 @@
+ 
+ 					scope.dispatchEvent( mouseDownEvent );
+ 
++					if(scope.plugin === undefined) {
++						// we lost the object in mouseDownEvent
++						return
++					}
++
+ 					scope.axis = intersect.object.name;
+ 
+ 					scope.update();
+@@ -1000,7 +1002,7 @@
+ 
+ 		function onPointerMove( event ) {
+ 
+-			if ( scope.object === undefined || scope.axis === null || _dragging === false || ( event.button !== undefined && event.button !== 0 ) ) return;
++			if ( scope.plugin === undefined || scope.axis === null || _dragging === false || ( event.button !== undefined && event.button !== 0 ) ) return;
+ 
+ 			if ( !_gizmo[ _mode ].isEnabled ) {
+ 				return
+@@ -1129,7 +1131,6 @@
+ 					tempQuaternion.multiplyQuaternions( tempQuaternion, quaternionE );
+ 					tempQuaternion.multiplyQuaternions( tempQuaternion, quaternionXYZ );
+ 
+-					//scope.object.quaternion.copy( tempQuaternion );
+ 					scope.plugin.undoableSetState('quaternion', tempQuaternion.clone(), oldQuaternion.clone())
+ 
+ 				} else if ( scope.axis === ""XYZE"" ) {
+@@ -1143,7 +1144,6 @@
+ 					tempQuaternion.multiplyQuaternions( tempQuaternion, quaternionX );
+ 					tempQuaternion.multiplyQuaternions( tempQuaternion, quaternionXYZ );
+ 
+-					//scope.object.quaternion.copy( tempQuaternion );
+ 					scope.plugin.undoableSetState('quaternion', tempQuaternion.clone(), oldQuaternion.clone())
+ 
+ 				} else if ( scope.space === ""local"" ) {
+@@ -1175,7 +1175,6 @@
+ 					if ( scope.axis === ""Y"" ) quaternionXYZ.multiplyQuaternions( quaternionXYZ, quaternionY );
+ 					if ( scope.axis === ""Z"" ) quaternionXYZ.multiplyQuaternions( quaternionXYZ, quaternionZ );
+ 
+-					//scope.object.quaternion.copy( quaternionXYZ );
+ 					scope.plugin.undoableSetState('quaternion', quaternionXYZ.clone(), oldQuaternion.clone())
+ 
+ 				} else if ( scope.space === ""world"" ) {
+@@ -1207,7 +1206,6 @@
+ 
+ 					tempQuaternion.multiplyQuaternions( tempQuaternion, quaternionXYZ );
+ 
+-					//scope.object.quaternion.copy( tempQuaternion );
+ 					scope.plugin.undoableSetState('quaternion', tempQuaternion.clone(), oldQuaternion.clone())
+ 
+ 				}"
+vizorvr/patches,913,122c7f1,browser/vendor/three/TransformControls.js,modified,6,6,12,"@@ -857,9 +857,9 @@
+ 
+ 			if ( scope.plugin === undefined || !scope.enabled ) return;
+ 
+-			scope.object.updateMatrixWorld();
+-			worldPosition.setFromMatrixPosition( scope.object.matrixWorld );
+-			worldRotation.setFromRotationMatrix( tempMatrix.extractRotation( scope.object.matrixWorld ) );
++			scope.plugin.object3d.updateMatrixWorld();
++			worldPosition.setFromMatrixPosition( scope.plugin.object3d.matrixWorld );
++			worldRotation.setFromRotationMatrix( tempMatrix.extractRotation( scope.plugin.object3d.matrixWorld ) );
+ 
+ 			camera.updateMatrixWorld();
+ 			camPosition.setFromMatrixPosition( camera.matrixWorld );
+@@ -895,7 +895,7 @@
+ 
+ 		function onPointerHover( event ) {
+ 
+-			if ( scope.object === undefined || !scope.enabled || _dragging === true || ( event.button !== undefined && event.button !== 0 ) ) return;
++			if ( scope.plugin === undefined || !scope.enabled || _dragging === true || ( event.button !== undefined && event.button !== 0 ) ) return;
+ 
+ 			var pointer = event.changedTouches ? event.changedTouches[ 0 ] : event;
+ 
+@@ -923,7 +923,7 @@
+ 
+ 		function onPointerDown( event ) {
+ 
+-			if ( scope.object === undefined || !scope.enabled || _dragging === true || ( event.button !== undefined && event.button !== 0 ) ) return;
++			if ( scope.plugin === undefined || !scope.enabled || _dragging === true || ( event.button !== undefined && event.button !== 0 ) ) return;
+ 
+ 			if ( !_gizmo[ _mode ].isEnabled ) {
+ 				return
+@@ -1004,7 +1004,7 @@
+ 
+ 		function onPointerMove( event ) {
+ 
+-			if ( scope.object === undefined || !scope.enabled || scope.axis === null || _dragging === false || ( event.button !== undefined && event.button !== 0 ) ) return;
++			if ( scope.plugin === undefined || !scope.enabled || scope.axis === null || _dragging === false || ( event.button !== undefined && event.button !== 0 ) ) return;
+ 
+ 			if ( !_gizmo[ _mode ].isEnabled ) {
+ 				return"
+vizorvr/patches,913,243c512,browser/vendor/three/TransformControls.js,modified,3,3,6,"@@ -857,9 +857,9 @@
+ 
+ 			if ( scope.plugin === undefined || !scope.enabled ) return;
+ 
+-			scope.object.updateMatrixWorld();
+-			worldPosition.setFromMatrixPosition( scope.object.matrixWorld );
+-			worldRotation.setFromRotationMatrix( tempMatrix.extractRotation( scope.object.matrixWorld ) );
++			scope.plugin.object3d.updateMatrixWorld();
++			worldPosition.setFromMatrixPosition( scope.plugin.object3d.matrixWorld );
++			worldRotation.setFromRotationMatrix( tempMatrix.extractRotation( scope.plugin.object3d.matrixWorld ) );
+ 
+ 			camera.updateMatrixWorld();
+ 			camPosition.setFromMatrixPosition( camera.matrixWorld );"
+vizorvr/patches,913,50c99f3,browser/plugins/three_loader_scene.plugin.js,modified,6,3,9,"@@ -17,6 +17,9 @@
+ 		this.input_slots = [].concat(this.input_slots)
+ 
+ 		this.defaultObject = new THREE.Object3D(new THREE.BoxGeometry(), new THREE.MeshBasicMaterial({color: 0x777777}))
++		this.defaultObject.backReference = this
++
++		this.object3d = this.defaultObject
+ 
+ 		THREE.Loader.Handlers.add(/\.dds$/i, new THREE.DDSLoader())
+ 
+@@ -47,7 +50,7 @@
+ 
+ 		this.loader
+ 		.then(function(asset) {
+-			that.object3d = asset
++			that.object3d = asset.clone()
+ 			that.postLoadFixUp()
+ 		})
+ 		.finally(function() {
+@@ -144,8 +147,6 @@
+ 				removeObjects.push({parent: n.parent, object: n})
+ 			}
+ 
+-			n.backReference = that
+-
+ 			var geom = n.geometry
+ 
+ 			if (geom) {
+@@ -177,6 +178,8 @@
+ 		for (var i = 0; i < removeObjects.length; ++i) {
+ 			removeObjects[i].parent.remove(removeObjects[i].object)
+ 		}
++
++		this.object3d.backReference = this
+ 	}
+ 
+ 	ThreeLoaderScenePlugin.prototype.update_state = function() {"
+vizorvr/patches,913,50c99f3,browser/scripts/worldEditor/worldEditor.js,modified,11,30,41,"@@ -193,26 +193,6 @@ WorldEditor.prototype.updateScene = function(scene, camera) {
+ 	this.vrCamera = camera
+ 
+ 	this.updateHelperHandles(scene, camera)
+-
+-	// if there's a pending selection (something was pasted),
+-	// set selection accordingly
+-	if (this.pendingSelection !== undefined) {
+-		if (--this.pendingSelection.waitTime < 0) {
+-			var selectNodes = []
+-
+-			for(var i = 0; i < this.pendingSelection.selection.length; ++i) {
+-				this.pendingSelection.selection[i].plugin.object3d.traverse(function(n) {
+-					if (n.backReference) {
+-						selectNodes.push(n)
+-					}
+-				})
+-			}
+-
+-			this.setSelection(selectNodes)
+-
+-			delete this.pendingSelection
+-		}
+-	}
+ }
+ 
+ WorldEditor.prototype.getEditorSceneTree = function() {
+@@ -291,15 +271,15 @@ WorldEditor.prototype.onPaste = function(nodes) {
+ 
+ 	E2.app.markConnectionAsSelected(connection)
+ 
+-	// set a pending selection object for the pasted objects
+-	// we have to wait for one update to pass before actually
+-	// setting the selection, because mesh creation itself is
+-	// deferred in AbstractThreeMeshPlugin
+-	var pendingSelection = {waitTime: 1, selection: []}
+-
++	// select the meshes in world editor
++	var selectNodes = []
+ 	function collectMeshes(node) {
+ 		if (node.plugin && node.plugin.object3d) {
+-			pendingSelection.selection.push(node)
++			node.plugin.object3d.traverse(function(n) {
++				if (n.backReference) {
++					selectNodes.push(n)
++				}
++			})
+ 		}
+ 
+ 		if (node.plugin.graph) {
+@@ -314,9 +294,9 @@ WorldEditor.prototype.onPaste = function(nodes) {
+ 		collectMeshes(node)
+ 	}
+ 
+-	this.pendingSelection = pendingSelection
++	this.setSelection(selectNodes)
+ 
+-	// TODO: if this.pendingSelection.length === 0, we didn't paste any objects
++	// TODO: if selectNodes.length === 0, we didn't paste any objects
+ 	// and we could warn the user somehow
+ }
+ 
+@@ -561,7 +541,8 @@ WorldEditor.prototype.setCameraView = function(camera) {
+ 
+ WorldEditor.prototype.toggleCameraOrthographic = function() {
+ 	// save selected object
+-	var selectedObject = this.cameraSelector.transformControls.object
++	var activePlugin = this.cameraSelector.transformControls.plugin
++	var selectedObject = activePlugin ? activePlugin.object3d : undefined
+ 	if (selectedObject !== undefined) {
+ 		this.cameraSelector.transformControls.detach()
+ 	}"
+vizorvr/patches,913,50c99f3,browser/vendor/three/TransformControls.js,modified,7,9,16,"@@ -648,7 +648,6 @@
+ 
+ 		domElement = ( domElement !== undefined ) ? domElement : document;
+ 
+-		this.object = undefined;
+ 		this.visible = false;
+ 		this.translationSnap = null;
+ 		this.rotationSnap = null;
+@@ -763,7 +762,7 @@
+ 		this.calculateObjectCenter = function() {
+ 			var bbox = new THREE.Box3()
+ 
+-			this.object.traverse( function(n) {
++			this.plugin.object3d.traverse( function(n) {
+ 				if (!n.boundingBox && n.calculateBoundingBox) {
+ 					n.calculateBoundingBox()
+ 				}
+@@ -794,7 +793,6 @@
+ 		this.attach = function ( object ) {
+ 
+ 			this.plugin = object.backReference
+-			this.object = this.plugin.object3d
+ 			this.visible = true
+ 
+ 			this.updateTransformLock()
+@@ -806,7 +804,6 @@
+ 
+ 		this.detach = function () {
+ 
+-			this.object = undefined;
+ 			this.plugin = undefined
+ 			this.visible = false;
+ 			this.axis = null;
+@@ -871,7 +868,7 @@
+ 			scale = worldPosition.distanceTo( camPosition ) / 6 * scope.size;
+ 
+ 			var centerPosition = (scope.objectCenter || worldPosition).clone()
+-			centerPosition.applyMatrix4(scope.object.matrixWorld)
++			centerPosition.applyMatrix4(scope.plugin.object3d.matrixWorld)
+ 
+ 			this.position.copy( centerPosition );
+ 			this.scale.set( scale, scale, scale );
+@@ -945,6 +942,11 @@
+ 
+ 					scope.dispatchEvent( mouseDownEvent );
+ 
++					if(scope.plugin === undefined) {
++						// we lost the object in mouseDownEvent
++						return
++					}
++
+ 					scope.axis = intersect.object.name;
+ 
+ 					scope.update();
+@@ -1131,7 +1133,6 @@
+ 					tempQuaternion.multiplyQuaternions( tempQuaternion, quaternionE );
+ 					tempQuaternion.multiplyQuaternions( tempQuaternion, quaternionXYZ );
+ 
+-					//scope.object.quaternion.copy( tempQuaternion );
+ 					scope.plugin.undoableSetState('quaternion', tempQuaternion.clone(), oldQuaternion.clone())
+ 
+ 				} else if ( scope.axis === ""XYZE"" ) {
+@@ -1145,7 +1146,6 @@
+ 					tempQuaternion.multiplyQuaternions( tempQuaternion, quaternionX );
+ 					tempQuaternion.multiplyQuaternions( tempQuaternion, quaternionXYZ );
+ 
+-					//scope.object.quaternion.copy( tempQuaternion );
+ 					scope.plugin.undoableSetState('quaternion', tempQuaternion.clone(), oldQuaternion.clone())
+ 
+ 				} else if ( scope.space === ""local"" ) {
+@@ -1177,7 +1177,6 @@
+ 					if ( scope.axis === ""Y"" ) quaternionXYZ.multiplyQuaternions( quaternionXYZ, quaternionY );
+ 					if ( scope.axis === ""Z"" ) quaternionXYZ.multiplyQuaternions( quaternionXYZ, quaternionZ );
+ 
+-					//scope.object.quaternion.copy( quaternionXYZ );
+ 					scope.plugin.undoableSetState('quaternion', quaternionXYZ.clone(), oldQuaternion.clone())
+ 
+ 				} else if ( scope.space === ""world"" ) {
+@@ -1209,7 +1208,6 @@
+ 
+ 					tempQuaternion.multiplyQuaternions( tempQuaternion, quaternionXYZ );
+ 
+-					//scope.object.quaternion.copy( tempQuaternion );
+ 					scope.plugin.undoableSetState('quaternion', tempQuaternion.clone(), oldQuaternion.clone())
+ 
+ 				}"
+vizorvr/patches,913,8970fc4,browser/vendor/three/TransformControls.js,modified,6,6,12,"@@ -857,9 +857,9 @@
+ 
+ 			if ( scope.object === undefined || !scope.enabled ) return;
+ 
+-			scope.object.updateMatrixWorld();
+-			worldPosition.setFromMatrixPosition( scope.object.matrixWorld );
+-			worldRotation.setFromRotationMatrix( tempMatrix.extractRotation( scope.object.matrixWorld ) );
++			scope.plugin.object3d.updateMatrixWorld();
++			worldPosition.setFromMatrixPosition( scope.plugin.object3d.matrixWorld );
++			worldRotation.setFromRotationMatrix( tempMatrix.extractRotation( scope.plugin.object3d.matrixWorld ) );
+ 
+ 			camera.updateMatrixWorld();
+ 			camPosition.setFromMatrixPosition( camera.matrixWorld );
+@@ -895,7 +895,7 @@
+ 
+ 		function onPointerHover( event ) {
+ 
+-			if ( scope.object === undefined || !scope.enabled || _dragging === true || ( event.button !== undefined && event.button !== 0 ) ) return;
++			if ( scope.plugin === undefined || !scope.enabled || _dragging === true || ( event.button !== undefined && event.button !== 0 ) ) return;
+ 
+ 			var pointer = event.changedTouches ? event.changedTouches[ 0 ] : event;
+ 
+@@ -923,7 +923,7 @@
+ 
+ 		function onPointerDown( event ) {
+ 
+-			if ( scope.object === undefined || !scope.enabled || _dragging === true || ( event.button !== undefined && event.button !== 0 ) ) return;
++			if ( scope.plugin === undefined || !scope.enabled || _dragging === true || ( event.button !== undefined && event.button !== 0 ) ) return;
+ 
+ 			if ( !_gizmo[ _mode ].isEnabled ) {
+ 				return
+@@ -1004,7 +1004,7 @@
+ 
+ 		function onPointerMove( event ) {
+ 
+-			if ( scope.object === undefined || !scope.enabled || scope.axis === null || _dragging === false || ( event.button !== undefined && event.button !== 0 ) ) return;
++			if ( scope.plugin === undefined || !scope.enabled || scope.axis === null || _dragging === false || ( event.button !== undefined && event.button !== 0 ) ) return;
+ 
+ 			if ( !_gizmo[ _mode ].isEnabled ) {
+ 				return"
+vizorvr/patches,913,1ed2d2f,browser/vendor/three/TransformControls.js,modified,3,3,6,"@@ -857,9 +857,9 @@
+ 
+ 			if ( scope.object === undefined || !scope.enabled ) return;
+ 
+-			scope.object.updateMatrixWorld();
+-			worldPosition.setFromMatrixPosition( scope.object.matrixWorld );
+-			worldRotation.setFromRotationMatrix( tempMatrix.extractRotation( scope.object.matrixWorld ) );
++			scope.plugin.object3d.updateMatrixWorld();
++			worldPosition.setFromMatrixPosition( scope.plugin.object3d.matrixWorld );
++			worldRotation.setFromRotationMatrix( tempMatrix.extractRotation( scope.plugin.object3d.matrixWorld ) );
+ 
+ 			camera.updateMatrixWorld();
+ 			camPosition.setFromMatrixPosition( camera.matrixWorld );"

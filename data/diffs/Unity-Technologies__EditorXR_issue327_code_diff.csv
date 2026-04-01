@@ -1,0 +1,110 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+Unity-Technologies/EditorXR,327,8ba3fc76f8e03b824fea40351b438974da76ad45,Menus/MainMenu/MainMenu.cs,modified,7,1,8,"@@ -157,6 +157,9 @@ void CreateFaceButtons()
+ 			foreach (var type in types)
+ 			{
+ 				var customMenuAttribute = (MainMenuItemAttribute)type.GetCustomAttributes(typeof(MainMenuItemAttribute), false).FirstOrDefault();
++				if (customMenuAttribute != null && !customMenuAttribute.shown)
++					continue;
++
+ 				var isTool = typeof(ITool).IsAssignableFrom(type) && menuTools.Contains(type);
+ 				var isWorkspace = typeof(Workspace).IsAssignableFrom(type);
+ 				var isSettingsProvider = typeof(ISettingsMenuProvider).IsAssignableFrom(type);
+@@ -186,11 +189,14 @@ void CreateFaceButtons()
+ 					{
+ 						if (targetRayOrigin)
+ 						{
+-							this.SelectTool(targetRayOrigin, selectedType);
++							this.SelectTool(targetRayOrigin, selectedType,
++								hideMenu: typeof(IInstantiateMenuUI).IsAssignableFrom(selectedType));
+ 							UpdateToolButtons();
+ 						}
+ 					});
+ 
++					m_ToolButtons[type] = mainMenuButton;
++
+ 					// Assign Tools Menu button preview properties
+ 					if (mainMenuButton != null)
+ 						mainMenuButton.toolType = selectedType;"
+Unity-Technologies/EditorXR,327,8ba3fc76f8e03b824fea40351b438974da76ad45,Menus/MainMenu/Scripts/MainMenuFace.cs,modified,8,0,8,"@@ -181,6 +181,14 @@ public void RemoveSubmenu()
+ 			else
+ 				visible = true;
+ 		}
++
++		public void ClearSubmenus()
++		{
++			foreach (var submenu in m_Submenus)
++			{
++				ObjectUtils.Destroy(submenu);
++			}
++		}
+ 	}
+ }
+ #endif"
+Unity-Technologies/EditorXR,327,8ba3fc76f8e03b824fea40351b438974da76ad45,Menus/MainMenu/Scripts/MainMenuUI.cs,modified,3,1,4,"@@ -378,7 +378,9 @@ IEnumerator AnimateHide()
+ 
+ 			foreach (var kvp in m_Faces)
+ 			{
+-				kvp.Value.visible = false;
++				var face = kvp.Value;
++				face.visible = false;
++				face.ClearSubmenus();
+ 			}
+ 
+ 			this.RestartCoroutine(ref m_FrameRevealCoroutine, AnimateFrameReveal(m_VisibilityState));"
+Unity-Technologies/EditorXR,327,8ba3fc76f8e03b824fea40351b438974da76ad45,Scripts/Core/EditorVR.Menus.cs,modified,0,1,1,"@@ -5,7 +5,6 @@
+ using UnityEditor.Experimental.EditorVR.Menus;
+ using UnityEditor.Experimental.EditorVR.Modules;
+ using UnityEditor.Experimental.EditorVR.Utilities;
+-using UnityEditor.Experimental.EditorVR.Workspaces;
+ using UnityEngine;
+ using UnityEngine.InputNew;
+ "
+Unity-Technologies/EditorXR,327,8ba3fc76f8e03b824fea40351b438974da76ad45,Scripts/Core/EditorVR.Tools.cs,modified,3,2,5,"@@ -195,7 +195,7 @@ static bool IsToolActive(Transform targetRayOrigin, Type toolType)
+ 				return result;
+ 			}
+ 
+-			internal static bool SelectTool(Transform rayOrigin, Type toolType, bool despawnOnReselect = true)
++			internal static bool SelectTool(Transform rayOrigin, Type toolType, bool despawnOnReselect = true, bool hideMenu = false)
+ 			{
+ 				var result = false;
+ 				var deviceInputModule = evr.GetModule<DeviceInputModule>();
+@@ -289,7 +289,8 @@ internal static bool SelectTool(Transform rayOrigin, Type toolType, bool despawn
+ 						
+ 						deviceInputModule.UpdatePlayerHandleMaps();
+ 						result = spawnTool;
+-					}
++					} else if (hideMenu)
++						deviceData.menuHideData[deviceData.mainMenu].hideFlags |= MenuHideFlags.Hidden;
+ 				});
+ 
+ 				return result;"
+Unity-Technologies/EditorXR,327,8ba3fc76f8e03b824fea40351b438974da76ad45,Scripts/Interfaces/FunctionalityInjection/ISelectTool.cs,modified,4,3,7,"@@ -13,7 +13,7 @@ public interface ISelectTool
+ 
+ 	public static class ISelectToolMethods
+ 	{
+-		internal static Func<Transform, Type, bool, bool> selectTool { get; set; }
++		internal static Func<Transform, Type, bool, bool, bool> selectTool { get; set; }
+ 		internal static Func<Transform, Type, bool> isToolActive { get; set; }
+ 
+ 		/// <summary>
+@@ -23,9 +23,10 @@ public static class ISelectToolMethods
+ 		/// <param name=""rayOrigin"">The rayOrigin that the tool should spawn under</param>
+ 		/// <param name=""toolType"">Type of tool to spawn/select</param>
+ 		/// <param name=""despawnOnReselect"">Despawn the tool, if re-selected while already the current tool</param>
+-		public static bool SelectTool(this ISelectTool obj, Transform rayOrigin, Type toolType, bool despawnOnReselect = true)
++		/// <param name=""hideMenu"">Whether to hide the menu after selecting this tool</param>
++		public static bool SelectTool(this ISelectTool obj, Transform rayOrigin, Type toolType, bool despawnOnReselect = true, bool hideMenu = false)
+ 		{
+-			return selectTool(rayOrigin, toolType, despawnOnReselect);
++			return selectTool(rayOrigin, toolType, despawnOnReselect, hideMenu);
+ 		}
+ 
+ 		/// <summary>"
+Unity-Technologies/EditorXR,327,8ba3fc76f8e03b824fea40351b438974da76ad45,Tools/AnnotationTool/AnnotationTool.cs,modified,0,1,1,"@@ -7,7 +7,6 @@
+ using UnityEditor.Experimental.EditorVR;
+ using UnityEditor.Experimental.EditorVR.Core;
+ using UnityEditor.Experimental.EditorVR.Extensions;
+-using UnityEditor.Experimental.EditorVR.Menus;
+ using UnityEditor.Experimental.EditorVR.Proxies;
+ using UnityEditor.Experimental.EditorVR.UI;
+ using UnityEditor.Experimental.EditorVR.Utilities;"

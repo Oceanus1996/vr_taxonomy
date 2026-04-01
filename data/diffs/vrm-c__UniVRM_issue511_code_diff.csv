@@ -1,0 +1,52 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vrm-c/UniVRM,511,f39618d1ec9d0aa40fac754f0eebf25707312564,Assets/VRM/UniVRM/Editor/Format/VRMExporterWizard.cs,modified,22,8,30,"@@ -139,6 +139,20 @@ static Vector3 GetForward(Transform l, Transform r)
+             return Vector3.Cross(lr, Vector3.up);
+         }
+ 
++        static bool EnableRenderer(Renderer renderer)
++        {
++            if (renderer.transform.Ancestor().Any(x => !x.gameObject.activeSelf))
++            {
++                // 自分か祖先に !activeSelf がいる
++                return false;
++            }
++            if (!renderer.enabled)
++            {
++                return false;
++            }
++            return true;
++        }
++
+         /// <summary>
+         /// エクスポート可能か検証する
+         /// </summary>
+@@ -167,7 +181,7 @@ public IEnumerable<Validation> Validate()
+             }
+ 
+             var renderers = ExportRoot.GetComponentsInChildren<Renderer>();
+-            if (renderers.All(x => !x.gameObject.activeInHierarchy))
++            if (renderers.All(x => !EnableRenderer(x)))
+             {
+                 yield return Validation.Error(Msg.NO_ACTIVE_MESH);
+             }
+@@ -384,13 +398,13 @@ private void OnGUI()
+                 Validation.Error(Msg.ROOT_WITHOUT_ROTATION_AND_SCALING_CHANGED).DrawGUI();
+                 return;
+             }
+-            if (!root.scene.IsValid())
+-            {
+-                // Prefab でシーンに出していないものを判定したい
+-                // FIXME: もっと適切な判定があればそれに
+-                Validation.Error(Msg.PREFAB_CANNOT_EXPORT).DrawGUI();
+-                return;
+-            }
++            // if (!root.scene.IsValid())
++            // {
++            //     // Prefab でシーンに出していないものを判定したい
++            //     // FIXME: もっと適切な判定があればそれに
++            //     Validation.Error(Msg.PREFAB_CANNOT_EXPORT).DrawGUI();
++            //     return;
++            // }
+             if (HasRotationOrScale(ExportRoot))
+             {
+                 if (m_settings.PoseFreeze)"

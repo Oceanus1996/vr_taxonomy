@@ -1,0 +1,177 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe-inspector,275,c41c6879cae5b614c85d3990561ecc1e28b66ec6,src/css/main.css,modified,20,2,22,"@@ -2,6 +2,9 @@ body {
+   font-family: Helvetica, Arial, sans-serif;
+   font-size: 14px;
+   margin: 0;
++}
++
++body.aframe-inspector-opened {
+   overflow: hidden;
+ }
+ 
+@@ -35,6 +38,11 @@ textarea.fail {
+ 
+ textarea, input { outline: none; } /* osx */
+ 
++#left-sidebar,
++#right-panels {
++  z-index: 9999;
++}
++
+ #sidebar,
+ #left-sidebar,
+ .panel {
+@@ -162,7 +170,7 @@ input.number:focus {
+ }
+ 
+ #left-sidebar {
+-  position: absolute;
++  position: fixed;
+   left: 0;
+   top: 0;
+   bottom: 0;
+@@ -727,6 +735,10 @@ a.help-link:hover {
+   display: flex;
+   justify-content: flex-end;
+   align-items: stretch;
++  position: fixed;
++  top: 0;
++  bottom: 0;
++  right: 0;
+ }
+ 
+ #aframe-inspector-panels {
+@@ -736,6 +748,12 @@ a.help-link:hover {
+ 
+ /* This is a temporaly hack, we should style the editor instead of overwriting
+    the a-scene to fix the ""display: block"" issue. */
+-a-scene {
++.aframe-inspector-opened a-scene {
+   display: inline !important;
+ }
++
++.aframe-inspector-opened a-scene .a-canvas {
++  position: fixed;
++  background-color: #191919;
++  z-index: 9999;
++}"
+aframevr/aframe-inspector,275,c41c6879cae5b614c85d3990561ecc1e28b66ec6,src/lib/inspector.js,modified,17,5,22,"@@ -268,21 +268,33 @@ Inspector.prototype = {
+    * Open the editor UI
+    */
+   open: function () {
++    const sceneEl = this.sceneEl;
+     this.opened = true;
+     Events.emit('inspectorModeChanged', true);
+-    this.sceneEl.pause();
+-    document.body.classList.add('editor-opened');
++    sceneEl.pause();
++    if (sceneEl.hasAttribute('embedded')) {
++      // Remove embedded styles, but keep track of it.
++      sceneEl.removeAttribute('embedded');
++      sceneEl.setAttribute('aframe-inspector-removed-embedded');
++    }
++    document.body.classList.add('aframe-inspector-opened');
++    sceneEl.resize();
+   },
+   /**
+    * Closes the editor and gives the control back to the scene
+    * @return {[type]} [description]
+    */
+   close: function () {
++    const sceneEl = this.sceneEl;
+     this.opened = false;
+     Events.emit('inspectorModeChanged', false);
+-    this.sceneEl.play();
+-    document.body.classList.remove('editor-opened');
+-  // @todo Removelisteners
++    sceneEl.play();
++    if (sceneEl.hasAttribute('aframe-inspector-removed-embedded')) {
++      sceneEl.setAttribute('embedded', '');
++      sceneEl.removeAttribute('aframe-inspector-removed-embedded');
++    }
++    document.body.classList.remove('aframe-inspector-opened');
++    sceneEl.resize();
+   },
+   addObject: function (object) {
+     var scope = this;"
+aframevr/aframe-inspector,275,b4d188234e08e9152df8f4979e985f12ed1c9b4a,src/css/main.css,modified,13,2,15,"@@ -2,6 +2,9 @@ body {
+   font-family: Helvetica, Arial, sans-serif;
+   font-size: 14px;
+   margin: 0;
++}
++
++body.aframe-inspector-opened {
+   overflow: hidden;
+ }
+ 
+@@ -162,7 +165,7 @@ input.number:focus {
+ }
+ 
+ #left-sidebar {
+-  position: absolute;
++  position: fixed;
+   left: 0;
+   top: 0;
+   bottom: 0;
+@@ -727,6 +730,10 @@ a.help-link:hover {
+   display: flex;
+   justify-content: flex-end;
+   align-items: stretch;
++  position: fixed;
++  top: 0;
++  bottom: 0;
++  right: 0;
+ }
+ 
+ #aframe-inspector-panels {
+@@ -736,6 +743,10 @@ a.help-link:hover {
+ 
+ /* This is a temporaly hack, we should style the editor instead of overwriting
+    the a-scene to fix the ""display: block"" issue. */
+-a-scene {
++.aframe-inspector-opened a-scene {
+   display: inline !important;
+ }
++
++.aframe-inspector-opened a-scene .a-canvas {
++  position: fixed;
++}"
+aframevr/aframe-inspector,275,b4d188234e08e9152df8f4979e985f12ed1c9b4a,src/lib/inspector.js,modified,17,5,22,"@@ -268,21 +268,33 @@ Inspector.prototype = {
+    * Open the editor UI
+    */
+   open: function () {
++    const sceneEl = this.sceneEl;
+     this.opened = true;
+     Events.emit('inspectorModeChanged', true);
+-    this.sceneEl.pause();
+-    document.body.classList.add('editor-opened');
++    sceneEl.pause();
++    if (sceneEl.hasAttribute('embedded')) {
++      // Remove embedded styles, but keep track of it.
++      sceneEl.removeAttribute('embedded');
++      sceneEl.setAttribute('aframe-inspector-removed-embedded');
++    }
++    document.body.classList.add('aframe-inspector-opened');
++    sceneEl.resize();
+   },
+   /**
+    * Closes the editor and gives the control back to the scene
+    * @return {[type]} [description]
+    */
+   close: function () {
++    const sceneEl = this.sceneEl;
+     this.opened = false;
+     Events.emit('inspectorModeChanged', false);
+-    this.sceneEl.play();
+-    document.body.classList.remove('editor-opened');
+-  // @todo Removelisteners
++    sceneEl.play();
++    if (sceneEl.hasAttribute('aframe-inspector-removed-embedded')) {
++      sceneEl.setAttribute('embedded', '');
++      sceneEl.removeAttribute('aframe-inspector-removed-embedded');
++    }
++    document.body.classList.remove('aframe-inspector-opened');
++    sceneEl.resize();
+   },
+   addObject: function (object) {
+     var scope = this;"

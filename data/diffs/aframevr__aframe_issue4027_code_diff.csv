@@ -1,0 +1,390 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe,4027,1d7d2791de752fa628b8e2159bb9cdf7cd20c51b,docs/core/entity.md,modified,4,0,4,"@@ -320,6 +320,10 @@ object:
+ entity.setAttribute('position', { x: 1, y: 2, z: 3 });
+ ```
+ 
++### `destroy ()`
++
++Clean up memory related to the entity such as clearing all components and their data.
++
+ #### Updating Multi-Property Component Data
+ 
+ To update component data for a multi-property component, we can pass the name"
+aframevr/aframe,4027,1d7d2791de752fa628b8e2159bb9cdf7cd20c51b,src/core/a-entity.js,modified,32,8,40,"@@ -100,7 +100,9 @@ var proto = Object.create(ANode.prototype, {
+       if (!this.parentEl) { return; }
+ 
+       // Remove components.
+-      for (componentName in this.components) { this.removeComponent(componentName); }
++      for (componentName in this.components) {
++        this.removeComponent(componentName, false);
++      }
+ 
+       if (this.isScene) { return; }
+ 
+@@ -377,7 +379,7 @@ var proto = Object.create(ANode.prototype, {
+   },
+ 
+   removeComponent: {
+-    value: function (name) {
++    value: function (name, destroy) {
+       var component;
+ 
+       component = this.components[name];
+@@ -387,16 +389,22 @@ var proto = Object.create(ANode.prototype, {
+       if (!component.initialized) {
+         this.addEventListener('componentinitialized', function tryRemoveLater (evt) {
+           if (evt.detail.name !== name) { return; }
+-          this.removeComponent(name);
++          this.removeComponent(name, destroy);
+           this.removeEventListener('componentinitialized', tryRemoveLater);
+         });
+         return;
+       }
+ 
+       component.pause();
+       component.remove();
+-      delete this.components[name];
+-      this.emit('componentremoved', component.evtDetail);
++
++      // Keep component attached to entity in case of just full entity detach.
++      if (destroy) {
++        component.destroy();
++        delete this.components[name];
++      }
++
++      this.emit('componentremoved', component.evtDetail, false);
+     },
+     writable: window.debug
+   },
+@@ -475,7 +483,7 @@ var proto = Object.create(ANode.prototype, {
+       if (component) {
+         // Remove component.
+         if (attrValue === null && !checkComponentDefined(this, attr)) {
+-          this.removeComponent(attr);
++          this.removeComponent(attr, true);
+           return;
+         }
+         // Component already initialized. Update component.
+@@ -502,7 +510,7 @@ var proto = Object.create(ANode.prototype, {
+ 
+       // Remove component.
+       if (component && propertyName === undefined) {
+-        this.removeComponent(attr);
++        this.removeComponent(attr, true);
+       }
+ 
+       // Reset component property value.
+@@ -645,7 +653,7 @@ var proto = Object.create(ANode.prototype, {
+                   this.components[component].handleMixinUpdate();
+                 } else {
+                   // Remove component if not explicitly defined.
+-                  this.removeComponent(component);
++                  this.removeComponent(component, true);
+                 }
+               }
+             }
+@@ -832,6 +840,22 @@ var proto = Object.create(ANode.prototype, {
+     value: function () {
+       this.sceneEl.components.inspector.openInspector(this);
+     }
++  },
++
++  /**
++   * Clean up memory and return memory to object pools.
++   */
++  destroy: {
++    value: function () {
++      var key;
++      if (this.el.parentNode) {
++        warn('Entity can only be destroyed if detached from scenegraph.');
++        return;
++      }
++      for (key in this.components) {
++        this.components[key].destroy();
++      }
++    }
+   }
+ });
+ "
+aframevr/aframe,4027,1d7d2791de752fa628b8e2159bb9cdf7cd20c51b,src/core/component.js,modified,10,17,27,"@@ -572,6 +572,16 @@ Component.prototype = {
+     for (eventName in this.events) {
+       this.el.removeEventListener(eventName, this.events[eventName]);
+     }
++  },
++
++  /**
++   * Release and free memory.
++   */
++  destroy: function () {
++    this.objectPool.recycle(this.attrValue);
++    this.objectPool.recycle(this.oldData);
++    this.objectPool.recycle(this.parsingAttrValue);
++    this.attrValue = this.oldData = this.parsingAttrValue = undefined;
+   }
+ };
+ 
+@@ -658,7 +668,6 @@ module.exports.registerComponent = function (name, definition) {
+   NewComponent.prototype.system = systems && systems.systems[name];
+   NewComponent.prototype.play = wrapPlay(NewComponent.prototype.play);
+   NewComponent.prototype.pause = wrapPause(NewComponent.prototype.pause);
+-  NewComponent.prototype.remove = wrapRemove(NewComponent.prototype.remove);
+ 
+   schema = utils.extend(processSchema(NewComponent.prototype.schema,
+                                       NewComponent.prototype.name));
+@@ -782,22 +791,6 @@ function wrapPlay (playMethod) {
+   };
+ }
+ 
+-/**
+- * Wrapper for defined remove method.
+- * Clean up memory.
+- *
+- * @param removeMethod {function} - Defined remove method.
+- */
+-function wrapRemove (removeMethod) {
+-  return function remove () {
+-    removeMethod.call(this);
+-    this.objectPool.recycle(this.attrValue);
+-    this.objectPool.recycle(this.oldData);
+-    this.objectPool.recycle(this.parsingAttrValue);
+-    this.attrValue = this.oldData = this.parsingAttrValue = undefined;
+-  };
+-}
+-
+ function isObject (value) {
+   return value && value.constructor === Object && !(value instanceof window.HTMLElement);
+ }"
+aframevr/aframe,4027,1d7d2791de752fa628b8e2159bb9cdf7cd20c51b,tests/components/geometry.test.js,modified,27,24,51,"@@ -7,8 +7,10 @@ var degToRad = require('index').THREE.Math.degToRad;
+  * parameters. That info is mostly lost when converting a Geometry to a BufferGeometry.
+  */
+ suite('geometry', function () {
++  let el;
++
+   setup(function (done) {
+-    var el = this.el = helpers.entityFactory();
++    el = helpers.entityFactory();
+     el.setAttribute('geometry', 'buffer: false; primitive: box;');
+     el.addEventListener('loaded', function () {
+       done();
+@@ -17,31 +19,29 @@ suite('geometry', function () {
+ 
+   suite('update', function () {
+     test('allows empty geometry', function () {
+-      this.el.setAttribute('geometry', '');
++      el.setAttribute('geometry', '');
+     });
+ 
+     test('creates geometry', function () {
+-      var mesh = this.el.getObject3D('mesh');
++      var mesh = el.getObject3D('mesh');
+       assert.ok(mesh.geometry);
+       assert.equal(mesh.geometry.type, 'BoxGeometry');
+     });
+ 
+     test('updates geometry', function () {
+-      var mesh = this.el.getObject3D('mesh');
+-      this.el.setAttribute('geometry', 'buffer: false; primitive: box; width: 5');
++      var mesh = el.getObject3D('mesh');
++      el.setAttribute('geometry', 'buffer: false; primitive: box; width: 5');
+       assert.equal(mesh.geometry.parameters.width, 5);
+     });
+ 
+     test('updates geometry for segment-related attribute', function () {
+-      var el = this.el;
+       var mesh = el.getObject3D('mesh');
+       el.setAttribute('geometry', 'buffer: false; primitive: sphere');
+       el.setAttribute('geometry', 'buffer: false; primitive: sphere; segmentsWidth: 8');
+       assert.equal(mesh.geometry.parameters.widthSegments, 8);
+     });
+ 
+     test('can change type of geometry', function () {
+-      var el = this.el;
+       var mesh = el.getObject3D('mesh');
+       el.setAttribute('geometry', 'buffer: false; primitive: sphere');
+       assert.equal(mesh.geometry.type, 'SphereGeometry');
+@@ -50,7 +50,6 @@ suite('geometry', function () {
+     });
+ 
+     test('disposes geometry', function () {
+-      var el = this.el;
+       var geometry = el.getObject3D('mesh').geometry;
+       var disposeSpy = this.sinon.spy(geometry, 'dispose');
+       assert.notOk(disposeSpy.called);
+@@ -61,22 +60,21 @@ suite('geometry', function () {
+ 
+   suite('remove', function () {
+     test('removes geometry', function () {
+-      var mesh = this.el.getObject3D('mesh');
+-      this.el.removeAttribute('geometry');
++      var mesh = el.getObject3D('mesh');
++      el.removeAttribute('geometry');
+       assert.equal(mesh.geometry.type, 'Geometry');
+     });
+ 
+     test('disposes geometry', function () {
+-      var geometry = this.el.getObject3D('mesh').geometry;
++      var geometry = el.getObject3D('mesh').geometry;
+       var disposeSpy = this.sinon.spy(geometry, 'dispose');
+-      this.el.removeAttribute('geometry');
++      el.removeAttribute('geometry');
+       assert.ok(disposeSpy.called);
+     });
+   });
+ 
+   suite('buffer', function () {
+     test('uses BufferGeometry', function () {
+-      var el = this.el;
+       assert.notEqual(el.getObject3D('mesh').geometry.type, 'BufferGeometry');
+       el.setAttribute('geometry', 'buffer', true);
+       assert.equal(el.getObject3D('mesh').geometry.type, 'BufferGeometry');
+@@ -85,16 +83,16 @@ suite('geometry', function () {
+ });
+ 
+ suite('standard geometries', function () {
++  let el;
+   setup(function (done) {
+-    var el = this.el = helpers.entityFactory();
++    el = helpers.entityFactory();
+     el.setAttribute('geometry', 'primitive: box');
+     el.addEventListener('loaded', function () {
+       done();
+     });
+   });
+ 
+   test('circle', function () {
+-    var el = this.el;
+     var geometry;
+     el.setAttribute('geometry', {
+       buffer: false, primitive: 'circle', radius: 5, segments: 4, thetaStart: 0, thetaLength: 350
+@@ -109,7 +107,6 @@ suite('standard geometries', function () {
+   });
+ 
+   test('cylinder', function () {
+-    var el = this.el;
+     var geometry;
+     el.setAttribute('geometry', {
+       buffer: false,
+@@ -136,7 +133,6 @@ suite('standard geometries', function () {
+   });
+ 
+   test('cone', function () {
+-    var el = this.el;
+     var geometry;
+     el.setAttribute('geometry', {
+       buffer: false,
+@@ -163,7 +159,6 @@ suite('standard geometries', function () {
+   });
+ 
+   test('icosahedron', function () {
+-    var el = this.el;
+     var geometry;
+     el.setAttribute('geometry', {
+       buffer: false, primitive: 'icosahedron', detail: 0, radius: 5});
+@@ -175,7 +170,6 @@ suite('standard geometries', function () {
+   });
+ 
+   test('plane', function () {
+-    var el = this.el;
+     var geometry;
+     el.setAttribute('geometry', {buffer: false, primitive: 'plane', width: 1, height: 2});
+ 
+@@ -186,7 +180,6 @@ suite('standard geometries', function () {
+   });
+ 
+   test('ring', function () {
+-    var el = this.el;
+     var geometry;
+     el.setAttribute('geometry', {
+       buffer: false, primitive: 'ring', radiusInner: 1, radiusOuter: 2, segmentsTheta: 3});
+@@ -199,7 +192,6 @@ suite('standard geometries', function () {
+   });
+ 
+   test('sphere', function () {
+-    var el = this.el;
+     var geometry;
+     el.setAttribute('geometry', {
+       buffer: false,
+@@ -224,7 +216,6 @@ suite('standard geometries', function () {
+   });
+ 
+   test('torus', function () {
+-    var el = this.el;
+     var geometry;
+     el.setAttribute('geometry', {
+       buffer: false,
+@@ -246,7 +237,6 @@ suite('standard geometries', function () {
+   });
+ 
+   test('torus knot', function () {
+-    var el = this.el;
+     var geometry;
+     el.setAttribute('geometry', {
+       buffer: false,
+@@ -270,7 +260,6 @@ suite('standard geometries', function () {
+   });
+ 
+   test('triangle', function () {
+-    var el = this.el;
+     var geometry;
+     el.setAttribute('geometry', {
+       buffer: false,
+@@ -294,4 +283,18 @@ suite('standard geometries', function () {
+     assert.equal(vertices[2].y, 8);
+     assert.equal(vertices[2].z, 9);
+   });
++
++  test('retains data on detach and reattach', function (done) {
++    helpers.elFactory().then(el => {
++      el.setAttribute('geometry', 'primitive', 'plane');
++      el.sceneEl.removeChild(el);
++      setTimeout(() => {
++        el.sceneEl.appendChild(el);
++        setTimeout(() => {
++          assert.equal(el.components.geometry.data.primitive, 'plane');
++          done();
++        });
++      });
++    });
++  });
+ });"
+aframevr/aframe,4027,1d7d2791de752fa628b8e2159bb9cdf7cd20c51b,tests/core/a-entity.test.js,modified,5,5,10,"@@ -80,8 +80,8 @@ suite('a-entity', function () {
+     const el2 = document.createElement('a-entity');
+     el2.object3D = new THREE.Mesh();
+     el2.setAttribute('geometry', 'primitive:plane');
+-    parentEl.appendChild(el2);
+     el2.addEventListener('loaded', afterFirstAttachment);
++    parentEl.appendChild(el2);
+ 
+     function afterFirstAttachment () {
+       el2.removeEventListener('loaded', afterFirstAttachment);
+@@ -93,18 +93,18 @@ suite('a-entity', function () {
+       assert.isTrue(el2.hasLoaded);
+ 
+       parentEl.removeChild(el2);
+-      process.nextTick(afterDetachment);
++      setTimeout(afterDetachment);
+     }
+ 
+     function afterDetachment () {
+       assert.equal(parentEl.object3D.children.length, 0);
+       assert.notOk(el2.parentEl);
+       assert.notOk(el2.parentNode);
+-      assert.notOk(el2.components.geometry);
++      assert.ok(el2.components.geometry);
+       assert.isFalse(el2.hasLoaded);
+ 
+-      parentEl.appendChild(el2);
+       el2.addEventListener('loaded', afterSecondAttachment);
++      parentEl.appendChild(el2);
+     }
+ 
+     function afterSecondAttachment () {
+@@ -544,7 +544,7 @@ suite('a-entity', function () {
+       assert.notEqual(el.sceneEl.behaviors.tock.indexOf(el.components.test), -1);
+       parentEl.removeChild(el);
+       process.nextTick(function () {
+-        assert.notOk('test' in el.components);
++        assert.ok('test' in el.components);
+         assert.equal(el.sceneEl.behaviors.tick.indexOf(el.components.test), -1);
+         assert.equal(el.sceneEl.behaviors.tock.indexOf(el.components.test), -1);
+         done();"

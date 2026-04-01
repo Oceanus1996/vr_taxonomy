@@ -1,0 +1,287 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe,395,9ca0120e6712dc7a22a19d956c180f0c578aff4e,examples/cylinders/index.html,modified,18,4,22,"@@ -9,14 +9,28 @@
+     <script src=""../../build/vr-markup.js""></script>
+   </head>
+   <body>
++    <vr-assets>
++      <vr-mixin id=""cylinder"" geometry=""primitive: cylinder""></vr-mixin>
++      <vr-mixin id=""open-ended"" geometry=""openEnded: true""
++                                material=""side: double""></vr-mixin>
++    </vr-assets>
+     <vr-scene stats=""true"">
+       <vr-object position=""0 0 20"">
+         <vr-object camera=""fov: 45"" look-controls wasd-controls></vr-object>
+       </vr-object>
+-      <vr-object position=""-10 0 0"" rotation=""45 0 -45"" geometry=""primitive: cylinder; radius: 2; height: 5; openEnded: false;"" material=""color: aqua""></vr-object>
+-      <vr-object position=""0 0 0"" rotation=""25 0 10"" geometry=""primitive: cylinder; radius: 4; height: 2; openEnded: true;"" material=""color: crimson""></vr-object>
+-      <vr-object position=""10 0 0"" rotation=""75 0 0"" geometry=""primitive: cylinder; radius: 2; height: 4; openEnded: false; thetaLength: 4.5"" material=""color: gold""></vr-object>
+-       <vr-object position=""0 4 0"" rotation=""0 0 0"" geometry=""primitive: cylinder; radius: 4; height: 2; openEnded: true; thetaLength: 3; thetaStart: 3"" material=""color: orchid""></vr-object>
++
++      <vr-object mixin=""cylinder"" position=""-10 0 0"" rotation=""45 0 -45""
++                 geometry=""radius: 2; height: 5;""
++                 material=""color: aqua""></vr-object>
++      <vr-object mixin=""open-ended cylinder"" rotation=""25 0 10""
++                 geometry=""radius: 4; height: 2""
++                 material=""color: crimson""></vr-object>
++      <vr-object mixin=""cylinder"" position=""10 0 0"" rotation=""75 0 0""
++                 geometry=""radius: 2; height: 4; thetaLength: 4.5""
++                 material=""color: gold; side: double""></vr-object>
++      <vr-object mixin=""open-ended cylinder"" position=""0 4 0""
++                 geometry=""radius: 4; height: 2; thetaLength: 3; thetaStart: 3""
++                 material=""color: orchid""></vr-object>
+     </vr-scene>
+   </body>
+ </html>"
+aframevr/aframe,395,9ca0120e6712dc7a22a19d956c180f0c578aff4e,src/components/material.js,modified,26,18,44,"@@ -23,6 +23,8 @@ var texturePromises = {};
+  * @params {string} repeat - X and Y value for size of texture repeating
+            (in UV units).
+  * @params {number} roughness - Parameter for physical/standard material.
++ * @params {string} [side=front] - Which side(s) to render (i.e., front, back,
++           both).
+  * @params {string} src - To load a texture. takes a selector to an img/video
+            element or a direct url().
+  * @params {boolean} transparent - Whether to render transparent the alpha
+@@ -41,6 +43,7 @@ module.exports.Component = registerComponent('material', {
+       reflectivity: 1.0,
+       repeat: '',
+       roughness: 0.5,
++      side: 'front',
+       src: '',
+       transparent: false,
+       width: 640
+@@ -71,7 +74,7 @@ module.exports.Component = registerComponent('material', {
+       var materialType = isStandardMaterial ? 'MeshStandardMaterial' : 'MeshBasicMaterial';
+       var materialData = {
+         color: new THREE.Color(data.color),
+-        side: this.getSides(),
++        side: getSide(data.side),
+         opacity: data.opacity,
+         transparent: data.transparent
+       };
+@@ -152,23 +155,6 @@ module.exports.Component = registerComponent('material', {
+     }
+   },
+ 
+-  /**
+-   * Returns an integer for which new material face sides will be rendered.
+-   *
+-   * @returns {Integer} `THREE.DoubleSide` (`0`) or `THREE.FrontSide` (`2`)
+-   */
+-  getSides: {
+-    value: function () {
+-      var geometry = this.el.components.geometry;
+-      if (geometry && geometry.data.openEnded) {
+-        // For performance reasons, we special case open-ended cylinders
+-        // for rendering both faces.
+-        return THREE.DoubleSide;
+-      }
+-      return THREE.FrontSide;
+-    }
+-  },
+-
+   /**
+    * Handle environment cubemap. Textures are cached in texturePromises.
+    *
+@@ -283,3 +269,25 @@ function loadVideoTexture (material, src, height, width) {
+   material.map = texture;
+   material.needsUpdate = true;
+ }
++
++/**
++ * Returns a three.js constant determining which material face sides to render
++ * based on the side parameter (passed as a component attribute).
++ *
++ * @param {string} [side=front] - `front`, `back`, or `double`.
++ * @returns {number} THREE.FrontSide, THREE.BackSide, or THREE.DoubleSide.
++ */
++function getSide (side) {
++  switch (side) {
++    case 'back': {
++      return THREE.BackSide;
++    }
++    case 'double': {
++      return THREE.DoubleSide;
++    }
++    default: {
++      // Including case `front`.
++      return THREE.FrontSide;
++    }
++  }
++}"
+aframevr/aframe,395,9ca0120e6712dc7a22a19d956c180f0c578aff4e,tests/components/material.test.js,modified,23,0,23,"@@ -1,5 +1,6 @@
+ /* global assert, process, setup, suite, test */
+ var entityFactory = require('../helpers.js').entityFactory;
++var THREE = require('vr-markup').THREE;
+ 
+ suite('material', function () {
+   'use strict';
+@@ -66,4 +67,26 @@ suite('material', function () {
+       });
+     });
+   });
++
++  suite('side', function (done) {
++    test('defaults to front side', function () {
++      assert.equal(this.el.object3D.material.side, THREE.FrontSide);
++    });
++
++    test('can be set to back', function () {
++      var el = this.el;
++      el.setAttribute('material', 'side: back');
++      process.nextTick(function () {
++        assert.equal(el.object3D.material.side, THREE.BackSide);
++      });
++    });
++
++    test('can be set to double', function () {
++      var el = this.el;
++      el.setAttribute('material', 'side: double');
++      process.nextTick(function () {
++        assert.equal(el.object3D.material.side, THREE.DoubleSide);
++      });
++    });
++  });
+ });"
+aframevr/aframe,395,26dac4d7affb0d35359f70058006d5db28031611,examples/cylinders/index.html,modified,18,4,22,"@@ -9,14 +9,28 @@
+     <script src=""../../build/vr-markup.js""></script>
+   </head>
+   <body>
++    <vr-assets>
++      <vr-mixin id=""cylinder"" geometry=""primitive: cylinder""></vr-mixin>
++      <vr-mixin id=""open-ended"" geometry=""openEnded: true""
++                                material=""side: double""></vr-mixin>
++    </vr-assets>
+     <vr-scene stats=""true"">
+       <vr-object position=""0 0 20"">
+         <vr-object camera=""fov: 45"" look-controls wasd-controls></vr-object>
+       </vr-object>
+-      <vr-object position=""-10 0 0"" rotation=""45 0 -45"" geometry=""primitive: cylinder; radius: 2; height: 5; openEnded: false;"" material=""color: aqua""></vr-object>
+-      <vr-object position=""0 0 0"" rotation=""25 0 10"" geometry=""primitive: cylinder; radius: 4; height: 2; openEnded: true;"" material=""color: crimson""></vr-object>
+-      <vr-object position=""10 0 0"" rotation=""75 0 0"" geometry=""primitive: cylinder; radius: 2; height: 4; openEnded: false; thetaLength: 4.5"" material=""color: gold""></vr-object>
+-       <vr-object position=""0 4 0"" rotation=""0 0 0"" geometry=""primitive: cylinder; radius: 4; height: 2; openEnded: true; thetaLength: 3; thetaStart: 3"" material=""color: orchid""></vr-object>
++
++      <vr-object mixin=""cylinder"" position=""-10 0 0"" rotation=""45 0 -45""
++                 geometry=""radius: 2; height: 5;""
++                 material=""color: aqua""></vr-object>
++      <vr-object mixin=""open-ended cylinder"" rotation=""25 0 10""
++                 geometry=""radius: 4; height: 2""
++                 material=""color: crimson""></vr-object>
++      <vr-object mixin=""cylinder"" position=""10 0 0"" rotation=""75 0 0""
++                 geometry=""radius: 2; height: 4; thetaLength: 4.5""
++                 material=""color: gold; side: double""></vr-object>
++      <vr-object mixin=""open-ended cylinder"" position=""0 4 0""
++                 geometry=""radius: 4; height: 2; thetaLength: 3; thetaStart: 3""
++                 material=""color: orchid""></vr-object>
+     </vr-scene>
+   </body>
+ </html>"
+aframevr/aframe,395,26dac4d7affb0d35359f70058006d5db28031611,src/components/material.js,modified,26,18,44,"@@ -23,6 +23,8 @@ var texturePromises = {};
+  * @params {string} repeat - X and Y value for size of texture repeating
+            (in UV units).
+  * @params {number} roughness - Parameter for physical/standard material.
++ * @params {string} [side=front] - Which side(s) to render (i.e., front, back,
++           both).
+  * @params {string} src - To load a texture. takes a selector to an img/video
+            element or a direct url().
+  * @params {boolean} transparent - Whether to render transparent the alpha
+@@ -41,6 +43,7 @@ module.exports.Component = registerComponent('material', {
+       reflectivity: 1.0,
+       repeat: '',
+       roughness: 0.5,
++      side: 'front',
+       src: '',
+       transparent: false,
+       width: 640
+@@ -71,7 +74,7 @@ module.exports.Component = registerComponent('material', {
+       var materialType = isStandardMaterial ? 'MeshStandardMaterial' : 'MeshBasicMaterial';
+       var materialData = {
+         color: new THREE.Color(data.color),
+-        side: this.getSides(),
++        side: getSide(data.side),
+         opacity: data.opacity,
+         transparent: data.transparent
+       };
+@@ -152,23 +155,6 @@ module.exports.Component = registerComponent('material', {
+     }
+   },
+ 
+-  /**
+-   * Returns an integer for which new material face sides will be rendered.
+-   *
+-   * @returns {Integer} `THREE.DoubleSide` (`0`) or `THREE.FrontSide` (`2`)
+-   */
+-  getSides: {
+-    value: function () {
+-      var geometry = this.el.components.geometry;
+-      if (geometry && geometry.data.openEnded) {
+-        // For performance reasons, we special case open-ended cylinders
+-        // for rendering both faces.
+-        return THREE.DoubleSide;
+-      }
+-      return THREE.FrontSide;
+-    }
+-  },
+-
+   /**
+    * Handle environment cubemap. Textures are cached in texturePromises.
+    *
+@@ -283,3 +269,25 @@ function loadVideoTexture (material, src, height, width) {
+   material.map = texture;
+   material.needsUpdate = true;
+ }
++
++/**
++ * Returns a three.js constant determining which material face sides to render
++ * based on the side parameter (passed as a component attribute).
++ *
++ * @param {string} [side=front] - `front`, `back`, or `double`.
++ * @returns {number} THREE.FrontSide, THREE.BackSide, or THREE.DoubleSide.
++ */
++function getSide (side) {
++  switch (side) {
++    case 'back': {
++      return THREE.BackSide;
++    }
++    case 'double': {
++      return THREE.DoubleSide;
++    }
++    default: {
++      // Including case `front`.
++      return THREE.FrontSide;
++    }
++  }
++}"
+aframevr/aframe,395,26dac4d7affb0d35359f70058006d5db28031611,tests/components/material.test.js,modified,23,0,23,"@@ -1,5 +1,6 @@
+ /* global assert, process, setup, suite, test */
+ var entityFactory = require('../helpers.js').entityFactory;
++var THREE = require('vr-markup').THREE;
+ 
+ suite('material', function () {
+   'use strict';
+@@ -66,4 +67,26 @@ suite('material', function () {
+       });
+     });
+   });
++
++  suite('side', function (done) {
++    test('defaults to front side', function () {
++      assert.equal(this.el.object3D.material.side, THREE.FrontSide);
++    });
++
++    test('can be set to back', function () {
++      var el = this.el;
++      el.setAttribute('material', 'side: back');
++      process.nextTick(function () {
++        assert.equal(el.object3D.material.side, THREE.BackSide);
++      });
++    });
++
++    test('can be set to double', function () {
++      var el = this.el;
++      el.setAttribute('material', 'side: double');
++      process.nextTick(function () {
++        assert.equal(el.object3D.material.side, THREE.DoubleSide);
++      });
++    });
++  });
+ });"

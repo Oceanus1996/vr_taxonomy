@@ -1,0 +1,119 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+Dominux/DGS,14,5a251a5267375c396696891d039415edb856761c,frontend/src/App.tsx,modified,1,1,2,"@@ -7,7 +7,7 @@ import GridSphere from './logic/spheres/grid_sphere'
+ 
+ const App: Component = () => {
+ 	// TODO: bind changing grid size
+-	const [gridSize, _setGridSize] = createSignal(5)
++	const [gridSize, _setGridSize] = createSignal(9)
+ 
+ 	let canvas: HTMLCanvasElement
+ "
+Dominux/DGS,14,5a251a5267375c396696891d039415edb856761c,gamelib/src/game.rs,modified,12,3,15,"@@ -19,8 +19,8 @@ where
+     rules: R,
+     pub(crate) field: F,
+     move_number: Option<usize>,
+-    black_groups: Vec<Group>,
+-    white_groups: Vec<Group>,
++    pub(crate) black_groups: Vec<Group>,
++    pub(crate) white_groups: Vec<Group>,
+     black_score: Option<usize>,
+     white_score: Option<usize>,
+ }
+@@ -63,6 +63,7 @@ where
+         let cloned_field = self.field.clone();
+         let point = cloned_field.get_point(point_id);
+         let mut deadlist = vec![];
++        let mut dead_groups = vec![];
+ 
+         // 1. Checking if the point is empty and not blocked
+         match point.borrow().inner.status {
+@@ -115,7 +116,10 @@ where
+                     let sum = dead_group.points_amount();
+ 
+                     // Adding stones into deadlist
+-                    deadlist.extend(dead_group.points_ids);
++                    deadlist.extend(dead_group.points_ids.clone());
++
++                    // Adding groups into dead groups
++                    dead_groups.push(dead_group);
+                     sum
+                 })
+                 .sum();
+@@ -128,6 +132,11 @@ where
+ 
+         // 5. Post removing dead enemies groups actions
+         if are_there_dead_enemies_groups {
++            // Deleting enemies groups amd emptying their points
++            for group in dead_groups {
++                group.delete(&cloned_field)
++            }
++
+             // Adding new group
+             players_groups.push(group);
+ "
+Dominux/DGS,14,5a251a5267375c396696891d039415edb856761c,gamelib/src/group.rs,modified,14,1,15,"@@ -1,6 +1,10 @@
+ use std::{collections::HashSet, fmt::Debug, ops::BitOrAssign};
+ 
+-use crate::{aliases::PointID, field::Field, point::PlayerColor};
++use crate::{
++    aliases::PointID,
++    field::Field,
++    point::{PlayerColor, PointStatus},
++};
+ 
+ #[derive(Clone)]
+ pub struct Group {
+@@ -66,6 +70,15 @@ impl Group {
+             .collect()
+     }
+ 
++    pub fn delete<T>(self, field: &T)
++    where
++        T: Field,
++    {
++        for id in self.points_ids {
++            field.get_point(&id).borrow_mut().inner.status = PointStatus::Empty;
++        }
++    }
++
+     /// Defines if the group has a liberty with the given point id
+     #[inline]
+     pub fn has_liberty(&self, point_id: &PointID) -> bool {"
+Dominux/DGS,14,5a251a5267375c396696891d039415edb856761c,gamelib/src/tests/test_stone_remover.rs,modified,18,2,20,"@@ -1,3 +1,5 @@
++use crate::{field::Field, point::PointStatus};
++
+ use super::fixtures::game::create_and_start_game;
+ 
+ #[test]
+@@ -12,15 +14,29 @@ fn test_remove_one_stone() {
+     and the black is to surround the first white stone till it's dead
+      */
+     {
+-        let moves = [15, 25, 24, 100, 26, 101];
++        let white_stone_to_die = 25;
++        let moves = [15, white_stone_to_die, 24, 100, 26, 101];
+         for id in moves {
+             let deadlist = game.make_move(&id).unwrap();
+             assert_eq!(deadlist.len(), 0)
+         }
+ 
++        let white_groups_count = game.inner.white_groups.len();
++
+         // Making killing move
+         let deadlist = game.make_move(&35).unwrap();
+-        assert_eq!(deadlist.len(), 1)
++
++        assert_eq!(deadlist.len(), 1);
++        assert_eq!(game.inner.white_groups.len() + 1, white_groups_count);
++        assert!(matches!(
++            game.inner
++                .field
++                .get_point(&white_stone_to_die)
++                .borrow()
++                .inner
++                .status,
++            PointStatus::Empty
++        ))
+     }
+ }
+ "

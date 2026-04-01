@@ -1,0 +1,38 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+GodotVR/godot_openvr,106,b62358f70f7f83ee2386292146928bcdfddef3a1,src/open_vr/OpenVRPose.cpp,modified,3,2,5,"@@ -30,10 +30,10 @@ void OpenVRPose::_process(float delta) {
+ 		if (is_active) {
+ 			// printf(""Pose is active\n"");
+ 
+-			float world_scale = 1.0; // need to get this
++			float world_scale = godot::arvr_api->godot_arvr_get_worldscale();
+ 			Transform transform;
+ 			ovr->transform_from_matrix((godot_transform *)&transform, &pose_data.pose.mDeviceToAbsoluteTracking, world_scale);
+-			set_transform(transform);
++			set_transform(server->get_reference_frame() * transform);
+ 		} else {
+ 			// printf(""Pose is inactive\n"");
+ 		}
+@@ -42,6 +42,7 @@ void OpenVRPose::_process(float delta) {
+ 
+ OpenVRPose::OpenVRPose() {
+ 	ovr = openvr_data::retain_singleton();
++	server = ARVRServer::get_singleton();
+ 	action_idx = -1;
+ 	is_active = false;
+ 	on_hand = 0;"
+GodotVR/godot_openvr,106,b62358f70f7f83ee2386292146928bcdfddef3a1,src/open_vr/OpenVRPose.h,modified,2,0,2,"@@ -5,6 +5,7 @@
+ #define OPENVR_POSE_H
+ 
+ #include ""openvr_data.h""
++#include <ARVRServer.hpp>
+ #include <Spatial.hpp>
+ #include <String.hpp>
+ 
+@@ -15,6 +16,7 @@ class OpenVRPose : public Spatial {
+ 
+ private:
+ 	openvr_data *ovr;
++	ARVRServer *server;
+ 
+ 	String action;
+ 	int action_idx;"

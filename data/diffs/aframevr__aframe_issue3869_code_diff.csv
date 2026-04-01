@@ -1,0 +1,161 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe,3869,3b5055ab13473d49b9feca1ee04765f05edadddd,package.json,modified,1,1,2,"@@ -50,7 +50,7 @@
+     ""style-attr"": ""^1.0.2"",
+     ""three"": ""0.95.0"",
+     ""three-bmfont-text"": ""^2.1.0"",
+-    ""webvr-polyfill"": ""^0.10.5""
++    ""webvr-polyfill"": ""^0.10.8""
+   },
+   ""devDependencies"": {
+     ""browserify"": ""^13.1.0"","
+aframevr/aframe,3869,3b5055ab13473d49b9feca1ee04765f05edadddd,src/index.js,modified,22,21,43,"@@ -1,6 +1,27 @@
+-var utils = require('./utils/');
++// Polyfill `Promise`.
++window.Promise = window.Promise || require('promise-polyfill');
++
++// WebVR polyfill
++// Check before the polyfill runs.
++window.hasNativeWebVRImplementation = !!window.navigator.getVRDisplays ||
++                                      !!window.navigator.getVRDevices;
+ 
++var isIOSOlderThan10 = require('./utils/isIOSOlderThan10');
++// Workaround for iOS Safari canvas sizing issues in stereo (webvr-polyfill/issues/102).
++// Only for iOS on versions older than 10.
++var bufferScale = isIOSOlderThan10(window.navigator.userAgent) ? 1 / window.devicePixelRatio : 1;
++var WebVRPolyfill = require('webvr-polyfill');
++var polyfillConfig = {
++  BUFFER_SCALE: bufferScale,
++  CARDBOARD_UI_DISABLED: true,
++  ROTATE_INSTRUCTIONS_DISABLED: true
++};
++
++window.webvrpolyfill = new WebVRPolyfill(polyfillConfig);
++
++var utils = require('./utils/');
+ var debug = utils.debug;
++
+ var error = debug('A-Frame:error');
+ var warn = debug('A-Frame:warn');
+ 
+@@ -20,26 +41,6 @@ if (window.location.protocol === 'file:') {
+     'https://aframe.io/docs/0.5.0/introduction/getting-started.html#using-a-local-server.');
+ }
+ 
+-// Polyfill `Promise`.
+-window.Promise = window.Promise || require('promise-polyfill');
+-
+-// WebVR polyfill
+-// Check before the polyfill runs.
+-window.hasNativeWebVRImplementation = !!window.navigator.getVRDisplays ||
+-                                      !!window.navigator.getVRDevices;
+-var WebVRPolyfill = require('webvr-polyfill');
+-var polyfillConfig = {
+-  BUFFER_SCALE: 1,
+-  CARDBOARD_UI_DISABLED: true,
+-  ROTATE_INSTRUCTIONS_DISABLED: true
+-};
+-// Workaround for iOS Safari canvas sizing issues in stereo (webvr-polyfill/issues/102).
+-// Only for iOS on versions older than 10.
+-if (utils.device.isIOSOlderThan10(window.navigator.userAgent)) {
+-  polyfillConfig.BUFFER_SCALE = 1 / window.devicePixelRatio;
+-}
+-window.webvrpolyfill = new WebVRPolyfill(polyfillConfig);
+-
+ require('present'); // Polyfill `performance.now()`.
+ 
+ // CSS."
+aframevr/aframe,3869,3b5055ab13473d49b9feca1ee04765f05edadddd,src/utils/device.js,modified,0,7,7,"@@ -88,13 +88,6 @@ module.exports.isLandscape = function () {
+   return orientation === 90 || orientation === -90;
+ };
+ 
+-/**
+- * Check if device is iOS and older than version 10.
+- */
+-module.exports.isIOSOlderThan10 = function (userAgent) {
+-  return /(iphone|ipod|ipad).*os.(7_|8_|9_)/i.test(userAgent);
+-};
+-
+ /**
+  * Check if running in a browser or spoofed browser (bundler).
+  * We need to check a node api that isn't mocked on either side."
+aframevr/aframe,3869,3b5055ab13473d49b9feca1ee04765f05edadddd,src/utils/isIOSOlderThan10.js,added,6,0,6,"@@ -0,0 +1,6 @@
++/**
++ * Check if device is iOS and older than version 10.
++ */
++module.exports = function isIOSOlderThan10 (userAgent) {
++  return /(iphone|ipod|ipad).*os.(7_|8_|9_)/i.test(userAgent);
++};"
+aframevr/aframe,3869,3b5055ab13473d49b9feca1ee04765f05edadddd,tests/utils/device.test.js,modified,0,32,32,"@@ -10,38 +10,6 @@ suite('isTablet', function () {
+   });
+ });
+ 
+-suite('isIOSOlderThan10', function () {
+-  test('is true for versions 7, 8, 9', function () {
+-    var v7 = `Mozilla/5.0 (iPad; CPU OS 7_0 like Mac OS X) AppleWebKit/537.51.1
+-             (KHTML, like Gecko) CriOS/30.0.1599.12 Mobile/11A465 Safari/8536.25
+-             (3B92C18B-D9DE-4CB7-A02A-22FD2AF17C8F)`;
+-    var v8 = `Mozilla/5.0 (iPhone; CPU iPhone OS 8_3 like Mac OS X) AppleWebKit/600.1.4
+-              (KHTML, like Gecko) Version/8.0 Mobile/12F70 Safari/600.1.4`;
+-    var v9 = `Mozilla/5.0 (iPad; CPU OS 9_0 like Mac OS X) AppleWebKit/601.1.17
+-              (KHTML, like Gecko) Version/8.0 Mobile/13A175 Safari/600.1.4`;
+-    assert.ok(device.isIOSOlderThan10(v7));
+-    assert.ok(device.isIOSOlderThan10(v8));
+-    assert.ok(device.isIOSOlderThan10(v9));
+-  });
+-
+-  test('is false for version 10, 11, 12', function () {
+-    var v10 = `Mozilla/5.0 (iPhone; CPU iPhone OS 10_0 like Mac OS X) AppleWebKit/602.1.38
+-              (KHTML, like Gecko) Version/10.0 Mobile/14A5297c Safari/602.1`;
+-    var v11 = `Mozilla/5.0 (iPhone; CPU iPhone OS 11_1 like Mac OS X) AppleWebKit/602.1.38
+-              (KHTML, like Gecko) Version/11.0 Mobile/14A5297c Safari/602.1`;
+-    var v12 = `Mozilla/5.0 (iPhone; CPU iPhone OS 12_7 like Mac OS X) AppleWebKit/602.1.38
+-              (KHTML, like Gecko) Version/12.0 Mobile/14A5297c Safari/602.1`;
+-    assert.notOk(device.isIOSOlderThan10(v10));
+-    assert.notOk(device.isIOSOlderThan10(v11));
+-    assert.notOk(device.isIOSOlderThan10(v12));
+-  });
+-
+-  test('is false for webview', function () {
+-    var chromeiOS = `Mozilla/5.0 (iPhone; CPU iPhone OS 12_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/70.0.3538.60 Mobile/15E148 Safari/605.1`;
+-    assert.notOk(device.isIOSOlderThan10(chromeiOS));
+-  });
+-});
+-
+ suite('environment', function () {
+   test('isNodeEnvironment is false for browser tests', function () {
+     assert.strictEqual(device.isNodeEnvironment, false);"
+aframevr/aframe,3869,3b5055ab13473d49b9feca1ee04765f05edadddd,tests/utils/isIOSOlderThan10.test.js,added,34,0,34,"@@ -0,0 +1,34 @@
++/* global assert, suite, test */
++var isIOSOlderThan10 = require('utils/isIOSOlderThan10');
++
++suite('isIOSOlderThan10', function () {
++  test('is true for versions 7, 8, 9', function () {
++    var v7 = `Mozilla/5.0 (iPad; CPU OS 7_0 like Mac OS X) AppleWebKit/537.51.1
++             (KHTML, like Gecko) CriOS/30.0.1599.12 Mobile/11A465 Safari/8536.25
++             (3B92C18B-D9DE-4CB7-A02A-22FD2AF17C8F)`;
++    var v8 = `Mozilla/5.0 (iPhone; CPU iPhone OS 8_3 like Mac OS X) AppleWebKit/600.1.4
++              (KHTML, like Gecko) Version/8.0 Mobile/12F70 Safari/600.1.4`;
++    var v9 = `Mozilla/5.0 (iPad; CPU OS 9_0 like Mac OS X) AppleWebKit/601.1.17
++              (KHTML, like Gecko) Version/8.0 Mobile/13A175 Safari/600.1.4`;
++    assert.ok(isIOSOlderThan10(v7));
++    assert.ok(isIOSOlderThan10(v8));
++    assert.ok(isIOSOlderThan10(v9));
++  });
++
++  test('is false for version 10, 11, 12', function () {
++    var v10 = `Mozilla/5.0 (iPhone; CPU iPhone OS 10_0 like Mac OS X) AppleWebKit/602.1.38
++              (KHTML, like Gecko) Version/10.0 Mobile/14A5297c Safari/602.1`;
++    var v11 = `Mozilla/5.0 (iPhone; CPU iPhone OS 11_1 like Mac OS X) AppleWebKit/602.1.38
++              (KHTML, like Gecko) Version/11.0 Mobile/14A5297c Safari/602.1`;
++    var v12 = `Mozilla/5.0 (iPhone; CPU iPhone OS 12_7 like Mac OS X) AppleWebKit/602.1.38
++              (KHTML, like Gecko) Version/12.0 Mobile/14A5297c Safari/602.1`;
++    assert.notOk(isIOSOlderThan10(v10));
++    assert.notOk(isIOSOlderThan10(v11));
++    assert.notOk(isIOSOlderThan10(v12));
++  });
++
++  test('is false for webview', function () {
++    var chromeiOS = `Mozilla/5.0 (iPhone; CPU iPhone OS 12_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/70.0.3538.60 Mobile/15E148 Safari/605.1`;
++    assert.notOk(isIOSOlderThan10(chromeiOS));
++  });
++});"

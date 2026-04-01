@@ -1,0 +1,39 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe,483,9fcba0ec6eb985623300ee75e4ded65cab360d03,src/core/vr-animation.js,modified,13,2,15,"@@ -46,7 +46,19 @@ module.exports = registerElement('vr-animation', {
+   prototype: Object.create(VRNode.prototype, {
+     attachedCallback: {
+       value: function () {
+-        this.el = this.parentNode;
++        var el = this.el = this.parentNode;
++        if (el.isNode) {
++          this.init();
++        } else {
++          // To handle elements that are not yet `<vr-object>`s (e.g., templates).
++          el.addEventListener('nodeready', this.init.bind(this));
++        }
++      },
++      writable: window.debug
++    },
++
++    init: {
++      value: function () {
+         this.bindMethods();
+         this.applyMixin();
+         this.update();
+@@ -145,7 +157,6 @@ module.exports = registerElement('vr-animation', {
+         // Stop previous tween.
+         var data = this.data;
+         var el = this.el;
+-
+         var attribute = data.attribute;
+         var begin = parseInt(data.begin, 10);
+         var currentValue = el.getComputedAttribute(attribute);"
+aframevr/aframe,483,9fcba0ec6eb985623300ee75e4ded65cab360d03,src/core/vr-scene.js,modified,2,0,2,"@@ -287,6 +287,8 @@ var VRScene = module.exports = registerElement('vr-scene', {
+ 
+     resizeCanvas: {
+       value: function () {
++        // It's possible that the camera is not injected yet.
++        if (!this.cameraEl) { return; }
+         var camera = this.cameraEl.components.camera.camera;
+         var size = this.getCanvasSize();
+         // Updates camera"

@@ -1,0 +1,1387 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+secondlife/viewer,3332,1c98827,indra/llrender/llfontgl.cpp,modified,1,0,1,"@@ -58,6 +58,7 @@ F32 LLFontGL::sVertDPI = 96.f;
+ F32 LLFontGL::sHorizDPI = 96.f;
+ F32 LLFontGL::sScaleX = 1.f;
+ F32 LLFontGL::sScaleY = 1.f;
++S32 LLFontGL::sResolutionGeneration = 0;
+ bool LLFontGL::sDisplayFont = true ;
+ std::string LLFontGL::sAppDir;
+ "
+secondlife/viewer,3332,1c98827,indra/llrender/llfontgl.h,modified,1,0,1,"@@ -224,6 +224,7 @@ class LLFontGL
+     static F32 sHorizDPI;
+     static F32 sScaleX;
+     static F32 sScaleY;
++    static S32 sResolutionGeneration;
+     static bool sDisplayFont ;
+     static std::string sAppDir;         // For loading fonts
+ "
+secondlife/viewer,3332,1c98827,indra/llrender/llfontvertexbuffer.cpp,modified,3,1,4,"@@ -146,7 +146,8 @@ S32 LLFontVertexBuffer::render(
+              || mLastScaleY != LLFontGL::sScaleY
+              || mLastVertDPI != LLFontGL::sVertDPI
+              || mLastHorizDPI != LLFontGL::sHorizDPI
+-             || mLastOrigin != LLFontGL::sCurOrigin)
++             || mLastOrigin != LLFontGL::sCurOrigin
++             || mLastResGeneration != LLFontGL::sResolutionGeneration)
+     {
+         genBuffers(fontp, text, begin_offset, x, y, color, halign, valign,
+             style, shadow, max_chars, max_pixels, right_x, use_ellipses, use_color);
+@@ -201,6 +202,7 @@ void LLFontVertexBuffer::genBuffers(
+     mLastVertDPI = LLFontGL::sVertDPI;
+     mLastHorizDPI = LLFontGL::sHorizDPI;
+     mLastOrigin = LLFontGL::sCurOrigin;
++    mLastResGeneration = LLFontGL::sResolutionGeneration;
+ 
+     if (right_x)
+     {"
+secondlife/viewer,3332,1c98827,indra/llrender/llfontvertexbuffer.h,modified,1,0,1,"@@ -117,6 +117,7 @@ class LLFontVertexBuffer
+     F32 mLastScaleY = 1.f;
+     F32 mLastVertDPI = 0.f;
+     F32 mLastHorizDPI = 0.f;
++    S32 mLastResGeneration = 0;
+     LLCoordGL mLastOrigin;
+ 
+     static bool sEnableBufferCollection;"
+secondlife/viewer,3332,1c98827,indra/newview/llviewerwindow.cpp,modified,1,0,1,"@@ -1750,6 +1750,7 @@ bool LLViewerWindow::handleDPIChanged(LLWindow *window, F32 ui_scale_factor, S32
+     {
+         LLViewerWindow::reshape(window_width, window_height);
+         mResDirty = true;
++        LLFontGL::sResolutionGeneration++;
+         return true;
+     }
+     else"
+secondlife/viewer,3332,3a251b1,indra/llrender/llfontgl.cpp,modified,1,0,1,"@@ -58,6 +58,7 @@ F32 LLFontGL::sVertDPI = 96.f;
+ F32 LLFontGL::sHorizDPI = 96.f;
+ F32 LLFontGL::sScaleX = 1.f;
+ F32 LLFontGL::sScaleY = 1.f;
++S32 LLFontGL::sResolutionGeneration = 0;
+ bool LLFontGL::sDisplayFont = true ;
+ std::string LLFontGL::sAppDir;
+ "
+secondlife/viewer,3332,3a251b1,indra/llrender/llfontgl.h,modified,1,0,1,"@@ -224,6 +224,7 @@ class LLFontGL
+     static F32 sHorizDPI;
+     static F32 sScaleX;
+     static F32 sScaleY;
++    static S32 sResolutionGeneration;
+     static bool sDisplayFont ;
+     static std::string sAppDir;         // For loading fonts
+ "
+secondlife/viewer,3332,3a251b1,indra/llrender/llfontvertexbuffer.cpp,modified,3,1,4,"@@ -146,7 +146,8 @@ S32 LLFontVertexBuffer::render(
+              || mLastScaleY != LLFontGL::sScaleY
+              || mLastVertDPI != LLFontGL::sVertDPI
+              || mLastHorizDPI != LLFontGL::sHorizDPI
+-             || mLastOrigin != LLFontGL::sCurOrigin)
++             || mLastOrigin != LLFontGL::sCurOrigin
++             || mLastResGeneration != LLFontGL::sResolutionGeneration)
+     {
+         genBuffers(fontp, text, begin_offset, x, y, color, halign, valign,
+             style, shadow, max_chars, max_pixels, right_x, use_ellipses, use_color);
+@@ -201,6 +202,7 @@ void LLFontVertexBuffer::genBuffers(
+     mLastVertDPI = LLFontGL::sVertDPI;
+     mLastHorizDPI = LLFontGL::sHorizDPI;
+     mLastOrigin = LLFontGL::sCurOrigin;
++    mLastResGeneration = LLFontGL::sResolutionGeneration;
+ 
+     if (right_x)
+     {"
+secondlife/viewer,3332,3a251b1,indra/llrender/llfontvertexbuffer.h,modified,1,0,1,"@@ -117,6 +117,7 @@ class LLFontVertexBuffer
+     F32 mLastScaleY = 1.f;
+     F32 mLastVertDPI = 0.f;
+     F32 mLastHorizDPI = 0.f;
++    S32 mLastResGeneration = 0;
+     LLCoordGL mLastOrigin;
+ 
+     static bool sEnableBufferCollection;"
+secondlife/viewer,3332,3a251b1,indra/newview/llviewerwindow.cpp,modified,1,0,1,"@@ -1750,6 +1750,7 @@ bool LLViewerWindow::handleDPIChanged(LLWindow *window, F32 ui_scale_factor, S32
+     {
+         LLViewerWindow::reshape(window_width, window_height);
+         mResDirty = true;
++        LLFontGL::sResolutionGeneration++;
+         return true;
+     }
+     else"
+secondlife/viewer,3332,45f37e9,indra/llwindow/llwindowcallbacks.cpp,modified,5,0,5,"@@ -194,6 +194,11 @@ bool LLWindowCallbacks::handleDPIChanged(LLWindow *window, F32 ui_scale_factor,
+     return false;
+ }
+ 
++bool LLWindowCallbacks::handleDisplayChanged()
++{
++    return false;
++}
++
+ bool LLWindowCallbacks::handleWindowDidChangeScreen(LLWindow *window)
+ {
+     return false;"
+secondlife/viewer,3332,45f37e9,indra/llwindow/llwindowcallbacks.h,modified,1,0,1,"@@ -69,6 +69,7 @@ class LLWindowCallbacks
+     virtual bool handleTimerEvent(LLWindow *window);
+     virtual bool handleDeviceChange(LLWindow *window);
+     virtual bool handleDPIChanged(LLWindow *window, F32 ui_scale_factor, S32 window_width, S32 window_height);
++    virtual bool handleDisplayChanged();
+     virtual bool handleWindowDidChangeScreen(LLWindow *window);
+ 
+     enum DragNDropAction {"
+secondlife/viewer,3332,45f37e9,indra/llwindow/llwindowwin32.cpp,modified,5,4,9,"@@ -81,10 +81,6 @@ const S32   BITS_PER_PIXEL = 32;
+ const S32   MAX_NUM_RESOLUTIONS = 32;
+ const F32   ICON_FLASH_TIME = 0.5f;
+ 
+-#ifndef WM_DPICHANGED
+-#define WM_DPICHANGED 0x02E0
+-#endif
+-
+ #ifndef USER_DEFAULT_SCREEN_DPI
+ #define USER_DEFAULT_SCREEN_DPI 96 // Win7
+ #endif
+@@ -2969,6 +2965,11 @@ LRESULT CALLBACK LLWindowWin32::mainWindowProc(HWND h_wnd, UINT u_msg, WPARAM w_
+             return 0;
+         }
+ 
++        case WM_DISPLAYCHANGE:
++        {
++            WINDOW_IMP_POST(window_imp->mCallbacks->handleDisplayChanged());
++        }
++
+         case WM_SETFOCUS:
+         {
+             LL_PROFILE_ZONE_NAMED_CATEGORY_WIN32(""mwp - WM_SETFOCUS"");"
+secondlife/viewer,3332,45f37e9,indra/newview/llviewerwindow.cpp,modified,7,1,8,"@@ -1746,11 +1746,11 @@ bool LLViewerWindow::handleDeviceChange(LLWindow *window)
+ 
+ bool LLViewerWindow::handleDPIChanged(LLWindow *window, F32 ui_scale_factor, S32 window_width, S32 window_height)
+ {
++    LLFontGL::sResolutionGeneration++;
+     if (ui_scale_factor >= MIN_UI_SCALE && ui_scale_factor <= MAX_UI_SCALE)
+     {
+         LLViewerWindow::reshape(window_width, window_height);
+         mResDirty = true;
+-        LLFontGL::sResolutionGeneration++;
+         return true;
+     }
+     else
+@@ -1760,6 +1760,12 @@ bool LLViewerWindow::handleDPIChanged(LLWindow *window, F32 ui_scale_factor, S32
+     }
+ }
+ 
++bool LLViewerWindow::handleDisplayChanged()
++{
++    LLFontGL::sResolutionGeneration++;
++    return false;
++}
++
+ bool LLViewerWindow::handleWindowDidChangeScreen(LLWindow *window)
+ {
+     LLCoordScreen window_rect;"
+secondlife/viewer,3332,45f37e9,indra/newview/llviewerwindow.h,modified,1,0,1,"@@ -225,6 +225,7 @@ class LLViewerWindow : public LLWindowCallbacks
+     /*virtual*/ bool handleTimerEvent(LLWindow *window);
+     /*virtual*/ bool handleDeviceChange(LLWindow *window);
+     /*virtual*/ bool handleDPIChanged(LLWindow *window, F32 ui_scale_factor, S32 window_width, S32 window_height);
++    /*virtual*/ bool handleDisplayChanged();
+     /*virtual*/ bool handleWindowDidChangeScreen(LLWindow *window);
+ 
+     /*virtual*/ void handlePingWatchdog(LLWindow *window, const char * msg);"
+secondlife/viewer,3332,6ae1158,indra/llrender/llfontgl.cpp,modified,5,3,8,"@@ -272,9 +272,11 @@ S32 LLFontGL::render(const LLWString &wstr, S32 begin_offset, F32 x, F32 y, cons
+     const LLFontGlyphInfo* next_glyph = NULL;
+ 
+     static constexpr S32 GLYPH_BATCH_SIZE = 30;
+-    static thread_local LLVector4a vertices[GLYPH_BATCH_SIZE * 6];
+-    static thread_local LLVector2 uvs[GLYPH_BATCH_SIZE * 6];
+-    static thread_local LLColor4U colors[GLYPH_BATCH_SIZE * 6];
++    // string can have more than one glyph per char, make sure last one can fit
++    static constexpr S32 BUFFER_SIZE = GLYPH_BATCH_SIZE * 2;
++    static thread_local LLVector4a vertices[BUFFER_SIZE * 6];
++    static thread_local LLVector2 uvs[BUFFER_SIZE * 6];
++    static thread_local LLColor4U colors[BUFFER_SIZE * 6];
+ 
+     LLColor4U text_color(color);
+     // Preserve the transparency to render fading emojis in fading text (e.g."
+secondlife/viewer,3332,6ae1158,indra/llrender/llfontvertexbuffer.cpp,modified,2,0,2,"@@ -147,6 +147,7 @@ S32 LLFontVertexBuffer::render(
+              || mLastVertDPI != LLFontGL::sVertDPI
+              || mLastHorizDPI != LLFontGL::sHorizDPI
+              || mLastOrigin != LLFontGL::sCurOrigin
++             || mLastDepth != LLFontGL::sCurDepth
+              || mLastResGeneration != LLFontGL::sResolutionGeneration)
+     {
+         genBuffers(fontp, text, begin_offset, x, y, color, halign, valign,
+@@ -202,6 +203,7 @@ void LLFontVertexBuffer::genBuffers(
+     mLastVertDPI = LLFontGL::sVertDPI;
+     mLastHorizDPI = LLFontGL::sHorizDPI;
+     mLastOrigin = LLFontGL::sCurOrigin;
++    mLastDepth = LLFontGL::sCurDepth;
+     mLastResGeneration = LLFontGL::sResolutionGeneration;
+ 
+     if (right_x)"
+secondlife/viewer,3332,6ae1158,indra/llrender/llfontvertexbuffer.h,modified,1,0,1,"@@ -117,6 +117,7 @@ class LLFontVertexBuffer
+     F32 mLastScaleY = 1.f;
+     F32 mLastVertDPI = 0.f;
+     F32 mLastHorizDPI = 0.f;
++    F32 mLastDepth = 0.f;
+     S32 mLastResGeneration = 0;
+     LLCoordGL mLastOrigin;
+ "
+secondlife/viewer,3332,6ae1158,indra/llwindow/llwindowcallbacks.cpp,modified,5,0,5,"@@ -194,6 +194,11 @@ bool LLWindowCallbacks::handleDPIChanged(LLWindow *window, F32 ui_scale_factor,
+     return false;
+ }
+ 
++bool LLWindowCallbacks::handleDisplayChanged()
++{
++    return false;
++}
++
+ bool LLWindowCallbacks::handleWindowDidChangeScreen(LLWindow *window)
+ {
+     return false;"
+secondlife/viewer,3332,6ae1158,indra/llwindow/llwindowcallbacks.h,modified,1,0,1,"@@ -69,6 +69,7 @@ class LLWindowCallbacks
+     virtual bool handleTimerEvent(LLWindow *window);
+     virtual bool handleDeviceChange(LLWindow *window);
+     virtual bool handleDPIChanged(LLWindow *window, F32 ui_scale_factor, S32 window_width, S32 window_height);
++    virtual bool handleDisplayChanged();
+     virtual bool handleWindowDidChangeScreen(LLWindow *window);
+ 
+     enum DragNDropAction {"
+secondlife/viewer,3332,6ae1158,indra/llwindow/llwindowwin32.cpp,modified,5,4,9,"@@ -81,10 +81,6 @@ const S32   BITS_PER_PIXEL = 32;
+ const S32   MAX_NUM_RESOLUTIONS = 32;
+ const F32   ICON_FLASH_TIME = 0.5f;
+ 
+-#ifndef WM_DPICHANGED
+-#define WM_DPICHANGED 0x02E0
+-#endif
+-
+ #ifndef USER_DEFAULT_SCREEN_DPI
+ #define USER_DEFAULT_SCREEN_DPI 96 // Win7
+ #endif
+@@ -2969,6 +2965,11 @@ LRESULT CALLBACK LLWindowWin32::mainWindowProc(HWND h_wnd, UINT u_msg, WPARAM w_
+             return 0;
+         }
+ 
++        case WM_DISPLAYCHANGE:
++        {
++            WINDOW_IMP_POST(window_imp->mCallbacks->handleDisplayChanged());
++        }
++
+         case WM_SETFOCUS:
+         {
+             LL_PROFILE_ZONE_NAMED_CATEGORY_WIN32(""mwp - WM_SETFOCUS"");"
+secondlife/viewer,3332,6ae1158,indra/newview/llviewerwindow.cpp,modified,9,1,10,"@@ -1746,11 +1746,11 @@ bool LLViewerWindow::handleDeviceChange(LLWindow *window)
+ 
+ bool LLViewerWindow::handleDPIChanged(LLWindow *window, F32 ui_scale_factor, S32 window_width, S32 window_height)
+ {
++    LLFontGL::sResolutionGeneration++;
+     if (ui_scale_factor >= MIN_UI_SCALE && ui_scale_factor <= MAX_UI_SCALE)
+     {
+         LLViewerWindow::reshape(window_width, window_height);
+         mResDirty = true;
+-        LLFontGL::sResolutionGeneration++;
+         return true;
+     }
+     else
+@@ -1760,6 +1760,12 @@ bool LLViewerWindow::handleDPIChanged(LLWindow *window, F32 ui_scale_factor, S32
+     }
+ }
+ 
++bool LLViewerWindow::handleDisplayChanged()
++{
++    LLFontGL::sResolutionGeneration++;
++    return false;
++}
++
+ bool LLViewerWindow::handleWindowDidChangeScreen(LLWindow *window)
+ {
+     LLCoordScreen window_rect;
+@@ -1928,6 +1934,7 @@ LLViewerWindow::LLViewerWindow(const Params& p)
+     mDisplayScale.setVec(llmax(1.f / mWindow->getPixelAspectRatio(), 1.f), llmax(mWindow->getPixelAspectRatio(), 1.f));
+     mDisplayScale *= ui_scale_factor;
+     LLUI::setScaleFactor(mDisplayScale);
++    LLFontGL::sResolutionGeneration++;
+ 
+     {
+         LLCoordWindow size;
+@@ -2495,6 +2502,7 @@ void LLViewerWindow::reshape(S32 width, S32 height)
+ 
+         bool display_scale_changed = mDisplayScale != LLUI::getScaleFactor();
+         LLUI::setScaleFactor(mDisplayScale);
++        LLFontGL::sResolutionGeneration++;
+ 
+         // update our window rectangle
+         mWindowRectScaled.mRight = mWindowRectScaled.mLeft + ll_round((F32)width / mDisplayScale.mV[VX]);"
+secondlife/viewer,3332,6ae1158,indra/newview/llviewerwindow.h,modified,1,0,1,"@@ -225,6 +225,7 @@ class LLViewerWindow : public LLWindowCallbacks
+     /*virtual*/ bool handleTimerEvent(LLWindow *window);
+     /*virtual*/ bool handleDeviceChange(LLWindow *window);
+     /*virtual*/ bool handleDPIChanged(LLWindow *window, F32 ui_scale_factor, S32 window_width, S32 window_height);
++    /*virtual*/ bool handleDisplayChanged();
+     /*virtual*/ bool handleWindowDidChangeScreen(LLWindow *window);
+ 
+     /*virtual*/ void handlePingWatchdog(LLWindow *window, const char * msg);"
+secondlife/viewer,3332,5663a77,indra/llrender/llfontvertexbuffer.cpp,modified,2,0,2,"@@ -147,6 +147,7 @@ S32 LLFontVertexBuffer::render(
+              || mLastVertDPI != LLFontGL::sVertDPI
+              || mLastHorizDPI != LLFontGL::sHorizDPI
+              || mLastOrigin != LLFontGL::sCurOrigin
++             || mLastDepth != LLFontGL::sCurDepth
+              || mLastResGeneration != LLFontGL::sResolutionGeneration)
+     {
+         genBuffers(fontp, text, begin_offset, x, y, color, halign, valign,
+@@ -202,6 +203,7 @@ void LLFontVertexBuffer::genBuffers(
+     mLastVertDPI = LLFontGL::sVertDPI;
+     mLastHorizDPI = LLFontGL::sHorizDPI;
+     mLastOrigin = LLFontGL::sCurOrigin;
++    mLastDepth = LLFontGL::sCurDepth;
+     mLastResGeneration = LLFontGL::sResolutionGeneration;
+ 
+     if (right_x)"
+secondlife/viewer,3332,5663a77,indra/llrender/llfontvertexbuffer.h,modified,1,0,1,"@@ -117,6 +117,7 @@ class LLFontVertexBuffer
+     F32 mLastScaleY = 1.f;
+     F32 mLastVertDPI = 0.f;
+     F32 mLastHorizDPI = 0.f;
++    F32 mLastDepth = 0.f;
+     S32 mLastResGeneration = 0;
+     LLCoordGL mLastOrigin;
+ "
+secondlife/viewer,3332,5663a77,indra/llwindow/llwindowcallbacks.cpp,modified,5,0,5,"@@ -194,6 +194,11 @@ bool LLWindowCallbacks::handleDPIChanged(LLWindow *window, F32 ui_scale_factor,
+     return false;
+ }
+ 
++bool LLWindowCallbacks::handleDisplayChanged()
++{
++    return false;
++}
++
+ bool LLWindowCallbacks::handleWindowDidChangeScreen(LLWindow *window)
+ {
+     return false;"
+secondlife/viewer,3332,5663a77,indra/llwindow/llwindowcallbacks.h,modified,1,0,1,"@@ -69,6 +69,7 @@ class LLWindowCallbacks
+     virtual bool handleTimerEvent(LLWindow *window);
+     virtual bool handleDeviceChange(LLWindow *window);
+     virtual bool handleDPIChanged(LLWindow *window, F32 ui_scale_factor, S32 window_width, S32 window_height);
++    virtual bool handleDisplayChanged();
+     virtual bool handleWindowDidChangeScreen(LLWindow *window);
+ 
+     enum DragNDropAction {"
+secondlife/viewer,3332,5663a77,indra/llwindow/llwindowwin32.cpp,modified,5,4,9,"@@ -81,10 +81,6 @@ const S32   BITS_PER_PIXEL = 32;
+ const S32   MAX_NUM_RESOLUTIONS = 32;
+ const F32   ICON_FLASH_TIME = 0.5f;
+ 
+-#ifndef WM_DPICHANGED
+-#define WM_DPICHANGED 0x02E0
+-#endif
+-
+ #ifndef USER_DEFAULT_SCREEN_DPI
+ #define USER_DEFAULT_SCREEN_DPI 96 // Win7
+ #endif
+@@ -2969,6 +2965,11 @@ LRESULT CALLBACK LLWindowWin32::mainWindowProc(HWND h_wnd, UINT u_msg, WPARAM w_
+             return 0;
+         }
+ 
++        case WM_DISPLAYCHANGE:
++        {
++            WINDOW_IMP_POST(window_imp->mCallbacks->handleDisplayChanged());
++        }
++
+         case WM_SETFOCUS:
+         {
+             LL_PROFILE_ZONE_NAMED_CATEGORY_WIN32(""mwp - WM_SETFOCUS"");"
+secondlife/viewer,3332,5663a77,indra/newview/llviewerwindow.cpp,modified,9,1,10,"@@ -1746,11 +1746,11 @@ bool LLViewerWindow::handleDeviceChange(LLWindow *window)
+ 
+ bool LLViewerWindow::handleDPIChanged(LLWindow *window, F32 ui_scale_factor, S32 window_width, S32 window_height)
+ {
++    LLFontGL::sResolutionGeneration++;
+     if (ui_scale_factor >= MIN_UI_SCALE && ui_scale_factor <= MAX_UI_SCALE)
+     {
+         LLViewerWindow::reshape(window_width, window_height);
+         mResDirty = true;
+-        LLFontGL::sResolutionGeneration++;
+         return true;
+     }
+     else
+@@ -1760,6 +1760,12 @@ bool LLViewerWindow::handleDPIChanged(LLWindow *window, F32 ui_scale_factor, S32
+     }
+ }
+ 
++bool LLViewerWindow::handleDisplayChanged()
++{
++    LLFontGL::sResolutionGeneration++;
++    return false;
++}
++
+ bool LLViewerWindow::handleWindowDidChangeScreen(LLWindow *window)
+ {
+     LLCoordScreen window_rect;
+@@ -1928,6 +1934,7 @@ LLViewerWindow::LLViewerWindow(const Params& p)
+     mDisplayScale.setVec(llmax(1.f / mWindow->getPixelAspectRatio(), 1.f), llmax(mWindow->getPixelAspectRatio(), 1.f));
+     mDisplayScale *= ui_scale_factor;
+     LLUI::setScaleFactor(mDisplayScale);
++    LLFontGL::sResolutionGeneration++;
+ 
+     {
+         LLCoordWindow size;
+@@ -2495,6 +2502,7 @@ void LLViewerWindow::reshape(S32 width, S32 height)
+ 
+         bool display_scale_changed = mDisplayScale != LLUI::getScaleFactor();
+         LLUI::setScaleFactor(mDisplayScale);
++        LLFontGL::sResolutionGeneration++;
+ 
+         // update our window rectangle
+         mWindowRectScaled.mRight = mWindowRectScaled.mLeft + ll_round((F32)width / mDisplayScale.mV[VX]);"
+secondlife/viewer,3332,5663a77,indra/newview/llviewerwindow.h,modified,1,0,1,"@@ -225,6 +225,7 @@ class LLViewerWindow : public LLWindowCallbacks
+     /*virtual*/ bool handleTimerEvent(LLWindow *window);
+     /*virtual*/ bool handleDeviceChange(LLWindow *window);
+     /*virtual*/ bool handleDPIChanged(LLWindow *window, F32 ui_scale_factor, S32 window_width, S32 window_height);
++    /*virtual*/ bool handleDisplayChanged();
+     /*virtual*/ bool handleWindowDidChangeScreen(LLWindow *window);
+ 
+     /*virtual*/ void handlePingWatchdog(LLWindow *window, const char * msg);"
+secondlife/viewer,3332,7f2d033,indra/llrender/llfontgl.cpp,modified,11,4,15,"@@ -272,9 +272,11 @@ S32 LLFontGL::render(const LLWString &wstr, S32 begin_offset, F32 x, F32 y, cons
+     const LLFontGlyphInfo* next_glyph = NULL;
+ 
+     static constexpr S32 GLYPH_BATCH_SIZE = 30;
+-    static thread_local LLVector4a vertices[GLYPH_BATCH_SIZE * 6];
+-    static thread_local LLVector2 uvs[GLYPH_BATCH_SIZE * 6];
+-    static thread_local LLColor4U colors[GLYPH_BATCH_SIZE * 6];
++    // string can have more than one glyph per char, make sure last one can fit
++    static constexpr S32 BUFFER_SIZE = GLYPH_BATCH_SIZE * 2;
++    static thread_local LLVector4a vertices[BUFFER_SIZE * 6];
++    static thread_local LLVector2 uvs[BUFFER_SIZE * 6];
++    static thread_local LLColor4U colors[BUFFER_SIZE * 6];
+ 
+     LLColor4U text_color(color);
+     // Preserve the transparency to render fading emojis in fading text (e.g.
+@@ -283,6 +285,7 @@ S32 LLFontGL::render(const LLWString &wstr, S32 begin_offset, F32 x, F32 y, cons
+ 
+     std::pair<EFontGlyphType, S32> bitmap_entry = std::make_pair(EFontGlyphType::Grayscale, -1);
+     S32 glyph_count = 0;
++    llwchar last_char = wstr[begin_offset];
+     for (i = begin_offset; i < begin_offset + length; i++)
+     {
+         llwchar wch = wstr[i];
+@@ -300,7 +303,7 @@ S32 LLFontGL::render(const LLWString &wstr, S32 begin_offset, F32 x, F32 y, cons
+         }
+         // Per-glyph bitmap texture.
+         std::pair<EFontGlyphType, S32> next_bitmap_entry = fgi->mBitmapEntry;
+-        if (next_bitmap_entry != bitmap_entry)
++        if (next_bitmap_entry != bitmap_entry || last_char != wch)
+         {
+             // Actually draw the queued glyphs before switching their texture;
+             // otherwise the queued glyphs will be taken from wrong textures.
+@@ -317,6 +320,10 @@ S32 LLFontGL::render(const LLWString &wstr, S32 begin_offset, F32 x, F32 y, cons
+             bitmap_entry = next_bitmap_entry;
+             LLImageGL* font_image = font_bitmap_cache->getImageGL(bitmap_entry.first, bitmap_entry.second);
+             gGL.getTexUnit(0)->bind(font_image);
++
++            // For multi-byte characters just draw each time character changes
++            // Might be overkill and might be better to actually detect multybite
++            last_char = wch;
+         }
+ 
+         if ((start_x + scaled_max_pixels) < (cur_x + fgi->mXBearing + fgi->mWidth))"
+secondlife/viewer,3332,b3e4d15,indra/llrender/llfontgl.cpp,modified,11,4,15,"@@ -272,9 +272,11 @@ S32 LLFontGL::render(const LLWString &wstr, S32 begin_offset, F32 x, F32 y, cons
+     const LLFontGlyphInfo* next_glyph = NULL;
+ 
+     static constexpr S32 GLYPH_BATCH_SIZE = 30;
+-    static thread_local LLVector4a vertices[GLYPH_BATCH_SIZE * 6];
+-    static thread_local LLVector2 uvs[GLYPH_BATCH_SIZE * 6];
+-    static thread_local LLColor4U colors[GLYPH_BATCH_SIZE * 6];
++    // string can have more than one glyph per char, make sure last one can fit
++    static constexpr S32 BUFFER_SIZE = GLYPH_BATCH_SIZE * 2;
++    static thread_local LLVector4a vertices[BUFFER_SIZE * 6];
++    static thread_local LLVector2 uvs[BUFFER_SIZE * 6];
++    static thread_local LLColor4U colors[BUFFER_SIZE * 6];
+ 
+     LLColor4U text_color(color);
+     // Preserve the transparency to render fading emojis in fading text (e.g.
+@@ -283,6 +285,7 @@ S32 LLFontGL::render(const LLWString &wstr, S32 begin_offset, F32 x, F32 y, cons
+ 
+     std::pair<EFontGlyphType, S32> bitmap_entry = std::make_pair(EFontGlyphType::Grayscale, -1);
+     S32 glyph_count = 0;
++    llwchar last_char = wstr[begin_offset];
+     for (i = begin_offset; i < begin_offset + length; i++)
+     {
+         llwchar wch = wstr[i];
+@@ -300,7 +303,7 @@ S32 LLFontGL::render(const LLWString &wstr, S32 begin_offset, F32 x, F32 y, cons
+         }
+         // Per-glyph bitmap texture.
+         std::pair<EFontGlyphType, S32> next_bitmap_entry = fgi->mBitmapEntry;
+-        if (next_bitmap_entry != bitmap_entry)
++        if (next_bitmap_entry != bitmap_entry || last_char != wch)
+         {
+             // Actually draw the queued glyphs before switching their texture;
+             // otherwise the queued glyphs will be taken from wrong textures.
+@@ -317,6 +320,10 @@ S32 LLFontGL::render(const LLWString &wstr, S32 begin_offset, F32 x, F32 y, cons
+             bitmap_entry = next_bitmap_entry;
+             LLImageGL* font_image = font_bitmap_cache->getImageGL(bitmap_entry.first, bitmap_entry.second);
+             gGL.getTexUnit(0)->bind(font_image);
++
++            // For multi-byte characters just draw each time character changes
++            // Might be overkill and might be better to detect multybyte
++            last_char = wch;
+         }
+ 
+         if ((start_x + scaled_max_pixels) < (cur_x + fgi->mXBearing + fgi->mWidth))"
+secondlife/viewer,3332,10da536,indra/llwindow/llwindowcallbacks.cpp,modified,5,0,5,"@@ -194,6 +194,11 @@ bool LLWindowCallbacks::handleDPIChanged(LLWindow *window, F32 ui_scale_factor,
+     return false;
+ }
+ 
++bool LLWindowCallbacks::handleDisplayChanged()
++{
++    return false;
++}
++
+ bool LLWindowCallbacks::handleWindowDidChangeScreen(LLWindow *window)
+ {
+     return false;"
+secondlife/viewer,3332,10da536,indra/llwindow/llwindowcallbacks.h,modified,1,0,1,"@@ -69,6 +69,7 @@ class LLWindowCallbacks
+     virtual bool handleTimerEvent(LLWindow *window);
+     virtual bool handleDeviceChange(LLWindow *window);
+     virtual bool handleDPIChanged(LLWindow *window, F32 ui_scale_factor, S32 window_width, S32 window_height);
++    virtual bool handleDisplayChanged();
+     virtual bool handleWindowDidChangeScreen(LLWindow *window);
+ 
+     enum DragNDropAction {"
+secondlife/viewer,3332,10da536,indra/llwindow/llwindowwin32.cpp,modified,5,4,9,"@@ -81,10 +81,6 @@ const S32   BITS_PER_PIXEL = 32;
+ const S32   MAX_NUM_RESOLUTIONS = 32;
+ const F32   ICON_FLASH_TIME = 0.5f;
+ 
+-#ifndef WM_DPICHANGED
+-#define WM_DPICHANGED 0x02E0
+-#endif
+-
+ #ifndef USER_DEFAULT_SCREEN_DPI
+ #define USER_DEFAULT_SCREEN_DPI 96 // Win7
+ #endif
+@@ -2969,6 +2965,11 @@ LRESULT CALLBACK LLWindowWin32::mainWindowProc(HWND h_wnd, UINT u_msg, WPARAM w_
+             return 0;
+         }
+ 
++        case WM_DISPLAYCHANGE:
++        {
++            WINDOW_IMP_POST(window_imp->mCallbacks->handleDisplayChanged());
++        }
++
+         case WM_SETFOCUS:
+         {
+             LL_PROFILE_ZONE_NAMED_CATEGORY_WIN32(""mwp - WM_SETFOCUS"");"
+secondlife/viewer,3332,10da536,indra/newview/llviewerwindow.cpp,modified,9,1,10,"@@ -1746,11 +1746,11 @@ bool LLViewerWindow::handleDeviceChange(LLWindow *window)
+ 
+ bool LLViewerWindow::handleDPIChanged(LLWindow *window, F32 ui_scale_factor, S32 window_width, S32 window_height)
+ {
++    LLFontGL::sResolutionGeneration++;
+     if (ui_scale_factor >= MIN_UI_SCALE && ui_scale_factor <= MAX_UI_SCALE)
+     {
+         LLViewerWindow::reshape(window_width, window_height);
+         mResDirty = true;
+-        LLFontGL::sResolutionGeneration++;
+         return true;
+     }
+     else
+@@ -1760,6 +1760,12 @@ bool LLViewerWindow::handleDPIChanged(LLWindow *window, F32 ui_scale_factor, S32
+     }
+ }
+ 
++bool LLViewerWindow::handleDisplayChanged()
++{
++    LLFontGL::sResolutionGeneration++;
++    return false;
++}
++
+ bool LLViewerWindow::handleWindowDidChangeScreen(LLWindow *window)
+ {
+     LLCoordScreen window_rect;
+@@ -1928,6 +1934,7 @@ LLViewerWindow::LLViewerWindow(const Params& p)
+     mDisplayScale.setVec(llmax(1.f / mWindow->getPixelAspectRatio(), 1.f), llmax(mWindow->getPixelAspectRatio(), 1.f));
+     mDisplayScale *= ui_scale_factor;
+     LLUI::setScaleFactor(mDisplayScale);
++    LLFontGL::sResolutionGeneration++;
+ 
+     {
+         LLCoordWindow size;
+@@ -2495,6 +2502,7 @@ void LLViewerWindow::reshape(S32 width, S32 height)
+ 
+         bool display_scale_changed = mDisplayScale != LLUI::getScaleFactor();
+         LLUI::setScaleFactor(mDisplayScale);
++        LLFontGL::sResolutionGeneration++;
+ 
+         // update our window rectangle
+         mWindowRectScaled.mRight = mWindowRectScaled.mLeft + ll_round((F32)width / mDisplayScale.mV[VX]);"
+secondlife/viewer,3332,10da536,indra/newview/llviewerwindow.h,modified,1,0,1,"@@ -225,6 +225,7 @@ class LLViewerWindow : public LLWindowCallbacks
+     /*virtual*/ bool handleTimerEvent(LLWindow *window);
+     /*virtual*/ bool handleDeviceChange(LLWindow *window);
+     /*virtual*/ bool handleDPIChanged(LLWindow *window, F32 ui_scale_factor, S32 window_width, S32 window_height);
++    /*virtual*/ bool handleDisplayChanged();
+     /*virtual*/ bool handleWindowDidChangeScreen(LLWindow *window);
+ 
+     /*virtual*/ void handlePingWatchdog(LLWindow *window, const char * msg);"
+secondlife/viewer,3332,eb8003b,indra/llrender/llfontgl.cpp,modified,11,4,15,"@@ -272,9 +272,11 @@ S32 LLFontGL::render(const LLWString &wstr, S32 begin_offset, F32 x, F32 y, cons
+     const LLFontGlyphInfo* next_glyph = NULL;
+ 
+     static constexpr S32 GLYPH_BATCH_SIZE = 30;
+-    static thread_local LLVector4a vertices[GLYPH_BATCH_SIZE * 6];
+-    static thread_local LLVector2 uvs[GLYPH_BATCH_SIZE * 6];
+-    static thread_local LLColor4U colors[GLYPH_BATCH_SIZE * 6];
++    // string can have more than one glyph per char, make sure last one can fit
++    static constexpr S32 BUFFER_SIZE = GLYPH_BATCH_SIZE * 2;
++    static thread_local LLVector4a vertices[BUFFER_SIZE * 6];
++    static thread_local LLVector2 uvs[BUFFER_SIZE * 6];
++    static thread_local LLColor4U colors[BUFFER_SIZE * 6];
+ 
+     LLColor4U text_color(color);
+     // Preserve the transparency to render fading emojis in fading text (e.g.
+@@ -283,6 +285,7 @@ S32 LLFontGL::render(const LLWString &wstr, S32 begin_offset, F32 x, F32 y, cons
+ 
+     std::pair<EFontGlyphType, S32> bitmap_entry = std::make_pair(EFontGlyphType::Grayscale, -1);
+     S32 glyph_count = 0;
++    llwchar last_char = wstr[begin_offset];
+     for (i = begin_offset; i < begin_offset + length; i++)
+     {
+         llwchar wch = wstr[i];
+@@ -300,7 +303,7 @@ S32 LLFontGL::render(const LLWString &wstr, S32 begin_offset, F32 x, F32 y, cons
+         }
+         // Per-glyph bitmap texture.
+         std::pair<EFontGlyphType, S32> next_bitmap_entry = fgi->mBitmapEntry;
+-        if (next_bitmap_entry != bitmap_entry)
++        if (next_bitmap_entry != bitmap_entry || last_char != wch)
+         {
+             // Actually draw the queued glyphs before switching their texture;
+             // otherwise the queued glyphs will be taken from wrong textures.
+@@ -317,6 +320,10 @@ S32 LLFontGL::render(const LLWString &wstr, S32 begin_offset, F32 x, F32 y, cons
+             bitmap_entry = next_bitmap_entry;
+             LLImageGL* font_image = font_bitmap_cache->getImageGL(bitmap_entry.first, bitmap_entry.second);
+             gGL.getTexUnit(0)->bind(font_image);
++
++            // For multi-byte characters just draw each time character changes
++            // Might be overkill and might be better to detect multybyte
++            last_char = wch;
+         }
+ 
+         if ((start_x + scaled_max_pixels) < (cur_x + fgi->mXBearing + fgi->mWidth))"
+secondlife/viewer,3332,bc84cb0,indra/llwindow/llwindowcallbacks.cpp,modified,5,0,5,"@@ -194,6 +194,11 @@ bool LLWindowCallbacks::handleDPIChanged(LLWindow *window, F32 ui_scale_factor,
+     return false;
+ }
+ 
++bool LLWindowCallbacks::handleDisplayChanged()
++{
++    return false;
++}
++
+ bool LLWindowCallbacks::handleWindowDidChangeScreen(LLWindow *window)
+ {
+     return false;"
+secondlife/viewer,3332,bc84cb0,indra/llwindow/llwindowcallbacks.h,modified,1,0,1,"@@ -69,6 +69,7 @@ class LLWindowCallbacks
+     virtual bool handleTimerEvent(LLWindow *window);
+     virtual bool handleDeviceChange(LLWindow *window);
+     virtual bool handleDPIChanged(LLWindow *window, F32 ui_scale_factor, S32 window_width, S32 window_height);
++    virtual bool handleDisplayChanged();
+     virtual bool handleWindowDidChangeScreen(LLWindow *window);
+ 
+     enum DragNDropAction {"
+secondlife/viewer,3332,bc84cb0,indra/llwindow/llwindowwin32.cpp,modified,5,4,9,"@@ -81,10 +81,6 @@ const S32   BITS_PER_PIXEL = 32;
+ const S32   MAX_NUM_RESOLUTIONS = 32;
+ const F32   ICON_FLASH_TIME = 0.5f;
+ 
+-#ifndef WM_DPICHANGED
+-#define WM_DPICHANGED 0x02E0
+-#endif
+-
+ #ifndef USER_DEFAULT_SCREEN_DPI
+ #define USER_DEFAULT_SCREEN_DPI 96 // Win7
+ #endif
+@@ -2969,6 +2965,11 @@ LRESULT CALLBACK LLWindowWin32::mainWindowProc(HWND h_wnd, UINT u_msg, WPARAM w_
+             return 0;
+         }
+ 
++        case WM_DISPLAYCHANGE:
++        {
++            WINDOW_IMP_POST(window_imp->mCallbacks->handleDisplayChanged());
++        }
++
+         case WM_SETFOCUS:
+         {
+             LL_PROFILE_ZONE_NAMED_CATEGORY_WIN32(""mwp - WM_SETFOCUS"");"
+secondlife/viewer,3332,bc84cb0,indra/newview/llviewerwindow.cpp,modified,9,1,10,"@@ -1746,11 +1746,11 @@ bool LLViewerWindow::handleDeviceChange(LLWindow *window)
+ 
+ bool LLViewerWindow::handleDPIChanged(LLWindow *window, F32 ui_scale_factor, S32 window_width, S32 window_height)
+ {
++    LLFontGL::sResolutionGeneration++;
+     if (ui_scale_factor >= MIN_UI_SCALE && ui_scale_factor <= MAX_UI_SCALE)
+     {
+         LLViewerWindow::reshape(window_width, window_height);
+         mResDirty = true;
+-        LLFontGL::sResolutionGeneration++;
+         return true;
+     }
+     else
+@@ -1760,6 +1760,12 @@ bool LLViewerWindow::handleDPIChanged(LLWindow *window, F32 ui_scale_factor, S32
+     }
+ }
+ 
++bool LLViewerWindow::handleDisplayChanged()
++{
++    LLFontGL::sResolutionGeneration++;
++    return false;
++}
++
+ bool LLViewerWindow::handleWindowDidChangeScreen(LLWindow *window)
+ {
+     LLCoordScreen window_rect;
+@@ -1928,6 +1934,7 @@ LLViewerWindow::LLViewerWindow(const Params& p)
+     mDisplayScale.setVec(llmax(1.f / mWindow->getPixelAspectRatio(), 1.f), llmax(mWindow->getPixelAspectRatio(), 1.f));
+     mDisplayScale *= ui_scale_factor;
+     LLUI::setScaleFactor(mDisplayScale);
++    LLFontGL::sResolutionGeneration++;
+ 
+     {
+         LLCoordWindow size;
+@@ -2495,6 +2502,7 @@ void LLViewerWindow::reshape(S32 width, S32 height)
+ 
+         bool display_scale_changed = mDisplayScale != LLUI::getScaleFactor();
+         LLUI::setScaleFactor(mDisplayScale);
++        LLFontGL::sResolutionGeneration++;
+ 
+         // update our window rectangle
+         mWindowRectScaled.mRight = mWindowRectScaled.mLeft + ll_round((F32)width / mDisplayScale.mV[VX]);"
+secondlife/viewer,3332,bc84cb0,indra/newview/llviewerwindow.h,modified,1,0,1,"@@ -225,6 +225,7 @@ class LLViewerWindow : public LLWindowCallbacks
+     /*virtual*/ bool handleTimerEvent(LLWindow *window);
+     /*virtual*/ bool handleDeviceChange(LLWindow *window);
+     /*virtual*/ bool handleDPIChanged(LLWindow *window, F32 ui_scale_factor, S32 window_width, S32 window_height);
++    /*virtual*/ bool handleDisplayChanged();
+     /*virtual*/ bool handleWindowDidChangeScreen(LLWindow *window);
+ 
+     /*virtual*/ void handlePingWatchdog(LLWindow *window, const char * msg);"
+secondlife/viewer,3332,6a78b5b,indra/llrender/llfontgl.cpp,modified,11,4,15,"@@ -272,9 +272,11 @@ S32 LLFontGL::render(const LLWString &wstr, S32 begin_offset, F32 x, F32 y, cons
+     const LLFontGlyphInfo* next_glyph = NULL;
+ 
+     static constexpr S32 GLYPH_BATCH_SIZE = 30;
+-    static thread_local LLVector4a vertices[GLYPH_BATCH_SIZE * 6];
+-    static thread_local LLVector2 uvs[GLYPH_BATCH_SIZE * 6];
+-    static thread_local LLColor4U colors[GLYPH_BATCH_SIZE * 6];
++    // string can have more than one glyph per char, make sure last one can fit
++    static constexpr S32 BUFFER_SIZE = GLYPH_BATCH_SIZE * 2;
++    static thread_local LLVector4a vertices[BUFFER_SIZE * 6];
++    static thread_local LLVector2 uvs[BUFFER_SIZE * 6];
++    static thread_local LLColor4U colors[BUFFER_SIZE * 6];
+ 
+     LLColor4U text_color(color);
+     // Preserve the transparency to render fading emojis in fading text (e.g.
+@@ -283,6 +285,7 @@ S32 LLFontGL::render(const LLWString &wstr, S32 begin_offset, F32 x, F32 y, cons
+ 
+     std::pair<EFontGlyphType, S32> bitmap_entry = std::make_pair(EFontGlyphType::Grayscale, -1);
+     S32 glyph_count = 0;
++    llwchar last_char = wstr[begin_offset];
+     for (i = begin_offset; i < begin_offset + length; i++)
+     {
+         llwchar wch = wstr[i];
+@@ -300,7 +303,7 @@ S32 LLFontGL::render(const LLWString &wstr, S32 begin_offset, F32 x, F32 y, cons
+         }
+         // Per-glyph bitmap texture.
+         std::pair<EFontGlyphType, S32> next_bitmap_entry = fgi->mBitmapEntry;
+-        if (next_bitmap_entry != bitmap_entry)
++        if (next_bitmap_entry != bitmap_entry || last_char != wch)
+         {
+             // Actually draw the queued glyphs before switching their texture;
+             // otherwise the queued glyphs will be taken from wrong textures.
+@@ -317,6 +320,10 @@ S32 LLFontGL::render(const LLWString &wstr, S32 begin_offset, F32 x, F32 y, cons
+             bitmap_entry = next_bitmap_entry;
+             LLImageGL* font_image = font_bitmap_cache->getImageGL(bitmap_entry.first, bitmap_entry.second);
+             gGL.getTexUnit(0)->bind(font_image);
++
++            // For multi-byte characters just draw each time character changes
++            // Might be overkill and might be better to detect multybyte
++            last_char = wch;
+         }
+ 
+         if ((start_x + scaled_max_pixels) < (cur_x + fgi->mXBearing + fgi->mWidth))"
+secondlife/viewer,3332,751db23,indra/llrender/llfontbitmapcache.cpp,modified,2,2,4,"@@ -107,7 +107,7 @@ bool LLFontBitmapCache::nextOpenPos(S32 width, S32& pos_x, S32& pos_y, EFontGlyp
+             mBitmapHeight = image_height;
+ 
+             S32 num_components = getNumComponents(bitmap_type);
+-            mImageRawVec[bitmap_idx].push_back(new LLImageRaw(mBitmapWidth, mBitmapHeight, num_components));
++            mImageRawVec[bitmap_idx].emplace_back(new LLImageRaw(mBitmapWidth, mBitmapHeight, num_components));
+             bitmap_num = static_cast<U32>(mImageRawVec[bitmap_idx].size()) - 1;
+ 
+             LLImageRaw* image_raw = getImageRaw(bitmap_type, bitmap_num);
+@@ -117,7 +117,7 @@ bool LLFontBitmapCache::nextOpenPos(S32 width, S32& pos_x, S32& pos_y, EFontGlyp
+             }
+ 
+             // Make corresponding GL image.
+-            mImageGLVec[bitmap_idx].push_back(new LLImageGL(image_raw, false, false));
++            mImageGLVec[bitmap_idx].emplace_back(new LLImageGL(image_raw, false, false));
+             LLImageGL* image_gl = getImageGL(bitmap_type, bitmap_num);
+ 
+             // Start at beginning of the new image."
+secondlife/viewer,3332,751db23,indra/llrender/llfontfreetype.h,modified,1,0,1,"@@ -148,6 +148,7 @@ class LLFontFreetype : public LLRefCount
+ 
+     void setStyle(U8 style);
+     U8 getStyle() const;
++    S32 getAddedGlyphs() const { return mAddGlyphCount; }
+ 
+ private:
+     void resetBitmapCache();"
+secondlife/viewer,3332,751db23,indra/llrender/llfontgl.cpp,modified,19,7,26,"@@ -110,6 +110,11 @@ S32 LLFontGL::getNumFaces(const std::string& filename)
+     return mFontFreetype->getNumFaces(filename);
+ }
+ 
++S32 LLFontGL::getKnownGlyphCount() const
++{
++    return mFontFreetype ? mFontFreetype->getAddedGlyphs() : 0;
++}
++
+ S32 LLFontGL::render(const LLWString &wstr, S32 begin_offset, const LLRect& rect, const LLColor4 &color, HAlign halign, VAlign valign, U8 style,
+     ShadowType shadow, S32 max_chars, F32* right_x, bool use_ellipses, bool use_color) const
+ {
+@@ -250,6 +255,10 @@ S32 LLFontGL::render(const LLWString &wstr, S32 begin_offset, F32 x, F32 y, cons
+ 
+     const LLFontBitmapCache* font_bitmap_cache = mFontFreetype->getFontBitmapCache();
+ 
++    // This looks wrong, value is dynamic.
++    // LLFontBitmapCache::nextOpenPos can alter these values when
++    // new characters get added to cache, which affects whole string.
++    // Todo: Perhaps value should update after symbols were added?
+     F32 inv_width = 1.f / font_bitmap_cache->getBitmapWidth();
+     F32 inv_height = 1.f / font_bitmap_cache->getBitmapHeight();
+ 
+@@ -271,12 +280,14 @@ S32 LLFontGL::render(const LLWString &wstr, S32 begin_offset, F32 x, F32 y, cons
+ 
+     const LLFontGlyphInfo* next_glyph = NULL;
+ 
++    // string can have more than one glyph per char (ex: bold or shadow),
++    // make sure that GLYPH_BATCH_SIZE won't end up with half a symbol.
++    // See drawGlyph.
++    // Ex: with shadows it's 6 glyps per char. 30 fits exactly 5 chars.
+     static constexpr S32 GLYPH_BATCH_SIZE = 30;
+-    // string can have more than one glyph per char, make sure last one can fit
+-    static constexpr S32 BUFFER_SIZE = GLYPH_BATCH_SIZE * 2;
+-    static thread_local LLVector4a vertices[BUFFER_SIZE * 6];
+-    static thread_local LLVector2 uvs[BUFFER_SIZE * 6];
+-    static thread_local LLColor4U colors[BUFFER_SIZE * 6];
++    static thread_local LLVector4a vertices[GLYPH_BATCH_SIZE * 6];
++    static thread_local LLVector2 uvs[GLYPH_BATCH_SIZE * 6];
++    static thread_local LLColor4U colors[GLYPH_BATCH_SIZE * 6];
+ 
+     LLColor4U text_color(color);
+     // Preserve the transparency to render fading emojis in fading text (e.g.
+@@ -321,8 +332,9 @@ S32 LLFontGL::render(const LLWString &wstr, S32 begin_offset, F32 x, F32 y, cons
+             LLImageGL* font_image = font_bitmap_cache->getImageGL(bitmap_entry.first, bitmap_entry.second);
+             gGL.getTexUnit(0)->bind(font_image);
+ 
+-            // For multi-byte characters just draw each time character changes
+-            // Might be overkill and might be better to detect multybyte
++            // For some reason it's not enough to compare by bitmap_entry.
++            // Issue hits emojis, japenese and chinese glyphs, only on first run.
++            // Todo: figure it out, there might be a bug with raw image data.
+             last_char = wch;
+         }
+ "
+secondlife/viewer,3332,751db23,indra/llrender/llfontgl.h,modified,1,0,1,"@@ -90,6 +90,7 @@ class LLFontGL
+     bool loadFace(const std::string& filename, F32 point_size, const F32 vert_dpi, const F32 horz_dpi, bool is_fallback, S32 face_n);
+ 
+     S32 getNumFaces(const std::string& filename);
++    S32 getKnownGlyphCount() const;
+ 
+     S32 render(const LLWString &text, S32 begin_offset,
+                 const LLRect& rect,"
+secondlife/viewer,3332,751db23,indra/llrender/llfontvertexbuffer.cpp,modified,3,1,4,"@@ -147,7 +147,8 @@ S32 LLFontVertexBuffer::render(
+              || mLastVertDPI != LLFontGL::sVertDPI
+              || mLastHorizDPI != LLFontGL::sHorizDPI
+              || mLastOrigin != LLFontGL::sCurOrigin
+-             || mLastResGeneration != LLFontGL::sResolutionGeneration)
++             || mLastResGeneration != LLFontGL::sResolutionGeneration
++             || mLastFontGlyphCount != fontp->getKnownGlyphCount())
+     {
+         genBuffers(fontp, text, begin_offset, x, y, color, halign, valign,
+             style, shadow, max_chars, max_pixels, right_x, use_ellipses, use_color);
+@@ -203,6 +204,7 @@ void LLFontVertexBuffer::genBuffers(
+     mLastHorizDPI = LLFontGL::sHorizDPI;
+     mLastOrigin = LLFontGL::sCurOrigin;
+     mLastResGeneration = LLFontGL::sResolutionGeneration;
++    mLastFontGlyphCount = fontp->getKnownGlyphCount();
+ 
+     if (right_x)
+     {"
+secondlife/viewer,3332,751db23,indra/llrender/llfontvertexbuffer.h,modified,4,0,4,"@@ -120,6 +120,10 @@ class LLFontVertexBuffer
+     S32 mLastResGeneration = 0;
+     LLCoordGL mLastOrigin;
+ 
++    // Adding new characters to bitmap cache can alter value from getBitmapWidth();
++    // which alters whole string. So rerender when new characters were added to cache.
++    S32 mLastFontGlyphCount = 0;
++
+     static bool sEnableBufferCollection;
+ };
+ "
+secondlife/viewer,3332,e708d69,indra/llrender/llfontbitmapcache.cpp,modified,2,2,4,"@@ -107,7 +107,7 @@ bool LLFontBitmapCache::nextOpenPos(S32 width, S32& pos_x, S32& pos_y, EFontGlyp
+             mBitmapHeight = image_height;
+ 
+             S32 num_components = getNumComponents(bitmap_type);
+-            mImageRawVec[bitmap_idx].push_back(new LLImageRaw(mBitmapWidth, mBitmapHeight, num_components));
++            mImageRawVec[bitmap_idx].emplace_back(new LLImageRaw(mBitmapWidth, mBitmapHeight, num_components));
+             bitmap_num = static_cast<U32>(mImageRawVec[bitmap_idx].size()) - 1;
+ 
+             LLImageRaw* image_raw = getImageRaw(bitmap_type, bitmap_num);
+@@ -117,7 +117,7 @@ bool LLFontBitmapCache::nextOpenPos(S32 width, S32& pos_x, S32& pos_y, EFontGlyp
+             }
+ 
+             // Make corresponding GL image.
+-            mImageGLVec[bitmap_idx].push_back(new LLImageGL(image_raw, false, false));
++            mImageGLVec[bitmap_idx].emplace_back(new LLImageGL(image_raw, false, false));
+             LLImageGL* image_gl = getImageGL(bitmap_type, bitmap_num);
+ 
+             // Start at beginning of the new image."
+secondlife/viewer,3332,e708d69,indra/llrender/llfontfreetype.h,modified,1,0,1,"@@ -148,6 +148,7 @@ class LLFontFreetype : public LLRefCount
+ 
+     void setStyle(U8 style);
+     U8 getStyle() const;
++    S32 getAddedGlyphs() const { return mAddGlyphCount; }
+ 
+ private:
+     void resetBitmapCache();"
+secondlife/viewer,3332,e708d69,indra/llrender/llfontgl.cpp,modified,19,7,26,"@@ -110,6 +110,11 @@ S32 LLFontGL::getNumFaces(const std::string& filename)
+     return mFontFreetype->getNumFaces(filename);
+ }
+ 
++S32 LLFontGL::getKnownGlyphCount() const
++{
++    return mFontFreetype ? mFontFreetype->getAddedGlyphs() : 0;
++}
++
+ S32 LLFontGL::render(const LLWString &wstr, S32 begin_offset, const LLRect& rect, const LLColor4 &color, HAlign halign, VAlign valign, U8 style,
+     ShadowType shadow, S32 max_chars, F32* right_x, bool use_ellipses, bool use_color) const
+ {
+@@ -250,6 +255,10 @@ S32 LLFontGL::render(const LLWString &wstr, S32 begin_offset, F32 x, F32 y, cons
+ 
+     const LLFontBitmapCache* font_bitmap_cache = mFontFreetype->getFontBitmapCache();
+ 
++    // This looks wrong, value is dynamic.
++    // LLFontBitmapCache::nextOpenPos can alter these values when
++    // new characters get added to cache, which affects whole string.
++    // Todo: Perhaps value should update after symbols were added?
+     F32 inv_width = 1.f / font_bitmap_cache->getBitmapWidth();
+     F32 inv_height = 1.f / font_bitmap_cache->getBitmapHeight();
+ 
+@@ -271,12 +280,14 @@ S32 LLFontGL::render(const LLWString &wstr, S32 begin_offset, F32 x, F32 y, cons
+ 
+     const LLFontGlyphInfo* next_glyph = NULL;
+ 
++    // string can have more than one glyph per char (ex: bold or shadow),
++    // make sure that GLYPH_BATCH_SIZE won't end up with half a symbol.
++    // See drawGlyph.
++    // Ex: with shadows it's 6 glyps per char. 30 fits exactly 5 chars.
+     static constexpr S32 GLYPH_BATCH_SIZE = 30;
+-    // string can have more than one glyph per char, make sure last one can fit
+-    static constexpr S32 BUFFER_SIZE = GLYPH_BATCH_SIZE * 2;
+-    static thread_local LLVector4a vertices[BUFFER_SIZE * 6];
+-    static thread_local LLVector2 uvs[BUFFER_SIZE * 6];
+-    static thread_local LLColor4U colors[BUFFER_SIZE * 6];
++    static thread_local LLVector4a vertices[GLYPH_BATCH_SIZE * 6];
++    static thread_local LLVector2 uvs[GLYPH_BATCH_SIZE * 6];
++    static thread_local LLColor4U colors[GLYPH_BATCH_SIZE * 6];
+ 
+     LLColor4U text_color(color);
+     // Preserve the transparency to render fading emojis in fading text (e.g.
+@@ -321,8 +332,9 @@ S32 LLFontGL::render(const LLWString &wstr, S32 begin_offset, F32 x, F32 y, cons
+             LLImageGL* font_image = font_bitmap_cache->getImageGL(bitmap_entry.first, bitmap_entry.second);
+             gGL.getTexUnit(0)->bind(font_image);
+ 
+-            // For multi-byte characters just draw each time character changes
+-            // Might be overkill and might be better to detect multybyte
++            // For some reason it's not enough to compare by bitmap_entry.
++            // Issue hits emojis, japenese and chinese glyphs, only on first run.
++            // Todo: figure it out, there might be a bug with raw image data.
+             last_char = wch;
+         }
+ "
+secondlife/viewer,3332,e708d69,indra/llrender/llfontgl.h,modified,1,0,1,"@@ -90,6 +90,7 @@ class LLFontGL
+     bool loadFace(const std::string& filename, F32 point_size, const F32 vert_dpi, const F32 horz_dpi, bool is_fallback, S32 face_n);
+ 
+     S32 getNumFaces(const std::string& filename);
++    S32 getKnownGlyphCount() const;
+ 
+     S32 render(const LLWString &text, S32 begin_offset,
+                 const LLRect& rect,"
+secondlife/viewer,3332,e708d69,indra/llrender/llfontvertexbuffer.cpp,modified,3,1,4,"@@ -147,7 +147,8 @@ S32 LLFontVertexBuffer::render(
+              || mLastVertDPI != LLFontGL::sVertDPI
+              || mLastHorizDPI != LLFontGL::sHorizDPI
+              || mLastOrigin != LLFontGL::sCurOrigin
+-             || mLastResGeneration != LLFontGL::sResolutionGeneration)
++             || mLastResGeneration != LLFontGL::sResolutionGeneration
++             || mLastFontGlyphCount != fontp->getKnownGlyphCount())
+     {
+         genBuffers(fontp, text, begin_offset, x, y, color, halign, valign,
+             style, shadow, max_chars, max_pixels, right_x, use_ellipses, use_color);
+@@ -203,6 +204,7 @@ void LLFontVertexBuffer::genBuffers(
+     mLastHorizDPI = LLFontGL::sHorizDPI;
+     mLastOrigin = LLFontGL::sCurOrigin;
+     mLastResGeneration = LLFontGL::sResolutionGeneration;
++    mLastFontGlyphCount = fontp->getKnownGlyphCount();
+ 
+     if (right_x)
+     {"
+secondlife/viewer,3332,e708d69,indra/llrender/llfontvertexbuffer.h,modified,4,0,4,"@@ -120,6 +120,10 @@ class LLFontVertexBuffer
+     S32 mLastResGeneration = 0;
+     LLCoordGL mLastOrigin;
+ 
++    // Adding new characters to bitmap cache can alter value from getBitmapWidth();
++    // which alters whole string. So rerender when new characters were added to cache.
++    S32 mLastFontGlyphCount = 0;
++
+     static bool sEnableBufferCollection;
+ };
+ "
+secondlife/viewer,3332,fdf3486,indra/llrender/llfontbitmapcache.cpp,modified,2,0,2,"@@ -141,6 +141,7 @@ bool LLFontBitmapCache::nextOpenPos(S32 width, S32& pos_x, S32& pos_y, EFontGlyp
+     bitmap_num = getNumBitmaps(bitmap_type) - 1;
+ 
+     mCurrentOffsetX[bitmap_idx] += width + 1;
++    mGeneration++;
+ 
+     return true;
+ }
+@@ -168,6 +169,7 @@ void LLFontBitmapCache::reset()
+ 
+     mBitmapWidth = 0;
+     mBitmapHeight = 0;
++    mGeneration++;
+ }
+ 
+ //static"
+secondlife/viewer,3332,fdf3486,indra/llrender/llfontbitmapcache.h,modified,2,0,2,"@@ -63,6 +63,7 @@ class LLFontBitmapCache
+     U32 getNumBitmaps(EFontGlyphType bitmapType) const { return (bitmapType < EFontGlyphType::Count) ? static_cast<U32>(mImageRawVec[static_cast<U32>(bitmapType)].size()) : 0U; }
+     S32 getBitmapWidth() const { return mBitmapWidth; }
+     S32 getBitmapHeight() const { return mBitmapHeight; }
++    S32 getCacheGeneration() const { return mGeneration; }
+ 
+ protected:
+     static U32 getNumComponents(EFontGlyphType bitmap_type);
+@@ -74,6 +75,7 @@ class LLFontBitmapCache
+     S32 mCurrentOffsetY[static_cast<U32>(EFontGlyphType::Count)] = { 1 };
+     S32 mMaxCharWidth = 0;
+     S32 mMaxCharHeight = 0;
++    S32 mGeneration = 0;
+     std::vector<LLPointer<LLImageRaw>> mImageRawVec[static_cast<U32>(EFontGlyphType::Count)];
+     std::vector<LLPointer<LLImageGL>> mImageGLVec[static_cast<U32>(EFontGlyphType::Count)];
+ };"
+secondlife/viewer,3332,fdf3486,indra/llrender/llfontfreetype.cpp,modified,0,2,2,"@@ -146,7 +146,6 @@ LLFontFreetype::LLFontFreetype()
+     mIsFallback(false),
+     mFTFace(NULL),
+     mRenderGlyphCount(0),
+-    mAddGlyphCount(0),
+     mStyle(0),
+     mPointSize(0)
+ {
+@@ -574,7 +573,6 @@ LLFontGlyphInfo* LLFontFreetype::addGlyphFromFont(const LLFontFreetype *fontp, l
+     S32 pos_x, pos_y;
+     U32 bitmap_num;
+     mFontBitmapCachep->nextOpenPos(width, pos_x, pos_y, bitmap_glyph_type, bitmap_num);
+-    mAddGlyphCount++;
+ 
+     LLFontGlyphInfo* gi = new LLFontGlyphInfo(glyph_index, requested_glyph_type);
+     gi->mXBitmapOffset = pos_x;"
+secondlife/viewer,3332,fdf3486,indra/llrender/llfontfreetype.h,modified,0,2,2,"@@ -148,7 +148,6 @@ class LLFontFreetype : public LLRefCount
+ 
+     void setStyle(U8 style);
+     U8 getStyle() const;
+-    S32 getAddedGlyphs() const { return mAddGlyphCount; }
+ 
+ private:
+     void resetBitmapCache();
+@@ -188,7 +187,6 @@ class LLFontFreetype : public LLRefCount
+     mutable LLFontBitmapCache* mFontBitmapCachep;
+ 
+     mutable S32 mRenderGlyphCount;
+-    mutable S32 mAddGlyphCount;
+ };
+ 
+ #endif // LL_FONTFREETYPE_H"
+secondlife/viewer,3332,fdf3486,indra/llrender/llfontgl.cpp,modified,3,2,5,"@@ -110,9 +110,10 @@ S32 LLFontGL::getNumFaces(const std::string& filename)
+     return mFontFreetype->getNumFaces(filename);
+ }
+ 
+-S32 LLFontGL::getKnownGlyphCount() const
++S32 LLFontGL::getCacheGeneration() const
+ {
+-    return mFontFreetype ? mFontFreetype->getAddedGlyphs() : 0;
++    const LLFontBitmapCache* font_bitmap_cache = mFontFreetype->getFontBitmapCache();
++    return font_bitmap_cache->getCacheGeneration();
+ }
+ 
+ S32 LLFontGL::render(const LLWString &wstr, S32 begin_offset, const LLRect& rect, const LLColor4 &color, HAlign halign, VAlign valign, U8 style,"
+secondlife/viewer,3332,fdf3486,indra/llrender/llfontgl.h,modified,1,1,2,"@@ -90,7 +90,7 @@ class LLFontGL
+     bool loadFace(const std::string& filename, F32 point_size, const F32 vert_dpi, const F32 horz_dpi, bool is_fallback, S32 face_n);
+ 
+     S32 getNumFaces(const std::string& filename);
+-    S32 getKnownGlyphCount() const;
++    S32 getCacheGeneration() const;
+ 
+     S32 render(const LLWString &text, S32 begin_offset,
+                 const LLRect& rect,"
+secondlife/viewer,3332,fdf3486,indra/llrender/llfontvertexbuffer.cpp,modified,4,2,6,"@@ -148,7 +148,7 @@ S32 LLFontVertexBuffer::render(
+              || mLastHorizDPI != LLFontGL::sHorizDPI
+              || mLastOrigin != LLFontGL::sCurOrigin
+              || mLastResGeneration != LLFontGL::sResolutionGeneration
+-             || mLastFontGlyphCount != fontp->getKnownGlyphCount())
++             || mLastFontCacheGen != fontp->getCacheGeneration())
+     {
+         genBuffers(fontp, text, begin_offset, x, y, color, halign, valign,
+             style, shadow, max_chars, max_pixels, right_x, use_ellipses, use_color);
+@@ -180,6 +180,9 @@ void LLFontVertexBuffer::genBuffers(
+ {
+     // todo: add a debug build assert if this triggers too often for to long?
+     mBufferList.clear();
++    // Save before rendreing, it can change mid-render,
++    // so will need to rerender previous characters
++    mLastFontCacheGen = fontp->getCacheGeneration();
+ 
+     gGL.beginList(&mBufferList);
+     mChars = fontp->render(text, begin_offset, x, y, color, halign, valign,
+@@ -204,7 +207,6 @@ void LLFontVertexBuffer::genBuffers(
+     mLastHorizDPI = LLFontGL::sHorizDPI;
+     mLastOrigin = LLFontGL::sCurOrigin;
+     mLastResGeneration = LLFontGL::sResolutionGeneration;
+-    mLastFontGlyphCount = fontp->getKnownGlyphCount();
+ 
+     if (right_x)
+     {"
+secondlife/viewer,3332,fdf3486,indra/llrender/llfontvertexbuffer.h,modified,1,1,2,"@@ -122,7 +122,7 @@ class LLFontVertexBuffer
+ 
+     // Adding new characters to bitmap cache can alter value from getBitmapWidth();
+     // which alters whole string. So rerender when new characters were added to cache.
+-    S32 mLastFontGlyphCount = 0;
++    S32 mLastFontCacheGen = 0;
+ 
+     static bool sEnableBufferCollection;
+ };"
+secondlife/viewer,3332,f4f7214,indra/llrender/llfontbitmapcache.cpp,modified,2,0,2,"@@ -141,6 +141,7 @@ bool LLFontBitmapCache::nextOpenPos(S32 width, S32& pos_x, S32& pos_y, EFontGlyp
+     bitmap_num = getNumBitmaps(bitmap_type) - 1;
+ 
+     mCurrentOffsetX[bitmap_idx] += width + 1;
++    mGeneration++;
+ 
+     return true;
+ }
+@@ -168,6 +169,7 @@ void LLFontBitmapCache::reset()
+ 
+     mBitmapWidth = 0;
+     mBitmapHeight = 0;
++    mGeneration++;
+ }
+ 
+ //static"
+secondlife/viewer,3332,f4f7214,indra/llrender/llfontbitmapcache.h,modified,2,0,2,"@@ -63,6 +63,7 @@ class LLFontBitmapCache
+     U32 getNumBitmaps(EFontGlyphType bitmapType) const { return (bitmapType < EFontGlyphType::Count) ? static_cast<U32>(mImageRawVec[static_cast<U32>(bitmapType)].size()) : 0U; }
+     S32 getBitmapWidth() const { return mBitmapWidth; }
+     S32 getBitmapHeight() const { return mBitmapHeight; }
++    S32 getCacheGeneration() const { return mGeneration; }
+ 
+ protected:
+     static U32 getNumComponents(EFontGlyphType bitmap_type);
+@@ -74,6 +75,7 @@ class LLFontBitmapCache
+     S32 mCurrentOffsetY[static_cast<U32>(EFontGlyphType::Count)] = { 1 };
+     S32 mMaxCharWidth = 0;
+     S32 mMaxCharHeight = 0;
++    S32 mGeneration = 0;
+     std::vector<LLPointer<LLImageRaw>> mImageRawVec[static_cast<U32>(EFontGlyphType::Count)];
+     std::vector<LLPointer<LLImageGL>> mImageGLVec[static_cast<U32>(EFontGlyphType::Count)];
+ };"
+secondlife/viewer,3332,f4f7214,indra/llrender/llfontfreetype.cpp,modified,0,2,2,"@@ -146,7 +146,6 @@ LLFontFreetype::LLFontFreetype()
+     mIsFallback(false),
+     mFTFace(NULL),
+     mRenderGlyphCount(0),
+-    mAddGlyphCount(0),
+     mStyle(0),
+     mPointSize(0)
+ {
+@@ -574,7 +573,6 @@ LLFontGlyphInfo* LLFontFreetype::addGlyphFromFont(const LLFontFreetype *fontp, l
+     S32 pos_x, pos_y;
+     U32 bitmap_num;
+     mFontBitmapCachep->nextOpenPos(width, pos_x, pos_y, bitmap_glyph_type, bitmap_num);
+-    mAddGlyphCount++;
+ 
+     LLFontGlyphInfo* gi = new LLFontGlyphInfo(glyph_index, requested_glyph_type);
+     gi->mXBitmapOffset = pos_x;"
+secondlife/viewer,3332,f4f7214,indra/llrender/llfontfreetype.h,modified,0,2,2,"@@ -148,7 +148,6 @@ class LLFontFreetype : public LLRefCount
+ 
+     void setStyle(U8 style);
+     U8 getStyle() const;
+-    S32 getAddedGlyphs() const { return mAddGlyphCount; }
+ 
+ private:
+     void resetBitmapCache();
+@@ -188,7 +187,6 @@ class LLFontFreetype : public LLRefCount
+     mutable LLFontBitmapCache* mFontBitmapCachep;
+ 
+     mutable S32 mRenderGlyphCount;
+-    mutable S32 mAddGlyphCount;
+ };
+ 
+ #endif // LL_FONTFREETYPE_H"
+secondlife/viewer,3332,f4f7214,indra/llrender/llfontgl.cpp,modified,3,2,5,"@@ -110,9 +110,10 @@ S32 LLFontGL::getNumFaces(const std::string& filename)
+     return mFontFreetype->getNumFaces(filename);
+ }
+ 
+-S32 LLFontGL::getKnownGlyphCount() const
++S32 LLFontGL::getCacheGeneration() const
+ {
+-    return mFontFreetype ? mFontFreetype->getAddedGlyphs() : 0;
++    const LLFontBitmapCache* font_bitmap_cache = mFontFreetype->getFontBitmapCache();
++    return font_bitmap_cache->getCacheGeneration();
+ }
+ 
+ S32 LLFontGL::render(const LLWString &wstr, S32 begin_offset, const LLRect& rect, const LLColor4 &color, HAlign halign, VAlign valign, U8 style,"
+secondlife/viewer,3332,f4f7214,indra/llrender/llfontgl.h,modified,1,1,2,"@@ -90,7 +90,7 @@ class LLFontGL
+     bool loadFace(const std::string& filename, F32 point_size, const F32 vert_dpi, const F32 horz_dpi, bool is_fallback, S32 face_n);
+ 
+     S32 getNumFaces(const std::string& filename);
+-    S32 getKnownGlyphCount() const;
++    S32 getCacheGeneration() const;
+ 
+     S32 render(const LLWString &text, S32 begin_offset,
+                 const LLRect& rect,"
+secondlife/viewer,3332,f4f7214,indra/llrender/llfontvertexbuffer.cpp,modified,4,2,6,"@@ -148,7 +148,7 @@ S32 LLFontVertexBuffer::render(
+              || mLastHorizDPI != LLFontGL::sHorizDPI
+              || mLastOrigin != LLFontGL::sCurOrigin
+              || mLastResGeneration != LLFontGL::sResolutionGeneration
+-             || mLastFontGlyphCount != fontp->getKnownGlyphCount())
++             || mLastFontCacheGen != fontp->getCacheGeneration())
+     {
+         genBuffers(fontp, text, begin_offset, x, y, color, halign, valign,
+             style, shadow, max_chars, max_pixels, right_x, use_ellipses, use_color);
+@@ -180,6 +180,9 @@ void LLFontVertexBuffer::genBuffers(
+ {
+     // todo: add a debug build assert if this triggers too often for to long?
+     mBufferList.clear();
++    // Save before rendreing, it can change mid-render,
++    // so will need to rerender previous characters
++    mLastFontCacheGen = fontp->getCacheGeneration();
+ 
+     gGL.beginList(&mBufferList);
+     mChars = fontp->render(text, begin_offset, x, y, color, halign, valign,
+@@ -204,7 +207,6 @@ void LLFontVertexBuffer::genBuffers(
+     mLastHorizDPI = LLFontGL::sHorizDPI;
+     mLastOrigin = LLFontGL::sCurOrigin;
+     mLastResGeneration = LLFontGL::sResolutionGeneration;
+-    mLastFontGlyphCount = fontp->getKnownGlyphCount();
+ 
+     if (right_x)
+     {"
+secondlife/viewer,3332,f4f7214,indra/llrender/llfontvertexbuffer.h,modified,1,1,2,"@@ -122,7 +122,7 @@ class LLFontVertexBuffer
+ 
+     // Adding new characters to bitmap cache can alter value from getBitmapWidth();
+     // which alters whole string. So rerender when new characters were added to cache.
+-    S32 mLastFontGlyphCount = 0;
++    S32 mLastFontCacheGen = 0;
+ 
+     static bool sEnableBufferCollection;
+ };"
+secondlife/viewer,3332,5b968b7,indra/llrender/llfontbitmapcache.cpp,modified,2,0,2,"@@ -141,6 +141,7 @@ bool LLFontBitmapCache::nextOpenPos(S32 width, S32& pos_x, S32& pos_y, EFontGlyp
+     bitmap_num = getNumBitmaps(bitmap_type) - 1;
+ 
+     mCurrentOffsetX[bitmap_idx] += width + 1;
++    mGeneration++;
+ 
+     return true;
+ }
+@@ -168,6 +169,7 @@ void LLFontBitmapCache::reset()
+ 
+     mBitmapWidth = 0;
+     mBitmapHeight = 0;
++    mGeneration++;
+ }
+ 
+ //static"
+secondlife/viewer,3332,5b968b7,indra/llrender/llfontbitmapcache.h,modified,2,0,2,"@@ -63,6 +63,7 @@ class LLFontBitmapCache
+     U32 getNumBitmaps(EFontGlyphType bitmapType) const { return (bitmapType < EFontGlyphType::Count) ? static_cast<U32>(mImageRawVec[static_cast<U32>(bitmapType)].size()) : 0U; }
+     S32 getBitmapWidth() const { return mBitmapWidth; }
+     S32 getBitmapHeight() const { return mBitmapHeight; }
++    S32 getCacheGeneration() const { return mGeneration; }
+ 
+ protected:
+     static U32 getNumComponents(EFontGlyphType bitmap_type);
+@@ -74,6 +75,7 @@ class LLFontBitmapCache
+     S32 mCurrentOffsetY[static_cast<U32>(EFontGlyphType::Count)] = { 1 };
+     S32 mMaxCharWidth = 0;
+     S32 mMaxCharHeight = 0;
++    S32 mGeneration = 0;
+     std::vector<LLPointer<LLImageRaw>> mImageRawVec[static_cast<U32>(EFontGlyphType::Count)];
+     std::vector<LLPointer<LLImageGL>> mImageGLVec[static_cast<U32>(EFontGlyphType::Count)];
+ };"
+secondlife/viewer,3332,5b968b7,indra/llrender/llfontfreetype.cpp,modified,0,2,2,"@@ -146,7 +146,6 @@ LLFontFreetype::LLFontFreetype()
+     mIsFallback(false),
+     mFTFace(NULL),
+     mRenderGlyphCount(0),
+-    mAddGlyphCount(0),
+     mStyle(0),
+     mPointSize(0)
+ {
+@@ -574,7 +573,6 @@ LLFontGlyphInfo* LLFontFreetype::addGlyphFromFont(const LLFontFreetype *fontp, l
+     S32 pos_x, pos_y;
+     U32 bitmap_num;
+     mFontBitmapCachep->nextOpenPos(width, pos_x, pos_y, bitmap_glyph_type, bitmap_num);
+-    mAddGlyphCount++;
+ 
+     LLFontGlyphInfo* gi = new LLFontGlyphInfo(glyph_index, requested_glyph_type);
+     gi->mXBitmapOffset = pos_x;"
+secondlife/viewer,3332,5b968b7,indra/llrender/llfontfreetype.h,modified,0,2,2,"@@ -148,7 +148,6 @@ class LLFontFreetype : public LLRefCount
+ 
+     void setStyle(U8 style);
+     U8 getStyle() const;
+-    S32 getAddedGlyphs() const { return mAddGlyphCount; }
+ 
+ private:
+     void resetBitmapCache();
+@@ -188,7 +187,6 @@ class LLFontFreetype : public LLRefCount
+     mutable LLFontBitmapCache* mFontBitmapCachep;
+ 
+     mutable S32 mRenderGlyphCount;
+-    mutable S32 mAddGlyphCount;
+ };
+ 
+ #endif // LL_FONTFREETYPE_H"
+secondlife/viewer,3332,5b968b7,indra/llrender/llfontgl.cpp,modified,3,2,5,"@@ -110,9 +110,10 @@ S32 LLFontGL::getNumFaces(const std::string& filename)
+     return mFontFreetype->getNumFaces(filename);
+ }
+ 
+-S32 LLFontGL::getKnownGlyphCount() const
++S32 LLFontGL::getCacheGeneration() const
+ {
+-    return mFontFreetype ? mFontFreetype->getAddedGlyphs() : 0;
++    const LLFontBitmapCache* font_bitmap_cache = mFontFreetype->getFontBitmapCache();
++    return font_bitmap_cache->getCacheGeneration();
+ }
+ 
+ S32 LLFontGL::render(const LLWString &wstr, S32 begin_offset, const LLRect& rect, const LLColor4 &color, HAlign halign, VAlign valign, U8 style,"
+secondlife/viewer,3332,5b968b7,indra/llrender/llfontgl.h,modified,1,1,2,"@@ -90,7 +90,7 @@ class LLFontGL
+     bool loadFace(const std::string& filename, F32 point_size, const F32 vert_dpi, const F32 horz_dpi, bool is_fallback, S32 face_n);
+ 
+     S32 getNumFaces(const std::string& filename);
+-    S32 getKnownGlyphCount() const;
++    S32 getCacheGeneration() const;
+ 
+     S32 render(const LLWString &text, S32 begin_offset,
+                 const LLRect& rect,"
+secondlife/viewer,3332,5b968b7,indra/llrender/llfontvertexbuffer.cpp,modified,4,2,6,"@@ -148,7 +148,7 @@ S32 LLFontVertexBuffer::render(
+              || mLastHorizDPI != LLFontGL::sHorizDPI
+              || mLastOrigin != LLFontGL::sCurOrigin
+              || mLastResGeneration != LLFontGL::sResolutionGeneration
+-             || mLastFontGlyphCount != fontp->getKnownGlyphCount())
++             || mLastFontCacheGen != fontp->getCacheGeneration())
+     {
+         genBuffers(fontp, text, begin_offset, x, y, color, halign, valign,
+             style, shadow, max_chars, max_pixels, right_x, use_ellipses, use_color);
+@@ -180,6 +180,9 @@ void LLFontVertexBuffer::genBuffers(
+ {
+     // todo: add a debug build assert if this triggers too often for to long?
+     mBufferList.clear();
++    // Save before rendreing, it can change mid-render,
++    // so will need to rerender previous characters
++    mLastFontCacheGen = fontp->getCacheGeneration();
+ 
+     gGL.beginList(&mBufferList);
+     mChars = fontp->render(text, begin_offset, x, y, color, halign, valign,
+@@ -204,7 +207,6 @@ void LLFontVertexBuffer::genBuffers(
+     mLastHorizDPI = LLFontGL::sHorizDPI;
+     mLastOrigin = LLFontGL::sCurOrigin;
+     mLastResGeneration = LLFontGL::sResolutionGeneration;
+-    mLastFontGlyphCount = fontp->getKnownGlyphCount();
+ 
+     if (right_x)
+     {"
+secondlife/viewer,3332,5b968b7,indra/llrender/llfontvertexbuffer.h,modified,1,1,2,"@@ -122,7 +122,7 @@ class LLFontVertexBuffer
+ 
+     // Adding new characters to bitmap cache can alter value from getBitmapWidth();
+     // which alters whole string. So rerender when new characters were added to cache.
+-    S32 mLastFontGlyphCount = 0;
++    S32 mLastFontCacheGen = 0;
+ 
+     static bool sEnableBufferCollection;
+ };"

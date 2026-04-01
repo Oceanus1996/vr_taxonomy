@@ -1,0 +1,97 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe-inspector,680,497eef04530dc8555fc4d1434f27792727917450,examples/360video.html,added,48,0,48,"@@ -0,0 +1,48 @@
++<!DOCTYPE html>
++<html>
++  <head>
++    <meta charset=""utf-8"">
++    <title>360 Video</title>
++    <meta name=""description"" content=""360 Video — A-Frame"">
++    <script src=""https://cdn.jsdelivr.net/gh/aframevr/aframe@master/dist/aframe-master.min.js""></script>
++    <!--
++    <script src=""https://cdn.jsdelivr.net/gh/aframevr/aframe@master/examples/js/play-on-click.js""></script>
++    <script src=""https://cdn.jsdelivr.net/gh/aframevr/aframe@master/examples/js/hide-on-play.js""></script>
++    -->
++  </head>
++  <body>
++    <a-scene>
++      <a-assets>
++        <!--
++        SOURCE
++        Author: Bitmovin
++        URL:    https://bitmovin.com/demos/vr-360
++        -->
++        <video id=""video""
++               loop
++               crossorigin=""anonymous""
++               playsinline webkit-playsinline
++               src=""https://bitmovin-a.akamaihd.net/content/playhouse-vr/progressive.mp4"">
++        </video>
++      </a-assets>
++      <a-videosphere
++        rotation=""0 -90 0"" src=""#video""
++        play-on-click>
++      </a-videosphere>
++
++      <a-camera>
++        <a-entity
++          position=""0 0 -1.5""
++          text=""align:center;
++                width:6;
++                wrapCount:100;
++                color: white;
++                value: Click or tap to start video""
++          hide-on-play=""#video"">
++        </a-entity>
++      </a-camera>
++    </a-scene>
++
++    <script src=""../dist/aframe-inspector.js""></script>
++  </body>
++</html>"
+aframevr/aframe-inspector,680,497eef04530dc8555fc4d1434f27792727917450,src/components/widgets/TextureWidget.js,modified,11,6,17,"@@ -131,7 +131,10 @@ export default class TextureWidget extends React.Component {
+ 
+     function getTextureFromSrc(src) {
+       for (var hash in AFRAME.INSPECTOR.sceneEl.systems.material.textureCache) {
+-        if (JSON.parse(hash).src === src) {
++        // The key in textureCache is not always a json.
++        // For example <a-videosphere src=""#video""> gives a ""video"" key in textureCache.
++        // So we check for '{' before using JSON.parse here.
++        if (hash[0] === '{' && JSON.parse(hash).src === src) {
+           return AFRAME.INSPECTOR.sceneEl.systems.material.textureCache[hash];
+         }
+       }
+@@ -141,8 +144,10 @@ export default class TextureWidget extends React.Component {
+     var url;
+     var isAssetHash = value[0] === '#';
+     var isAssetImg = value instanceof HTMLImageElement;
++    var isAssetVideo = value instanceof HTMLVideoElement;
++    var isAssetImgOrVideo = isAssetImg || isAssetVideo;
+ 
+-    if (isAssetImg) {
++    if (isAssetImgOrVideo) {
+       url = value.src;
+     } else if (isAssetHash) {
+       url = getUrlFromId(value);
+@@ -152,10 +157,10 @@ export default class TextureWidget extends React.Component {
+ 
+     var texture = getTextureFromSrc(value);
+     var valueType = null;
+-    valueType = isAssetImg || isAssetHash ? 'asset' : 'url';
+-    if (texture) {
++    valueType = isAssetImgOrVideo || isAssetHash ? 'asset' : 'url';
++    if (!isAssetVideo && texture) {
+       texture.then(paintPreview);
+-    } else if (url) {
++    } else if (!isAssetVideo && url) {
+       // The image still didn't load
+       var image = new Image();
+       image.addEventListener(
+@@ -171,7 +176,7 @@ export default class TextureWidget extends React.Component {
+     }
+ 
+     this.setState({
+-      value: isAssetImg ? '#' + value.id : value,
++      value: isAssetImgOrVideo ? '#' + value.id : value,
+       valueType: valueType,
+       url: url
+     });"

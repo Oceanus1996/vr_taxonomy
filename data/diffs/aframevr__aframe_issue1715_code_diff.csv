@@ -1,0 +1,49 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe,1715,734f39f26ebf9d37ee1cd3c0ca1616cb58ab4919,src/components/camera.js,modified,13,4,17,"@@ -59,16 +59,25 @@ module.exports.Component = registerComponent('camera', {
+     });
+   },
+ 
++  /**
++   * Remove the height offset (called when entering VR) since WebVR API gives absolute
++   * position.
++   * Does not apply for mobile.
++   */
+   removeHeightOffset: function () {
++    var currentPosition;
+     var el = this.el;
+-    // Remove default camera if present.
++    var headsetConnected;
++    var sceneEl = el.sceneEl;
+     var userHeightOffset = this.userHeightOffset;
+-    var currentPosition;
++
+     // Checking this.headsetConnected to make the value injectable for unit tests.
+-    var headsetConnected = this.headsetConnected || checkHeadsetConnected();
++    headsetConnected = this.headsetConnected || checkHeadsetConnected();
++
+     // If there's not a headset connected we keep the offset.
+     // Necessary for fullscreen mode with no headset.
+-    if (!userHeightOffset || !headsetConnected) { return; }
++    if (sceneEl.isMobile || !userHeightOffset || !headsetConnected) { return; }
++
+     this.userHeightOffset = undefined;
+     currentPosition = el.getAttribute('position') || {x: 0, y: 0, z: 0};
+     el.setAttribute('position', {"
+aframevr/aframe,1715,734f39f26ebf9d37ee1cd3c0ca1616cb58ab4919,tests/components/camera.test.js,modified,12,0,12,"@@ -87,5 +87,17 @@ suite('camera', function () {
+       sceneEl.emit('enter-vr');
+       assert.shallowDeepEqual(cameraEl.getAttribute('position'), {x: 0, y: 1.6, z: 0});
+     });
++
++    test('does not remove the default offset when entering VR on mobile', function () {
++      var sceneEl = this.el.sceneEl;
++      var cameraEl = this.el;
++
++      sceneEl.isMobile = true;
++      cameraEl.components.camera.headsetConnected = true;
++
++      assert.shallowDeepEqual(cameraEl.getAttribute('position'), {x: 0, y: 1.6, z: 0});
++      sceneEl.emit('enter-vr');
++      assert.shallowDeepEqual(cameraEl.getAttribute('position'), {x: 0, y: 1.6, z: 0});
++    });
+   });
+ });"

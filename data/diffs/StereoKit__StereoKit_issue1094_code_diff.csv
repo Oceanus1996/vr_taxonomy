@@ -1,0 +1,340 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+StereoKit/StereoKit,1094,515fc4a,Examples/StereoKitTest/Docs/DocText.cs,modified,12,7,19,"@@ -1,4 +1,9 @@
+-﻿using StereoKit;
++﻿// SPDX-License-Identifier: MIT
++// The authors below grant copyright rights under the MIT license:
++// Copyright (c) 2024 Nick Klingensmith
++// Copyright (c) 2024 Qualcomm Technologies, Inc.
++
++using StereoKit;
+ 
+ class DocText : ITest
+ {
+@@ -33,11 +38,11 @@ void ShowTextStyleInfo()
+ 		Color32 colDescender  = new Color32( 50,  50, 255, 255);
+ 		Color32 colLineHeight = new Color32(255, 255, 255, 255);
+ 
+-		float ascenderAt   =  0;
+-		float baselineAt   = -style.Ascender;
+-		float capHeightAt  = -style.Ascender + style.CapHeight;
+-		float descenderAt  = -style.TotalHeight;
+-		float lineHeightAt = -style.LineHeightPct * style.TotalHeight;
++		float baselineAt   = -style.CapHeight;
++		float ascenderAt   = baselineAt + style.Ascender;
++		float capHeightAt  = baselineAt + style.CapHeight;
++		float descenderAt  = baselineAt - style.Descender;
++		float lineHeightAt = ascenderAt - style.LineHeightPct * style.TotalHeight;
+ 
+ 		Lines.Add(V.XY0(0, ascenderAt  ), V.XY0(-size.x, ascenderAt  ), colAscender,   0.003f);
+ 		Lines.Add(V.XY0(0, baselineAt  ), V.XY0(-size.x, baselineAt  ), colBaseline,   0.003f);
+@@ -54,7 +59,7 @@ public void Step()
+ 		Hierarchy.Pop();
+ 
+ 		Vec2 s = Text.SizeLayout(""lÔTy"", style);
+-		Tests.Screenshot(""TextStyleInfo.jpg"", 400, 400, V.XYZ(s.x/2, s.y/-2, -0.2f), V.XYZ(s.x/2, s.y/-2, -0.5f));
++		Tests.Screenshot(""TextStyleInfo.jpg"", 400, 400, V.XYZ(s.x/2, s.y/-2, -0.18f), V.XYZ(s.x/2, s.y/-2, -0.5f));
+ 	}
+ 
+ 	public void Initialize() {}"
+StereoKit/StereoKit,1094,515fc4a,Examples/StereoKitTest/Tests/TestText.cs,modified,18,11,29,"@@ -1,5 +1,9 @@
+-﻿using StereoKit;
+-using System;
++﻿// SPDX-License-Identifier: MIT
++// The authors below grant copyright rights under the MIT license:
++// Copyright (c) 2024 Nick Klingensmith
++// Copyright (c) 2024 Qualcomm Technologies, Inc.
++
++using StereoKit;
+ 
+ class TestText : ITest
+ {
+@@ -10,6 +14,7 @@ class TestText : ITest
+ 
+ 	public void Initialize() {
+ 		style = TextStyle.FromFont(Font.FromFile(""aileron_font.ttf""), 0.02f, Color.White);
++		style.LineHeightPct = 1.2f;
+ 	}
+ 	public void Shutdown() { }
+ 	public void Step()
+@@ -62,15 +67,17 @@ public void Step()
+ 
+ 	static void DrawTextLineGuides(Vec3 at, float width, TextStyle style)
+ 	{
+-		Color32 capHeight = new Color32( 50, 255,  50, 255);
+-		Color32 baseline  = new Color32(255, 255, 255, 255);
+-		Color32 ascender  = new Color32(255,  50,  50, 255);
+-		Color32 descender = new Color32( 50,  50, 255, 255);
++		Color32 colCapHeight = new Color32( 50, 255,  50, 255);
++		Color32 colBaseline  = new Color32(255, 255, 255, 255);
++		Color32 colAscender  = new Color32(255,  50,  50, 255);
++		Color32 colDescender = new Color32( 50,  50, 255, 255);
+ 
+-		Lines.Add(at+V.XYZ(-0.01f, -style.LineHeightPct * style.TotalHeight, 0), at + V.XYZ(width+0.01f, -style.LineHeightPct * style.TotalHeight, 0), baseline, 0.002f);
+-		Lines.Add(at+V.XY0(0, 0                              ), at + V.XY0(width, 0                              ), ascender,  0.002f);
+-		Lines.Add(at+V.XY0(0, -style.Ascender                ), at + V.XY0(width, -style.Ascender                ), baseline,  0.002f);
+-		Lines.Add(at+V.XY0(0, -style.Ascender+style.CapHeight), at + V.XY0(width, -style.Ascender+style.CapHeight), capHeight, 0.002f);
+-		Lines.Add(at+V.XY0(0, -style.TotalHeight             ), at + V.XY0(width, -style.TotalHeight             ), descender, 0.002f);
++		float baseline = -style.CapHeight;
++		float top      = baseline+style.Ascender;
++		Lines.Add(at+V.XYZ(-0.01f, top-style.LineHeightPct*style.TotalHeight, 0), at + V.XYZ(width+0.01f, top-style.LineHeightPct*style.TotalHeight, 0), colBaseline, 0.002f);
++		Lines.Add(at+V.XY0(0, baseline                ), at + V.XY0(width, baseline                ), colBaseline,  0.0005f);
++		Lines.Add(at+V.XY0(0, baseline+style.CapHeight), at + V.XY0(width, baseline+style.CapHeight), colCapHeight, 0.0005f);
++		Lines.Add(at+V.XY0(0, baseline+style.Ascender ), at + V.XY0(width, baseline+style.Ascender ), colAscender,  0.0005f);
++		Lines.Add(at+V.XY0(0, baseline-style.Descender), at + V.XY0(width, baseline-style.Descender), colDescender, 0.0005f);
+ 	}
+ }"
+StereoKit/StereoKit,1094,515fc4a,StereoKit/Systems/Text.cs,modified,33,24,57,"@@ -1,4 +1,9 @@
+-﻿using System;
++﻿// SPDX-License-Identifier: MIT
++// The authors below grant copyright rights under the MIT license:
++// Copyright (c) 2019-2024 Nick Klingensmith
++// Copyright (c) 2024 Qualcomm Technologies, Inc.
++
++using System;
+ using System.Runtime.InteropServices;
+ 
+ namespace StereoKit
+@@ -28,11 +33,10 @@ public float CharHeight
+ 		}
+ 
+ 		/// <summary>(meters) Layout height is the height of the font's
+-		/// ascender, which is used for calculating the vertical height of the
++		/// CapHeight, which is used for calculating the vertical height of the
+ 		/// text when doing text layouts. This does _not_ include the height of
+-		/// the descender (use TotalHeight), nor does it represent the maximum
+-		/// possible height a glyph may extend upwards (use Text.SizeRender).
+-		/// </summary>
++		/// the descender, nor does it represent the maximum possible height a
++		/// glyph may extend upwards (use Text.SizeRender).</summary>
+ 		public float LayoutHeight
+ 		{
+ 			get => NativeAPI.text_style_get_layout_height(this);
+@@ -62,13 +66,15 @@ public float TotalHeight
+ 		/// Text.SizeRender), but this is not used when laying out characters.
+ 		/// </summary>
+ 		public float Ascender => NativeAPI.text_style_get_ascender(this);
+-		/// <summary>(meters) The layout descender of the font, this is the positive height below the baseline</summary>
++		/// <summary>(meters) The layout descender of the font, this is the
++		/// positive height below the baseline</summary>
+ 		public float Descender => NativeAPI.text_style_get_descender(this);
+ 
+ 		/// <summary>This is the space a full line of text takes, from baseline
+-		/// to baseline, as a 0-1 percentage of the font's character height.
+-		/// This is similar to CSS line-height, a value of 1.0 means the line
+-		/// takes _only_</summary>
++		/// to baseline, as a 0-1 percentage of the font's TotalHeight. This
++		/// is similar to CSS line-height, a value of 1.0 means this line's
++		/// descenders will squish up adjacent to the next line's tallest
++		/// ascenders.</summary>
+ 		public float LineHeightPct
+ 		{
+ 			get => NativeAPI.text_style_get_line_height_pct(this);
+@@ -88,7 +94,7 @@ public float LineHeightPct
+ 		/// <param name=""font"">Font asset you want attached to this style.
+ 		/// </param>
+ 		/// <param name=""layoutHeightMeters"">Height of a text glyph in
+-		/// meters. StereoKit currently bases this on layout ascender height.
++		/// meters. StereoKit currently bases this on CapHeight.
+ 		/// </param>
+ 		/// <param name=""colorGamma"">The gamma space color of the text
+ 		/// style. This will be embedded in the vertex color of the text
+@@ -108,7 +114,7 @@ public static TextStyle FromFont(Font font, float layoutHeightMeters, Color colo
+ 		/// <param name=""font"">Font asset you want attached to this style.
+ 		/// </param>
+ 		/// <param name=""layoutHeightMeters"">Height of a text glyph in
+-		/// meters. StereoKit currently bases this on layout ascender height.
++		/// meters. StereoKit currently bases this on CapHeight.
+ 		/// </param>
+ 		/// <param name=""shader"">This style will create and use a unique
+ 		/// Material based on the Shader that you provide here.</param>
+@@ -133,7 +139,7 @@ public static TextStyle FromFont(Font font, float layoutHeightMeters, Shader sha
+ 		/// <param name=""font"">Font asset you want attached to this style.
+ 		/// </param>
+ 		/// <param name=""layoutHeightMeters"">Height of a text glyph in
+-		/// meters. StereoKit currently bases this on layout ascender height.
++		/// meters. StereoKit currently bases this on CapHeight.
+ 		/// </param>
+ 		/// <param name=""material"">Which material should be used to render
+ 		/// the text with? Note that this does NOT duplicate the material, so
+@@ -164,15 +170,16 @@ public static class Text
+ 		/// on Default.ShaderFont.</summary>
+ 		/// <param name=""font"">Font asset you want attached to this style.
+ 		/// </param>
+-		/// <param name=""characterHeightMeters"">Height of a text glyph in
+-		/// meters. StereoKit currently bases this on the letter 'T'.</param>
++		/// <param name=""layoutHeightMeters"">Height of a text glyph in
++		/// meters. StereoKit currently bases this on CapHeight.
++		/// </param>
+ 		/// <param name=""colorGamma"">The gamma space color of the text
+ 		/// style. This will be embedded in the vertex color of the text
+ 		/// mesh.</param>
+ 		/// <returns>A text style id for use with text rendering functions.
+ 		/// </returns>
+-		public static TextStyle MakeStyle(Font font, float characterHeightMeters, Color colorGamma)
+-			=> NativeAPI.text_make_style(font._inst, characterHeightMeters, colorGamma);
++		public static TextStyle MakeStyle(Font font, float layoutHeightMeters, Color colorGamma)
++			=> NativeAPI.text_make_style(font._inst, layoutHeightMeters, colorGamma);
+ 
+ 		/// <summary>Create a text style for use with other text functions! A
+ 		/// text style is a font plus size/color/material parameters, and are
+@@ -183,17 +190,18 @@ public static TextStyle MakeStyle(Font font, float characterHeightMeters, Color
+ 		/// on the provided Shader.</summary>
+ 		/// <param name=""font"">Font asset you want attached to this style.
+ 		/// </param>
+-		/// <param name=""characterHeightMeters"">Height of a text glyph in
+-		/// meters. StereoKit currently bases this on the letter 'T'.</param>
++		/// <param name=""layoutHeightMeters"">Height of a text glyph in
++		/// meters. StereoKit currently bases this on CapHeight.
++		/// </param>
+ 		/// <param name=""shader"">This style will create and use a unique
+ 		/// Material based on the Shader that you provide here.</param>
+ 		/// <param name=""colorGamma"">The gamma space color of the text
+ 		/// style. This will be embedded in the vertex color of the text
+ 		/// mesh.</param>
+ 		/// <returns>A text style id for use with text rendering functions.
+ 		/// </returns>
+-		public static TextStyle MakeStyle(Font font, float characterHeightMeters, Shader shader, Color colorGamma)
+-			=> NativeAPI.text_make_style_shader(font._inst, characterHeightMeters, shader._inst, colorGamma);
++		public static TextStyle MakeStyle(Font font, float layoutHeightMeters, Shader shader, Color colorGamma)
++			=> NativeAPI.text_make_style_shader(font._inst, layoutHeightMeters, shader._inst, colorGamma);
+ 
+ 		/// <summary>Create a text style for use with other text functions! A
+ 		/// text style is a font plus size/color/material parameters, and are
+@@ -207,8 +215,9 @@ public static TextStyle MakeStyle(Font font, float characterHeightMeters, Shader
+ 		/// Shader, or takes neither a Shader nor a Material!</summary>
+ 		/// <param name=""font"">Font asset you want attached to this style.
+ 		/// </param>
+-		/// <param name=""characterHeightMeters"">Height of a text glyph in
+-		/// meters. StereoKit currently bases this on the letter 'T'.</param>
++		/// <param name=""layoutHeightMeters"">Height of a text glyph in
++		/// meters. StereoKit currently bases this on CapHeight.
++		/// </param>
+ 		/// <param name=""material"">Which material should be used to render
+ 		/// the text with? Note that this does NOT duplicate the material, so
+ 		/// some parameters of this Material instance will get overwritten, 
+@@ -220,8 +229,8 @@ public static TextStyle MakeStyle(Font font, float characterHeightMeters, Shader
+ 		/// mesh.</param>
+ 		/// <returns>A text style id for use with text rendering functions.
+ 		/// </returns>
+-		public static TextStyle MakeStyle(Font font, float characterHeightMeters, Material material, Color colorGamma)
+-			=> NativeAPI.text_make_style_mat(font._inst, characterHeightMeters, material._inst, colorGamma);
++		public static TextStyle MakeStyle(Font font, float layoutHeightMeters, Material material, Color colorGamma)
++			=> NativeAPI.text_make_style_mat(font._inst, layoutHeightMeters, material._inst, colorGamma);
+ 
+ 		/// <summary>Renders text at the given location! Must be called every
+ 		/// frame you want this text to be visible.</summary>"
+StereoKit/StereoKit,1094,515fc4a,StereoKitC/stereokit.h,modified,1,0,1,"@@ -1384,6 +1384,7 @@ SK_API material_t    text_style_get_material        (text_style_t style);
+ SK_API float         text_style_get_ascender        (text_style_t style);
+ SK_API float         text_style_get_descender       (text_style_t style);
+ SK_API float         text_style_get_cap_height      (text_style_t style);
++SK_API float         text_style_get_baseline        (text_style_t style);
+ 
+ ///////////////////////////////////////////
+ "
+StereoKit/StereoKit,1094,515fc4a,StereoKitC/systems/defaults.cpp,modified,1,1,2,"@@ -307,7 +307,7 @@ bool defaults_init() {
+ 	sk_default_text_style = text_make_style_mat(sk_default_font, 0.02f, sk_default_material_font, color128{ 1,1,1,1 });
+ 	// TODO: v0.4, switch these to something more intentional instead of backwards compatible
+ 	// This matches the original SK line height for compat, for now.
+-	text_style_set_line_height_pct(sk_default_text_style, 1.18f);
++	text_style_set_line_height_pct(sk_default_text_style, 1.1f);
+ 
+ 	// Sounds
+ 	sk_default_click = sound_generate([](float t){"
+StereoKit/StereoKit,1094,515fc4a,StereoKitC/systems/text.cpp,modified,9,3,12,"@@ -178,10 +178,10 @@ text_style_t text_make_style_mat(font_t font, float layout_height, material_t ma
+ 	style.font            = font;
+ 	style.buffer_index    = (uint32_t)index;
+ 	style.color           = color_to_32( color_to_linear( color ) );
+-	style.line_baseline   = font->layout_ascend_pct;
++	style.line_baseline   = font->cap_height_pct;
+ 	style.scale           = layout_height / style.line_baseline;
+ 	style.cap_height      = font->cap_height_pct;
+-	style.scender_extra   = font->layout_descend_pct;
++	style.scender_extra   = font->layout_descend_pct + (font->layout_ascend_pct-font->cap_height_pct);
+ 	style.line_spacing    = style.scender_extra + 0.4f;
+ 	
+ 	return (text_style_t)text_styles.add(style);
+@@ -239,6 +239,12 @@ float text_style_get_cap_height(text_style_t style) {
+ 
+ ///////////////////////////////////////////
+ 
++float text_style_get_baseline(text_style_t style) {
++	return text_styles[style].line_baseline * text_styles[style].scale;
++}
++
++///////////////////////////////////////////
++
+ float text_style_get_line_height_pct(text_style_t style) {
+ 	return (text_styles[style].line_spacing - text_styles[style].scender_extra) + 1.0f;
+ }
+@@ -382,7 +388,7 @@ vec2 text_size_layout_16(const char16_t *text_utf16, text_style_t style) { retur
+ vec2 text_size_render(vec2 layout_size, text_style_t style_id, float* out_y_offset) {
+ 	_text_style_t* style        = &text_styles[style_id];
+ 	font_t         font         = style->font;
+-	float          additional_y = font->render_ascend_pct - font->layout_ascend_pct;
++	float          additional_y = font->render_ascend_pct - font->cap_height_pct;
+ 	vec2           result       = { layout_size.x, layout_size.y + (additional_y + font->render_descend_pct) * style->scale };
+ 	if (out_y_offset) *out_y_offset = additional_y * style->scale;
+ 	return result;"
+StereoKit/StereoKit,1094,515fc4a,StereoKitC/ui/stereokit_ui.cpp,modified,4,4,8,"@@ -138,7 +138,7 @@ void ui_model_at(model_t model, vec3 start, vec3 size, color128 color) {
+ void ui_hseparator() {
+ 	vec3 pos;
+ 	vec2 size;
+-	ui_layout_reserve_sz({ 0, text_style_get_ascender(ui_get_text_style())*0.4f }, false, &pos, &size);
++	ui_layout_reserve_sz({ 0, text_style_get_baseline(ui_get_text_style())*0.4f }, false, &pos, &size);
+ 
+ 	ui_draw_element(ui_vis_separator, pos, vec3{ size.x, size.y, size.y / 2.0f }, 0);
+ }
+@@ -200,7 +200,7 @@ void _ui_button_img_surface(const C* text, sprite_t image, ui_btn_layout_ image_
+ 	vec2  text_size;
+ 	text_align_ text_align;
+ 	float aspect = image != nullptr ? sprite_get_aspect(image) : 1.0f;
+-	float font_size = text_style_get_ascender(ui_get_text_style());
++	float font_size = text_style_get_baseline(ui_get_text_style());
+ 	switch (image_layout) {
+ 	default:
+ 	case ui_btn_layout_left:
+@@ -257,7 +257,7 @@ template<typename C>
+ vec2 _ui_button_img_size(const C* text, sprite_t image, ui_btn_layout_ image_layout) {
+ 	text_style_t style   = ui_get_text_style();
+ 	vec2         size    = {};
+-	float        text_sz = text_style_get_ascender(style);
++	float        text_sz = text_style_get_baseline(style);
+ 	if (image_layout == ui_btn_layout_center_no_text) {
+ 		size = { text_sz, text_sz };
+ 	} else if (image_layout == ui_btn_layout_none) {
+@@ -590,7 +590,7 @@ bool32_t ui_input_at_g(const C* id, C* buffer, int32_t buffer_size, vec3 window_
+ 
+ 		int32_t carat_at      = skui_input_carat;
+ 		vec2    carat_pos     = text_char_at_o(draw_text, style, carat_at, &text_bounds, text_fit_clip, text_align_top_left, text_align_center_left);
+-		float   scroll_margin = text_bounds.x - text_style_get_ascender(ui_get_text_style());
++		float   scroll_margin = text_bounds.x - text_style_get_baseline(ui_get_text_style());
+ 		while (carat_pos.x < -scroll_margin && *draw_text != '\0' && carat_at >= 0) {
+ 			draw_text += 1;
+ 			carat_at  -= 1;"
+StereoKit/StereoKit,1094,515fc4a,StereoKitC/ui/ui_layout.cpp,modified,1,1,2,"@@ -415,7 +415,7 @@ ui_layout_t* ui_layout_curr() {
+ ///////////////////////////////////////////
+ 
+ float ui_line_height() {
+-	return skui_settings.padding * 2 + text_style_get_ascender(ui_get_text_style());
++	return skui_settings.padding * 2 + text_style_get_baseline(ui_get_text_style());
+ }
+ 
+ ///////////////////////////////////////////"
+StereoKit/StereoKit,1094,515fc4a,StereoKitC/ui/ui_theming.cpp,modified,2,2,4,"@@ -107,7 +107,7 @@ void ui_theming_init() {
+ 	text_style_t style = text_make_style_mat(skui_font, 0.01f, skui_font_mat, { 1,1,1,1 });
+ 	// TODO: v0.4, switch these to something more intentional instead of backwards compatible (like lineheight 1.4)
+ 	// This matches the original SK size for compat, for now.
+-	text_style_set_line_height_pct(style, 1.18f);
++	text_style_set_line_height_pct(style, 1.1f);
+ 	skui_font_stack.add(style);
+ 
+ 	// TODO: v0.4, this sets up default values when zeroed out, with a
+@@ -1086,7 +1086,7 @@ void ui_theme_visuals_update() {
+ 
+ 	_ui_gen_quadrant_mesh(&theme_mesh_slider_pinch, ui_corner_all, fminf((ui_line_height() * 0.5f)/2.f, skui_settings.rounding), 5, false, true, lathe_slider_btn, _countof(lathe_slider_btn));
+ 	_ui_gen_quadrant_mesh(&theme_mesh_slider_push,  ui_corner_all, fminf((ui_line_height() * 0.55f)/2.f, skui_settings.rounding), 5, false, true, lathe_slider_btn, _countof(lathe_slider_btn));
+-	_ui_gen_quadrant_mesh(&theme_mesh_separator,    ui_corner_all, fminf((text_style_get_ascender(ui_get_text_style()) * 0.4f)/2.f, skui_settings.rounding * 0.1f),  3, false, true, lathe_slider_btn, _countof(lathe_slider_btn));
++	_ui_gen_quadrant_mesh(&theme_mesh_separator,    ui_corner_all, fminf((text_style_get_baseline(ui_get_text_style()) * 0.4f)/2.f, skui_settings.rounding * 0.1f),  3, false, true, lathe_slider_btn, _countof(lathe_slider_btn));
+ 	
+ 	float aura_mesh_radius = skui_aura_radius * 0.75f;
+ 	ui_default_aura_mesh(&theme_mesh_aura, 0, fminf(ui_line_height(), skui_settings.rounding) + aura_mesh_radius, skui_aura_radius - aura_mesh_radius, 7, 5);"

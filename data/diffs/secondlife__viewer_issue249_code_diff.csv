@@ -1,0 +1,1743 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+secondlife/viewer,249,4614442,indra/llui/llbutton.cpp,modified,2,1,3,"@@ -203,7 +203,8 @@ LLButton::LLButton(const LLButton::Params& p)
+ 	}
+ 
+ 	// Hack to make sure there is space for at least one character
+-	if (getRect().getWidth() - (mRightHPad + mLeftHPad) < mGLFont->getWidth(std::string("" "")))
++	if (getRect().mRight >= 0 && getRect().getWidth() > 0 &&
++		getRect().getWidth() - (mRightHPad + mLeftHPad) < mGLFont->getWidth(std::string("" "")))
+ 	{
+ 		// Use old defaults
+ 		mLeftHPad = llbutton_orig_h_pad;"
+secondlife/viewer,249,4614442,indra/llui/llscrollcontainer.cpp,modified,7,7,14,"@@ -105,8 +105,8 @@ LLScrollContainer::LLScrollContainer(const LLScrollContainer::Params& p)
+ 	mBorder = LLUICtrlFactory::create<LLViewBorder> (params);
+ 	LLView::addChild( mBorder );
+ 
+-	mInnerRect.set( 0, getRect().getHeight(), getRect().getWidth(), 0 );
+-	mInnerRect.stretch( -getBorderWidth()  );
++	mInnerRect = getLocalRect();
++	mInnerRect.stretch( -getBorderWidth() );
+ 
+ 	LLRect vertical_scroll_rect = mInnerRect;
+ 	vertical_scroll_rect.mLeft = vertical_scroll_rect.mRight - scrollbar_size;
+@@ -124,9 +124,9 @@ LLScrollContainer::LLScrollContainer(const LLScrollContainer::Params& p)
+ 	mScrollbar[VERTICAL] = LLUICtrlFactory::create<LLScrollbar> (sbparams);
+ 	LLView::addChild( mScrollbar[VERTICAL] );
+ 	
+-	LLRect horizontal_scroll_rect = mInnerRect;
+-	horizontal_scroll_rect.mTop = horizontal_scroll_rect.mBottom + scrollbar_size;
+-	horizontal_scroll_rect.mLeft += 3;
++	LLRect horizontal_scroll_rect;
++	horizontal_scroll_rect.mRight = mInnerRect.getWidth();
++	horizontal_scroll_rect.mTop = scrollbar_size;
+ 	sbparams.name(""scrollable horizontal"");
+ 	sbparams.rect(horizontal_scroll_rect);
+ 	sbparams.orientation(LLScrollbar::HORIZONTAL);
+@@ -135,7 +135,7 @@ LLScrollContainer::LLScrollContainer(const LLScrollContainer::Params& p)
+ 	sbparams.page_size(mInnerRect.getWidth());
+ 	sbparams.step_size(VERTICAL_MULTIPLE);
+ 	sbparams.visible(false);
+-	sbparams.follows.flags(FOLLOWS_LEFT | FOLLOWS_RIGHT);
++	sbparams.follows.flags(FOLLOWS_LEFT | FOLLOWS_RIGHT | FOLLOWS_BOTTOM);
+ 	sbparams.change_callback(p.scroll_callback);
+ 	mScrollbar[HORIZONTAL] = LLUICtrlFactory::create<LLScrollbar> (sbparams);
+ 	LLView::addChild( mScrollbar[HORIZONTAL] );
+@@ -631,7 +631,7 @@ void LLScrollContainer::updateScroll()
+ 		}
+ 	
+ 		mScrollbar[HORIZONTAL]->setVisible( TRUE );
+-		S32 h_scrollbar_width = visible_width;
++		S32 h_scrollbar_width = visible_width;// -LLPANEL_BORDER_WIDTH * 2;
+ 		if( !show_v_scrollbar && mReserveScrollCorner )
+ 		{
+ 			h_scrollbar_width -= scrollbar_size;"
+secondlife/viewer,249,4614442,indra/llui/lltabcontainer.cpp,modified,4,4,8,"@@ -1002,7 +1002,7 @@ void LLTabContainer::addTabPanel(const TabPanelParams& panel)
+ 	}
+ 	else
+ 	{
+-		//Scip tab button space if they are invisible(EXT - 576)
++		// Skip tab button space if tabs are invisible (EXT-576)
+ 		tab_panel_top = getRect().getHeight();
+ 		tab_panel_bottom = LLPANEL_BORDER_WIDTH;
+ 	}
+@@ -1017,9 +1017,9 @@ void LLTabContainer::addTabPanel(const TabPanelParams& panel)
+ 	}
+ 	else
+ 	{
+-		tab_panel_rect = LLRect(LLPANEL_BORDER_WIDTH, 
++		tab_panel_rect = LLRect(LLPANEL_BORDER_WIDTH * 3,
+ 								tab_panel_top,
+-								getRect().getWidth()-LLPANEL_BORDER_WIDTH,
++								getRect().getWidth() - LLPANEL_BORDER_WIDTH * 2,
+ 								tab_panel_bottom );
+ 	}
+ 	child->setFollowsAll();
+@@ -1106,7 +1106,7 @@ void LLTabContainer::addTabPanel(const TabPanelParams& panel)
+ 		  p.follows.flags = p.follows.flags() | FOLLOWS_TOP;
+ 		}
+ 		else
+-		  { 
++		{ 
+ 		    p.name(""htab_""+std::string(child->getName()));
+ 		    p.visible(false);
+ 		    p.image_unselected(tab_img);"
+secondlife/viewer,249,4614442,indra/newview/llinventorypanel.cpp,modified,0,1,1,"@@ -298,7 +298,6 @@ void LLInventoryPanel::initFolderRoot()
+     // Scroller
+     LLRect scroller_view_rect = getRect();
+     scroller_view_rect.translate(-scroller_view_rect.mLeft, -scroller_view_rect.mBottom);
+-	scroller_view_rect.mTop -= 3;
+     LLScrollContainer::Params scroller_params(mParams.scroll());
+     scroller_params.rect(scroller_view_rect);
+     mScroller = LLUICtrlFactory::create<LLFolderViewScrollContainer>(scroller_params);"
+secondlife/viewer,249,4614442,indra/newview/llpanelmaininventory.cpp,modified,1,1,2,"@@ -2505,7 +2505,7 @@ void LLPanelMainInventory::setViewMode(EViewModeType mode)
+     {
+         std::list<LLUUID> forward_history;
+         std::list<LLUUID> backward_history;
+-        U32 sort_order;
++        U32 sort_order = 0;
+         switch(mViewMode)
+         {
+             case MODE_LIST:"
+secondlife/viewer,249,4614442,indra/newview/skins/default/xui/en/panel_inventory_gallery.xml,modified,6,11,17,"@@ -6,19 +6,15 @@
+    follows=""all""
+    height=""390""
+    name=""Inventory Gallery""
+-   layout=""topleft""
+-   left=""0""
+-   top=""0""
+-   width=""404"">
++   layout=""topleft"">
+   <text
+     type=""string""
+     clip_partial=""false""
+-    follows=""left|top""
++    follows=""all""
+     layout=""topleft""
+-    left=""13""
+     name=""empty_txt""
+-    top=""0""
+-    height=""32""
++    height=""390""
++    halign=""center""
+     valign=""center""
+     parse_urls=""true""
+     wrap=""true"">
+@@ -28,10 +24,9 @@
+    follows=""all""
+    height=""390""
+    layout=""topleft""
+-   left=""4""
++   left=""0""
+    top=""0""
+    name=""gallery_scroll_panel""
+-   opaque=""false""
+-   top_pad=""0"">
++   opaque=""false"">
+   </scroll_container>
+ </panel>"
+secondlife/viewer,249,4614442,indra/newview/skins/default/xui/en/panel_main_inventory.xml,modified,22,35,57,"@@ -6,8 +6,7 @@
+  layout=""topleft""
+  min_height=""300""
+  min_width=""240""
+- name=""main inventory panel""
+- width=""355"">
++ name=""main inventory panel"">
+   <panel.string
+    name=""Itemcount"">
+   </panel.string>
+@@ -27,18 +26,18 @@
+   <panel.string name=""default_mode_btn"">Multi_Folder_Mode</panel.string>
+   <panel.string name=""single_folder_mode_btn"">Single_Folder_Mode</panel.string>
+   <text
+-		     type=""string""
+-		     length=""1""
+-		     follows=""left|top|right""
+-		     height=""13""
+-		     layout=""topleft""
+-    		 left=""12""
+-		     name=""ItemcountText""
+-		     font=""SansSerifMedium""
+-		     text_color=""InventoryItemLinkColor""
+-		     use_ellipses=""true""
+-		     top_pad=""0""
+-		     width=""300"">
++     type=""string""
++     length=""1""
++     follows=""left|top|right""
++     height=""13""
++     layout=""topleft""
++  	 left=""12""
++  	 right=""-12""
++     name=""ItemcountText""
++     font=""SansSerifMedium""
++     text_color=""InventoryItemLinkColor""
++     use_ellipses=""true""
++     top_pad=""0"">
+     Items:
+   </text>
+   <layout_stack
+@@ -47,6 +46,7 @@
+    animate=""false""
+    top_pad=""10""
+    left=""2""
++   right=""-4""
+    orientation=""horizontal"">
+     <layout_panel
+      border=""false""
+@@ -100,7 +100,7 @@
+       bevel_style=""in""
+       user_resize=""false""
+       height=""25""
+-      width=""375""
++      width=""381""
+       visible=""true"">
+       <combo_box
+        height=""23""
+@@ -203,10 +203,10 @@
+      halign=""center""
+      height=""372""
+      layout=""topleft""
+-     left=""7""
++     left=""3""
++     right=""-3""
+      name=""default_inventory_panel""
+-     top_pad=""10""
+-     width=""312"">
++     top_pad=""5"">
+       <tab_container
+        follows=""all""
+        halign=""center""
+@@ -217,26 +217,22 @@
+        tab_height=""30""
+        tab_position=""top""
+        tab_min_width=""100""
+-       top=""0""
+-       width=""312"">
++       top=""0"">
+         <inventory_panel
+          bg_opaque_color=""DkGray2""
+          bg_alpha_color=""DkGray2""
+          background_visible=""true""
+          border=""false""
+          bevel_style=""none""
+          follows=""all""
+-         height=""338""
+          label=""MY INVENTORY""
+          help_topic=""my_inventory_tab""
+          layout=""topleft""
+-         left=""0""
+          name=""All Items""
+          sort_order_setting=""InventorySortOrder""
+          show_item_link_overlays=""true""
+          preinitialize_views=""false""
+-         top=""16""
+-         width=""288"">
++         scroll.reserve_scroll_corner=""false"">
+             <folder double_click_override=""true""/>
+         </inventory_panel>
+         <recent_inventory_panel
+@@ -246,15 +242,13 @@
+          border=""false""
+          bevel_style=""none""
+          follows=""all""
+-         height=""338""
+          label=""RECENT""
+          help_topic=""recent_inventory_tab""
+          layout=""topleft""
+-         left_delta=""0""
+          name=""Recent Items""
+          show_item_link_overlays=""true""
+          preinitialize_views=""false""
+-         width=""290"">
++         scroll.reserve_scroll_corner=""false"">
+             <folder double_click_override=""true""/>
+         </recent_inventory_panel>
+         <inventory_panel
+@@ -263,7 +257,6 @@
+          show_empty_message=""false""
+          follows=""all""
+          layout=""topleft""
+-         width=""290""
+          bg_opaque_color=""DkGray2""
+          bg_alpha_color=""DkGray2""
+          background_visible=""true""
+@@ -283,13 +276,11 @@
+      left=""7""
+      name=""combination_view_inventory""
+      top_delta=""0""
+-     visible=""false""
+-     width=""312"">
++     visible=""false"">
+      <layout_stack
+       follows=""all""
+       layout=""topleft""
+       height=""372""
+-      width=""312""
+       animate=""false""
+       drag_handle_gap=""13""
+       drag_handle_thickness=""6""
+@@ -306,7 +297,6 @@
+         user_resize=""true""
+         auto_resize=""true""
+         height=""246""
+-        width=""312""
+         min_width=""150""
+         name=""comb_gallery_layout"">
+         <panel
+@@ -315,7 +305,6 @@
+          left=""0""
+          top=""1""
+          height=""246""
+-         width=""312""
+          name=""comb_gallery_view_inv""
+          background_visible=""true""
+          follows=""all""
+@@ -328,7 +317,6 @@
+         user_resize=""true""
+         auto_resize=""true""
+         height=""126""
+-        width=""312""
+         min_height=""100""
+         name=""comb_inventory_layout"">
+         <single_folder_inventory_panel
+@@ -337,7 +325,6 @@
+          left=""0""
+          top=""1""
+          height=""126""
+-         width=""312""
+          layout=""topleft""
+          show_item_link_overlays=""true""
+          bg_opaque_color=""DkGray2"""
+secondlife/viewer,249,4614442,indra/newview/skins/default/xui/en/sidepanel_inventory.xml,modified,23,32,55,"@@ -6,8 +6,7 @@
+ 	  layout=""topleft""
+ 	  min_height=""350""
+ 	  min_width=""240""
+-	  name=""objects panel""
+-	  width=""358"">
++	  name=""objects panel"">
+     <panel
+ 		 follows=""all""
+ 		 layout=""topleft""
+@@ -17,25 +16,22 @@
+ 		 label=""""
+ 		 height=""570""
+ 		 visible=""true""
+-		 default_tab_group=""1""
+-		 width=""395"">
++		 default_tab_group=""1"">
+       <layout_stack
+               follows=""left|right|top|bottom""
+               layout=""topleft""
+               left=""0""
+               top=""0""
+-							tab_group=""1""
++              tab_group=""1""
+               orientation=""vertical""
+               name=""inventory_layout_stack""
+-              height=""565""
+-              width=""395"">
++              height=""560"">
+              <layout_panel
+                  name=""main_inventory_layout_panel""
+                  layout=""topleft""
+                  auto_resize=""true""
+                  user_resize=""true""
+                  min_dim=""150""
+-                 width=""395""
+                  follows=""bottom|left|right""
+                  height=""300"">
+                  <panel
+@@ -47,11 +43,9 @@
+                       name=""panel_main_inventory""
+                       top=""0""
+                       label=""""
+-                      height=""300""
+-                      width=""395"" />
++                      height=""300"" />
+              </layout_panel>
+ 			    <layout_panel
+-                 width=""355""
+                  layout=""topleft""
+                  auto_resize=""false""
+                  user_resize=""true""
+@@ -69,17 +63,15 @@
+                       class=""panel_marketplace_inbox""
+                       top=""0""
+                       label=""""
+-                      height=""235""
+-                      width=""330"">
++                      height=""235"">
+                      <string name=""InboxLabelWithArg"">Received items ([NUM])</string>
+                      <string name=""InboxLabelNoArg"">Received items</string>
+                      <button
+                         control_name=""InventoryInboxToggleState""
+                         label=""Received items""
+-												font=""SansSerifMedium""
++                        font=""SansSerifMedium""
+                         name=""inbox_btn""
+                         height=""35""
+-                        width=""308""
+                         image_unselected=""MarketplaceBtn_Off""
+                         image_selected=""MarketplaceBtn_Selected""
+                         halign=""left""
+@@ -89,7 +81,8 @@
+                         tab_stop=""false""
+                         pad_left=""35""
+                         top=""0""
+-                        left=""10"" />
++                        left=""5""
++                        right=""-5"" />
+                      <text
+                         type=""string""
+                         length=""1""
+@@ -101,34 +94,32 @@
+                         name=""inbox_fresh_new_count""
+                         font=""SansSerifMedium""
+                         halign=""right""
+-                        top_pad=""0""
+-                        width=""300"">
++                        top_pad=""0"">
+                         [NUM] new
+                      </text>
+                      <panel
+                         name=""inbox_inventory_placeholder_panel""
+                         follows=""all""
+-                        left=""10""
+-                        bottom=""235""
+-                        width=""308""
++                        left=""5""
++                        right=""-5""
+                         top=""35""
++                        height=""200""
+                         bg_opaque_color=""InventoryBackgroundColor""
+                         background_visible=""true""
+                         background_opaque=""true""
+                         tool_tip=""Drag and drop items to your inventory to use them""
+                         >
+                         <text name=""inbox_inventory_placeholder""
+-															type=""string""
+-															follows=""all""
+-															layout=""topleft""
+-															top=""0""
+-															left=""0""
+-															width=""308""
+-															height=""200""
+-															wrap=""true""
+-															halign=""center"">
+-Purchases from the marketplace will be delivered here.
+-												</text>
++                            type=""string""
++                            follows=""all""
++                            layout=""topleft""
++                            top=""0""
++                            height=""200""
++                            wrap=""true""
++                            halign=""center""
++                            valign=""center"">
++                          Purchases from the marketplace will be delivered here.
++                        </text>
+                     </panel>
+                  </panel>
+              </layout_panel>"
+secondlife/viewer,249,14e167e,indra/llui/llbutton.cpp,modified,2,1,3,"@@ -203,7 +203,8 @@ LLButton::LLButton(const LLButton::Params& p)
+ 	}
+ 
+ 	// Hack to make sure there is space for at least one character
+-	if (getRect().getWidth() - (mRightHPad + mLeftHPad) < mGLFont->getWidth(std::string("" "")))
++	if (getRect().mRight >= 0 && getRect().getWidth() > 0 &&
++		getRect().getWidth() - (mRightHPad + mLeftHPad) < mGLFont->getWidth(std::string("" "")))
+ 	{
+ 		// Use old defaults
+ 		mLeftHPad = llbutton_orig_h_pad;"
+secondlife/viewer,249,14e167e,indra/llui/llscrollcontainer.cpp,modified,7,7,14,"@@ -105,8 +105,8 @@ LLScrollContainer::LLScrollContainer(const LLScrollContainer::Params& p)
+ 	mBorder = LLUICtrlFactory::create<LLViewBorder> (params);
+ 	LLView::addChild( mBorder );
+ 
+-	mInnerRect.set( 0, getRect().getHeight(), getRect().getWidth(), 0 );
+-	mInnerRect.stretch( -getBorderWidth()  );
++	mInnerRect = getLocalRect();
++	mInnerRect.stretch( -getBorderWidth() );
+ 
+ 	LLRect vertical_scroll_rect = mInnerRect;
+ 	vertical_scroll_rect.mLeft = vertical_scroll_rect.mRight - scrollbar_size;
+@@ -124,9 +124,9 @@ LLScrollContainer::LLScrollContainer(const LLScrollContainer::Params& p)
+ 	mScrollbar[VERTICAL] = LLUICtrlFactory::create<LLScrollbar> (sbparams);
+ 	LLView::addChild( mScrollbar[VERTICAL] );
+ 	
+-	LLRect horizontal_scroll_rect = mInnerRect;
+-	horizontal_scroll_rect.mTop = horizontal_scroll_rect.mBottom + scrollbar_size;
+-	horizontal_scroll_rect.mLeft += 3;
++	LLRect horizontal_scroll_rect;
++	horizontal_scroll_rect.mTop = scrollbar_size;
++	horizontal_scroll_rect.mRight = mInnerRect.getWidth();
+ 	sbparams.name(""scrollable horizontal"");
+ 	sbparams.rect(horizontal_scroll_rect);
+ 	sbparams.orientation(LLScrollbar::HORIZONTAL);
+@@ -135,7 +135,7 @@ LLScrollContainer::LLScrollContainer(const LLScrollContainer::Params& p)
+ 	sbparams.page_size(mInnerRect.getWidth());
+ 	sbparams.step_size(VERTICAL_MULTIPLE);
+ 	sbparams.visible(false);
+-	sbparams.follows.flags(FOLLOWS_LEFT | FOLLOWS_RIGHT);
++	sbparams.follows.flags(FOLLOWS_LEFT | FOLLOWS_RIGHT | FOLLOWS_BOTTOM);
+ 	sbparams.change_callback(p.scroll_callback);
+ 	mScrollbar[HORIZONTAL] = LLUICtrlFactory::create<LLScrollbar> (sbparams);
+ 	LLView::addChild( mScrollbar[HORIZONTAL] );
+@@ -631,7 +631,7 @@ void LLScrollContainer::updateScroll()
+ 		}
+ 	
+ 		mScrollbar[HORIZONTAL]->setVisible( TRUE );
+-		S32 h_scrollbar_width = visible_width;
++		S32 h_scrollbar_width = visible_width;// -LLPANEL_BORDER_WIDTH * 2;
+ 		if( !show_v_scrollbar && mReserveScrollCorner )
+ 		{
+ 			h_scrollbar_width -= scrollbar_size;"
+secondlife/viewer,249,14e167e,indra/llui/lltabcontainer.cpp,modified,4,4,8,"@@ -1002,7 +1002,7 @@ void LLTabContainer::addTabPanel(const TabPanelParams& panel)
+ 	}
+ 	else
+ 	{
+-		//Scip tab button space if they are invisible(EXT - 576)
++		// Skip tab button space if tabs are invisible (EXT-576)
+ 		tab_panel_top = getRect().getHeight();
+ 		tab_panel_bottom = LLPANEL_BORDER_WIDTH;
+ 	}
+@@ -1017,9 +1017,9 @@ void LLTabContainer::addTabPanel(const TabPanelParams& panel)
+ 	}
+ 	else
+ 	{
+-		tab_panel_rect = LLRect(LLPANEL_BORDER_WIDTH, 
++		tab_panel_rect = LLRect(LLPANEL_BORDER_WIDTH * 3,
+ 								tab_panel_top,
+-								getRect().getWidth()-LLPANEL_BORDER_WIDTH,
++								getRect().getWidth() - LLPANEL_BORDER_WIDTH * 2,
+ 								tab_panel_bottom );
+ 	}
+ 	child->setFollowsAll();
+@@ -1106,7 +1106,7 @@ void LLTabContainer::addTabPanel(const TabPanelParams& panel)
+ 		  p.follows.flags = p.follows.flags() | FOLLOWS_TOP;
+ 		}
+ 		else
+-		  { 
++		{ 
+ 		    p.name(""htab_""+std::string(child->getName()));
+ 		    p.visible(false);
+ 		    p.image_unselected(tab_img);"
+secondlife/viewer,249,14e167e,indra/newview/llinventorypanel.cpp,modified,0,1,1,"@@ -298,7 +298,6 @@ void LLInventoryPanel::initFolderRoot()
+     // Scroller
+     LLRect scroller_view_rect = getRect();
+     scroller_view_rect.translate(-scroller_view_rect.mLeft, -scroller_view_rect.mBottom);
+-	scroller_view_rect.mTop -= 3;
+     LLScrollContainer::Params scroller_params(mParams.scroll());
+     scroller_params.rect(scroller_view_rect);
+     mScroller = LLUICtrlFactory::create<LLFolderViewScrollContainer>(scroller_params);"
+secondlife/viewer,249,14e167e,indra/newview/llpanelmaininventory.cpp,modified,1,1,2,"@@ -2505,7 +2505,7 @@ void LLPanelMainInventory::setViewMode(EViewModeType mode)
+     {
+         std::list<LLUUID> forward_history;
+         std::list<LLUUID> backward_history;
+-        U32 sort_order;
++        U32 sort_order = 0;
+         switch(mViewMode)
+         {
+             case MODE_LIST:"
+secondlife/viewer,249,14e167e,indra/newview/skins/default/xui/en/panel_inventory_gallery.xml,modified,6,11,17,"@@ -6,19 +6,15 @@
+    follows=""all""
+    height=""390""
+    name=""Inventory Gallery""
+-   layout=""topleft""
+-   left=""0""
+-   top=""0""
+-   width=""404"">
++   layout=""topleft"">
+   <text
+     type=""string""
+     clip_partial=""false""
+-    follows=""left|top""
++    follows=""all""
+     layout=""topleft""
+-    left=""13""
+     name=""empty_txt""
+-    top=""0""
+-    height=""32""
++    height=""390""
++    halign=""center""
+     valign=""center""
+     parse_urls=""true""
+     wrap=""true"">
+@@ -28,10 +24,9 @@
+    follows=""all""
+    height=""390""
+    layout=""topleft""
+-   left=""4""
++   left=""0""
+    top=""0""
+    name=""gallery_scroll_panel""
+-   opaque=""false""
+-   top_pad=""0"">
++   opaque=""false"">
+   </scroll_container>
+ </panel>"
+secondlife/viewer,249,14e167e,indra/newview/skins/default/xui/en/panel_main_inventory.xml,modified,22,35,57,"@@ -6,8 +6,7 @@
+  layout=""topleft""
+  min_height=""300""
+  min_width=""240""
+- name=""main inventory panel""
+- width=""355"">
++ name=""main inventory panel"">
+   <panel.string
+    name=""Itemcount"">
+   </panel.string>
+@@ -27,18 +26,18 @@
+   <panel.string name=""default_mode_btn"">Multi_Folder_Mode</panel.string>
+   <panel.string name=""single_folder_mode_btn"">Single_Folder_Mode</panel.string>
+   <text
+-		     type=""string""
+-		     length=""1""
+-		     follows=""left|top|right""
+-		     height=""13""
+-		     layout=""topleft""
+-    		 left=""12""
+-		     name=""ItemcountText""
+-		     font=""SansSerifMedium""
+-		     text_color=""InventoryItemLinkColor""
+-		     use_ellipses=""true""
+-		     top_pad=""0""
+-		     width=""300"">
++     type=""string""
++     length=""1""
++     follows=""left|top|right""
++     height=""13""
++     layout=""topleft""
++  	 left=""12""
++  	 right=""-12""
++     name=""ItemcountText""
++     font=""SansSerifMedium""
++     text_color=""InventoryItemLinkColor""
++     use_ellipses=""true""
++     top_pad=""0"">
+     Items:
+   </text>
+   <layout_stack
+@@ -47,6 +46,7 @@
+    animate=""false""
+    top_pad=""10""
+    left=""2""
++   right=""-4""
+    orientation=""horizontal"">
+     <layout_panel
+      border=""false""
+@@ -100,7 +100,7 @@
+       bevel_style=""in""
+       user_resize=""false""
+       height=""25""
+-      width=""375""
++      width=""381""
+       visible=""true"">
+       <combo_box
+        height=""23""
+@@ -203,10 +203,10 @@
+      halign=""center""
+      height=""372""
+      layout=""topleft""
+-     left=""7""
++     left=""3""
++     right=""-3""
+      name=""default_inventory_panel""
+-     top_pad=""10""
+-     width=""312"">
++     top_pad=""5"">
+       <tab_container
+        follows=""all""
+        halign=""center""
+@@ -217,26 +217,22 @@
+        tab_height=""30""
+        tab_position=""top""
+        tab_min_width=""100""
+-       top=""0""
+-       width=""312"">
++       top=""0"">
+         <inventory_panel
+          bg_opaque_color=""DkGray2""
+          bg_alpha_color=""DkGray2""
+          background_visible=""true""
+          border=""false""
+          bevel_style=""none""
+          follows=""all""
+-         height=""338""
+          label=""MY INVENTORY""
+          help_topic=""my_inventory_tab""
+          layout=""topleft""
+-         left=""0""
+          name=""All Items""
+          sort_order_setting=""InventorySortOrder""
+          show_item_link_overlays=""true""
+          preinitialize_views=""false""
+-         top=""16""
+-         width=""288"">
++         scroll.reserve_scroll_corner=""false"">
+             <folder double_click_override=""true""/>
+         </inventory_panel>
+         <recent_inventory_panel
+@@ -246,15 +242,13 @@
+          border=""false""
+          bevel_style=""none""
+          follows=""all""
+-         height=""338""
+          label=""RECENT""
+          help_topic=""recent_inventory_tab""
+          layout=""topleft""
+-         left_delta=""0""
+          name=""Recent Items""
+          show_item_link_overlays=""true""
+          preinitialize_views=""false""
+-         width=""290"">
++         scroll.reserve_scroll_corner=""false"">
+             <folder double_click_override=""true""/>
+         </recent_inventory_panel>
+         <inventory_panel
+@@ -263,7 +257,6 @@
+          show_empty_message=""false""
+          follows=""all""
+          layout=""topleft""
+-         width=""290""
+          bg_opaque_color=""DkGray2""
+          bg_alpha_color=""DkGray2""
+          background_visible=""true""
+@@ -283,13 +276,11 @@
+      left=""7""
+      name=""combination_view_inventory""
+      top_delta=""0""
+-     visible=""false""
+-     width=""312"">
++     visible=""false"">
+      <layout_stack
+       follows=""all""
+       layout=""topleft""
+       height=""372""
+-      width=""312""
+       animate=""false""
+       drag_handle_gap=""13""
+       drag_handle_thickness=""6""
+@@ -306,7 +297,6 @@
+         user_resize=""true""
+         auto_resize=""true""
+         height=""246""
+-        width=""312""
+         min_width=""150""
+         name=""comb_gallery_layout"">
+         <panel
+@@ -315,7 +305,6 @@
+          left=""0""
+          top=""1""
+          height=""246""
+-         width=""312""
+          name=""comb_gallery_view_inv""
+          background_visible=""true""
+          follows=""all""
+@@ -328,7 +317,6 @@
+         user_resize=""true""
+         auto_resize=""true""
+         height=""126""
+-        width=""312""
+         min_height=""100""
+         name=""comb_inventory_layout"">
+         <single_folder_inventory_panel
+@@ -337,7 +325,6 @@
+          left=""0""
+          top=""1""
+          height=""126""
+-         width=""312""
+          layout=""topleft""
+          show_item_link_overlays=""true""
+          bg_opaque_color=""DkGray2"""
+secondlife/viewer,249,14e167e,indra/newview/skins/default/xui/en/sidepanel_inventory.xml,modified,23,32,55,"@@ -6,8 +6,7 @@
+ 	  layout=""topleft""
+ 	  min_height=""350""
+ 	  min_width=""240""
+-	  name=""objects panel""
+-	  width=""358"">
++	  name=""objects panel"">
+     <panel
+ 		 follows=""all""
+ 		 layout=""topleft""
+@@ -17,25 +16,22 @@
+ 		 label=""""
+ 		 height=""570""
+ 		 visible=""true""
+-		 default_tab_group=""1""
+-		 width=""395"">
++		 default_tab_group=""1"">
+       <layout_stack
+               follows=""left|right|top|bottom""
+               layout=""topleft""
+               left=""0""
+               top=""0""
+-							tab_group=""1""
++              tab_group=""1""
+               orientation=""vertical""
+               name=""inventory_layout_stack""
+-              height=""565""
+-              width=""395"">
++              height=""560"">
+              <layout_panel
+                  name=""main_inventory_layout_panel""
+                  layout=""topleft""
+                  auto_resize=""true""
+                  user_resize=""true""
+                  min_dim=""150""
+-                 width=""395""
+                  follows=""bottom|left|right""
+                  height=""300"">
+                  <panel
+@@ -47,11 +43,9 @@
+                       name=""panel_main_inventory""
+                       top=""0""
+                       label=""""
+-                      height=""300""
+-                      width=""395"" />
++                      height=""300"" />
+              </layout_panel>
+ 			    <layout_panel
+-                 width=""355""
+                  layout=""topleft""
+                  auto_resize=""false""
+                  user_resize=""true""
+@@ -69,17 +63,15 @@
+                       class=""panel_marketplace_inbox""
+                       top=""0""
+                       label=""""
+-                      height=""235""
+-                      width=""330"">
++                      height=""235"">
+                      <string name=""InboxLabelWithArg"">Received items ([NUM])</string>
+                      <string name=""InboxLabelNoArg"">Received items</string>
+                      <button
+                         control_name=""InventoryInboxToggleState""
+                         label=""Received items""
+-												font=""SansSerifMedium""
++                        font=""SansSerifMedium""
+                         name=""inbox_btn""
+                         height=""35""
+-                        width=""308""
+                         image_unselected=""MarketplaceBtn_Off""
+                         image_selected=""MarketplaceBtn_Selected""
+                         halign=""left""
+@@ -89,7 +81,8 @@
+                         tab_stop=""false""
+                         pad_left=""35""
+                         top=""0""
+-                        left=""10"" />
++                        left=""5""
++                        right=""-5"" />
+                      <text
+                         type=""string""
+                         length=""1""
+@@ -101,34 +94,32 @@
+                         name=""inbox_fresh_new_count""
+                         font=""SansSerifMedium""
+                         halign=""right""
+-                        top_pad=""0""
+-                        width=""300"">
++                        top_pad=""0"">
+                         [NUM] new
+                      </text>
+                      <panel
+                         name=""inbox_inventory_placeholder_panel""
+                         follows=""all""
+-                        left=""10""
+-                        bottom=""235""
+-                        width=""308""
++                        left=""5""
++                        right=""-5""
+                         top=""35""
++                        height=""200""
+                         bg_opaque_color=""InventoryBackgroundColor""
+                         background_visible=""true""
+                         background_opaque=""true""
+                         tool_tip=""Drag and drop items to your inventory to use them""
+                         >
+                         <text name=""inbox_inventory_placeholder""
+-															type=""string""
+-															follows=""all""
+-															layout=""topleft""
+-															top=""0""
+-															left=""0""
+-															width=""308""
+-															height=""200""
+-															wrap=""true""
+-															halign=""center"">
+-Purchases from the marketplace will be delivered here.
+-												</text>
++                            type=""string""
++                            follows=""all""
++                            layout=""topleft""
++                            top=""0""
++                            height=""200""
++                            wrap=""true""
++                            halign=""center""
++                            valign=""center"">
++                          Purchases from the marketplace will be delivered here.
++                        </text>
+                     </panel>
+                  </panel>
+              </layout_panel>"
+secondlife/viewer,249,c000c59,indra/llui/llbutton.cpp,modified,2,1,3,"@@ -203,7 +203,8 @@ LLButton::LLButton(const LLButton::Params& p)
+ 	}
+ 
+ 	// Hack to make sure there is space for at least one character
+-	if (getRect().getWidth() - (mRightHPad + mLeftHPad) < mGLFont->getWidth(std::string("" "")))
++	if (getRect().mRight >= 0 && getRect().getWidth() > 0 &&
++		getRect().getWidth() - (mRightHPad + mLeftHPad) < mGLFont->getWidth(std::string("" "")))
+ 	{
+ 		// Use old defaults
+ 		mLeftHPad = llbutton_orig_h_pad;"
+secondlife/viewer,249,c000c59,indra/llui/llscrollcontainer.cpp,modified,6,6,12,"@@ -105,8 +105,8 @@ LLScrollContainer::LLScrollContainer(const LLScrollContainer::Params& p)
+ 	mBorder = LLUICtrlFactory::create<LLViewBorder> (params);
+ 	LLView::addChild( mBorder );
+ 
+-	mInnerRect.set( 0, getRect().getHeight(), getRect().getWidth(), 0 );
+-	mInnerRect.stretch( -getBorderWidth()  );
++	mInnerRect = getLocalRect();
++	mInnerRect.stretch( -getBorderWidth() );
+ 
+ 	LLRect vertical_scroll_rect = mInnerRect;
+ 	vertical_scroll_rect.mLeft = vertical_scroll_rect.mRight - scrollbar_size;
+@@ -124,9 +124,9 @@ LLScrollContainer::LLScrollContainer(const LLScrollContainer::Params& p)
+ 	mScrollbar[VERTICAL] = LLUICtrlFactory::create<LLScrollbar> (sbparams);
+ 	LLView::addChild( mScrollbar[VERTICAL] );
+ 	
+-	LLRect horizontal_scroll_rect = mInnerRect;
+-	horizontal_scroll_rect.mTop = horizontal_scroll_rect.mBottom + scrollbar_size;
+-	horizontal_scroll_rect.mLeft += 3;
++	LLRect horizontal_scroll_rect;
++	horizontal_scroll_rect.mTop = scrollbar_size;
++	horizontal_scroll_rect.mRight = mInnerRect.getWidth();
+ 	sbparams.name(""scrollable horizontal"");
+ 	sbparams.rect(horizontal_scroll_rect);
+ 	sbparams.orientation(LLScrollbar::HORIZONTAL);
+@@ -135,7 +135,7 @@ LLScrollContainer::LLScrollContainer(const LLScrollContainer::Params& p)
+ 	sbparams.page_size(mInnerRect.getWidth());
+ 	sbparams.step_size(VERTICAL_MULTIPLE);
+ 	sbparams.visible(false);
+-	sbparams.follows.flags(FOLLOWS_LEFT | FOLLOWS_RIGHT);
++	sbparams.follows.flags(FOLLOWS_LEFT | FOLLOWS_RIGHT | FOLLOWS_BOTTOM);
+ 	sbparams.change_callback(p.scroll_callback);
+ 	mScrollbar[HORIZONTAL] = LLUICtrlFactory::create<LLScrollbar> (sbparams);
+ 	LLView::addChild( mScrollbar[HORIZONTAL] );"
+secondlife/viewer,249,c000c59,indra/llui/lltabcontainer.cpp,modified,4,4,8,"@@ -1002,7 +1002,7 @@ void LLTabContainer::addTabPanel(const TabPanelParams& panel)
+ 	}
+ 	else
+ 	{
+-		//Scip tab button space if they are invisible(EXT - 576)
++		// Skip tab button space if tabs are invisible (EXT-576)
+ 		tab_panel_top = getRect().getHeight();
+ 		tab_panel_bottom = LLPANEL_BORDER_WIDTH;
+ 	}
+@@ -1017,9 +1017,9 @@ void LLTabContainer::addTabPanel(const TabPanelParams& panel)
+ 	}
+ 	else
+ 	{
+-		tab_panel_rect = LLRect(LLPANEL_BORDER_WIDTH, 
++		tab_panel_rect = LLRect(LLPANEL_BORDER_WIDTH * 3,
+ 								tab_panel_top,
+-								getRect().getWidth()-LLPANEL_BORDER_WIDTH,
++								getRect().getWidth() - LLPANEL_BORDER_WIDTH * 2,
+ 								tab_panel_bottom );
+ 	}
+ 	child->setFollowsAll();
+@@ -1106,7 +1106,7 @@ void LLTabContainer::addTabPanel(const TabPanelParams& panel)
+ 		  p.follows.flags = p.follows.flags() | FOLLOWS_TOP;
+ 		}
+ 		else
+-		  { 
++		{ 
+ 		    p.name(""htab_""+std::string(child->getName()));
+ 		    p.visible(false);
+ 		    p.image_unselected(tab_img);"
+secondlife/viewer,249,c000c59,indra/newview/llinventorypanel.cpp,modified,0,1,1,"@@ -298,7 +298,6 @@ void LLInventoryPanel::initFolderRoot()
+     // Scroller
+     LLRect scroller_view_rect = getRect();
+     scroller_view_rect.translate(-scroller_view_rect.mLeft, -scroller_view_rect.mBottom);
+-	scroller_view_rect.mTop -= 3;
+     LLScrollContainer::Params scroller_params(mParams.scroll());
+     scroller_params.rect(scroller_view_rect);
+     mScroller = LLUICtrlFactory::create<LLFolderViewScrollContainer>(scroller_params);"
+secondlife/viewer,249,c000c59,indra/newview/llpanelmaininventory.cpp,modified,1,1,2,"@@ -2505,7 +2505,7 @@ void LLPanelMainInventory::setViewMode(EViewModeType mode)
+     {
+         std::list<LLUUID> forward_history;
+         std::list<LLUUID> backward_history;
+-        U32 sort_order;
++        U32 sort_order = 0;
+         switch(mViewMode)
+         {
+             case MODE_LIST:"
+secondlife/viewer,249,c000c59,indra/newview/skins/default/xui/en/panel_inventory_gallery.xml,modified,6,11,17,"@@ -6,19 +6,15 @@
+    follows=""all""
+    height=""390""
+    name=""Inventory Gallery""
+-   layout=""topleft""
+-   left=""0""
+-   top=""0""
+-   width=""404"">
++   layout=""topleft"">
+   <text
+     type=""string""
+     clip_partial=""false""
+-    follows=""left|top""
++    follows=""all""
+     layout=""topleft""
+-    left=""13""
+     name=""empty_txt""
+-    top=""0""
+-    height=""32""
++    height=""390""
++    halign=""center""
+     valign=""center""
+     parse_urls=""true""
+     wrap=""true"">
+@@ -28,10 +24,9 @@
+    follows=""all""
+    height=""390""
+    layout=""topleft""
+-   left=""4""
++   left=""0""
+    top=""0""
+    name=""gallery_scroll_panel""
+-   opaque=""false""
+-   top_pad=""0"">
++   opaque=""false"">
+   </scroll_container>
+ </panel>"
+secondlife/viewer,249,c000c59,indra/newview/skins/default/xui/en/panel_main_inventory.xml,modified,22,35,57,"@@ -6,8 +6,7 @@
+  layout=""topleft""
+  min_height=""300""
+  min_width=""240""
+- name=""main inventory panel""
+- width=""355"">
++ name=""main inventory panel"">
+   <panel.string
+    name=""Itemcount"">
+   </panel.string>
+@@ -27,18 +26,18 @@
+   <panel.string name=""default_mode_btn"">Multi_Folder_Mode</panel.string>
+   <panel.string name=""single_folder_mode_btn"">Single_Folder_Mode</panel.string>
+   <text
+-		     type=""string""
+-		     length=""1""
+-		     follows=""left|top|right""
+-		     height=""13""
+-		     layout=""topleft""
+-    		 left=""12""
+-		     name=""ItemcountText""
+-		     font=""SansSerifMedium""
+-		     text_color=""InventoryItemLinkColor""
+-		     use_ellipses=""true""
+-		     top_pad=""0""
+-		     width=""300"">
++     type=""string""
++     length=""1""
++     follows=""left|top|right""
++     height=""13""
++     layout=""topleft""
++  	 left=""12""
++  	 right=""-12""
++     name=""ItemcountText""
++     font=""SansSerifMedium""
++     text_color=""InventoryItemLinkColor""
++     use_ellipses=""true""
++     top_pad=""0"">
+     Items:
+   </text>
+   <layout_stack
+@@ -47,6 +46,7 @@
+    animate=""false""
+    top_pad=""10""
+    left=""2""
++   right=""-4""
+    orientation=""horizontal"">
+     <layout_panel
+      border=""false""
+@@ -100,7 +100,7 @@
+       bevel_style=""in""
+       user_resize=""false""
+       height=""25""
+-      width=""375""
++      width=""381""
+       visible=""true"">
+       <combo_box
+        height=""23""
+@@ -203,10 +203,10 @@
+      halign=""center""
+      height=""372""
+      layout=""topleft""
+-     left=""7""
++     left=""3""
++     right=""-3""
+      name=""default_inventory_panel""
+-     top_pad=""10""
+-     width=""312"">
++     top_pad=""5"">
+       <tab_container
+        follows=""all""
+        halign=""center""
+@@ -217,26 +217,22 @@
+        tab_height=""30""
+        tab_position=""top""
+        tab_min_width=""100""
+-       top=""0""
+-       width=""312"">
++       top=""0"">
+         <inventory_panel
+          bg_opaque_color=""DkGray2""
+          bg_alpha_color=""DkGray2""
+          background_visible=""true""
+          border=""false""
+          bevel_style=""none""
+          follows=""all""
+-         height=""338""
+          label=""MY INVENTORY""
+          help_topic=""my_inventory_tab""
+          layout=""topleft""
+-         left=""0""
+          name=""All Items""
+          sort_order_setting=""InventorySortOrder""
+          show_item_link_overlays=""true""
+          preinitialize_views=""false""
+-         top=""16""
+-         width=""288"">
++         scroll.reserve_scroll_corner=""false"">
+             <folder double_click_override=""true""/>
+         </inventory_panel>
+         <recent_inventory_panel
+@@ -246,15 +242,13 @@
+          border=""false""
+          bevel_style=""none""
+          follows=""all""
+-         height=""338""
+          label=""RECENT""
+          help_topic=""recent_inventory_tab""
+          layout=""topleft""
+-         left_delta=""0""
+          name=""Recent Items""
+          show_item_link_overlays=""true""
+          preinitialize_views=""false""
+-         width=""290"">
++         scroll.reserve_scroll_corner=""false"">
+             <folder double_click_override=""true""/>
+         </recent_inventory_panel>
+         <inventory_panel
+@@ -263,7 +257,6 @@
+          show_empty_message=""false""
+          follows=""all""
+          layout=""topleft""
+-         width=""290""
+          bg_opaque_color=""DkGray2""
+          bg_alpha_color=""DkGray2""
+          background_visible=""true""
+@@ -283,13 +276,11 @@
+      left=""7""
+      name=""combination_view_inventory""
+      top_delta=""0""
+-     visible=""false""
+-     width=""312"">
++     visible=""false"">
+      <layout_stack
+       follows=""all""
+       layout=""topleft""
+       height=""372""
+-      width=""312""
+       animate=""false""
+       drag_handle_gap=""13""
+       drag_handle_thickness=""6""
+@@ -306,7 +297,6 @@
+         user_resize=""true""
+         auto_resize=""true""
+         height=""246""
+-        width=""312""
+         min_width=""150""
+         name=""comb_gallery_layout"">
+         <panel
+@@ -315,7 +305,6 @@
+          left=""0""
+          top=""1""
+          height=""246""
+-         width=""312""
+          name=""comb_gallery_view_inv""
+          background_visible=""true""
+          follows=""all""
+@@ -328,7 +317,6 @@
+         user_resize=""true""
+         auto_resize=""true""
+         height=""126""
+-        width=""312""
+         min_height=""100""
+         name=""comb_inventory_layout"">
+         <single_folder_inventory_panel
+@@ -337,7 +325,6 @@
+          left=""0""
+          top=""1""
+          height=""126""
+-         width=""312""
+          layout=""topleft""
+          show_item_link_overlays=""true""
+          bg_opaque_color=""DkGray2"""
+secondlife/viewer,249,c000c59,indra/newview/skins/default/xui/en/sidepanel_inventory.xml,modified,23,32,55,"@@ -6,8 +6,7 @@
+ 	  layout=""topleft""
+ 	  min_height=""350""
+ 	  min_width=""240""
+-	  name=""objects panel""
+-	  width=""358"">
++	  name=""objects panel"">
+     <panel
+ 		 follows=""all""
+ 		 layout=""topleft""
+@@ -17,25 +16,22 @@
+ 		 label=""""
+ 		 height=""570""
+ 		 visible=""true""
+-		 default_tab_group=""1""
+-		 width=""395"">
++		 default_tab_group=""1"">
+       <layout_stack
+               follows=""left|right|top|bottom""
+               layout=""topleft""
+               left=""0""
+               top=""0""
+-							tab_group=""1""
++              tab_group=""1""
+               orientation=""vertical""
+               name=""inventory_layout_stack""
+-              height=""565""
+-              width=""395"">
++              height=""560"">
+              <layout_panel
+                  name=""main_inventory_layout_panel""
+                  layout=""topleft""
+                  auto_resize=""true""
+                  user_resize=""true""
+                  min_dim=""150""
+-                 width=""395""
+                  follows=""bottom|left|right""
+                  height=""300"">
+                  <panel
+@@ -47,11 +43,9 @@
+                       name=""panel_main_inventory""
+                       top=""0""
+                       label=""""
+-                      height=""300""
+-                      width=""395"" />
++                      height=""300"" />
+              </layout_panel>
+ 			    <layout_panel
+-                 width=""355""
+                  layout=""topleft""
+                  auto_resize=""false""
+                  user_resize=""true""
+@@ -69,17 +63,15 @@
+                       class=""panel_marketplace_inbox""
+                       top=""0""
+                       label=""""
+-                      height=""235""
+-                      width=""330"">
++                      height=""235"">
+                      <string name=""InboxLabelWithArg"">Received items ([NUM])</string>
+                      <string name=""InboxLabelNoArg"">Received items</string>
+                      <button
+                         control_name=""InventoryInboxToggleState""
+                         label=""Received items""
+-												font=""SansSerifMedium""
++                        font=""SansSerifMedium""
+                         name=""inbox_btn""
+                         height=""35""
+-                        width=""308""
+                         image_unselected=""MarketplaceBtn_Off""
+                         image_selected=""MarketplaceBtn_Selected""
+                         halign=""left""
+@@ -89,7 +81,8 @@
+                         tab_stop=""false""
+                         pad_left=""35""
+                         top=""0""
+-                        left=""10"" />
++                        left=""5""
++                        right=""-5"" />
+                      <text
+                         type=""string""
+                         length=""1""
+@@ -101,34 +94,32 @@
+                         name=""inbox_fresh_new_count""
+                         font=""SansSerifMedium""
+                         halign=""right""
+-                        top_pad=""0""
+-                        width=""300"">
++                        top_pad=""0"">
+                         [NUM] new
+                      </text>
+                      <panel
+                         name=""inbox_inventory_placeholder_panel""
+                         follows=""all""
+-                        left=""10""
+-                        bottom=""235""
+-                        width=""308""
++                        left=""5""
++                        right=""-5""
+                         top=""35""
++                        height=""200""
+                         bg_opaque_color=""InventoryBackgroundColor""
+                         background_visible=""true""
+                         background_opaque=""true""
+                         tool_tip=""Drag and drop items to your inventory to use them""
+                         >
+                         <text name=""inbox_inventory_placeholder""
+-															type=""string""
+-															follows=""all""
+-															layout=""topleft""
+-															top=""0""
+-															left=""0""
+-															width=""308""
+-															height=""200""
+-															wrap=""true""
+-															halign=""center"">
+-Purchases from the marketplace will be delivered here.
+-												</text>
++                            type=""string""
++                            follows=""all""
++                            layout=""topleft""
++                            top=""0""
++                            height=""200""
++                            wrap=""true""
++                            halign=""center""
++                            valign=""center"">
++                          Purchases from the marketplace will be delivered here.
++                        </text>
+                     </panel>
+                  </panel>
+              </layout_panel>"
+secondlife/viewer,249,2a035c0,indra/llui/llbutton.cpp,modified,2,1,3,"@@ -203,7 +203,8 @@ LLButton::LLButton(const LLButton::Params& p)
+ 	}
+ 
+ 	// Hack to make sure there is space for at least one character
+-	if (getRect().getWidth() - (mRightHPad + mLeftHPad) < mGLFont->getWidth(std::string("" "")))
++	if (getRect().mRight >= 0 && getRect().getWidth() > 0 &&
++		getRect().getWidth() - (mRightHPad + mLeftHPad) < mGLFont->getWidth(std::string("" "")))
+ 	{
+ 		// Use old defaults
+ 		mLeftHPad = llbutton_orig_h_pad;"
+secondlife/viewer,249,2a035c0,indra/llui/llscrollcontainer.cpp,modified,6,6,12,"@@ -105,8 +105,8 @@ LLScrollContainer::LLScrollContainer(const LLScrollContainer::Params& p)
+ 	mBorder = LLUICtrlFactory::create<LLViewBorder> (params);
+ 	LLView::addChild( mBorder );
+ 
+-	mInnerRect.set( 0, getRect().getHeight(), getRect().getWidth(), 0 );
+-	mInnerRect.stretch( -getBorderWidth()  );
++	mInnerRect = getLocalRect();
++	mInnerRect.stretch( -getBorderWidth() );
+ 
+ 	LLRect vertical_scroll_rect = mInnerRect;
+ 	vertical_scroll_rect.mLeft = vertical_scroll_rect.mRight - scrollbar_size;
+@@ -124,9 +124,9 @@ LLScrollContainer::LLScrollContainer(const LLScrollContainer::Params& p)
+ 	mScrollbar[VERTICAL] = LLUICtrlFactory::create<LLScrollbar> (sbparams);
+ 	LLView::addChild( mScrollbar[VERTICAL] );
+ 	
+-	LLRect horizontal_scroll_rect = mInnerRect;
+-	horizontal_scroll_rect.mTop = horizontal_scroll_rect.mBottom + scrollbar_size;
+-	horizontal_scroll_rect.mLeft += 3;
++	LLRect horizontal_scroll_rect;
++	horizontal_scroll_rect.mTop = scrollbar_size;
++	horizontal_scroll_rect.mRight = mInnerRect.getWidth();
+ 	sbparams.name(""scrollable horizontal"");
+ 	sbparams.rect(horizontal_scroll_rect);
+ 	sbparams.orientation(LLScrollbar::HORIZONTAL);
+@@ -135,7 +135,7 @@ LLScrollContainer::LLScrollContainer(const LLScrollContainer::Params& p)
+ 	sbparams.page_size(mInnerRect.getWidth());
+ 	sbparams.step_size(VERTICAL_MULTIPLE);
+ 	sbparams.visible(false);
+-	sbparams.follows.flags(FOLLOWS_LEFT | FOLLOWS_RIGHT);
++	sbparams.follows.flags(FOLLOWS_LEFT | FOLLOWS_RIGHT | FOLLOWS_BOTTOM);
+ 	sbparams.change_callback(p.scroll_callback);
+ 	mScrollbar[HORIZONTAL] = LLUICtrlFactory::create<LLScrollbar> (sbparams);
+ 	LLView::addChild( mScrollbar[HORIZONTAL] );"
+secondlife/viewer,249,2a035c0,indra/llui/lltabcontainer.cpp,modified,4,4,8,"@@ -1002,7 +1002,7 @@ void LLTabContainer::addTabPanel(const TabPanelParams& panel)
+ 	}
+ 	else
+ 	{
+-		//Scip tab button space if they are invisible(EXT - 576)
++		// Skip tab button space if tabs are invisible (EXT-576)
+ 		tab_panel_top = getRect().getHeight();
+ 		tab_panel_bottom = LLPANEL_BORDER_WIDTH;
+ 	}
+@@ -1017,9 +1017,9 @@ void LLTabContainer::addTabPanel(const TabPanelParams& panel)
+ 	}
+ 	else
+ 	{
+-		tab_panel_rect = LLRect(LLPANEL_BORDER_WIDTH, 
++		tab_panel_rect = LLRect(LLPANEL_BORDER_WIDTH * 3,
+ 								tab_panel_top,
+-								getRect().getWidth()-LLPANEL_BORDER_WIDTH,
++								getRect().getWidth() - LLPANEL_BORDER_WIDTH * 2,
+ 								tab_panel_bottom );
+ 	}
+ 	child->setFollowsAll();
+@@ -1106,7 +1106,7 @@ void LLTabContainer::addTabPanel(const TabPanelParams& panel)
+ 		  p.follows.flags = p.follows.flags() | FOLLOWS_TOP;
+ 		}
+ 		else
+-		  { 
++		{ 
+ 		    p.name(""htab_""+std::string(child->getName()));
+ 		    p.visible(false);
+ 		    p.image_unselected(tab_img);"
+secondlife/viewer,249,2a035c0,indra/newview/llinventorypanel.cpp,modified,0,1,1,"@@ -298,7 +298,6 @@ void LLInventoryPanel::initFolderRoot()
+     // Scroller
+     LLRect scroller_view_rect = getRect();
+     scroller_view_rect.translate(-scroller_view_rect.mLeft, -scroller_view_rect.mBottom);
+-	scroller_view_rect.mTop -= 3;
+     LLScrollContainer::Params scroller_params(mParams.scroll());
+     scroller_params.rect(scroller_view_rect);
+     mScroller = LLUICtrlFactory::create<LLFolderViewScrollContainer>(scroller_params);"
+secondlife/viewer,249,2a035c0,indra/newview/llpanelmaininventory.cpp,modified,1,1,2,"@@ -2505,7 +2505,7 @@ void LLPanelMainInventory::setViewMode(EViewModeType mode)
+     {
+         std::list<LLUUID> forward_history;
+         std::list<LLUUID> backward_history;
+-        U32 sort_order;
++        U32 sort_order = 0;
+         switch(mViewMode)
+         {
+             case MODE_LIST:"
+secondlife/viewer,249,2a035c0,indra/newview/skins/default/xui/en/panel_inventory_gallery.xml,modified,6,11,17,"@@ -6,19 +6,15 @@
+    follows=""all""
+    height=""390""
+    name=""Inventory Gallery""
+-   layout=""topleft""
+-   left=""0""
+-   top=""0""
+-   width=""404"">
++   layout=""topleft"">
+   <text
+     type=""string""
+     clip_partial=""false""
+-    follows=""left|top""
++    follows=""all""
+     layout=""topleft""
+-    left=""13""
+     name=""empty_txt""
+-    top=""0""
+-    height=""32""
++    height=""390""
++    halign=""center""
+     valign=""center""
+     parse_urls=""true""
+     wrap=""true"">
+@@ -28,10 +24,9 @@
+    follows=""all""
+    height=""390""
+    layout=""topleft""
+-   left=""4""
++   left=""0""
+    top=""0""
+    name=""gallery_scroll_panel""
+-   opaque=""false""
+-   top_pad=""0"">
++   opaque=""false"">
+   </scroll_container>
+ </panel>"
+secondlife/viewer,249,2a035c0,indra/newview/skins/default/xui/en/panel_main_inventory.xml,modified,22,35,57,"@@ -6,8 +6,7 @@
+  layout=""topleft""
+  min_height=""300""
+  min_width=""240""
+- name=""main inventory panel""
+- width=""355"">
++ name=""main inventory panel"">
+   <panel.string
+    name=""Itemcount"">
+   </panel.string>
+@@ -27,18 +26,18 @@
+   <panel.string name=""default_mode_btn"">Multi_Folder_Mode</panel.string>
+   <panel.string name=""single_folder_mode_btn"">Single_Folder_Mode</panel.string>
+   <text
+-		     type=""string""
+-		     length=""1""
+-		     follows=""left|top|right""
+-		     height=""13""
+-		     layout=""topleft""
+-    		 left=""12""
+-		     name=""ItemcountText""
+-		     font=""SansSerifMedium""
+-		     text_color=""InventoryItemLinkColor""
+-		     use_ellipses=""true""
+-		     top_pad=""0""
+-		     width=""300"">
++     type=""string""
++     length=""1""
++     follows=""left|top|right""
++     height=""13""
++     layout=""topleft""
++  	 left=""12""
++  	 right=""-12""
++     name=""ItemcountText""
++     font=""SansSerifMedium""
++     text_color=""InventoryItemLinkColor""
++     use_ellipses=""true""
++     top_pad=""0"">
+     Items:
+   </text>
+   <layout_stack
+@@ -47,6 +46,7 @@
+    animate=""false""
+    top_pad=""10""
+    left=""2""
++   right=""-4""
+    orientation=""horizontal"">
+     <layout_panel
+      border=""false""
+@@ -100,7 +100,7 @@
+       bevel_style=""in""
+       user_resize=""false""
+       height=""25""
+-      width=""375""
++      width=""381""
+       visible=""true"">
+       <combo_box
+        height=""23""
+@@ -203,10 +203,10 @@
+      halign=""center""
+      height=""372""
+      layout=""topleft""
+-     left=""7""
++     left=""3""
++     right=""-3""
+      name=""default_inventory_panel""
+-     top_pad=""10""
+-     width=""312"">
++     top_pad=""5"">
+       <tab_container
+        follows=""all""
+        halign=""center""
+@@ -217,26 +217,22 @@
+        tab_height=""30""
+        tab_position=""top""
+        tab_min_width=""100""
+-       top=""0""
+-       width=""312"">
++       top=""0"">
+         <inventory_panel
+          bg_opaque_color=""DkGray2""
+          bg_alpha_color=""DkGray2""
+          background_visible=""true""
+          border=""false""
+          bevel_style=""none""
+          follows=""all""
+-         height=""338""
+          label=""MY INVENTORY""
+          help_topic=""my_inventory_tab""
+          layout=""topleft""
+-         left=""0""
+          name=""All Items""
+          sort_order_setting=""InventorySortOrder""
+          show_item_link_overlays=""true""
+          preinitialize_views=""false""
+-         top=""16""
+-         width=""288"">
++         scroll.reserve_scroll_corner=""false"">
+             <folder double_click_override=""true""/>
+         </inventory_panel>
+         <recent_inventory_panel
+@@ -246,15 +242,13 @@
+          border=""false""
+          bevel_style=""none""
+          follows=""all""
+-         height=""338""
+          label=""RECENT""
+          help_topic=""recent_inventory_tab""
+          layout=""topleft""
+-         left_delta=""0""
+          name=""Recent Items""
+          show_item_link_overlays=""true""
+          preinitialize_views=""false""
+-         width=""290"">
++         scroll.reserve_scroll_corner=""false"">
+             <folder double_click_override=""true""/>
+         </recent_inventory_panel>
+         <inventory_panel
+@@ -263,7 +257,6 @@
+          show_empty_message=""false""
+          follows=""all""
+          layout=""topleft""
+-         width=""290""
+          bg_opaque_color=""DkGray2""
+          bg_alpha_color=""DkGray2""
+          background_visible=""true""
+@@ -283,13 +276,11 @@
+      left=""7""
+      name=""combination_view_inventory""
+      top_delta=""0""
+-     visible=""false""
+-     width=""312"">
++     visible=""false"">
+      <layout_stack
+       follows=""all""
+       layout=""topleft""
+       height=""372""
+-      width=""312""
+       animate=""false""
+       drag_handle_gap=""13""
+       drag_handle_thickness=""6""
+@@ -306,7 +297,6 @@
+         user_resize=""true""
+         auto_resize=""true""
+         height=""246""
+-        width=""312""
+         min_width=""150""
+         name=""comb_gallery_layout"">
+         <panel
+@@ -315,7 +305,6 @@
+          left=""0""
+          top=""1""
+          height=""246""
+-         width=""312""
+          name=""comb_gallery_view_inv""
+          background_visible=""true""
+          follows=""all""
+@@ -328,7 +317,6 @@
+         user_resize=""true""
+         auto_resize=""true""
+         height=""126""
+-        width=""312""
+         min_height=""100""
+         name=""comb_inventory_layout"">
+         <single_folder_inventory_panel
+@@ -337,7 +325,6 @@
+          left=""0""
+          top=""1""
+          height=""126""
+-         width=""312""
+          layout=""topleft""
+          show_item_link_overlays=""true""
+          bg_opaque_color=""DkGray2"""
+secondlife/viewer,249,2a035c0,indra/newview/skins/default/xui/en/sidepanel_inventory.xml,modified,23,32,55,"@@ -6,8 +6,7 @@
+ 	  layout=""topleft""
+ 	  min_height=""350""
+ 	  min_width=""240""
+-	  name=""objects panel""
+-	  width=""358"">
++	  name=""objects panel"">
+     <panel
+ 		 follows=""all""
+ 		 layout=""topleft""
+@@ -17,25 +16,22 @@
+ 		 label=""""
+ 		 height=""570""
+ 		 visible=""true""
+-		 default_tab_group=""1""
+-		 width=""395"">
++		 default_tab_group=""1"">
+       <layout_stack
+               follows=""left|right|top|bottom""
+               layout=""topleft""
+               left=""0""
+               top=""0""
+-							tab_group=""1""
++              tab_group=""1""
+               orientation=""vertical""
+               name=""inventory_layout_stack""
+-              height=""565""
+-              width=""395"">
++              height=""560"">
+              <layout_panel
+                  name=""main_inventory_layout_panel""
+                  layout=""topleft""
+                  auto_resize=""true""
+                  user_resize=""true""
+                  min_dim=""150""
+-                 width=""395""
+                  follows=""bottom|left|right""
+                  height=""300"">
+                  <panel
+@@ -47,11 +43,9 @@
+                       name=""panel_main_inventory""
+                       top=""0""
+                       label=""""
+-                      height=""300""
+-                      width=""395"" />
++                      height=""300"" />
+              </layout_panel>
+ 			    <layout_panel
+-                 width=""355""
+                  layout=""topleft""
+                  auto_resize=""false""
+                  user_resize=""true""
+@@ -69,17 +63,15 @@
+                       class=""panel_marketplace_inbox""
+                       top=""0""
+                       label=""""
+-                      height=""235""
+-                      width=""330"">
++                      height=""235"">
+                      <string name=""InboxLabelWithArg"">Received items ([NUM])</string>
+                      <string name=""InboxLabelNoArg"">Received items</string>
+                      <button
+                         control_name=""InventoryInboxToggleState""
+                         label=""Received items""
+-												font=""SansSerifMedium""
++                        font=""SansSerifMedium""
+                         name=""inbox_btn""
+                         height=""35""
+-                        width=""308""
+                         image_unselected=""MarketplaceBtn_Off""
+                         image_selected=""MarketplaceBtn_Selected""
+                         halign=""left""
+@@ -89,7 +81,8 @@
+                         tab_stop=""false""
+                         pad_left=""35""
+                         top=""0""
+-                        left=""10"" />
++                        left=""5""
++                        right=""-5"" />
+                      <text
+                         type=""string""
+                         length=""1""
+@@ -101,34 +94,32 @@
+                         name=""inbox_fresh_new_count""
+                         font=""SansSerifMedium""
+                         halign=""right""
+-                        top_pad=""0""
+-                        width=""300"">
++                        top_pad=""0"">
+                         [NUM] new
+                      </text>
+                      <panel
+                         name=""inbox_inventory_placeholder_panel""
+                         follows=""all""
+-                        left=""10""
+-                        bottom=""235""
+-                        width=""308""
++                        left=""5""
++                        right=""-5""
+                         top=""35""
++                        height=""200""
+                         bg_opaque_color=""InventoryBackgroundColor""
+                         background_visible=""true""
+                         background_opaque=""true""
+                         tool_tip=""Drag and drop items to your inventory to use them""
+                         >
+                         <text name=""inbox_inventory_placeholder""
+-															type=""string""
+-															follows=""all""
+-															layout=""topleft""
+-															top=""0""
+-															left=""0""
+-															width=""308""
+-															height=""200""
+-															wrap=""true""
+-															halign=""center"">
+-Purchases from the marketplace will be delivered here.
+-												</text>
++                            type=""string""
++                            follows=""all""
++                            layout=""topleft""
++                            top=""0""
++                            height=""200""
++                            wrap=""true""
++                            halign=""center""
++                            valign=""center"">
++                          Purchases from the marketplace will be delivered here.
++                        </text>
+                     </panel>
+                  </panel>
+              </layout_panel>"

@@ -1,0 +1,198 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+KozGit/DOOM-3-BFG-VR,35,592da5df5479adba69d8813eba99943a5a8698c3,neo/d3xp/menus/MenuScreen_Shell_Stereoscopics.cpp,modified,4,6,10,"@@ -219,12 +219,10 @@ void idMenuScreen_Shell_Stereoscopics::HideScreen( const mainMenuTransition_t tr
+ 				common->Dialog().ClearDialog( msg );
+ 				if( restart )
+ 				{
+-					idStr cmdLine = Sys_GetCmdLine();
+-					if( cmdLine.Find( ""com_skipIntroVideos"" ) < 0 )
+-					{
+-						cmdLine.Append( "" +set com_skipIntroVideos 1"" );
+-					}
+-					Sys_ReLaunch( ( void* )cmdLine.c_str(), cmdLine.Length() );
++					// DG: Sys_ReLaunch() doesn't need any options anymore
++					//     (the old way would have been unnecessarily painful on POSIX systems)
++					Sys_ReLaunch();
++					// DG end
+ 				}
+ 				return idSWFScriptVar();
+ 			}"
+KozGit/DOOM-3-BFG-VR,35,592da5df5479adba69d8813eba99943a5a8698c3,neo/d3xp/menus/MenuScreen_Shell_SystemOptions.cpp,modified,4,6,10,"@@ -232,12 +232,10 @@ void idMenuScreen_Shell_SystemOptions::HideScreen( const mainMenuTransition_t tr
+ 				common->Dialog().ClearDialog( msg );
+ 				if( restart )
+ 				{
+-					idStr cmdLine = Sys_GetCmdLine();
+-					if( cmdLine.Find( ""com_skipIntroVideos"" ) < 0 )
+-					{
+-						cmdLine.Append( "" +set com_skipIntroVideos 1"" );
+-					}
+-					Sys_ReLaunch( ( void* )cmdLine.c_str(), cmdLine.Length() );
++					// DG: Sys_ReLaunch() doesn't need any options anymore
++					//     (the old way would have been unnecessarily painful on POSIX systems)
++					Sys_ReLaunch();
++					// DG end
+ 				}
+ 				return idSWFScriptVar();
+ 			}"
+KozGit/DOOM-3-BFG-VR,35,592da5df5479adba69d8813eba99943a5a8698c3,neo/sys/linux/linux_main.cpp,modified,85,3,88,"@@ -38,6 +38,13 @@ If you have questions concerning this license or the applicable additional terms
+ #include <sys/types.h>
+ #include <fcntl.h>
+ 
++// DG: needed for Sys_ReLaunch()
++#include <dirent.h>
++
++static const char** cmdargv = NULL;
++static int cmdargc = 0;
++// DG end
++
+ #ifdef ID_MCHECK
+ #include <mcheck.h>
+ #endif
+@@ -46,7 +53,6 @@ static idStr	basepath;
+ static idStr	savepath;
+ 
+ 
+-
+ /*
+  ==============
+  Sys_DefaultSavePath
+@@ -645,6 +651,7 @@ Sys_GetCmdLine
+ */
+ const char* Sys_GetCmdLine()
+ {
++	// DG: don't use this, use cmdargv and cmdargc instead!
+ 	return ""TODO Sys_GetCmdLine"";
+ }
+ 
+@@ -653,9 +660,80 @@ const char* Sys_GetCmdLine()
+ Sys_ReLaunch
+ ========================
+ */
+-void Sys_ReLaunch( void* data, const unsigned int dataSize )
++void Sys_ReLaunch()
+ {
+-	idLib::Error( ""Could not start process: TODO Sys_ReLaunch() "" );
++	// DG: implementing this... basic old fork() exec() (+ setsid()) routine..
++	// NOTE: this function used to have parameters: the commandline arguments, but as one string..
++	//       for Linux/Unix we want one char* per argument so we'll just add the friggin'
++	//       "" +set com_skipIntroVideos 1"" to the other commandline arguments in this function.
++	
++	int ret = fork();
++	if( ret < 0 )
++		idLib::Error( ""Sys_ReLaunch(): Couldn't fork(), reason: %s "", strerror( errno ) );
++		
++	if( ret == 0 )
++	{
++		// child process
++		
++		// get our own session so we don't depend on the (soon to be killed)
++		// parent process anymore - else we'll freeze
++		pid_t sId = setsid();
++		if( sId == ( pid_t ) - 1 )
++		{
++			idLib::Error( ""Sys_ReLaunch(): setsid() failed! Reason: %s "", strerror( errno ) );
++		}
++		
++		// close all FDs (except for stdin/out/err) so we don't leak FDs
++		DIR* devfd = opendir( ""/dev/fd"" );
++		if( devfd != NULL )
++		{
++			struct dirent entry;
++			struct dirent* result;
++			while( readdir_r( devfd, &entry, &result ) == 0 )
++			{
++				const char* filename = result->d_name;
++				char* endptr = NULL;
++				long int fd = strtol( filename, &endptr, 0 );
++				if( endptr != filename && fd > STDERR_FILENO )
++					close( fd );
++			}
++		}
++		else
++		{
++			idLib::Warning( ""Sys_ReLaunch(): Couldn't open /dev/fd/ - will leak file descriptors. Reason: %s"", strerror( errno ) );
++		}
++		
++		// + 3 because ""+set"" ""com_skipIntroVideos"" ""1"" - and note that while we'll skip
++		// one (the first) cmdargv argument, we need one more pointer for NULL at the end.
++		int argc = cmdargc + 3;
++		const char** argv = ( const char** )calloc( argc, sizeof( char* ) );
++		
++		int i;
++		for( i = 0; i < cmdargc - 1; ++i )
++			argv[i] = cmdargv[i + 1]; // ignore cmdargv[0] == executable name
++			
++		// add +set com_skipIntroVideos 1
++		argv[i++] = ""+set"";
++		argv[i++] = ""com_skipIntroVideos"";
++		argv[i++] = ""1"";
++		// execv expects NULL terminated array
++		argv[i] = NULL;
++		
++		const char* exepath = Sys_EXEPath();
++		
++		errno = 0;
++		execv( exepath, ( char** )argv );
++		// we only get here if execv() fails, else the executable is restarted
++		idLib::Error( ""Sys_ReLaunch(): WTF exec() failed! Reason: %s "", strerror( errno ) );
++		
++	}
++	else
++	{
++		// original process
++		// just do a clean shutdown
++		cmdSystem->AppendCommandText( ""quit\n"" );
++	}
++	// DG end
+ }
+ 
+ /*
+@@ -665,6 +743,10 @@ main
+ */
+ int main( int argc, const char** argv )
+ {
++	// DG: needed for Sys_ReLaunch()
++	cmdargc = argc;
++	cmdargv = argv;
++	// DG end
+ #ifdef ID_MCHECK
+ 	// must have -lmcheck linkage
+ 	mcheck( abrt_func );"
+KozGit/DOOM-3-BFG-VR,35,592da5df5479adba69d8813eba99943a5a8698c3,neo/sys/sys_public.h,modified,3,1,4,"@@ -432,7 +432,9 @@ void			Sys_Init();
+ void			Sys_Shutdown();
+ void			Sys_Error( const char* error, ... );
+ const char* 	Sys_GetCmdLine();
+-void			Sys_ReLaunch( void* launchData, unsigned int launchDataSize );
++// DG: Sys_ReLaunch() doesn't need any options (and the old way is painful for POSIX systems)
++void			Sys_ReLaunch();
++// DG end
+ void			Sys_Launch( const char* path, idCmdArgs& args,  void* launchData, unsigned int launchDataSize );
+ void			Sys_SetLanguageFromSystem();
+ const char* 	Sys_DefaultLanguage();"
+KozGit/DOOM-3-BFG-VR,35,592da5df5479adba69d8813eba99943a5a8698c3,neo/sys/win32/win_main.cpp,modified,12,2,14,"@@ -290,15 +290,25 @@ const char * Sys_GetCmdLine() {
+ Sys_ReLaunch
+ ========================
+ */
+-void Sys_ReLaunch( void * data, const unsigned int dataSize ) {
++void Sys_ReLaunch() {
+ 	TCHAR				szPathOrig[MAX_PRINT_MSG];
+ 	STARTUPINFO			si;
+ 	PROCESS_INFORMATION	pi;
+ 
+ 	ZeroMemory( &si, sizeof(si) );
+ 	si.cb = sizeof(si);
+ 
+-	strcpy( szPathOrig, va( ""\""%s\"" %s"", Sys_EXEPath(), (const char *)data ) );
++	// DG: we don't have function arguments in Sys_ReLaunch() anymore, everyone only passed
++	//     the command-line +"" +set com_skipIntroVideos 1"" anyway and it was painful on POSIX systems
++	//     so let's just add it here.
++	idStr cmdLine = Sys_GetCmdLine();
++	if( cmdLine.Find( ""com_skipIntroVideos"" ) < 0 )
++	{
++		cmdLine.Append( "" +set com_skipIntroVideos 1"" );
++	}
++
++	strcpy( szPathOrig, va( ""\""%s\"" %s"", Sys_EXEPath(), cmdLine.c_str() ) );
++	// DG end
+ 
+ 	CloseHandle( hProcessMutex );
+ "

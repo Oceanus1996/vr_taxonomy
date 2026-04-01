@@ -1,0 +1,68 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe-inspector,199,92cc8228432308510372faa25493ecd4835a43c5,src/actions/entity.js,modified,1,1,2,"@@ -36,5 +36,5 @@ export function updateEntity (entity, componentName, propertyName, value) {
+       entity.setAttribute(componentName, value);
+     }
+   }
+-  Events.emit('objectChanged', entity);
++  Events.emit('objectChanged', entity.object3D);
+ }"
+aframevr/aframe-inspector,199,92cc8228432308510372faa25493ecd4835a43c5,src/components/components/Mixins.js,modified,2,2,4,"@@ -24,7 +24,7 @@ export default class Mixin extends React.Component {
+     }
+ 
+     // @todo Is there some aframe event we could catch instead of explicitly emit the objectChanged event?
+-    Events.emit('objectChanged', entity);
++    Events.emit('objectChanged', entity.object3D);
+   }
+ 
+   addMixin = () => {
+@@ -33,7 +33,7 @@ export default class Mixin extends React.Component {
+       'mixin', trim(entity.getAttribute('mixin') + ' ' + this.refs.select.value));
+ 
+     // @todo Is there some aframe event that we could catch instead of explicitly emit the objectChanged event?
+-    Events.emit('objectChanged', entity);
++    Events.emit('objectChanged', entity.object3D);
+   }
+ 
+   renderMixinOptions = () => {"
+aframevr/aframe-inspector,199,92cc8228432308510372faa25493ecd4835a43c5,src/lib/viewport/index.js,modified,15,6,21,"@@ -40,6 +40,19 @@ function Viewport (editor) {
+   var objectRotationOnDown = null;
+   var objectScaleOnDown = null;
+ 
++  /**
++   * Update the helpers of the object and it childrens
++   * @param  {object3D} object Object to update
++   */
++  function updateHelpers(object) {
++    for (var i = 0; i < object.children.length; i++) {
++      var child = object.children[ i ];
++      if (editor.helpers[ child.id ] !== undefined) {
++        editor.helpers[ child.id ].update();
++      }
++    }
++  }
++
+   var transformControls = new THREE.TransformControls(camera, editor.container);
+   transformControls.addEventListener('change', function () {
+     var object = transformControls.object;
+@@ -48,9 +61,7 @@ function Viewport (editor) {
+ 
+       selectionBox.update(object);
+ 
+-      if (editor.helpers[ objectId ] !== undefined) {
+-        editor.helpers[ objectId ].update();
+-      }
++      updateHelpers(object);
+ 
+       switch (transformControls.getMode()) {
+         case 'translate':
+@@ -295,9 +306,7 @@ function Viewport (editor) {
+       object.updateProjectionMatrix();
+     }
+ 
+-    if (editor.helpers[ object.id ] !== undefined) {
+-      editor.helpers[ object.id ].update();
+-    }
++    updateHelpers(object);
+   });
+   Events.on('componentChanged', function(e){
+ "

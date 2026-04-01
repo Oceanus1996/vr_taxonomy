@@ -1,0 +1,126 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vircadia/vircadia-native-core,107,31ea9e3,scripts/communityModules/chat/FloofChat.html,modified,40,7,47,"@@ -52,6 +52,21 @@
+     var $ChatLog; // The scrolling chat log.
+     var $ChatInputText; // The text field for entering text.
+     var userName;
++    var urlRegEx = /((([A-Za-z]{3,9}:(?:\/\/)?)(?:[\-;:&=\+\$,\w]+@)?[A-Za-z0-9\.\-]+|(?:www\.|[\-;,:&=\+\$,\w]+@)[A-Za-z0-9\.\-]+)((?:\/[\+,~%\/\.\w\-]*)?\??(?:[\-\+=&;,:%@\.\w]*)#?(?:[\.\!\/\\\w]*))?)/g;
++
++    function reverseMatches(msg) {
++        var result = [];
++        var matches = msg.match(urlRegEx);
++        if (matches === null) {
++            matches = [];
++        }
++        for (var i = 0; i <= matches.length; i++) {
++            var split = msg.split(matches[i], 2);
++            result.push(split[0]);
++            msg = split[1];
++        }
++        return result;
++    }
+ 
+     //Start George Function
+     //Function provided by George Deac
+@@ -62,11 +77,30 @@
+ 
+         $.fn.linky = function (options) {
+             return this.each(function () {
+-                var $el = $(this),
+-                    linkifiedContent = _linkify($el, options);
+-                var formattedContent = replaceFormatting(linkifiedContent);
++                var $el = $(this);
++                var content = $el.html();
++
++                var match = content.match(urlRegEx);
++                var matchLength = match === null ? 0 : match.length;
++                var messageParts = reverseMatches(content);
++
++                var messageFormatted = [];
++                var urlLinkified = [];
++                var completeMessage = [];
++
++                for (var i = 0; i < matchLength; i++) {
++                    urlLinkified.push(_linkify(match[i], options));
++                }
++
++                for (var i = 0; i < messageParts.length; i++) {
++                    messageFormatted.push(replaceFormatting(messageParts[i]));
++                }
++
++                for (var i = 0; i < messageFormatted.length; i++) {
++                    completeMessage.push(messageFormatted[i], urlLinkified[i]);
++                }
+ 
+-                $el.html(formattedContent);
++                $el.html(completeMessage.join(""""));
+             });
+         };
+ 
+@@ -92,9 +126,8 @@
+                     linkTo: ""twitter"" // Let's default to Twitter
+                 },
+                 extendedOptions = $.extend(defaultOptions, options),
+-                elContent = $el.html(),
++                elContent = $el,
+                 // Regular expression courtesy of Matthew O'Riordan, see: http://goo.gl/3syEKK
+-                urlRegEx = /((([A-Za-z]{3,9}:(?:\/\/)?)(?:[\-;:&=\+\$,\w]+@)?[A-Za-z0-9\.\-]+|(?:www\.|[\-;,:&=\+\$,\w]+@)[A-Za-z0-9\.\-]+)((?:\/[\+,~%\/\.\w\-]*)?\??(?:[\-\+=&;,:%@\.\w]*)#?(?:[\.\!\/\\\w]*))?)/g,
+                 matches;
+ 
+             // Linkifying URLs
+@@ -121,7 +154,7 @@
+         // For any URLs present, unless they are already identified within
+         // an `a` element, linkify them.
+         function _linkifyUrls(matches, $el) {
+-            var elContent = $el.html();
++            var elContent = $el;
+ 
+             $.each(matches, function () {
+ "
+vircadia/vircadia-native-core,107,31ea9e3,scripts/communityModules/chat/FloofChat.js,modified,15,5,20,"@@ -112,10 +112,15 @@ function connectWebSocket(timeout) {
+         console.log('disconnected');
+ 
+         timeout = timeout | 0;
+-        if (!shutdownBool && timeout < (30 * 1000)) {
++        if (!shutdownBool) {
++            if (timeout > (30 * 1000)) {
++                timeout = 30 * 1000;
++            } else if (timeout < (30 * 1000)) {
++                timeout += 1000;
++            }
+             Script.setTimeout(function () {
+                 connectWebSocket(timeout);
+-            }, timeout + 1000);
++            }, timeout);
+         } else {
+             wsReady = -1;
+         }
+@@ -128,13 +133,18 @@ function sendWS(msg, timeout) {
+         ws.send(JSON.stringify(msg));
+     } else {
+         timeout = timeout | 0;
+-        if (!shutdownBool && timeout < (30 * 1000)) {
++        if (!shutdownBool) {
++            if (timeout > (30 * 1000)) {
++                timeout = 30 * 1000;
++            } else if (timeout < (30 * 1000)) {
++                timeout += 1000;
++            }
+             Script.setTimeout(function () {
+                 if (wsReady === -1) {
+                     connectWebSocket();
+                 }
+                 sendWS(msg, timeout);
+-            }, timeout + 1000);
++            }, timeout);
+         }
+     }
+ }
+@@ -181,7 +191,7 @@ function go2(msg) {
+     var dest = false;
+     var domainsList = [];
+     try {
+-        domainsList = Script.require(""http://metaverse.darlingvr.club:8081/goto.json"");
++        domainsList = Script.require(gotoJSONUrl + ""?"" + Date.now());
+     } catch (e) {
+         //
+     }"

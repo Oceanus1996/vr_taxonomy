@@ -1,0 +1,187 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+secondlife/viewer,1467,3fef460,indra/llprimitive/llmodel.cpp,modified,1,1,2,"@@ -50,7 +50,7 @@ std::string model_names[] =
+ 
+ const int MODEL_NAMES_LENGTH = sizeof(model_names) / sizeof(std::string);
+ 
+-LLModel::LLModel(LLVolumeParams& params, F32 detail)
++LLModel::LLModel(const LLVolumeParams& params, F32 detail)
+ 	: LLVolume(params, detail), 
+       mNormalizedScale(1,1,1),
+       mNormalizedTranslation(0, 0, 0),"
+secondlife/viewer,1467,3fef460,indra/llprimitive/llmodel.h,modified,3,3,6,"@@ -150,7 +150,7 @@ class LLModel : public LLVolume
+ 		LLModel::PhysicsMesh mPhysicsShapeMesh;
+ 	};
+ 
+-	LLModel(LLVolumeParams& params, F32 detail);
++	LLModel(const LLVolumeParams& params, F32 detail);
+ 	~LLModel();
+ 
+ 	bool loadModel(std::istream& is);
+@@ -375,7 +375,7 @@ class LLModelInstanceBase
+ 	LLMatrix4 mTransform;
+ 	material_map mMaterial;
+ 
+-	LLModelInstanceBase(LLModel* model, LLMatrix4& transform, material_map& materials)
++	LLModelInstanceBase(LLModel* model, const LLMatrix4& transform, const material_map& materials)
+ 		: mModel(model), mTransform(transform), mMaterial(materials)
+ 	{
+ 	}
+@@ -404,7 +404,7 @@ class LLModelInstance : public LLModelInstanceBase
+ 	LLUUID mMeshID;
+ 	S32 mLocalMeshID;
+ 
+-	LLModelInstance(LLModel* model, const std::string& label, LLMatrix4& transform, material_map& materials)
++	LLModelInstance(LLModel* model, const std::string& label, const LLMatrix4& transform, const material_map& materials)
+ 		: LLModelInstanceBase(model, transform, materials), mLabel(label)
+ 	{
+ 		mLocalMeshID = -1;"
+secondlife/viewer,1467,3fef460,indra/newview/llmodelpreview.cpp,modified,36,0,36,"@@ -68,6 +68,8 @@
+ #include ""lltabcontainer.h""
+ #include ""lltextbox.h""
+ 
++#include <filesystem>
++
+ #include <boost/algorithm/string.hpp>
+ 
+ bool LLModelPreview::sIgnoreLoadedCallback = false;
+@@ -1067,6 +1069,29 @@ void LLModelPreview::loadModelCallback(S32 loaded_lod)
+     { //only replace given LoD
+         mModel[loaded_lod] = mModelLoader->mModelList;
+         mScene[loaded_lod] = mModelLoader->mScene;
++
++        // Duplicate the model if it is an internal bounding box model
++        if (loaded_lod == LLModel::LOD_PHYSICS &&
++            mBaseModel.size() > 1 && // This makes sense for multiple models only
++            mModelLoader->mModelList.size() == 1 && // Just on the off-chance
++            mModelLoader->mScene.size() == 1 &&     // Just on the off-chance
++            std::filesystem::path(mModelLoader->mFilename).filename() == ""cube.dae"")
++        {
++            // Create a copy of the just loaded model for each model in mBaseModel
++            const LLModel* origin = mModelLoader->mModelList.front();
++            const LLModelInstance& mi = mModelLoader->mScene.begin()->second.front();
++            for (U32 i = 1; i < mBaseModel.size(); ++i)
++            {
++                LLPointer<LLModel> copy(new LLModel(origin->getParams(), origin->getDetail()));
++                copy->mLabel = origin->mLabel;
++                copy->copyVolumeFaces(origin);
++                copy->mPosition = origin->mPosition;
++                copy->mMaterialList = origin->mMaterialList;
++                mModel[loaded_lod].push_back(copy);
++                mScene[loaded_lod][mi.mTransform].push_back(LLModelInstance(copy, copy->mLabel, mi.mTransform, mi.mMaterial));
++            }
++        }
++
+         mVertexBuffer[loaded_lod].clear();
+ 
+         setPreviewLOD(loaded_lod);
+@@ -1163,6 +1188,17 @@ void LLModelPreview::loadModelCallback(S32 loaded_lod)
+                                     LLFloaterModelPreview::addStringToLog(out, false);
+                                 }
+                                 mModel[loaded_lod][idx]->mLabel = name;
++                                // Rename the correspondent instance as well
++                                [&]()
++                                {
++                                    for (auto& p : mScene[loaded_lod])
++                                        for (auto& i : p.second)
++                                            if (i.mModel == mModel[loaded_lod][idx])
++                                            {
++                                                i.mLabel = name;
++                                                return;
++                                            }
++                                }();
+                             }
+                         }
+                     }"
+secondlife/viewer,1467,a266a43,indra/llprimitive/llmodel.cpp,modified,1,1,2,"@@ -50,7 +50,7 @@ std::string model_names[] =
+ 
+ const int MODEL_NAMES_LENGTH = sizeof(model_names) / sizeof(std::string);
+ 
+-LLModel::LLModel(LLVolumeParams& params, F32 detail)
++LLModel::LLModel(const LLVolumeParams& params, F32 detail)
+ 	: LLVolume(params, detail), 
+       mNormalizedScale(1,1,1),
+       mNormalizedTranslation(0, 0, 0),"
+secondlife/viewer,1467,a266a43,indra/llprimitive/llmodel.h,modified,3,3,6,"@@ -150,7 +150,7 @@ class LLModel : public LLVolume
+ 		LLModel::PhysicsMesh mPhysicsShapeMesh;
+ 	};
+ 
+-	LLModel(LLVolumeParams& params, F32 detail);
++	LLModel(const LLVolumeParams& params, F32 detail);
+ 	~LLModel();
+ 
+ 	bool loadModel(std::istream& is);
+@@ -375,7 +375,7 @@ class LLModelInstanceBase
+ 	LLMatrix4 mTransform;
+ 	material_map mMaterial;
+ 
+-	LLModelInstanceBase(LLModel* model, LLMatrix4& transform, material_map& materials)
++	LLModelInstanceBase(LLModel* model, const LLMatrix4& transform, const material_map& materials)
+ 		: mModel(model), mTransform(transform), mMaterial(materials)
+ 	{
+ 	}
+@@ -404,7 +404,7 @@ class LLModelInstance : public LLModelInstanceBase
+ 	LLUUID mMeshID;
+ 	S32 mLocalMeshID;
+ 
+-	LLModelInstance(LLModel* model, const std::string& label, LLMatrix4& transform, material_map& materials)
++	LLModelInstance(LLModel* model, const std::string& label, const LLMatrix4& transform, const material_map& materials)
+ 		: LLModelInstanceBase(model, transform, materials), mLabel(label)
+ 	{
+ 		mLocalMeshID = -1;"
+secondlife/viewer,1467,a266a43,indra/newview/llmodelpreview.cpp,modified,36,0,36,"@@ -68,6 +68,8 @@
+ #include ""lltabcontainer.h""
+ #include ""lltextbox.h""
+ 
++#include <filesystem>
++
+ #include <boost/algorithm/string.hpp>
+ 
+ bool LLModelPreview::sIgnoreLoadedCallback = false;
+@@ -1067,6 +1069,29 @@ void LLModelPreview::loadModelCallback(S32 loaded_lod)
+     { //only replace given LoD
+         mModel[loaded_lod] = mModelLoader->mModelList;
+         mScene[loaded_lod] = mModelLoader->mScene;
++
++        // Duplicate the model if it is an internal bounding box model
++        if (loaded_lod == LLModel::LOD_PHYSICS &&
++            mBaseModel.size() > 1 && // This makes sense for multiple models only
++            mModelLoader->mModelList.size() == 1 && // Just on the off-chance
++            mModelLoader->mScene.size() == 1 &&     // Just on the off-chance
++            std::filesystem::path(mModelLoader->mFilename).filename() == ""cube.dae"")
++        {
++            // Create a copy of the just loaded model for each model in mBaseModel
++            const LLModel* origin = mModelLoader->mModelList.front();
++            const LLModelInstance& mi = mModelLoader->mScene.begin()->second.front();
++            for (U32 i = 1; i < mBaseModel.size(); ++i)
++            {
++                LLPointer<LLModel> copy(new LLModel(origin->getParams(), origin->getDetail()));
++                copy->mLabel = origin->mLabel;
++                copy->copyVolumeFaces(origin);
++                copy->mPosition = origin->mPosition;
++                copy->mMaterialList = origin->mMaterialList;
++                mModel[loaded_lod].push_back(copy);
++                mScene[loaded_lod][mi.mTransform].push_back(LLModelInstance(copy, copy->mLabel, mi.mTransform, mi.mMaterial));
++            }
++        }
++
+         mVertexBuffer[loaded_lod].clear();
+ 
+         setPreviewLOD(loaded_lod);
+@@ -1163,6 +1188,17 @@ void LLModelPreview::loadModelCallback(S32 loaded_lod)
+                                     LLFloaterModelPreview::addStringToLog(out, false);
+                                 }
+                                 mModel[loaded_lod][idx]->mLabel = name;
++                                // Rename the correspondent instance as well
++                                [&]()
++                                {
++                                    for (auto& p : mScene[loaded_lod])
++                                        for (auto& i : p.second)
++                                            if (i.mModel == mModel[loaded_lod][idx])
++                                            {
++                                                i.mLabel = name;
++                                                return;
++                                            }
++                                }();
+                             }
+                         }
+                     }"

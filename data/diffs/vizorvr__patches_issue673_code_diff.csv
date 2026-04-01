@@ -1,0 +1,1035 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch,gpt_bug_detection
+vizorvr/patches,673,dd1d60b,browser/scripts/account-controller.js,modified,51,141,192,"@@ -18,61 +18,11 @@ AccountController.prototype.renderLoginView = function(user) {
+ 	})
+ 
+ 	$('#account').html(html)
+-
+ 	E2.dom.userPullDown = $('#userPullDown')
+-
+ 	this._bindModalLinks(E2.dom.userPullDown)
+-
+ 	this.emit('redrawn')
+ }
+ 
+-AccountController.prototype.isValidEmail = function(email) {
+-    var re = /^(([^<>()[\]\.,;:\s@\""]+(\.[^<>()[\]\.,;:\s@\""]+)*)|(\"".+\""))@(([^<>()[\]\.,;:\s@\""]+\.)+[^<>()[\]\.,;:\s@\""]{2,})$/i;
+-    return re.test(email);
+-}
+-
+-AccountController.prototype.showError = function(ertype, ertext) {
+-	$('#'+ertype+'-error span').html(ertext);
+-	$('#'+ertype+'-error').addClass('revealError');
+-
+-	// @todo remove this validation code
+-
+-	switch (true) {
+-		case (ertype === 'signin'): {
+-			$('#login-form_id .form-input').addClass('wrong');
+-			break;
+-		}
+-		case (ertype === 'email'): {
+-			$('#email_id').addClass('wrong');
+-			break;
+-		}
+-		case (ertype === 'username'): {
+-			$('#username_id').addClass('wrong');
+-			break;
+-		}
+-		case (ertype === 'password'): {
+-			$('#password_id').addClass('wrong');
+-			break;
+-		}
+-		case (ertype === 'confirm'): {
+-			$('#password_confirm_id').addClass('wrong');
+-			break;
+-		}
+-	}
+-}
+-
+-AccountController.prototype.hideError = function(ertype) {
+-	if ($('#'+ertype+'-error').hasClass('revealError')) {
+-		$('#'+ertype+'-error').addClass('hideError')
+-							.removeClass('revealError');
+-		setTimeout(function() {
+-			$('#'+ertype+'-error').removeClass('hideError')
+-								.find('span')
+-								.html('');
+-		},1000)
+-	}
+-}
+-
+ AccountController.prototype._bindModalLinks = function(el, dfd) {
+ 	var that = this;
+ 
+@@ -96,7 +46,6 @@ AccountController.prototype._bindModalLinks = function(el, dfd) {
+ 		that.openForgotPasswordModal(dfd);
+ 		return false;
+ 	});
+-	
+ 
+ 	$('a.account', el).on('click', function(evt) {
+ 		evt.preventDefault();
+@@ -109,14 +58,13 @@ AccountController.prototype._bindModalLinks = function(el, dfd) {
+ }
+ 
+ AccountController.prototype.openLoginModal = function(dfd) {
+-	var that = this;
+-	var dfd = dfd || when.defer();
++	dfd = dfd || when.defer();
+ 	var loginTemplate = E2.views.account.login;
+ 
+ 	ga('send', 'event', 'account', 'open', 'loginModal');
+ 
+-	var bb = VizorUI.modalOpen(loginTemplate(), 'Sign in', 'nopad login')
+-	this._bindModalLinks(bb, dfd);
++	var $modal = VizorUI.modalOpen(loginTemplate(), 'Sign in', 'nopad login');
++	this._bindModalLinks($modal, dfd);
+ 
+ 	var onSuccess = function(user) {
+ 		ga('send', 'event', 'account', 'loggedIn', user.username)
+@@ -125,27 +73,27 @@ AccountController.prototype.openLoginModal = function(dfd) {
+ 		dfd.resolve()
+ 	};
+ 
+-	var $form = $('#loginForm', bb);
+-	VizorUI.setupGenericAjaxForm($form, onSuccess);
++	var $form = $('#loginForm', $modal);
++	VizorUI.setupXHRForm($form, onSuccess);
+ 
+ 	return dfd.promise
+ }
+ 
+ /**
+  * adds handler to check whether desired username is available.
+- * this is used in the signup and edit account details forms
+- * @param $el jQuery
++ * this is used in the signup form, and may be used in the account details form
++ * @param $input jQuery
+  */
+-AccountController.prototype.setupAccountUsernameField = function($el) {
+-	if (!($el instanceof jQuery)) {
+-		msg(""ERROR: unrecognised $el"");
++AccountController.prototype._setupAccountUsernameField = function($input) {
++	if (!($input instanceof jQuery)) {
++		msg(""ERROR: unrecognised $input"");
+ 		return false;
+ 	}
+ 	var _t = null;
+ 	var lastValue=false;
+-	$el.on('keyup', function(e){
++	$input.on('keyup', function(e){
+ 		var currentUsername = (E2.models.user) ? E2.models.user.username : '';
+-		var value = $el.val().trim();
++		var value = $input.val().trim();
+ 		if (value && (value !== currentUsername) && (value !== lastValue)) {
+ 			lastValue=value;
+ 			if (_t) clearTimeout(_t);
+@@ -154,14 +102,13 @@ AccountController.prototype.setupAccountUsernameField = function($el) {
+ 					type: ""POST"",
+ 					url: '/account/exists',
+ 					data: jQuery.param({'username': value}),
+-					error: function(err, msg) {
+-						// err.status = 409
++					error: function(err) { // assume 409
+ 						var errText = 'Sorry, this username is already taken'
+-						$el.parent().addClass('error').find('span.message').html(errText);
++						$input.parent().addClass('error').find('span.message').html(errText);
+ 					},
+-					success: function(user) {
+-						if ($el.val() === value) {	//
+-							$el.parent().removeClass('error').find('span.message').html('');
++					success: function() {	// 200
++						if ($input.val() === value) {	//
++							$input.parent().removeClass('error').find('span.message').html('');
+ 						}
+ 					},
+ 					dataType: 'json'
+@@ -170,8 +117,6 @@ AccountController.prototype.setupAccountUsernameField = function($el) {
+ 		}
+ 		return true;
+ 	});
+-
+-
+ }
+ 
+ AccountController.prototype.openSignupModal = function(dfd) {
+@@ -180,137 +125,102 @@ AccountController.prototype.openSignupModal = function(dfd) {
+ 	var signupTemplate = E2.views.account.signup();
+ 	ga('send', 'event', 'account', 'open', 'signupModal');
+ 
+-	var bb = VizorUI.modalOpen(signupTemplate, 'Sign up', 'nopad mSignup', true, {backdrop:null});
++	var $modal = VizorUI.modalOpen(signupTemplate, 'Sign up', 'nopad mSignup', true, {backdrop:null});
+ 
+-	that._bindModalLinks(bb, dfd);
++	that._bindModalLinks($modal, dfd);
+ 
+-	var $form = jQuery('#signupForm', bb);
++	var $form = jQuery('#signupForm', $modal);
+ 	var $usernameField = jQuery('input#username_id', $form);
+ 	var onSuccess = function(user) {
+ 		ga('send', 'event', 'account', 'signedUp', user.username)
+ 		E2.models.user.set(user);
+ 		VizorUI.modalClose();
++		VizorUI.modalAlert('Enjoy Vizor, ' + user.username + '!', 'Welcome')
+ 		dfd.resolve()
+ 	};
+ 
+-	VizorUI.setupGenericAjaxForm($form, onSuccess);
+-	this.setupAccountUsernameField($usernameField);		// username check
++	VizorUI.setupXHRForm($form, onSuccess);
++	this._setupAccountUsernameField($usernameField);		// username check
+ 
+ 	return dfd.promise;
+ }
+ 
+ AccountController.prototype.openForgotPasswordModal = function(dfd) {
+-	var that = this;
+-	var dfd = dfd || when.defer();
++	dfd = dfd || when.defer();
+ 	var forgotTemplate = E2.views.account.forgot;
+ 	
+ 	ga('send', 'event', 'account', 'open', 'forgotModal');
+-	
+-	var bb = bootbox.dialog(
+-	{
+-		show: true,
+-		animate: false,
+-		message: 'Rendering',
+-	}).init(function() {
+-		E2.app.useCustomBootboxTemplate(forgotTemplate);
+-	});
+ 
+-	this._bindModalLinks(bb, dfd);
+-	
+-	var formEl = $('#forgot-form_id');
+-	formEl.submit(function( event )
+-	{
+-		event.preventDefault();
+-		
+-		if (!that.isValidEmail(formEl.find('#email_id').val())) {
+-			var errText = 'Whoops! This isn\'t a valid email address';
+-			that.showError('email',errText);
+-			return;
++	var $modal = VizorUI.modalOpen(forgotTemplate(), 'Forgot password', 'nopad mForgotpassword');
++	this._bindModalLinks($modal, dfd);
++	var $form = $('#forgotPasswordForm');
++	VizorUI.setupXHRForm($form, function(response){
++		VizorUI.modalClose();
++		if (response.ok) {
++			ga('send', 'event', 'account', 'passwordReset', response.email)
++			VizorUI.modalAlert(response.message, 'Done');
+ 		}
+-
+-		var formData = formEl.serialize();
+-
+-		$.ajax(
+-		{
+-			type: ""POST"",
+-			url: formEl.attr('action'),
+-			data: formData,
+-			error: function(err)
+-			{	
+-				var errText = 'Whoops! This email isn\'t registered'
+-				that.showError('general',errText);
+-			},
+-			success: function(user)
+-			{
+-				ga('send', 'event', 'account', 'passwordReset', user.username)
+-				bootbox.hideAll();
+-				bootbox.alert('Instructions have been sent. Please check your email.');
+-				dfd.resolve();
+-			},
+-			dataType: 'json'
+-		});
++		dfd.resolve();
+ 	});
+-
+-	return dfd.promise
++	return dfd.promise;
+ }
+ 
+ AccountController.prototype.openResetPasswordModal = function(dfd) {
+-	var that = this;
+-	var dfd = dfd || when.defer();
++	dfd = dfd || when.defer();
+ 	var resetTemplate = E2.views.account.reset;
+ 	
+ 	ga('send', 'event', 'account', 'open', 'resetModal');
+ 
+-	var bb = VizorUI.modalOpen(resetTemplate, 'Change Password', 'nopad');
+-	this._bindModalLinks(bb, dfd);
++	var $modal = VizorUI.modalOpen(resetTemplate, 'Change Password', 'nopad');
++	this._bindModalLinks($modal, dfd);
+ 	
+-	var $form = jQuery('#resetPasswordForm', bb);
++	var $form = jQuery('#resetPasswordForm', $modal);
+ 	var onSuccess = function(data) {
+ 		var user = data.user;
+-		ga('send', 'event', 'account', 'passwordChanged', user.username)
+ 		VizorUI.modalClose();
+-		bootbox.alert('Password for ' + user.username + ' was changed.');
++		ga('send', 'event', 'account', 'passwordChanged', user.username)
++		VizorUI.modalAlert('Password for ' + user.username + ' was changed.', 'Done');
+ 		dfd.resolve();
+ 	};
+-	VizorUI.setupGenericAjaxForm($form, onSuccess);
++	VizorUI.setupXHRForm($form, onSuccess);
+ 
+ 	return dfd.promise
+ }
+ 
+ AccountController.prototype.openAccountModal = function(dfd) {
+ 	var that = this;
+-	var dfd = dfd || when.defer();
++	dfd = dfd || when.defer();
+ 	var accountTemplate = E2.views.account.account({user: E2.models.user.toJSON()});
+ 
+ 	ga('send', 'event', 'account', 'open', 'accountModal');
+ 
+-	var bb = VizorUI.modalOpen(accountTemplate, 'Account', 'nopad', true)
++	var $modal = VizorUI.modalOpen(accountTemplate, 'Account', 'nopad', true)
+ 
+-	jQuery('a#changePasswordLink', bb).on('click', function(evt) {
++	jQuery('a#changePasswordLink', $modal).on('click', function(evt) {
+ 		evt.preventDefault();
+ 		VizorUI.modalClose();
+ 		that.openResetPasswordModal(dfd);
+ 	});
+ 
+ 	// #704
+ 	/*
+-	jQuery('a#deleteAccountLink', bb).on('click', function(evt) {
++	jQuery('a#deleteAccountLink', $modal).on('click', function(evt) {
+ 		evt.preventDefault();
+-		VizorUI.modalClose();
++		// ...
+ 	});
+ 	*/
+ 
+ 	var onSuccess = function(data) {
+ 		var user = data.user || null;
+-		if (user) E2.models.user.set(user);
+-		ga('send', 'event', 'account', 'accountUpdated', user.username)
++		E2.models.user.set(user);
++		ga('send', 'event', 'account', 'accountUpdated', user.username);
+ 		VizorUI.modalClose();
+-		bootbox.alert('Account updated!');
++		VizorUI.modalAlert(data.message, 'Done');
+ 		dfd.resolve();
+ 	};
+ 
+-	var $form = jQuery('#accountDetailsForm', bb);
+-	VizorUI.setupGenericAjaxForm($form, onSuccess);
++	var $form = jQuery('#accountDetailsForm', $modal);
++	VizorUI.setupXHRForm($form, onSuccess);
+ 	return dfd.promise
+ }
+ ","{""has_bug"": true, ""bugs"": [{""line_start"": 4, ""line_end"": 4, ""description"": ""Potential null reference issue if 'window.Handlebars' is not defined."", ""buggy_code"": ""this._handlebars = handlebars || window.Handlebars""}, {""line_start"": 95, ""line_end"": 95, ""description"": ""Logic error: 'currentUsername' may be undefined if 'E2.models.user' is not initialized."", ""buggy_code"": ""var currentUsername = (E2.models.user) ? E2.models.user.username : '';""}, {""line_start"": 126, ""line_end"": 126, ""description"": ""Incorrect function call: 'E2.views.account.signup()' should not have parentheses if it is a template reference."", ""buggy_code"": ""var signupTemplate = E2.views.account.signup();""}, {""line_start"": 154, ""line_end"": 154, ""description"": ""Incorrect function call: 'E2.views.account.forgot()' should not have parentheses if it is a template reference."", ""buggy_code"": ""var $modal = VizorUI.modalOpen(forgotTemplate(), 'Forgot password', 'nopad mForgotpassword');""}, {""line_start"": 170, ""line_end"": 170, ""description"": ""Incorrect function call: 'E2.views.account.reset()' should not have parentheses if it is a template reference."", ""buggy_code"": ""var resetTemplate = E2.views.account.reset;""}, {""line_start"": 193, ""line_end"": 193, ""description"": ""Potential null reference issue if 'E2.models.user' is not initialized."", ""buggy_code"": ""var accountTemplate = E2.views.account.account({user: E2.models.user.toJSON()});""}]}"
+vizorvr/patches,673,dd1d60b,browser/scripts/ui.js,modified,83,75,158,"@@ -134,65 +134,31 @@ VizorUI.prototype.openPublishGraphModal = function() {
+ 	var that = this;
+ 	var publishTemplate = E2.views.filebrowser.publishModal;
+ 	var graphname = E2.app.path.split('/')
+-   
+-   if (graphname.length > 1)
++    if (graphname.length > 1)
+         graphname = graphname[1];
+-	
+-	ga('send', 'event', 'account', 'open', 'forgotModal');
+-	
+-	bootbox.dialog({
+-		show: true,
+-		animate: false,
+-		message: 'Rendering'
+-	}).init(function() {
+-		E2.app.useCustomBootboxTemplate(publishTemplate);
+-		$('#userGraphName_id').val(graphname);
+-	})
+-
+-	var formEl = $('#publish-form_id');
+-	formEl.submit(function( event ){
+-		event.preventDefault();
+-		E2.ui.updateProgressBar(65);
+-		
+-		var path = $('#userGraphName_id').val();
+ 
+-		if (!path)
+-			return bootbox.alert('Please enter a graph name');
+-
+-		var ser = E2.app.player.core.serialise();
+-
+-		$.ajax({
+-			type: 'POST',
+-			url: '/graph',
+-			data: {
+-				path: path,
+-				graph: ser
+-			},
+-			dataType: 'json',
+-			success: function(saved) {
+-				E2.ui.updateProgressBar(100);
+-				ga('send', 'event', 'graph', 'saved')
+-				dfd.resolve(saved.path)
+-			},
+-			error: function(x, t, err) {
+-				E2.ui.updateProgressBar(100);
+-
+-				if (x.status === 401) {
+-					return dfd.resolve(
+-						E2.controllers.account.openLoginModal()
+-							.then(that.openPublishGraphModal.bind(that))
+-					)
+-				}
+-
+-				if (x.responseText)
+-					bootbox.alert('Publish failed: ' + x.responseText);
+-				else
+-					bootbox.alert('Publish failed: ' + err);
++	var graphdata = E2.app.player.core.serialise();
++	var data = {
++		path:	graphname,
++		graph:	graphdata
++	};
++
++	var openSaveGraph = function(dfd) {
++		ga('send', 'event', 'account', 'open', 'publishGraphModal');
++		var $modal = VizorUI.modalOpen(publishTemplate(data), 'Publish this scene', 'nopad');
++		var $form = $('#publishGraphForm', $modal);
++		VizorUI.setupXHRForm($form, function(saved){
++			ga('send', 'event', 'graph', 'saved')
++			dfd.resolve(saved.path);
++		});
++	}
+ 
+-				dfd.reject(err)
+-			}
+-		})
+-	});
++	if (!VizorUI.userIsLoggedIn()) {
++		E2.controllers.account.openLoginModal()
++			.then(openSaveGraph);
++	} else {
++		openSaveGraph(dfd);
++	}
+ 
+ 	return dfd.promise
+ }
+@@ -615,14 +581,11 @@ VizorUI.prototype.updateProgressBar = function(percent) {
+ 
+ /***** HELPER METHODS *****/
+ 
+-VizorUI.isLoggedIn = function() {
++VizorUI.userIsLoggedIn = function() {
+ 	var user = E2.models.user.toJSON();
+ 	return (typeof user.username !== 'undefined') && (user.username !== '');
+ }
+ 
+-VizorUI.getUser = function() {
+-	return E2.models.user.toJSON();
+-}
+ 
+ /***** INTERIM MODAL LAYER *****/
+ VizorUI.modalOpen = function(html, heading, className, allowclose, opts) {
+@@ -640,6 +603,19 @@ VizorUI.modalClose = function() {
+ 	bootbox.hideAll();
+ };
+ 
++// shorthand
++VizorUI.modalAlert = function(message, heading, className, okLabel) {
++	var opts = {
++		buttons: {
++			OK : {
++				label: okLabel || ""OK"",
++				callback: function(){}
++			}
++		}
++	}
++	return VizorUI.modalOpen('<p>'+message+'</p>', heading, className, true, opts);
++}
++
+ VizorUI.checkCompatibleBrowser = function() {
+ 	var agent = navigator.userAgent;
+ 	var heading=false,message=false;
+@@ -664,7 +640,7 @@ VizorUI.checkCompatibleBrowser = function() {
+ }
+ 
+ 
+-VizorUI.setupGenericAjaxForm = function($form, onSuccess) {	// see views/account/signup for example
++VizorUI.setupXHRForm = function($form, onSuccess) {	// see views/account/signup for example
+ 	if (!($form instanceof jQuery)) {
+ 		msg(""ERROR: $form not a jQuery object"")
+ 		return false;
+@@ -702,10 +678,13 @@ VizorUI.setupGenericAjaxForm = function($form, onSuccess) {	// see views/account
+ 		}
+ 	});
+ 
++	var inProgress = false;
++	var $body = jQuery(document.body);
+ 
+ 	$form.submit(function(event) {
+ 
+-		// var can_submit = true;
++		if (inProgress) return false;
++
+ 		// if (!can_submit) return false;
+ 
+ 		// future decision on forms without this set
+@@ -720,37 +699,66 @@ VizorUI.setupGenericAjaxForm = function($form, onSuccess) {	// see views/account
+ 
+ 		var $unknownError = jQuery('#unknown_error', $form);
+ 		$unknownError.html('').hide();
++		inProgress = true;
++		$body.addClass('loading');
+ 		jQuery.ajax({
+ 			type:	'POST',
+ 			url:	actionURL,
+ 			data:	formData,
+ 			dataType: 'json',
+ 			error: function(err) {
++				inProgress = false;
++				$body.removeClass('loading');
+ 				console.log(err);
+ 				if (err.responseJSON) {
++					var errors
+ 					// validation returns array, but simple responses only have message
+-					var errors = (err.responseJSON instanceof Array) ?
+-							err.responseJSON  :
+-							[{
+-								param:	err.responseJSON.param || '',
+-								msg:	err.responseJSON.message
+-							}];
++					if (err.responseJSON instanceof Array) {
++						errors = err.responseJSON;
++					}
++					else if (err.responseJSON.error && err.responseJSON.error.errors){	// graphController
++						errors = [];
++						var ers = err.responseJSON.error.errors;
++						for (var key in ers) {
++							if (ers.hasOwnProperty(key)) {
++								errors.push({
++									param: key,
++									msg: ers[key].message
++								});
++							}
++						}
++					}
++					else {
++						errors = [{
++							param:	err.responseJSON.param || '',
++							msg:	err.responseJSON.message
++						}];
++					}
+ 					errors.map(function(ei) {
+-						if (ei.param && ei.msg) {
+-							$form.find('#f_'+ei.param).addClass('error')
+-							.find('span.message').html(ei.msg)
++						var $field = $form.find('#f_'+ei.param);
++						if (ei.param && ei.msg && ($field.length>0)) {
++							$field.addClass('error')
++								.find('span.message').html(ei.msg)
+ 						} else {
+ 							// in case no 'param' comes back
+-
+ 							$unknownError.html($unknownError.html() + '<span>'+ (ei.msg || ei.message) + '</span>').show();
+ 						}
+ 					});
+ 				} else {
+-					// in case no responseJSON comes back, e.g. just a code
+-					$unknownError.html('<span>An error ('+err.status+')occurred. Please check all required fields</span>').show();
++					if (err.status === 200) {	// the response was deemed an error but has good status
++						$unknownError.html('<span>The server said: (' + err.status + '): ' + err.statusText +'</span>').show();
++					} else {
++						// in case no responseJSON comes back, e.g. just a code
++						$unknownError.html('<span>An error ('+err.status+') occurred. Please check all required fields</span>').show();
++					}
+ 				}
+ 			},
+-			success: onSuccess
++			success: function() {
++				inProgress = false;
++				$body.removeClass('loading');
++				onSuccess.apply(this,arguments);
++			}
++
+ 		});
+ 		return false;
+ 	});","{""has_bug"": true, ""bugs"": [{""line_start"": 4, ""line_end"": 4, ""description"": ""Potential null/undefined reference issue. If e2 is undefined, the function returns false without handling the error properly."", ""buggy_code"": ""if (typeof e2 === 'undefined') return false;""}, {""line_start"": 18, ""line_end"": 18, ""description"": ""Redundant click handler. The click event for dom.btnAccountMenu is bound twice, which may lead to unexpected behavior."", ""buggy_code"": ""dom.btnAccountMenu.click(this.toggleAccountDropdown.bind(this));""}, {""line_start"": 70, ""line_end"": 70, ""description"": ""Off-by-one error. The calculation for chatTop may not account for the correct spacing, leading to incorrect positioning."", ""buggy_code"": ""chatTop = breadcrumbHeight + breadcrumbHeight + 40;""}, {""line_start"": 100, ""line_end"": 100, ""description"": ""Incorrect condition. The function returns false if the user is not logged in, which may not be the intended behavior."", ""buggy_code"": ""if (!isLoggedIn) return false;""}, {""line_start"": 210, ""line_end"": 210, ""description"": ""Incorrect condition. The logic may not correctly handle the transition between VR and world editor views, potentially leading to unexpected behavior."", ""buggy_code"": ""if ((this.state.viewCamera === uiViewCam.vr) && !E2.app.worldEditor.isActive()) return false;""}, {""line_start"": 226, ""line_end"": 226, ""description"": ""Potential resource leak. The function does not handle the case where the chatParent variable is not defined, which may lead to errors."", ""buggy_code"": ""$chatPanel.height(chatParent""}]}"
+vizorvr/patches,673,dd1d60b,controllers/userController.js,modified,32,11,43,"@@ -138,8 +138,6 @@ function parseErrors(errors) {
+  	req.assert('email', 'Email is not valid').isEmail()
+  	req.assert('password', 'Password must be at least 8 characters long').len(8)
+ 
+-	// @todo roll ""username exists"" and ""email exists"" errors into response errors
+-
+  	var errors = req.validationErrors()
+ 
+  	if (errors) {
+@@ -434,12 +432,17 @@ function parseErrors(errors) {
+ 
+  exports.postForgot = function(req, res, next) {
+  	req.assert('email', 'Please enter a valid email address.').isEmail()
++	var wantJSON = req.xhr;
+ 
+  	var errors = req.validationErrors()
+ 
+  	if (errors) {
+- 		req.flash('errors', parseErrors(errors))
+- 		return res.redirect('/forgot')
++		if (wantJSON) {
++			return res.status(400).json(errors);
++		} else {
++			req.flash('errors', parseErrors(errors))
++			return res.redirect('/forgot')
++		}
+  	}
+ 
+  	async.waterfall([
+@@ -452,8 +455,13 @@ function parseErrors(errors) {
+  		function(token, done) {
+  			User.findOne({ email: req.body.email.toLowerCase() }, function(err, user) {
+  				if (!user) {
+- 					req.flash('errors', { message: 'No account with that email address exists.' })
+- 					return res.redirect('/forgot')
++					var msg = 'No account with that email address exists.';
++					if (wantJSON) {
++						return res.status(400).json({ok:false, success: false, message: msg, msg:msg, param:'email'});
++					} else {
++						req.flash('errors', { message: msg })
++						return res.redirect('/forgot')
++					}
+  				}
+ 
+  				user.resetPasswordToken = token
+@@ -477,17 +485,30 @@ function parseErrors(errors) {
+ 
+  			mailer.send(mail.to, mail.subject, mail.text)
+  			.then(function() {
+- 				req.flash('info', {
+- 					message: 'An e-mail has been sent to ' + user.email + ' with further instructions.'
+- 				})
++				if (!wantJSON) {
++					req.flash('info', {
++						message: 'We emailed further instructions to ' + user.email + '.'
++					})
++				}
+  				done()
+  			})
+  			.catch(done)
+  		}
+  		], function(err) {
+- 			if (err)
++ 			if (err) {
++				res.status(500).json({ok:false, message: 'The server could not email you. Please contact us for assistance.'})
+  				return next(err)
++			}
++			if (wantJSON) {
++				return res.status(200).json({
++					ok:		true,
++					success:true,
++					message: 'We emailed further instructions to ' + req.body.email + '.',
++					email:	req.body.email
++				})
++			} else {
++				res.redirect('/forgot')
++			}
+ 
+- 			res.redirect('/forgot')
+  		})
+ }","{""has_bug"": true, ""bugs"": [{""line_start"": 41, ""line_end"": 41, ""description"": ""Potential null reference issue if req.validationErrors() returns null."", ""buggy_code"": ""var errors = req.validationErrors()""}, {""line_start"": 60, ""line_end"": 61, ""description"": ""Logic error: If user is not found, the function should return an error instead of proceeding to log in."", ""buggy_code"": ""if (!user) {""}, {""line_start"": 138, ""line_end"": 139, ""description"": ""Logic error: Password length validation should check for minimum length correctly."", ""buggy_code"": ""req.assert('password', 'Password must be at least 8 characters long').len(8)""}, {""line_start"": 264, ""line_end"": 264, ""description"": ""Potential null reference issue if req.validationErrors() returns null."", ""buggy_code"": ""var errors = req.validationErrors()""}, {""line_start"": 296, ""line_end"": 296, ""description"": ""Resource leak: User.remove() is deprecated; should use User.deleteOne() or User.findByIdAndDelete() instead."", ""buggy_code"": ""User.remove({ _id: req.user.id }, function(err) {""}]}"
+vizorvr/patches,673,dd1d60b,less/modals.less,modified,28,93,121,"@@ -60,8 +60,6 @@
+             border-radius: 4px;
+             box-shadow: 0 0 2px rgba(0,0,0,0.22);
+             background: transparent;
+-//            overflow: hidden;
+-//            float: left;
+             position: relative;
+             width: 100%;
+             > div {
+@@ -83,10 +81,8 @@
+                     font-weight: 300;
+                     margin: 0;
+                     line-height: 1;
+-                } 
+-
++                }
+             }
+-
+             .modal-body {
+                 background: @bg-light;
+                 padding: 22px 40px 18px;
+@@ -113,24 +109,11 @@
+                 }
+ 			  	fieldset {margin-bottom:1em;}
+                 div.form-input {
+-//                    height: @modal-control-height;
+                     width: 100%;
+-//                    background: @bg-dark;
+                     border-radius: 4px;
+                     margin: 0 auto 5px;
+                     position: relative;
+                     text-align: left;
+-				  /*
+-                    >label, >input {
+-                        display: block;
+-                        position: absolute;
+-                        top: 0;
+-                        left: 0;
+-                        height: @modal-control-height;
+-                        width: 100%;
+-                        margin: 0;
+-                    }
+-                    */
+                     &.error input {
+                         border: 1px solid @editor-text-hover;
+                     }
+@@ -149,80 +132,47 @@
+ 					::-webkit-input-placeholder {
+ 					   color: lighten(#414857, 10%);
+ 					}
+-
+ 					::-moz-placeholder {
+ 					   color: lighten(#414857, 10%);
+ 					}
+ 				  	.in_focus::-webkit-input-placeholder {
+ 					   color: darken(#414857, 5%);
+ 					}
+-
+ 					.in_focus::-moz-placeholder {
+ 					   color: darken(#414857, 5%);
+ 					}
+-
+                     >label {
+ 					  	display:none; // modals only!
+                         color: #414857;
+-//                        padding: 15px 20px 0 36px;
+                         font-size: 16px;
+-//                        line-height: 1.33;
+                         font-weight: 400;
+ 					  	float:left;
+ 					  	position:absolute;
+ 					  	top:0;
+-//					  	top: 50%;
+-//					  	margin-top: -0.5em;
+-//					  	left: 1em;
+ 					  	z-index: 0;
+-					  /*
+-					  // @todo remove
+-                        &:after {
+-                            content: '';
+-                            background: darken(@bg-dark, 2%);
+-                            display: block;
+-                            position: absolute;
+-                            top: 0;
+-                            left: 0 - @modal-input-width;
+-                            border-radius: 3px;
+-                            width: @modal-input-width;
+-                            height: @modal-control-height;
+-                            transition: left 0.1s ease-out;
+-                        }
+-                        */
+                     }
+ 				  	>span.message {
+ 					  clear: left;
+ 					  display: block;
+ 					  text-align: right;
+ 					  color: #fff;
+-					  padding-top:2px;	// prevent from collapsing
++					  padding-top:2px;
+ 					  font-size: 85%;
+ 					}
+ 					>span.message:after {
+-					  content: "".""; color: rgba(0,0,0,0);
++					  content: "".""; color: rgba(0,0,0,0);		// prevent from collapsing
+ 					}
+ 				  	&.error>span.message {
+ 					  color: #ff6868;
+ 					}
+                 }
+                 div.modal-error {
+-				      display: none;
+-//                    height: 0;
+-//                    overflow: hidden;
+-
+-//                    margin: -8px 0 8px 0;
+-//                    position: relative;
+-//                    float: left;
+-//                    width: 100%;
++				    display: none;
+                     span {
+                         color: #ff6868;
+                         display: block;
+                         width: 100%;
+                         height: 16px;
+-//                        text-align: center;
+-//                        position: absolute;
+-//                        bottom: 0;
+                         font-size: 12px;
+                     }
+                     &#general-error span {
+@@ -242,7 +192,7 @@
+                 button {
+                   	position: relative;
+                     border-radius: 4px;
+-                    background: @bg-bright;
++                    background: darken(@bg-bright, 5%);
+                 }
+                 button.sign-btn {
+                     width: 100%;
+@@ -253,7 +203,7 @@
+                     span {
+                         display: block;
+                         position: relative;
+-                        padding: 15px 20px 0 36px;
++                        padding: 15px 20px 0 22px;
+                         height: @modal-control-height;
+                         font-size: 16px;
+                         float: left;
+@@ -263,14 +213,17 @@
+                         width: 24px;
+                         height: 24px;
+                         position: absolute;
+-                        right: 24px;
++                        right: 22px;
+                         top: 50%;
+                         margin: -12px 0 0;
+                         stroke: @editor-text-active;
+                     }
+                     &.disabled {
+                         background: #515c75;
+                     }
++					&:hover {
++					  background: @bg-bright;
++					}
+                 }
+             }
+             .modal-footer {
+@@ -279,12 +232,13 @@
+                 text-align: center;
+                 padding: 20px 40px;
+                 box-sizing: border-box;
++			  	color: @editor-text-hover;
++			  	font-size: 12px;
++			  	font-weight: 400;
+                 span, p {
+                     padding: 0;
+                     margin: 0;
+                     display: block;
+-                    color: @editor-text-hover;
+-                    font-size: 12px;
+                     a, a:active {
+                         color: #2d93c9;
+                         text-decoration: none;
+@@ -444,6 +398,15 @@
+   .modal-body form {
+ 	margin: 20px 40px;
+   }
++  .modal-body p.left {text-align: left;}
++  .modal-body>p {
++	margin-left: 40px; margin-right: 40px;
++  }
++  .modal-body .bootbox-body {
++	p:only-child {
++	  margin: 20px 40px;
++	}
++  }
+ }
+ 
+ .modal.login {
+@@ -460,19 +423,19 @@
+ 	background: rgba(0,0,0,0.2);
+ 	font-size: 12px;
+ 	font-weight: 500;
+-	color: #ccc;
+   }
+ }
+ 
+ div.bootbox.modal {
+   .modal-header, .modal-content {	// necessary for selector weight
+ 	button.bootbox-close-button {
+ 		background: transparent;
+-		opacity: 0;		// js will set this to 1 when replaced with svg button
++	  	color:#ccc;
++	  	font-weight: 100;
+ 		float: none;
+ 		position: absolute;
+-		right: 2px;
+ 		top: 9px;
++	  	right: 2px;
+ 		margin: 0;
+ 	}
+   }
+@@ -496,7 +459,7 @@ div.bootbox.modal {
+                 top: 0;
+                 margin: 0;
+             }
+-            &#welcome-gs {
++            &#welcome-gs {	// get started button
+             	width: 210px;
+             	height: 50px;
+ 			  	margin: 0 auto;
+@@ -509,35 +472,6 @@ div.bootbox.modal {
+             	border-radius: 4px;
+             	border: 0;
+             }
+-            &#welcome-new {
+-                background: rgba(30,33,31,0.8);
+-                width: 261px;
+-                height: 60px;
+-                position: relative;
+-                margin: 22px auto 34px;
+-                clear: both;
+-                padding-left: 45px;
+-                color: #ffffff;
+-                font-size: 18px;
+-                font-weight: 600;
+-                letter-spacing: 1px;
+-                text-transform: uppercase;
+-                border: 0 none;
+-                border-radius: 4px;
+-                svg {
+-                    position: absolute;
+-                    display: block;
+-                    left: 25px;
+-                    top: 50%;
+-                    margin-top: -8px;
+-                    height: 16px;
+-                    width: 16px;
+-                    fill: #ffffff;
+-                }
+-                &:hover {
+-                    background: rgba(30,33,31,0.9);
+-                }
+-            }
+             &#welcome-sign-up {
+                 margin: 22px auto 10px;
+                 display: block;
+@@ -613,6 +547,7 @@ div.bootbox.modal {
+         }
+         a, a:active {
+             color: #ffffff;
++		  	border: 0;
+             font-weight: 400;
+             text-decoration: none; 
+             display: inline-block;
+@@ -800,7 +735,7 @@ div.bootbox.modal {
+                         height: @modal-input-height;
+                         background: #f6f7f8;
+                         color: #535c6b;
+-                        padding: 15px 20px 0 36px;
++                        padding: 15px 20px 0 22px;
+                         cursor: pointer;
+                         font-size: 16px;
+                         font-weight: 400;","{""has_bug"": true, ""bugs"": [{""line_start"": 11, ""line_end"": 11, ""description"": ""Extra semicolon in the CSS rule which may cause unexpected behavior."", ""buggy_code"": ""background-color: darken(rgba(61,67,83,0.8), 50%);;""}, {""line_start"": 138, ""line_end"": 142, ""description"": ""The placeholder color is not being cleared when text is entered, which may lead to visibility issues."", ""buggy_code"": "".in_focus::-webkit-input-placeholder {""}]}"
+vizorvr/patches,673,dd1d60b,views/account/forgot.handlebars,modified,19,33,52,"@@ -1,36 +1,22 @@
+-<div class=""modal-header"">
+-	<h4>Reset Password</h4>
+-	<button aria-hidden=""true"" data-dismiss=""modal"" class=""bootbox-close-button"" type=""button"">
+-		<svg class=""icon-dialog-close""><use xlink:href=""#icon-close""></use></svg>
+-	</button>
+-</div>
++<form action=""/forgot"" id=""forgotPasswordForm"" method=""POST"">
++    <p>Enter your email address below and we will send you instructions to reset your password.</p>
++    <input type=""hidden"" name=""_csrf"" value={{_csrf}}>
++    <fieldset>
++        <div class=""form-input"" id=""f_email"">
++            <label for=""email_id"">Email</label>
++            <input type=""email"" name=""email"" id=""email_id"" class=""required"" placeholder=""Email"" tabindex=""1"">
++            <span class=""message""></span>
++        </div>
+ 
+-<div class=""modal-body"">
+-	<p>Enter your email address below and we will send you password reset instructions.</p>
+-	<form action=""/forgot"" id=""forgot-form_id"" method=""POST"">
+-		<input type=""hidden"" name=""_csrf"" value={{_csrf}}>
++        <div class=""modal-error"" id=""unknown_error""><span></span></div>
++    </fieldset>
++    <button class=""sign-btn"" type=""submit"">
++        <span>Send Instructions</span>
++        <svg class=""icon-sign-in""><use xlink:href=""#icon-go""></use></svg>
++    </button>
++</form>
+ 
+-		<div class=""form-input"">
+-			<label for=""email_id"">Email</label>
+-			<input type=""email"" name=""email"" id=""email_id"" placeholder="""" tabindex=""-1"">
+-		</div> 
+-		
+-		<div class=""modal-error"" id=""email-error"">
+-			<span></span>
+-		</div>
+-		
+-		<div class=""modal-error"" id=""general-error"">
+-			<span></span>
+-		</div>
+-
+-		<button id=""sign-in-btn"" class=""sign-btn"" type=""submit"">
+-			<span>Continue</span>
+-			<svg class=""icon-sign-in""><use xlink:href=""#icon-go""></use></svg>
+-		</button>
+-
+-	</form>
+-</div>
+-<div class=""modal-footer"">
+-	<span class=""pull-left""><a href=""/signup"" class=""signup"">Create an account</a></span>
+-	<span class=""pull-right""><a href=""/login"" class=""login"" id=""signup-link"">Sign in</a></span>
++<div class=""twocol clearfix modal-footer"">
++	<span class=""col left""><a href=""/signup"" class=""signup"">Create a new account</a></span>
++	<span class=""col right pull""><a href=""/login"" class=""login"" id=""signup-link"">Sign in </a></span>
+ </div>
+\ No newline at end of file","{""has_bug"": true, ""bugs"": [{""line_start"": 7, ""line_end"": 7, ""description"": ""The placeholder text does not clear upon entering text, which may lead to confusion for users."", ""buggy_code"": ""<input type=\""email\"" name=\""email\"" id=\""email_id\"" class=\""required\"" placeholder=\""Email\"" tabindex=\""1\"">""}]}"
+vizorvr/patches,673,dd1d60b,views/account/signup.handlebars,modified,1,1,2,"@@ -35,6 +35,6 @@
+ </form>
+ 
+ <div class=""modal-footer"">
+-	<p>By signing up you agree to <a href=""https://docs.google.com/document/d/172dcWVz8bSEDxS_y2InXpqWhVvbM7w1Z9MSp1-Lw1rIc/edit?usp=sharing"" target=""_blank"" alt=""Read Terms of Service"">Terms of Service</a>
++	<p>By signing up you agree to our <a href=""https://docs.google.com/document/d/172dcWVz8bSEDxS_y2InXpqWhVvbM7w1Z9MSp1-Lw1rIc/edit?usp=sharing"" target=""_blank"" alt=""Read Terms of Service"">Terms of Service</a>
+ 	<p>Already have an account? <a href=""/login"" id=""signinModalLink"" class=""login"" alt=""Sign in"">Sign in here</a>
+ </div>
+\ No newline at end of file","{""has_bug"": true, ""bugs"": [{""line_start"": 38, ""line_end"": 38, ""description"": ""The <p> tag is not properly closed before the next <p> tag, which can lead to unexpected rendering issues."", ""buggy_code"": ""<p>By signing up you agree to our <a href=\""https://docs.google.com/document/d/172dcWVz8bSEDxS_y2InXpqWhVvbM7w1Z9MSp1-Lw1rIc/edit?usp=sharing\"" target=\""_blank\"" alt=\""Read Terms of Service\"">Terms of Service</a>""}, {""line_start"": 39, ""line_end"": 39, ""description"": ""The <p> tag is not properly closed, which can lead to unexpected rendering issues."", ""buggy_code"": ""<p>Already have an account? <a href=\""/login\"" id=\""signinModalLink\"" class=\""login\"" alt=\""Sign in\"">Sign in here</a>""}]}"
+vizorvr/patches,673,dd1d60b,views/filebrowser/publishModal.handlebars,modified,16,29,45,"@@ -1,31 +1,18 @@
+-<div class=""modal-header"">
+-	<h4>Publish graph</h4>
+-	<button aria-hidden=""true"" data-dismiss=""modal"" class=""bootbox-close-button"" type=""button"">
+-		<svg class=""icon-dialog-close""><use xlink:href=""#icon-close""></use></svg>
+-	</button>
+-</div>
++<form action=""/graph"" id=""publishGraphForm"" method=""POST"">
++    <input type=""hidden"" name=""_csrf"" value={{_csrf}} />
++    <input type=""hidden"" name=""graph"" value=""{{graph}}"" />
++    <fieldset>
++        <div class=""form-input"" id=""f_name""><!-- #728, changed from f_path originally -->
++            <label for=""pathInput"">Graph name</label>
++            <input type=""text"" name=""path"" id=""pathInput"" placeholder=""Friendly name"" class=""required"" tabindex=""1"">
++            <span class=""message""></span>
++        </div>
+ 
+-<div class=""modal-body"">
+-	<form action=""/publish"" id=""publish-form_id"" method=""POST"">
+-		<input type=""hidden"" name=""_csrf"" value={{_csrf}}>
++        <div class=""modal-error"" id=""unknown_error""><span></span></div>
++    </fieldset>
+ 
+-		<div class=""form-input"">
+-			<label for=""userGraphName_id"">Graph name</label>
+-			<input type=""text"" name=""userGraphName"" id=""userGraphName_id"" placeholder="""" tabindex=""-1"">
+-		</div> 
+-		
+-		<div class=""modal-error"" id=""graphname-error"">
+-			<span></span>
+-		</div>
+-		
+-		<div class=""modal-error"" id=""general-error"">
+-			<span></span>
+-		</div>
+-
+-		<button id=""publish-graph-btn"" class=""sign-btn"" type=""submit"">
+-			<span>Publish</span>
+-			<svg class=""icon-sign-in""><use xlink:href=""#icon-go""></use></svg>
+-		</button>
+-
+-	</form>
+-</div>
+\ No newline at end of file
++    <button id=""publish-graph-btn"" class=""sign-btn"" type=""submit"">
++        <span>Publish</span>
++        <svg class=""icon-sign-in""><use xlink:href=""#icon-go""></use></svg>
++    </button>
++</form>","{""has_bug"": true, ""bugs"": [{""line_start"": 7, ""line_end"": 7, ""description"": ""The placeholder does not clear upon entering text, which may lead to confusion for users."", ""buggy_code"": ""<input type=\""text\"" name=\""path\"" id=\""pathInput\"" placeholder=\""Friendly name\"" class=\""required\"" tabindex=\""1\"">""}]}"

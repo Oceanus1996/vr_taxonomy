@@ -1,0 +1,38 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+secondlife/viewer,406,f36f504,indra/llui/llemojihelper.cpp,modified,2,1,3,"@@ -37,7 +37,7 @@
+ //
+ 
+ constexpr char DEFAULT_EMOJI_HELPER_FLOATER[] = ""emoji_complete"";
+-constexpr S32 HELPER_FLOATER_OFFSET_X = 20;
++constexpr S32 HELPER_FLOATER_OFFSET_X = 0;
+ constexpr S32 HELPER_FLOATER_OFFSET_Y = 0;
+ 
+ // ============================================================================
+@@ -113,6 +113,7 @@ void LLEmojiHelper::showHelper(LLUICtrl* hostctrl_p, S32 local_x, S32 local_y, c
+ 	rct.setLeftTopAndSize(floater_x - HELPER_FLOATER_OFFSET_X, floater_y - HELPER_FLOATER_OFFSET_Y + rct.getHeight(), rct.getWidth(), rct.getHeight());
+ 	pHelperFloater->setRect(rct);
+ 	pHelperFloater->openFloater(LLSD().with(""hint"", short_code));
++    gFloaterView->adjustToFitScreen(pHelperFloater, FALSE);
+ }
+ 
+ void LLEmojiHelper::hideHelper(const LLUICtrl* ctrl_p)"
+secondlife/viewer,406,f36f504,indra/llui/lltexteditor.cpp,modified,7,4,11,"@@ -1169,12 +1169,15 @@ void LLTextEditor::addChar(llwchar wc)
+ 
+ 	if (!mReadOnly && mShowEmojiHelper)
+ 	{
+-		LLWString wtext(getWText()); S32 shortCodePos;
++		S32 shortCodePos;
++		LLWString wtext(getWText());
+ 		if (LLEmojiHelper::isCursorInEmojiCode(wtext, mCursorPos, &shortCodePos))
+ 		{
+-			const LLRect cursorRect = getLocalRectFromDocIndex(mCursorPos - 1);
+-			const LLWString shortCode = wtext.substr(shortCodePos, mCursorPos - shortCodePos);
+-			LLEmojiHelper::instance().showHelper(this, cursorRect.mLeft, cursorRect.mTop, wstring_to_utf8str(shortCode), std::bind(&LLTextEditor::handleEmojiCommit, this, std::placeholders::_1));
++			const LLRect cursorRect(getLocalRectFromDocIndex(shortCodePos));
++			const LLWString wpart(wtext.substr(shortCodePos, mCursorPos - shortCodePos));
++			const std::string part(wstring_to_utf8str(wpart));
++			auto cb = [this](llwchar emoji) { handleEmojiCommit(emoji); };
++			LLEmojiHelper::instance().showHelper(this, cursorRect.mLeft, cursorRect.mTop, part, cb);
+ 		}
+ 	}
+ "

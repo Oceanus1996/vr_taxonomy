@@ -1,0 +1,394 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vizorvr/patches,800,97f0d9a,browser/scripts/application.js,modified,44,35,79,"@@ -1529,47 +1529,56 @@ Application.prototype.openSaveACopyDialog = function() {
+ 	return dfd.promise
+ }
+ 
+-Application.prototype.growl = function(title, type, duration, person) {
+-	var letter=title.charAt(0);
+-	var image=''
+-	type= type || 'info';
+-	if (!$('symbol#icon-'+type).length) {
+-		type='info'
+-	}
+-	if (person) {
+-		var image='<div style=""background-color: '+person.color+';"" class=""image-crop""><span>'+letter+'</span></div>';
+-	} 
+-	
+-	/** TODO: when users will have pics - use this:
+-	if (person.userpic) {
+-		image = '<div style=""background-image: url('+person.userpic+');"" class=""image-crop""></div>';
++Application.prototype.growl = function(message, type, duration, user) {
++	user = user || null
++	type = type || 'info'
++	duration = duration || 2000
++
++	if (typeof user !== 'object') {
++		user = {
++			username: user,
++			firstLetter: null,
++			pic: null,
++			color: 'transparent'
++		};
+ 	}
+-	*/
+-	
+-	var glyph = '<div class=""glyph"">'+image+'<svg class=""icon-'+type+'""><use xlink:href=""#icon-'+type+'""></use></svg></div>';
+-	
+-	if (!$('#notifications-area').length) {
+-		$('body').append('<div id=""notifications-area""></div>');
++
++	if (user) {
++		user.firstLetter = user.username.charAt(0);
++		if (typeof user.color === 'undefined') user.color='transparent';
++	} 
++
++	var $notificationArea = jQuery('#notifications-area')
++	if (!$notificationArea.length) {
++		$notificationArea = jQuery('<div id=""notifications-area""></div>')
++		jQuery('body').append($notificationArea)
+ 	}
+-	
+-	function close() {
+-		$('#notifications-area>.notification-show:first-child').removeClass('notification-show').addClass('notification-hide');
++
++	var data = {
++		type: type,
++		fromUser: user,
++		message: message
+ 	}
+-	
+-	function remove() {
+-		$('.notification-hide:first-child').remove();
+-		$('#notifications-area>.notification-show:first-child').removeClass('notification-show').addClass('notification-hide');
+-		if (!$('#notifications-area>div').length) {
+-			$('#notifications-area').remove();
++	var $notification = jQuery(E2.views.partials.notification(data))
++
++	var remove = function () {
++		$notification.remove()
++		if (jQuery('>div', $notificationArea).length === 0) {
++			$notificationArea.remove()
+ 		}
+ 	}
+ 
+-	$('#notifications-area').append('<div class=""notification notification-show""><div class=""nt-content"">'+glyph+'<div class=""text""><span>'+title+'</span></div></div></div>');
+-	
+-	duration = duration || 2000;
+-	
+-	setTimeout(close, duration * $('#notifications-area .notification').length)
+-	setTimeout(remove, duration * $('#notifications-area .notification').length + 1000)
++	var close = function() {
++		$notification.removeClass('notification-show').addClass('notification-hide')
++		setTimeout(remove, 1000)
++	}
++
++	$notificationArea.append($notification)
++	$notification.addClass('notification-show');
++
++	setTimeout(close, duration * $('.notification', $notificationArea).length)
++
++	return $notification
+ }
+ 
+ Application.prototype.setupStoreListeners = function() {"
+vizorvr/patches,800,97f0d9a,less/notifications.less,modified,29,31,60,"@@ -1,3 +1,19 @@
++.notificationAnimationIn () {
++	  0% { opacity: 0; right: 0 - @msg-width - 30; 	height: 0; 					margin-bottom: 0px;}
++     30% { opacity: 0; right: 0 - @msg-width - 30; 	height: @msg-min-height; 	margin-bottom: 10px;}
++    100% { opacity: 1; right: 0; 					height: @msg-min-height; 	margin-bottom: 10px;}
++}
++.notificationAnimationOut () {
++      0% { opacity: 1; right: 0; 					height: @msg-min-height; 	margin-bottom: 10px;}
++     70% { opacity: 0; right: 0 - @msg-width - 30; 	height: @msg-min-height; 	margin-bottom: 10px;}
++	100% { opacity: 0; right: 0 - @msg-width - 30; 	height: 0; 					margin-bottom: 0px;}
++}
++// ff,chrome won't play animations in reverse. (?)
++@-webkit-keyframes notification-appear { .notificationAnimationIn(); }		// safari pre-9
++@-webkit-keyframes notification-disappear { .notificationAnimationOut(); }
++@keyframes notification-appear { .notificationAnimationIn(); }
++@keyframes notification-disappear { .notificationAnimationOut(); }
++
+ #notifications-area {
+     display: block;
+     position: absolute;
+@@ -6,46 +22,28 @@
+     width: @msg-width + 30;
+     overflow: hidden;
+     padding-top: 30px;
+-    z-index: 99;
++    z-index: 1000;
+ }
+ #notifications-area .notification {
+     width: @msg-width;
+-    min-height: @msg-min-height;
+     background: @msg-text-bg;
+     border-radius: 4px;
+     box-shadow: 0 2px 2px rgba(0,0,0,0.22);
+     overflow: hidden;
+     position: relative;
+-    margin-bottom: 10px;
+-    animation: notification-appear 0.35s ease-out; 
+-    opacity: 1;
+-    right: 0;
+-    margin-top: 0;
+-}
+-@keyframes notification-appear {
+-    0% {
+-        opacity: 0;
+-        right: 0 - @msg-width - 30;
+-        }
+-    100% {
+-        opacity: 1;
+-        right: 0;
+-        }
++   -webkit-animation: notification-appear 0.4s ease-in-out 1;
++  	animation: notification-appear 0.4s ease-in-out 1;
++  	margin-bottom: 10px;
+ }
++
++
+ #notifications-area .notification-hide {
+-    animation: notification-disappear 0.65s ease-in;  
+-    opacity: 0;
+-    margin-top: 0 - @msg-min-height;
+-}
+-@keyframes notification-disappear {
+-    0% {
+-        opacity: 1;
+-        margin-top: 0;
+-        }
+-    100% {
+-        opacity: 0;
+-        margin-top: 0 - @msg-min-height - 10;
+-        }
++   -webkit-animation: notification-disappear 0.6s ease-in-out 1;
++  	animation: notification-disappear 0.6s ease-in-out 1;
++  	opacity: 0;
++  	height: 0;
++    right: 0 - @msg-width - 30;
++  	margin-bottom: 0px;
+ }
+ 
+ .nt-content {
+@@ -84,7 +82,7 @@
+     width: @msg-min-height;
+     min-height: @msg-min-height;
+     height: 100%;
+-    background: @msg-glyph-bg;
++    background-color: @msg-glyph-bg;
+ }
+ 
+ .nt-content .glyph svg {"
+vizorvr/patches,800,97f0d9a,views/partials/notification.handlebars,added,16,0,16,"@@ -0,0 +1,16 @@
++<div class=""growl notification nt-type-{{type}}"">
++	<div class=""nt-content"">
++		<div class=""glyph"">
++			{{#if fromUser}}
++				{{#if fromUser.pic}}
++					<div style=""background-image: url('{{fromUser.pic}}');"" class=""image-crop""></div>
++				{{else}}
++					<div style=""background-color: {{fromUser.color}};"" class=""image-crop""><span>{{fromUser.firstLetter}}</span></div>
++				{{/if}}
++			{{else}}
++				<svg class=""icon-{{type}}""><use xlink:href=""#icon-{{type}}""></use></svg>
++			{{/if}}
++		</div>
++		<div class=""text""><span>{{message}}</span></div>
++	</div>
++</div>
+\ No newline at end of file"
+vizorvr/patches,800,d59b15f,browser/scripts/application.js,modified,41,35,76,"@@ -1529,47 +1529,53 @@ Application.prototype.openSaveACopyDialog = function() {
+ 	return dfd.promise
+ }
+ 
+-Application.prototype.growl = function(title, type, duration, person) {
+-	var letter=title.charAt(0);
+-	var image=''
+-	type= type || 'info';
+-	if (!$('symbol#icon-'+type).length) {
+-		type='info'
+-	}
+-	if (person) {
+-		var image='<div style=""background-color: '+person.color+';"" class=""image-crop""><span>'+letter+'</span></div>';
+-	} 
+-	
+-	/** TODO: when users will have pics - use this:
+-	if (person.userpic) {
+-		image = '<div style=""background-image: url('+person.userpic+');"" class=""image-crop""></div>';
++Application.prototype.growl = function(message, type, duration, user) {
++	type = type || 'info'
++	duration = 500 + (duration || 2000)			// account for reveal animations
++
++	var fromUser = _.extend({
++		username: '',
++		color: 'transparent',
++		firstLetter: '',
++		gravatar: ''
++	}, user)
++
++	if (fromUser.username) {
++		fromUser.firstLetter = fromUser.username.charAt(0)
+ 	}
+-	*/
+-	
+-	var glyph = '<div class=""glyph"">'+image+'<svg class=""icon-'+type+'""><use xlink:href=""#icon-'+type+'""></use></svg></div>';
+-	
+-	if (!$('#notifications-area').length) {
+-		$('body').append('<div id=""notifications-area""></div>');
++
++	var data = {
++		type: type,
++		fromUser: fromUser,
++		message: message
+ 	}
+-	
+-	function close() {
+-		$('#notifications-area>.notification-show:first-child').removeClass('notification-show').addClass('notification-hide');
++
++	var $notificationArea = jQuery('#notifications-area')
++	if (!$notificationArea.length) {
++		$notificationArea = jQuery('<div id=""notifications-area""></div>')
++		jQuery('body').append($notificationArea)
+ 	}
+-	
+-	function remove() {
+-		$('.notification-hide:first-child').remove();
+-		$('#notifications-area>.notification-show:first-child').removeClass('notification-show').addClass('notification-hide');
+-		if (!$('#notifications-area>div').length) {
+-			$('#notifications-area').remove();
++
++	var $notification = jQuery(E2.views.partials.notification(data))
++
++	var remove = function () {
++		$notification.remove()
++		if (jQuery('>div', $notificationArea).length === 0) {
++			$notificationArea.remove()
+ 		}
+ 	}
+ 
+-	$('#notifications-area').append('<div class=""notification notification-show""><div class=""nt-content"">'+glyph+'<div class=""text""><span>'+title+'</span></div></div></div>');
+-	
+-	duration = duration || 2000;
+-	
+-	setTimeout(close, duration * $('#notifications-area .notification').length)
+-	setTimeout(remove, duration * $('#notifications-area .notification').length + 1000)
++	var close = function() {
++		$notification.removeClass('notification-show').addClass('notification-hide')
++		setTimeout(remove, 1000)
++	}
++
++	$notificationArea.append($notification)
++	$notification.addClass('notification-show')
++
++	setTimeout(close, duration * $('.notification', $notificationArea).length)
++
++	return $notification
+ }
+ 
+ Application.prototype.setupStoreListeners = function() {"
+vizorvr/patches,800,d59b15f,less/notifications.less,modified,29,31,60,"@@ -1,3 +1,19 @@
++.notificationAnimationIn () {
++	  0% { opacity: 0; right: 0 - @msg-width - 30; 	height: 0; 					margin-bottom: 0px;}
++     30% { opacity: 0; right: 0 - @msg-width - 30; 	height: @msg-min-height; 	margin-bottom: 10px;}
++    100% { opacity: 1; right: 0; 					height: @msg-min-height; 	margin-bottom: 10px;}
++}
++.notificationAnimationOut () {
++      0% { opacity: 1; right: 0; 					height: @msg-min-height; 	margin-bottom: 10px;}
++     70% { opacity: 0; right: 0 - @msg-width - 30; 	height: @msg-min-height; 	margin-bottom: 10px;}
++	100% { opacity: 0; right: 0 - @msg-width - 30; 	height: 0; 					margin-bottom: 0px;}
++}
++// ff,chrome won't play animations in reverse. (?)
++@-webkit-keyframes notification-appear { .notificationAnimationIn(); }		// safari pre-9
++@-webkit-keyframes notification-disappear { .notificationAnimationOut(); }
++@keyframes notification-appear { .notificationAnimationIn(); }
++@keyframes notification-disappear { .notificationAnimationOut(); }
++
+ #notifications-area {
+     display: block;
+     position: absolute;
+@@ -6,46 +22,28 @@
+     width: @msg-width + 30;
+     overflow: hidden;
+     padding-top: 30px;
+-    z-index: 99;
++    z-index: 1000;
+ }
+ #notifications-area .notification {
+     width: @msg-width;
+-    min-height: @msg-min-height;
+     background: @msg-text-bg;
+     border-radius: 4px;
+     box-shadow: 0 2px 2px rgba(0,0,0,0.22);
+     overflow: hidden;
+     position: relative;
+-    margin-bottom: 10px;
+-    animation: notification-appear 0.35s ease-out; 
+-    opacity: 1;
+-    right: 0;
+-    margin-top: 0;
+-}
+-@keyframes notification-appear {
+-    0% {
+-        opacity: 0;
+-        right: 0 - @msg-width - 30;
+-        }
+-    100% {
+-        opacity: 1;
+-        right: 0;
+-        }
++   -webkit-animation: notification-appear 0.4s ease-in-out 1;
++  	animation: notification-appear 0.4s ease-in-out 1;
++  	margin-bottom: 10px;
+ }
++
++
+ #notifications-area .notification-hide {
+-    animation: notification-disappear 0.65s ease-in;  
+-    opacity: 0;
+-    margin-top: 0 - @msg-min-height;
+-}
+-@keyframes notification-disappear {
+-    0% {
+-        opacity: 1;
+-        margin-top: 0;
+-        }
+-    100% {
+-        opacity: 0;
+-        margin-top: 0 - @msg-min-height - 10;
+-        }
++   -webkit-animation: notification-disappear 0.6s ease-in-out 1;
++  	animation: notification-disappear 0.6s ease-in-out 1;
++  	opacity: 0;
++  	height: 0;
++    right: 0 - @msg-width - 30;
++  	margin-bottom: 0px;
+ }
+ 
+ .nt-content {
+@@ -84,7 +82,7 @@
+     width: @msg-min-height;
+     min-height: @msg-min-height;
+     height: 100%;
+-    background: @msg-glyph-bg;
++    background-color: @msg-glyph-bg;
+ }
+ 
+ .nt-content .glyph svg {"
+vizorvr/patches,800,d59b15f,views/partials/notification.handlebars,added,16,0,16,"@@ -0,0 +1,16 @@
++<div class=""growl notification nt-type-{{type}}"">
++	<div class=""nt-content"">
++		<div class=""glyph"">
++			{{#if fromUser.username}}
++				{{#if fromUser.gravatar}}
++					<div style=""background-image: url('{{fromUser.gravatar}}');"" class=""image-crop""></div>
++				{{else}}
++					<div style=""background-color: {{fromUser.color}};"" class=""image-crop""><span>{{fromUser.firstLetter}}</span></div>
++				{{/if}}
++			{{else}}
++				<svg class=""icon-{{type}}""><use xlink:href=""#icon-{{type}}""></use></svg>
++			{{/if}}
++		</div>
++		<div class=""text""><span>{{message}}</span></div>
++	</div>
++</div>
+\ No newline at end of file"

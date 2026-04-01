@@ -1,0 +1,81 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+uic-evl/omegalib,44,a97ab00,src/omega/DrawInterface.cpp,modified,1,1,2,"@@ -140,7 +140,7 @@ void DrawInterface::pushTransform(const AffineTransform3& transform)
+ {
+     glMatrixMode(GL_MODELVIEW);
+ 	glPushMatrix();
+-	glMultMatrixd(transform.data());
++	glLoadMatrixd(transform.data());
+ }
+ 
+ ///////////////////////////////////////////////////////////////////////////////"
+uic-evl/omegalib,44,a97ab00,src/omegaToolkit/ui/Container.cpp,modified,28,13,41,"@@ -730,25 +730,40 @@ void ContainerRenderable::draw3d(const DrawContext& context)
+ 		glBlendFunc (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+ 
+ 		Container3dSettings& c3ds = myOwner->get3dSettings();
+-		float width = myOwner->getWidth() * c3ds.scale;
+-		float height = myOwner->getHeight() * c3ds.scale;
++		double width = myOwner->getWidth() * c3ds.scale;
++		double height = myOwner->getHeight() * c3ds.scale;
+ 
+ 		glColor4ub(255, 255, 255, (GLubyte)(c3ds.alpha * 255));
+ 
+ 		glPushMatrix();
+ 
+ 		if(c3ds.node != NULL)
+ 		{
+-			getRenderer()->pushTransform(c3ds.node->getFullTransform());
+-		}
+-
+-		if(!c3ds.center)
+-		{
+-			glTranslated(c3ds.position[0], c3ds.position[1] - height, c3ds.position[2]);
++			AffineTransform3 xform = c3ds.node->getFullTransform();
++			//ofmsg(""%1% %2% %3%"", %xform(2, 0) %xform(2, 1) %xform(2, 2));
++			if(!c3ds.center)
++			{
++				Vector3f pos(c3ds.position[0], c3ds.position[1] - height, c3ds.position[2]);
++				xform.translate(pos);
++			}
++			else
++			{
++				Vector3f pos(c3ds.position[0] - width / 2, c3ds.position[1] - height / 2, c3ds.position[2]);
++				xform.translate(pos);
++			}
++			xform = context.modelview * xform;
++			getRenderer()->pushTransform(xform);
+ 		}
+ 		else
+ 		{
+-			glTranslated(c3ds.position[0] - width / 2, c3ds.position[1] - height / 2, c3ds.position[2]);
++			if(!c3ds.center)
++			{
++				glTranslated(c3ds.position[0], c3ds.position[1] - height, c3ds.position[2]);
++			}
++			else
++			{
++				glTranslated(c3ds.position[0] - width / 2, c3ds.position[1] - height / 2, c3ds.position[2]);
++			}
+ 		}
+ 
+ 		// TODO: redo this using DrawInterface.
+@@ -761,16 +776,16 @@ void ContainerRenderable::draw3d(const DrawContext& context)
+ 
+ 		glBegin(GL_TRIANGLE_STRIP);
+ 		glTexCoord2f(0, 1);
+-		glVertex3f(0, 0, 0);
++		glVertex3d(0, 0, 0);
+ 
+ 		glTexCoord2f(1, 1);
+-		glVertex3f(topRight.x(), topRight.y(), topRight.z());
++		glVertex3d(topRight.x(), topRight.y(), topRight.z());
+ 
+ 		glTexCoord2f(0, 0);
+-		glVertex3f(downLeft.x(), downLeft.y(), downLeft.z());
++		glVertex3d(downLeft.x(), downLeft.y(), downLeft.z());
+ 
+ 		glTexCoord2f(1, 0);
+-		glVertex3f(downRight.x(), downRight.y(), downRight.z());
++		glVertex3d(downRight.x(), downRight.y(), downRight.z());
+ 
+ 		glEnd();
+ "

@@ -1,0 +1,355 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+secondlife/viewer,3311,29d077b,indra/llinventory/llsettingssky.cpp,modified,11,8,19,"@@ -2032,34 +2032,37 @@ F32 LLSettingsSky::getGamma() const
+     return mGamma;
+ }
+ 
+-F32 LLSettingsSky::getHDRMin() const
++F32 LLSettingsSky::getHDRMin(bool auto_adjust) const
+ {
+-    if (mCanAutoAdjust)
++    if (mCanAutoAdjust && !auto_adjust)
+         return 0.f;
+ 
+     return mHDRMin;
+ }
+ 
+-F32 LLSettingsSky::getHDRMax() const
++F32 LLSettingsSky::getHDRMax(bool auto_adjust) const
+ {
+-    if (mCanAutoAdjust)
++    if (mCanAutoAdjust && !auto_adjust)
+         return 0.f;
+ 
+     return mHDRMax;
+ }
+ 
+-F32 LLSettingsSky::getHDROffset() const
++F32 LLSettingsSky::getHDROffset(bool auto_adjust) const
+ {
+-    if (mCanAutoAdjust)
++    if (mCanAutoAdjust && !auto_adjust)
+         return 1.0f;
+ 
+     return mHDROffset;
+ }
+ 
+-F32 LLSettingsSky::getTonemapMix() const
++F32 LLSettingsSky::getTonemapMix(bool auto_adjust) const
+ {
+-    if (mCanAutoAdjust)
++    if (mCanAutoAdjust && !auto_adjust)
++    {
++        // legacy settings do not support tonemaping
+         return 0.0f;
++    }
+ 
+     return mTonemapMix;
+ }"
+secondlife/viewer,3311,29d077b,indra/llinventory/llsettingssky.h,modified,4,4,8,"@@ -209,10 +209,10 @@ class LLSettingsSky: public LLSettingsBase
+ 
+     F32 getGamma() const;
+ 
+-    F32 getHDRMin() const;
+-    F32 getHDRMax() const;
+-    F32 getHDROffset() const;
+-    F32 getTonemapMix() const;
++    F32 getHDRMin(bool auto_adjust = false) const;
++    F32 getHDRMax(bool auto_adjust = false) const;
++    F32 getHDROffset(bool auto_adjust = false) const;
++    F32 getTonemapMix(bool auto_adjust = false) const;
+     void setTonemapMix(F32 mix);
+ 
+     void setGamma(F32 val);"
+secondlife/viewer,3311,29d077b,indra/newview/pipeline.cpp,modified,7,7,14,"@@ -7076,7 +7076,7 @@ void LLPipeline::generateExposure(LLRenderTarget* src, LLRenderTarget* dst, bool
+ 
+         LLSettingsSky::ptr_t sky = LLEnvironment::instance().getCurrentSky();
+ 
+-        F32 probe_ambiance = LLEnvironment::instance().getCurrentSky()->getReflectionProbeAmbiance(should_auto_adjust);
++        F32 probe_ambiance = LLEnvironment::instance().getCurrentSky()->getReflectionProbeAmbiance(should_auto_adjust());
+ 
+         F32 exp_min = 1.f;
+         F32 exp_max = 1.f;
+@@ -7087,13 +7087,13 @@ void LLPipeline::generateExposure(LLRenderTarget* src, LLRenderTarget* dst, bool
+         {
+             if (dynamic_exposure_enabled)
+             {
+-                exp_min = sky->getHDROffset() - sky->getHDRMin();
+-                exp_max = sky->getHDROffset() + sky->getHDRMax();
++                exp_min = sky->getHDROffset(should_auto_adjust()) - sky->getHDRMin(should_auto_adjust());
++                exp_max = sky->getHDROffset(should_auto_adjust()) + sky->getHDRMax(should_auto_adjust());
+             }
+             else
+             {
+-                exp_min = sky->getHDROffset();
+-                exp_max = sky->getHDROffset();
++                exp_min = sky->getHDROffset(should_auto_adjust());
++                exp_max = sky->getHDROffset(should_auto_adjust());
+             }
+         }
+         else if (dynamic_exposure_enabled)
+@@ -7113,7 +7113,7 @@ void LLPipeline::generateExposure(LLRenderTarget* src, LLRenderTarget* dst, bool
+         shader->uniform1f(dt, gFrameIntervalSeconds);
+         shader->uniform2f(noiseVec, ll_frand() * 2.0f - 1.0f, ll_frand() * 2.0f - 1.0f);
+         shader->uniform4f(dynamic_exposure_params, dynamic_exposure_coefficient, exp_min, exp_max, dynamic_exposure_speed_error);
+-        shader->uniform4f(dynamic_exposure_params2, sky->getHDROffset(), exp_min, exp_max, dynamic_exposure_speed_target);
++        shader->uniform4f(dynamic_exposure_params2, sky->getHDROffset(should_auto_adjust()), exp_min, exp_max, dynamic_exposure_speed_target);
+ 
+         mScreenTriangleVB->setBuffer();
+         mScreenTriangleVB->drawArrays(LLRender::TRIANGLES, 0, 3);
+@@ -7171,7 +7171,7 @@ void LLPipeline::tonemap(LLRenderTarget* src, LLRenderTarget* dst)
+ 
+         static LLCachedControl<U32> tonemap_type_setting(gSavedSettings, ""RenderTonemapType"", 0U);
+         shader.uniform1i(tonemap_type, tonemap_type_setting);
+-        shader.uniform1f(tonemap_mix, psky->getTonemapMix());
++        shader.uniform1f(tonemap_mix, psky->getTonemapMix(should_auto_adjust()));
+ 
+         mScreenTriangleVB->setBuffer();
+         mScreenTriangleVB->drawArrays(LLRender::TRIANGLES, 0, 3);"
+secondlife/viewer,3311,2452e1a,indra/llinventory/llsettingssky.cpp,modified,11,11,22,"@@ -2032,43 +2032,43 @@ F32 LLSettingsSky::getGamma() const
+     return mGamma;
+ }
+ 
+-F32 LLSettingsSky::getHDRMin() const
++F32 LLSettingsSky::getHDRMin(bool auto_adjust) const
+ {
+-    if (mCanAutoAdjust)
++    if (mCanAutoAdjust && !auto_adjust)
+         return 0.f;
+ 
+     return mHDRMin;
+ }
+ 
+-F32 LLSettingsSky::getHDRMax() const
++F32 LLSettingsSky::getHDRMax(bool auto_adjust) const
+ {
+-    if (mCanAutoAdjust)
++    if (mCanAutoAdjust && !auto_adjust)
+         return 0.f;
+ 
+     return mHDRMax;
+ }
+ 
+-F32 LLSettingsSky::getHDROffset() const
++F32 LLSettingsSky::getHDROffset(bool auto_adjust) const
+ {
+-    if (mCanAutoAdjust)
++    if (mCanAutoAdjust && !auto_adjust)
+         return 1.0f;
+ 
+     return mHDROffset;
+ }
+ 
+-F32 LLSettingsSky::getTonemapMix() const
++F32 LLSettingsSky::getTonemapMix(bool auto_adjust) const
+ {
+-    if (mCanAutoAdjust)
++    if (mCanAutoAdjust && !auto_adjust)
++    {
++        // legacy settings do not support tonemaping
+         return 0.0f;
++    }
+ 
+     return mTonemapMix;
+ }
+ 
+ void LLSettingsSky::setTonemapMix(F32 mix)
+ {
+-    if (mCanAutoAdjust)
+-        return;
+-
+     mTonemapMix = mix;
+ }
+ "
+secondlife/viewer,3311,2452e1a,indra/llinventory/llsettingssky.h,modified,4,4,8,"@@ -209,10 +209,10 @@ class LLSettingsSky: public LLSettingsBase
+ 
+     F32 getGamma() const;
+ 
+-    F32 getHDRMin() const;
+-    F32 getHDRMax() const;
+-    F32 getHDROffset() const;
+-    F32 getTonemapMix() const;
++    F32 getHDRMin(bool auto_adjust = false) const;
++    F32 getHDRMax(bool auto_adjust = false) const;
++    F32 getHDROffset(bool auto_adjust = false) const;
++    F32 getTonemapMix(bool auto_adjust = false) const;
+     void setTonemapMix(F32 mix);
+ 
+     void setGamma(F32 val);"
+secondlife/viewer,3311,2452e1a,indra/newview/llsettingsvo.cpp,modified,1,1,2,"@@ -807,7 +807,7 @@ void LLSettingsVOSky::applySpecial(void *ptarget, bool force)
+     static LLCachedControl<F32> tonemap_mix_setting(gSavedSettings, ""RenderTonemapMix"", 1.f);
+ 
+     // sky is a ""classic"" sky following pre SL 7.0 shading
+-    bool classic_mode = psky->canAutoAdjust();
++    bool classic_mode = psky->canAutoAdjust() && !should_auto_adjust();
+ 
+     if (!classic_mode)
+     {"
+secondlife/viewer,3311,2452e1a,indra/newview/pipeline.cpp,modified,7,7,14,"@@ -7076,7 +7076,7 @@ void LLPipeline::generateExposure(LLRenderTarget* src, LLRenderTarget* dst, bool
+ 
+         LLSettingsSky::ptr_t sky = LLEnvironment::instance().getCurrentSky();
+ 
+-        F32 probe_ambiance = LLEnvironment::instance().getCurrentSky()->getReflectionProbeAmbiance(should_auto_adjust);
++        F32 probe_ambiance = LLEnvironment::instance().getCurrentSky()->getReflectionProbeAmbiance(should_auto_adjust());
+ 
+         F32 exp_min = 1.f;
+         F32 exp_max = 1.f;
+@@ -7087,13 +7087,13 @@ void LLPipeline::generateExposure(LLRenderTarget* src, LLRenderTarget* dst, bool
+         {
+             if (dynamic_exposure_enabled)
+             {
+-                exp_min = sky->getHDROffset() - sky->getHDRMin();
+-                exp_max = sky->getHDROffset() + sky->getHDRMax();
++                exp_min = sky->getHDROffset(should_auto_adjust()) - sky->getHDRMin(should_auto_adjust());
++                exp_max = sky->getHDROffset(should_auto_adjust()) + sky->getHDRMax(should_auto_adjust());
+             }
+             else
+             {
+-                exp_min = sky->getHDROffset();
+-                exp_max = sky->getHDROffset();
++                exp_min = sky->getHDROffset(should_auto_adjust());
++                exp_max = sky->getHDROffset(should_auto_adjust());
+             }
+         }
+         else if (dynamic_exposure_enabled)
+@@ -7113,7 +7113,7 @@ void LLPipeline::generateExposure(LLRenderTarget* src, LLRenderTarget* dst, bool
+         shader->uniform1f(dt, gFrameIntervalSeconds);
+         shader->uniform2f(noiseVec, ll_frand() * 2.0f - 1.0f, ll_frand() * 2.0f - 1.0f);
+         shader->uniform4f(dynamic_exposure_params, dynamic_exposure_coefficient, exp_min, exp_max, dynamic_exposure_speed_error);
+-        shader->uniform4f(dynamic_exposure_params2, sky->getHDROffset(), exp_min, exp_max, dynamic_exposure_speed_target);
++        shader->uniform4f(dynamic_exposure_params2, sky->getHDROffset(should_auto_adjust()), exp_min, exp_max, dynamic_exposure_speed_target);
+ 
+         mScreenTriangleVB->setBuffer();
+         mScreenTriangleVB->drawArrays(LLRender::TRIANGLES, 0, 3);
+@@ -7171,7 +7171,7 @@ void LLPipeline::tonemap(LLRenderTarget* src, LLRenderTarget* dst)
+ 
+         static LLCachedControl<U32> tonemap_type_setting(gSavedSettings, ""RenderTonemapType"", 0U);
+         shader.uniform1i(tonemap_type, tonemap_type_setting);
+-        shader.uniform1f(tonemap_mix, psky->getTonemapMix());
++        shader.uniform1f(tonemap_mix, psky->getTonemapMix(should_auto_adjust()));
+ 
+         mScreenTriangleVB->setBuffer();
+         mScreenTriangleVB->drawArrays(LLRender::TRIANGLES, 0, 3);"
+secondlife/viewer,3311,a275157,indra/llinventory/llsettingssky.cpp,modified,11,11,22,"@@ -2032,43 +2032,43 @@ F32 LLSettingsSky::getGamma() const
+     return mGamma;
+ }
+ 
+-F32 LLSettingsSky::getHDRMin() const
++F32 LLSettingsSky::getHDRMin(bool auto_adjust) const
+ {
+-    if (mCanAutoAdjust)
++    if (mCanAutoAdjust && !auto_adjust)
+         return 0.f;
+ 
+     return mHDRMin;
+ }
+ 
+-F32 LLSettingsSky::getHDRMax() const
++F32 LLSettingsSky::getHDRMax(bool auto_adjust) const
+ {
+-    if (mCanAutoAdjust)
++    if (mCanAutoAdjust && !auto_adjust)
+         return 0.f;
+ 
+     return mHDRMax;
+ }
+ 
+-F32 LLSettingsSky::getHDROffset() const
++F32 LLSettingsSky::getHDROffset(bool auto_adjust) const
+ {
+-    if (mCanAutoAdjust)
++    if (mCanAutoAdjust && !auto_adjust)
+         return 1.0f;
+ 
+     return mHDROffset;
+ }
+ 
+-F32 LLSettingsSky::getTonemapMix() const
++F32 LLSettingsSky::getTonemapMix(bool auto_adjust) const
+ {
+-    if (mCanAutoAdjust)
++    if (mCanAutoAdjust && !auto_adjust)
++    {
++        // legacy settings do not support tonemaping
+         return 0.0f;
++    }
+ 
+     return mTonemapMix;
+ }
+ 
+ void LLSettingsSky::setTonemapMix(F32 mix)
+ {
+-    if (mCanAutoAdjust)
+-        return;
+-
+     mTonemapMix = mix;
+ }
+ "
+secondlife/viewer,3311,a275157,indra/llinventory/llsettingssky.h,modified,4,4,8,"@@ -209,10 +209,10 @@ class LLSettingsSky: public LLSettingsBase
+ 
+     F32 getGamma() const;
+ 
+-    F32 getHDRMin() const;
+-    F32 getHDRMax() const;
+-    F32 getHDROffset() const;
+-    F32 getTonemapMix() const;
++    F32 getHDRMin(bool auto_adjust = false) const;
++    F32 getHDRMax(bool auto_adjust = false) const;
++    F32 getHDROffset(bool auto_adjust = false) const;
++    F32 getTonemapMix(bool auto_adjust = false) const;
+     void setTonemapMix(F32 mix);
+ 
+     void setGamma(F32 val);"
+secondlife/viewer,3311,a275157,indra/newview/llsettingsvo.cpp,modified,1,1,2,"@@ -807,7 +807,7 @@ void LLSettingsVOSky::applySpecial(void *ptarget, bool force)
+     static LLCachedControl<F32> tonemap_mix_setting(gSavedSettings, ""RenderTonemapMix"", 1.f);
+ 
+     // sky is a ""classic"" sky following pre SL 7.0 shading
+-    bool classic_mode = psky->canAutoAdjust();
++    bool classic_mode = psky->canAutoAdjust() && !should_auto_adjust();
+ 
+     if (!classic_mode)
+     {"
+secondlife/viewer,3311,a275157,indra/newview/pipeline.cpp,modified,7,7,14,"@@ -7076,7 +7076,7 @@ void LLPipeline::generateExposure(LLRenderTarget* src, LLRenderTarget* dst, bool
+ 
+         LLSettingsSky::ptr_t sky = LLEnvironment::instance().getCurrentSky();
+ 
+-        F32 probe_ambiance = LLEnvironment::instance().getCurrentSky()->getReflectionProbeAmbiance(should_auto_adjust);
++        F32 probe_ambiance = LLEnvironment::instance().getCurrentSky()->getReflectionProbeAmbiance(should_auto_adjust());
+ 
+         F32 exp_min = 1.f;
+         F32 exp_max = 1.f;
+@@ -7087,13 +7087,13 @@ void LLPipeline::generateExposure(LLRenderTarget* src, LLRenderTarget* dst, bool
+         {
+             if (dynamic_exposure_enabled)
+             {
+-                exp_min = sky->getHDROffset() - sky->getHDRMin();
+-                exp_max = sky->getHDROffset() + sky->getHDRMax();
++                exp_min = sky->getHDROffset(should_auto_adjust()) - sky->getHDRMin(should_auto_adjust());
++                exp_max = sky->getHDROffset(should_auto_adjust()) + sky->getHDRMax(should_auto_adjust());
+             }
+             else
+             {
+-                exp_min = sky->getHDROffset();
+-                exp_max = sky->getHDROffset();
++                exp_min = sky->getHDROffset(should_auto_adjust());
++                exp_max = sky->getHDROffset(should_auto_adjust());
+             }
+         }
+         else if (dynamic_exposure_enabled)
+@@ -7113,7 +7113,7 @@ void LLPipeline::generateExposure(LLRenderTarget* src, LLRenderTarget* dst, bool
+         shader->uniform1f(dt, gFrameIntervalSeconds);
+         shader->uniform2f(noiseVec, ll_frand() * 2.0f - 1.0f, ll_frand() * 2.0f - 1.0f);
+         shader->uniform4f(dynamic_exposure_params, dynamic_exposure_coefficient, exp_min, exp_max, dynamic_exposure_speed_error);
+-        shader->uniform4f(dynamic_exposure_params2, sky->getHDROffset(), exp_min, exp_max, dynamic_exposure_speed_target);
++        shader->uniform4f(dynamic_exposure_params2, sky->getHDROffset(should_auto_adjust()), exp_min, exp_max, dynamic_exposure_speed_target);
+ 
+         mScreenTriangleVB->setBuffer();
+         mScreenTriangleVB->drawArrays(LLRender::TRIANGLES, 0, 3);
+@@ -7171,7 +7171,7 @@ void LLPipeline::tonemap(LLRenderTarget* src, LLRenderTarget* dst)
+ 
+         static LLCachedControl<U32> tonemap_type_setting(gSavedSettings, ""RenderTonemapType"", 0U);
+         shader.uniform1i(tonemap_type, tonemap_type_setting);
+-        shader.uniform1f(tonemap_mix, psky->getTonemapMix());
++        shader.uniform1f(tonemap_mix, psky->getTonemapMix(should_auto_adjust()));
+ 
+         mScreenTriangleVB->setBuffer();
+         mScreenTriangleVB->drawArrays(LLRender::TRIANGLES, 0, 3);"

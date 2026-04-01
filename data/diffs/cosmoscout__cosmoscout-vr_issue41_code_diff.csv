@@ -1,0 +1,567 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+cosmoscout/cosmoscout-vr,41,52e5b9d,src/cosmoscout/dfn-nodes/DragNavigationNode.cpp,modified,2,2,4,"@@ -180,8 +180,8 @@ bool DragNavigationNode::DoEvalNode() {
+     }
+ 
+     // Only rotate, if no other interactive object is affected
+-    if (bPerformRotation && !mInputManager->pHoveredNode.get() &&
+-        !mInputManager->pHoveredGuiNode.get()) {
++    if (bPerformRotation && !mInputManager->pActiveNode.get() &&
++        !mInputManager->pActiveGuiNode.get()) {
+       // Rotation angle computations:
+       glm::dvec3 currentAxis = glm::cross(start_vec, end_vec);
+ "
+cosmoscout/cosmoscout-vr,41,52e5b9d,src/cs-core/InputManager.cpp,modified,81,22,103,"@@ -212,7 +212,26 @@ void InputManager::HandleEvent(VistaEvent* pEvent) {
+ 
+           if (i == 0) {
+             if (pHoveredNode.get()) {
+-              pSelectedNode = pHoveredNode;
++              if (port->GetValue()) {
++                pSelectedNode = pHoveredNode;
++                pActiveNode   = pHoveredNode;
++              } else {
++                pActiveNode = nullptr;
++              }
++            }
++
++            if (pHoveredGuiNode.get()) {
++              gui::MouseEvent mouseEvent;
++              mouseEvent.mButton = gui::Button::eLeft;
++              if (port->GetValue()) {
++                pSelectedGuiNode = pHoveredGuiNode;
++                pActiveGuiNode   = pHoveredGuiNode;
++                mouseEvent.mType = gui::MouseEvent::Type::ePress;
++              } else {
++                pActiveGuiNode   = nullptr;
++                mouseEvent.mType = gui::MouseEvent::Type::eRelease;
++              }
++              pHoveredGuiNode.get()->injectMouseEvent(mouseEvent);
+             }
+ 
+             if (!port->GetValue()) {
+@@ -225,17 +244,6 @@ void InputManager::HandleEvent(VistaEvent* pEvent) {
+               mClickTime = t;
+             }
+           }
+-
+-          if (i == 0 && pHoveredGuiNode.get()) {
+-            gui::MouseEvent mouseEvent;
+-            mouseEvent.mButton = gui::Button::eLeft;
+-            if (port->GetValue()) {
+-              mouseEvent.mType = gui::MouseEvent::Type::ePress;
+-            } else {
+-              mouseEvent.mType = gui::MouseEvent::Type::eRelease;
+-            }
+-            pHoveredGuiNode.get()->injectMouseEvent(mouseEvent);
+-          }
+         }
+       }
+ 
+@@ -287,6 +295,11 @@ bool InputManager::HandleContextChange(VistaInteractionEvent* pEvent) {
+ 
+   pHoveredObject = intersection;
+ 
++  // If there is an active node, we do not want to change any selection state.
++  if (pActiveNode.get()) {
++    return true;
++  }
++
+   // Test the Intention Node for Intersection with screen space gui.
+   if (!mScreenSpaceGuis.empty()) {
+     VistaViewport* pViewport(GetVistaSystem()->GetDisplayManager()->GetViewports().begin()->second);
+@@ -323,24 +336,69 @@ bool InputManager::HandleContextChange(VistaInteractionEvent* pEvent) {
+                       pViewportGui->getHeight());
+ 
+         gui::GuiItem* item = pViewportGui->getItemAt(x, y);
++
++        // If there is a pActiveGuiNode in this pViewportGui, we want to send the input events even
++        // if the pointer is not over the item
++        if (!item && pActiveGuiNode.get()) {
++          if (std::find(pViewportGui->getItems().begin(), pViewportGui->getItems().end(),
++                  pActiveGuiNode.get()) != pViewportGui->getItems().end()) {
++            item = pActiveGuiNode.get();
++          }
++        }
++
+         if (item) {
+           // There has been no focused gui element before, so inject a focus event.
+           if (!pHoveredGuiNode.get()) {
+             item->injectFocusEvent(true);
+           }
+ 
+-          pHoveredGuiNode = item;
+-          pHoveredNode    = nullptr;
++          if (!pActiveGuiNode.get()) {
++            pHoveredGuiNode = item;
++            pHoveredNode    = nullptr;
++          }
+ 
+-          gui::MouseEvent event;
+-          item->calculateMousePosition(x, y, event.mX, event.mY);
+-          item->injectMouseEvent(event);
++          if (!pActiveGuiNode.get() || pActiveGuiNode.get() == item) {
++            gui::MouseEvent event;
++            item->calculateMousePosition(x, y, event.mX, event.mY);
++            item->injectMouseEvent(event);
++          }
+           return true;
+         }
+       }
+     }
+   }
+ 
++  // If there is an active guiItem in Worldspace, we want to send the mouse input to it in all
++  // cases. So we can skip any later intersection calculation.
++  if (pActiveGuiNode.get()) {
++    VistaTransformMatrix matTransform;
++    mActiveWorldSpaceGuiNode->GetParentWorldTransform(matTransform);
++    gui::WorldSpaceGuiArea* area =
++        dynamic_cast<gui::WorldSpaceGuiArea*>(mActiveWorldSpaceGuiNode->GetExtension());
++
++    // We scale the gui element's transform matrix so that the translation magnitude becomes 1.f.
++    // This is not strictly necessary but reduces precision issues in the inversion of the matrix.
++    // Without this step, objects which are *really* far away would not be selectable.
++    VistaTransformMatrix matScale;
++    float                scale = 1.f / matTransform.GetTranslation().GetLength();
++    matScale.SetToScaleMatrix(scale);
++    matTransform = matScale * matTransform;
++
++    VistaTransformMatrix matInvParentTransform = matTransform.GetInverted();
++    VistaVector3D        start                 = matInvParentTransform * (v3Position * scale);
++    VistaVector3D end = matInvParentTransform * ((v3Position * scale) + qOrientation.GetViewDir());
++
++    int x, y;
++    area->calculateMousePosition(start, end, x, y);
++    // Inject a mouse move event.
++    gui::MouseEvent event;
++    pHoveredGuiNode.get()->calculateMousePosition(x, y, event.mX, event.mY);
++    pHoveredGuiNode.get()->injectMouseEvent(event);
++    return true;
++  }
++
++  // There is no currently active object. So we can intersect our selectables to find potential
++  // candidates.
+   std::vector<IVistaIntentionSelectAdapter*> vResults;
+   mSelection.SetConeTransform(v3Position, qOrientation);
+   mSelection.Update(vResults);
+@@ -367,9 +425,10 @@ bool InputManager::HandleContextChange(VistaInteractionEvent* pEvent) {
+       VistaTransformMatrix matTransform;
+       pOGLNode->GetParentWorldTransform(matTransform);
+ 
+-      // We scale the gui element's transform matrix so that the translation magnitude becomes 1.f.
+-      // This is not strictly necessary but reduces precision issues in the inversion of the matrix.
+-      // Without this step, objects which are *really* far away would not be selectable.
++      // We scale the gui element's transform matrix so that the translation magnitude
++      // becomes 1.f. This is not strictly necessary but reduces precision issues in the
++      // inversion of the matrix. Without this step, objects which are *really* far away would
++      // not be selectable.
+       VistaTransformMatrix matScale;
+       float                scale = 1.f / matTransform.GetTranslation().GetLength();
+       matScale.SetToScaleMatrix(scale);
+@@ -389,7 +448,8 @@ bool InputManager::HandleContextChange(VistaInteractionEvent* pEvent) {
+             item->injectFocusEvent(true);
+           }
+ 
+-          pHoveredGuiNode = item;
++          pHoveredGuiNode          = item;
++          mActiveWorldSpaceGuiNode = pOGLNode;
+ 
+           // Inject a mouse move event.
+           gui::MouseEvent event;
+@@ -424,7 +484,6 @@ bool InputManager::HandleContextChange(VistaInteractionEvent* pEvent) {
+ 
+   pHoveredNode = nullptr;
+   unselectGuiNode();
+-  // TODO setCursor(Cursor::ePointer);
+ 
+   return true;
+ }"
+cosmoscout/cosmoscout-vr,41,52e5b9d,src/cs-core/InputManager.hpp,modified,21,8,29,"@@ -26,6 +26,7 @@
+ class IVistaNode;
+ class VistaTransformNode;
+ class VistaNodeAdapter;
++class VistaOpenGLNode;
+ 
+ namespace cs::gui {
+ class GuiItem;
+@@ -51,18 +52,28 @@ class CS_CORE_EXPORT InputManager : public VistaKeyboardSystemControl::IVistaDir
+     }
+   };
+ 
+-  /// The node that was clicked on last.
++  /// The GuiItem the pointer is currently hovering over is the pHoveredGuiNode. When pButtons[0] is
++  /// pressed while hovering a GuiItem, this GuiItem will become active and selected. Once the
++  /// button is released again, pActiveGuiNode will be nullptr again. As long as a node is active,
++  /// it will stay hovered and receive input events.
++  utils::Property<gui::GuiItem*> pHoveredGuiNode  = nullptr;
++  utils::Property<gui::GuiItem*> pActiveGuiNode   = nullptr;
++  utils::Property<gui::GuiItem*> pSelectedGuiNode = nullptr;
++
++  /// When no GuiItem is hovered, any other IVistaNode which has been registered via
++  /// registerSelectable() may become hovered.
++  /// The GuiItem the pointer is currently hovering over is the pHoveredGuiNode. When pButtons[0] is
++  /// pressed while hovering a GuiItem, this GuiItem will become active and selected. Once the
++  /// button is released again, pActiveGuiNode will be nullptr again. As long as a node is active,
++  /// it will stay hovered and receive input events.
++  utils::Property<IVistaNode*> pHoveredNode  = nullptr;
++  utils::Property<IVistaNode*> pActiveNode   = nullptr;
+   utils::Property<IVistaNode*> pSelectedNode = nullptr;
+ 
+-  /// DocTODO not sure what this is for.
+-  utils::Property<IVistaNode*> pHoveredNode = nullptr;
+-
+-  /// The GuiItem the mouse is currently hovering over.
+-  utils::Property<gui::GuiItem*> pHoveredGuiNode = nullptr;
+-
+-  /// The IntersectableObject currently hovered over.
++  /// Regardless of the node state above, this property will always be updated.
+   utils::Property<Intersection> pHoveredObject;
+ 
++  /// Contains the state of the buttons of your input device.
+   std::array<utils::Property<bool>, 8> pButtons;
+ 
+   /// Emits an event when the escape key is pressed.
+@@ -106,6 +117,8 @@ class CS_CORE_EXPORT InputManager : public VistaKeyboardSystemControl::IVistaDir
+   std::unordered_set<gui::ScreenSpaceGuiArea*>                    mScreenSpaceGuis;
+   VistaTransformNode*                                             mRayTrans;
+   boost::posix_time::ptime                                        mClickTime;
++
++  VistaOpenGLNode* mActiveWorldSpaceGuiNode;
+ };
+ 
+ } // namespace cs::core"
+cosmoscout/cosmoscout-vr,41,52e5b9d,src/cs-gui/GuiItem.cpp,modified,3,3,6,"@@ -172,14 +172,14 @@ bool GuiItem::calculateMousePosition(int areaX, int areaY, int& x, int& y) {
+   int tmpX = areaX - mOffsetX - mPositionX + getWidth() / 2;
+   int tmpY = areaY - mOffsetY - mPositionY + getHeight() / 2;
+ 
++  x = tmpX;
++  y = tmpY;
++
+   if (tmpX > mSizeX - 1 || tmpX < 0)
+     return false;
+   if (tmpY > mSizeY - 1 || tmpY < 0)
+     return false;
+ 
+-  x = tmpX;
+-  y = tmpY;
+-
+   return true;
+ }
+ "
+cosmoscout/cosmoscout-vr,41,52e5b9d,src/cs-gui/GuiItem.hpp,modified,2,2,4,"@@ -56,8 +56,8 @@ class CS_GUI_EXPORT GuiItem : public WebView {
+   ///
+   /// @param      areaX  The x position of the mouse in the parent GuiArea.
+   /// @param      areaY  The y position of the mouse in the parent GuiArea.
+-  /// @param[out] x      The x position of the mouse inside this GuiItem.
+-  /// @param[out] y      The y position of the mouse inside this GuiItem.
++  /// @param[out] x      The x position of the mouse relative to this GuiItem.
++  /// @param[out] y      The y position of the mouse relative to this GuiItem.
+   ///
+   /// @return If the mouse is in this items bounds at all.
+   bool calculateMousePosition(int areaX, int areaY, int& x, int& y);"
+cosmoscout/cosmoscout-vr,41,52e5b9d,src/cs-gui/WorldSpaceGuiArea.cpp,modified,3,2,5,"@@ -168,10 +168,11 @@ bool WorldSpaceGuiArea::calculateMousePosition(
+     return false;
+   }
+ 
++  x = (int)((intersection[0] + 0.5) * mWidth);
++  y = (int)((-intersection[1] + 0.5) * mHeight);
++
+   if (intersection[0] >= -0.5f && intersection[0] <= 0.5f && intersection[1] >= -0.5f &&
+       intersection[1] <= 0.5f) {
+-    x = (int)((intersection[0] + 0.5) * mWidth);
+-    y = (int)((-intersection[1] + 0.5) * mHeight);
+     return true;
+   }
+ "
+cosmoscout/cosmoscout-vr,41,52e5b9d,src/cs-gui/WorldSpaceGuiArea.hpp,modified,2,1,3,"@@ -44,7 +44,8 @@ class CS_GUI_EXPORT WorldSpaceGuiArea : public GuiArea, public IVistaOpenGLDraw
+ 
+   /// Calculates the position of the mouse in pixels. vRayOrigin and vRayEnd should be in
+   /// gui-plane-coordinates. The gui plane is the xy-plane with the normal pointing in positive
+-  /// z-direction.
++  /// z-direction. The result can be out of bounds of this area  - in this case 'false' is returned,
++  /// but the values are compted anyways.
+   virtual bool calculateMousePosition(
+       VistaVector3D const& vRayOrigin, VistaVector3D const& vRayEnd, int& x, int& y);
+ "
+cosmoscout/cosmoscout-vr,41,574db5a,src/cosmoscout/dfn-nodes/DragNavigationNode.cpp,modified,2,2,4,"@@ -180,8 +180,8 @@ bool DragNavigationNode::DoEvalNode() {
+     }
+ 
+     // Only rotate, if no other interactive object is affected
+-    if (bPerformRotation && !mInputManager->pHoveredNode.get() &&
+-        !mInputManager->pHoveredGuiNode.get()) {
++    if (bPerformRotation && !mInputManager->pActiveNode.get() &&
++        !mInputManager->pActiveGuiNode.get()) {
+       // Rotation angle computations:
+       glm::dvec3 currentAxis = glm::cross(start_vec, end_vec);
+ "
+cosmoscout/cosmoscout-vr,41,574db5a,src/cs-core/InputManager.cpp,modified,81,22,103,"@@ -212,7 +212,26 @@ void InputManager::HandleEvent(VistaEvent* pEvent) {
+ 
+           if (i == 0) {
+             if (pHoveredNode.get()) {
+-              pSelectedNode = pHoveredNode;
++              if (port->GetValue()) {
++                pSelectedNode = pHoveredNode;
++                pActiveNode   = pHoveredNode;
++              } else {
++                pActiveNode = nullptr;
++              }
++            }
++
++            if (pHoveredGuiNode.get()) {
++              gui::MouseEvent mouseEvent;
++              mouseEvent.mButton = gui::Button::eLeft;
++              if (port->GetValue()) {
++                pSelectedGuiNode = pHoveredGuiNode;
++                pActiveGuiNode   = pHoveredGuiNode;
++                mouseEvent.mType = gui::MouseEvent::Type::ePress;
++              } else {
++                pActiveGuiNode   = nullptr;
++                mouseEvent.mType = gui::MouseEvent::Type::eRelease;
++              }
++              pHoveredGuiNode.get()->injectMouseEvent(mouseEvent);
+             }
+ 
+             if (!port->GetValue()) {
+@@ -225,17 +244,6 @@ void InputManager::HandleEvent(VistaEvent* pEvent) {
+               mClickTime = t;
+             }
+           }
+-
+-          if (i == 0 && pHoveredGuiNode.get()) {
+-            gui::MouseEvent mouseEvent;
+-            mouseEvent.mButton = gui::Button::eLeft;
+-            if (port->GetValue()) {
+-              mouseEvent.mType = gui::MouseEvent::Type::ePress;
+-            } else {
+-              mouseEvent.mType = gui::MouseEvent::Type::eRelease;
+-            }
+-            pHoveredGuiNode.get()->injectMouseEvent(mouseEvent);
+-          }
+         }
+       }
+ 
+@@ -287,6 +295,11 @@ bool InputManager::HandleContextChange(VistaInteractionEvent* pEvent) {
+ 
+   pHoveredObject = intersection;
+ 
++  // If there is an active node, we do not want to change any selection state.
++  if (pActiveNode.get()) {
++    return true;
++  }
++
+   // Test the Intention Node for Intersection with screen space gui.
+   if (!mScreenSpaceGuis.empty()) {
+     VistaViewport* pViewport(GetVistaSystem()->GetDisplayManager()->GetViewports().begin()->second);
+@@ -323,24 +336,69 @@ bool InputManager::HandleContextChange(VistaInteractionEvent* pEvent) {
+                       pViewportGui->getHeight());
+ 
+         gui::GuiItem* item = pViewportGui->getItemAt(x, y);
++
++        // If there is a pActiveGuiNode in this pViewportGui, we want to send the input events even
++        // if the pointer is not over the item
++        if (!item && pActiveGuiNode.get()) {
++          if (std::find(pViewportGui->getItems().begin(), pViewportGui->getItems().end(),
++                  pActiveGuiNode.get()) != pViewportGui->getItems().end()) {
++            item = pActiveGuiNode.get();
++          }
++        }
++
+         if (item) {
+           // There has been no focused gui element before, so inject a focus event.
+           if (!pHoveredGuiNode.get()) {
+             item->injectFocusEvent(true);
+           }
+ 
+-          pHoveredGuiNode = item;
+-          pHoveredNode    = nullptr;
++          if (!pActiveGuiNode.get()) {
++            pHoveredGuiNode = item;
++            pHoveredNode    = nullptr;
++          }
+ 
+-          gui::MouseEvent event;
+-          item->calculateMousePosition(x, y, event.mX, event.mY);
+-          item->injectMouseEvent(event);
++          if (!pActiveGuiNode.get() || pActiveGuiNode.get() == item) {
++            gui::MouseEvent event;
++            item->calculateMousePosition(x, y, event.mX, event.mY);
++            item->injectMouseEvent(event);
++          }
+           return true;
+         }
+       }
+     }
+   }
+ 
++  // If there is an active guiItem in Worldspace, we want to send the mouse input to it in all
++  // cases. So we can skip any later intersection calculation.
++  if (pActiveGuiNode.get()) {
++    VistaTransformMatrix matTransform;
++    mActiveWorldSpaceGuiNode->GetParentWorldTransform(matTransform);
++    gui::WorldSpaceGuiArea* area =
++        dynamic_cast<gui::WorldSpaceGuiArea*>(mActiveWorldSpaceGuiNode->GetExtension());
++
++    // We scale the gui element's transform matrix so that the translation magnitude becomes 1.f.
++    // This is not strictly necessary but reduces precision issues in the inversion of the matrix.
++    // Without this step, objects which are *really* far away would not be selectable.
++    VistaTransformMatrix matScale;
++    float                scale = 1.f / matTransform.GetTranslation().GetLength();
++    matScale.SetToScaleMatrix(scale);
++    matTransform = matScale * matTransform;
++
++    VistaTransformMatrix matInvParentTransform = matTransform.GetInverted();
++    VistaVector3D        start                 = matInvParentTransform * (v3Position * scale);
++    VistaVector3D end = matInvParentTransform * ((v3Position * scale) + qOrientation.GetViewDir());
++
++    int x, y;
++    area->calculateMousePosition(start, end, x, y);
++    // Inject a mouse move event.
++    gui::MouseEvent event;
++    pHoveredGuiNode.get()->calculateMousePosition(x, y, event.mX, event.mY);
++    pHoveredGuiNode.get()->injectMouseEvent(event);
++    return true;
++  }
++
++  // There is no currently active object. So we can intersect our selectables to find potential
++  // candidates.
+   std::vector<IVistaIntentionSelectAdapter*> vResults;
+   mSelection.SetConeTransform(v3Position, qOrientation);
+   mSelection.Update(vResults);
+@@ -367,9 +425,10 @@ bool InputManager::HandleContextChange(VistaInteractionEvent* pEvent) {
+       VistaTransformMatrix matTransform;
+       pOGLNode->GetParentWorldTransform(matTransform);
+ 
+-      // We scale the gui element's transform matrix so that the translation magnitude becomes 1.f.
+-      // This is not strictly necessary but reduces precision issues in the inversion of the matrix.
+-      // Without this step, objects which are *really* far away would not be selectable.
++      // We scale the gui element's transform matrix so that the translation magnitude
++      // becomes 1.f. This is not strictly necessary but reduces precision issues in the
++      // inversion of the matrix. Without this step, objects which are *really* far away would
++      // not be selectable.
+       VistaTransformMatrix matScale;
+       float                scale = 1.f / matTransform.GetTranslation().GetLength();
+       matScale.SetToScaleMatrix(scale);
+@@ -389,7 +448,8 @@ bool InputManager::HandleContextChange(VistaInteractionEvent* pEvent) {
+             item->injectFocusEvent(true);
+           }
+ 
+-          pHoveredGuiNode = item;
++          pHoveredGuiNode          = item;
++          mActiveWorldSpaceGuiNode = pOGLNode;
+ 
+           // Inject a mouse move event.
+           gui::MouseEvent event;
+@@ -424,7 +484,6 @@ bool InputManager::HandleContextChange(VistaInteractionEvent* pEvent) {
+ 
+   pHoveredNode = nullptr;
+   unselectGuiNode();
+-  // TODO setCursor(Cursor::ePointer);
+ 
+   return true;
+ }"
+cosmoscout/cosmoscout-vr,41,574db5a,src/cs-core/InputManager.hpp,modified,21,8,29,"@@ -26,6 +26,7 @@
+ class IVistaNode;
+ class VistaTransformNode;
+ class VistaNodeAdapter;
++class VistaOpenGLNode;
+ 
+ namespace cs::gui {
+ class GuiItem;
+@@ -51,18 +52,28 @@ class CS_CORE_EXPORT InputManager : public VistaKeyboardSystemControl::IVistaDir
+     }
+   };
+ 
+-  /// The node that was clicked on last.
++  /// The GuiItem the pointer is currently hovering over is the pHoveredGuiNode. When pButtons[0] is
++  /// pressed while hovering a GuiItem, this GuiItem will become active and selected. Once the
++  /// button is released again, pActiveGuiNode will be nullptr again. As long as a node is active,
++  /// it will stay hovered and receive input events.
++  utils::Property<gui::GuiItem*> pHoveredGuiNode  = nullptr;
++  utils::Property<gui::GuiItem*> pActiveGuiNode   = nullptr;
++  utils::Property<gui::GuiItem*> pSelectedGuiNode = nullptr;
++
++  /// When no GuiItem is hovered, any other IVistaNode which has been registered via
++  /// registerSelectable() may become hovered.
++  /// The GuiItem the pointer is currently hovering over is the pHoveredGuiNode. When pButtons[0] is
++  /// pressed while hovering a GuiItem, this GuiItem will become active and selected. Once the
++  /// button is released again, pActiveGuiNode will be nullptr again. As long as a node is active,
++  /// it will stay hovered and receive input events.
++  utils::Property<IVistaNode*> pHoveredNode  = nullptr;
++  utils::Property<IVistaNode*> pActiveNode   = nullptr;
+   utils::Property<IVistaNode*> pSelectedNode = nullptr;
+ 
+-  /// DocTODO not sure what this is for.
+-  utils::Property<IVistaNode*> pHoveredNode = nullptr;
+-
+-  /// The GuiItem the mouse is currently hovering over.
+-  utils::Property<gui::GuiItem*> pHoveredGuiNode = nullptr;
+-
+-  /// The IntersectableObject currently hovered over.
++  /// Regardless of the node state above, this property will always be updated.
+   utils::Property<Intersection> pHoveredObject;
+ 
++  /// Contains the state of the buttons of your input device.
+   std::array<utils::Property<bool>, 8> pButtons;
+ 
+   /// Emits an event when the escape key is pressed.
+@@ -106,6 +117,8 @@ class CS_CORE_EXPORT InputManager : public VistaKeyboardSystemControl::IVistaDir
+   std::unordered_set<gui::ScreenSpaceGuiArea*>                    mScreenSpaceGuis;
+   VistaTransformNode*                                             mRayTrans;
+   boost::posix_time::ptime                                        mClickTime;
++
++  VistaOpenGLNode* mActiveWorldSpaceGuiNode;
+ };
+ 
+ } // namespace cs::core"
+cosmoscout/cosmoscout-vr,41,574db5a,src/cs-gui/GuiItem.cpp,modified,3,3,6,"@@ -172,14 +172,14 @@ bool GuiItem::calculateMousePosition(int areaX, int areaY, int& x, int& y) {
+   int tmpX = areaX - mOffsetX - mPositionX + getWidth() / 2;
+   int tmpY = areaY - mOffsetY - mPositionY + getHeight() / 2;
+ 
++  x = tmpX;
++  y = tmpY;
++
+   if (tmpX > mSizeX - 1 || tmpX < 0)
+     return false;
+   if (tmpY > mSizeY - 1 || tmpY < 0)
+     return false;
+ 
+-  x = tmpX;
+-  y = tmpY;
+-
+   return true;
+ }
+ "
+cosmoscout/cosmoscout-vr,41,574db5a,src/cs-gui/GuiItem.hpp,modified,2,2,4,"@@ -56,8 +56,8 @@ class CS_GUI_EXPORT GuiItem : public WebView {
+   ///
+   /// @param      areaX  The x position of the mouse in the parent GuiArea.
+   /// @param      areaY  The y position of the mouse in the parent GuiArea.
+-  /// @param[out] x      The x position of the mouse inside this GuiItem.
+-  /// @param[out] y      The y position of the mouse inside this GuiItem.
++  /// @param[out] x      The x position of the mouse relative to this GuiItem.
++  /// @param[out] y      The y position of the mouse relative to this GuiItem.
+   ///
+   /// @return If the mouse is in this items bounds at all.
+   bool calculateMousePosition(int areaX, int areaY, int& x, int& y);"
+cosmoscout/cosmoscout-vr,41,574db5a,src/cs-gui/WorldSpaceGuiArea.cpp,modified,3,2,5,"@@ -168,10 +168,11 @@ bool WorldSpaceGuiArea::calculateMousePosition(
+     return false;
+   }
+ 
++  x = (int)((intersection[0] + 0.5) * mWidth);
++  y = (int)((-intersection[1] + 0.5) * mHeight);
++
+   if (intersection[0] >= -0.5f && intersection[0] <= 0.5f && intersection[1] >= -0.5f &&
+       intersection[1] <= 0.5f) {
+-    x = (int)((intersection[0] + 0.5) * mWidth);
+-    y = (int)((-intersection[1] + 0.5) * mHeight);
+     return true;
+   }
+ "
+cosmoscout/cosmoscout-vr,41,574db5a,src/cs-gui/WorldSpaceGuiArea.hpp,modified,2,1,3,"@@ -44,7 +44,8 @@ class CS_GUI_EXPORT WorldSpaceGuiArea : public GuiArea, public IVistaOpenGLDraw
+ 
+   /// Calculates the position of the mouse in pixels. vRayOrigin and vRayEnd should be in
+   /// gui-plane-coordinates. The gui plane is the xy-plane with the normal pointing in positive
+-  /// z-direction.
++  /// z-direction. The result can be out of bounds of this area  - in this case 'false' is returned,
++  /// but the values are compted anyways.
+   virtual bool calculateMousePosition(
+       VistaVector3D const& vRayOrigin, VistaVector3D const& vRayEnd, int& x, int& y);
+ "

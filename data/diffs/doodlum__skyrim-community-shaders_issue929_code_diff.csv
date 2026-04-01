@@ -1,0 +1,1448 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+doodlum/skyrim-community-shaders,929,bb1835f63a74dcc0204a3bcab05c5247d4426084,features/Dynamic Cubemaps/Shaders/DynamicCubemaps/DynamicCubemaps.hlsli,modified,50,2,52,"@@ -1,3 +1,8 @@
++
++#if defined(SKYLIGHTING)
++#	include ""Skylighting/Skylighting.hlsli""
++#endif
++
+ namespace DynamicCubemaps
+ {
+ 	TextureCube<float4> EnvReflectionsTexture : register(t30);
+@@ -33,7 +38,11 @@ namespace DynamicCubemaps
+ 		return specularIrradiance;
+ 	}
+ 
+-	float3 GetDynamicCubemap(float2 uv, float3 N, float3 VN, float3 V, float roughness, float3 F0, float3 diffuseColor, float distance)
++#	if defined(SKYLIGHTING)
++	float3 GetDynamicCubemap(float3 N, float3 VN, float3 V, float roughness, float3 F0, sh2 skylighting)
++#	else
++	float3 GetDynamicCubemap(float3 N, float3 VN, float3 V, float roughness, float3 F0)
++#	endif
+ 	{
+ 		float3 R = reflect(-V, N);
+ 		float NoV = saturate(dot(N, V));
+@@ -50,10 +59,49 @@ namespace DynamicCubemaps
+ #	if defined(DEFERRED)
+ 		return horizon * (1 + F0 * (1 / (specularBRDF.x + specularBRDF.y) - 1));
+ #	else
++
++		float3 finalIrradiance = 0;
++
++#		if defined(SKYLIGHTING)
++		if (SharedData::InInterior) {
++			float3 specularIrradiance = EnvReflectionsTexture.SampleLevel(SampColorSampler, R, level).xyz;
++			specularIrradiance = Color::GammaToLinear(specularIrradiance);
++
++			finalIrradiance += specularIrradiance;
++
++			return horizon * (1 + F0 * (1 / (specularBRDF.x + specularBRDF.y) - 1)) * finalIrradiance;
++		}
++
++		sh2 specularLobe = SphericalHarmonics::FauxSpecularLobe(N, -V, roughness);
++
++		float skylightingSpecular = SphericalHarmonics::FuncProductIntegral(skylighting, specularLobe);
++		skylightingSpecular = Skylighting::mixSpecular(SharedData::skylightingSettings, skylightingSpecular);
++
++		float3 specularIrradiance = 1;
++
++		if (skylightingSpecular < 1.0) {
++			specularIrradiance = EnvTexture.SampleLevel(SampColorSampler, R, level).xyz;
++			specularIrradiance = Color::GammaToLinear(specularIrradiance);
++		}
++
++		float3 specularIrradianceReflections = 1.0;
++
++		if (skylightingSpecular > 0.0) {
++			specularIrradianceReflections = EnvReflectionsTexture.SampleLevel(SampColorSampler, R, level).xyz;
++			specularIrradianceReflections = Color::GammaToLinear(specularIrradianceReflections);
++		}
++
++		finalIrradiance = finalIrradiance * skylightingSpecular + lerp(specularIrradiance, specularIrradianceReflections, skylightingSpecular);
++
++		return horizon * (1 + F0 * (1 / (specularBRDF.x + specularBRDF.y) - 1)) * finalIrradiance;
++#		else
+ 		float3 specularIrradiance = EnvReflectionsTexture.SampleLevel(SampColorSampler, R, level).xyz;
+ 		specularIrradiance = Color::GammaToLinear(specularIrradiance);
+ 
+-		return specularIrradiance * (1 + F0 * (1 / (specularBRDF.x + specularBRDF.y) - 1));
++		finalIrradiance += specularIrradiance;
++
++		return horizon * (1 + F0 * (1 / (specularBRDF.x + specularBRDF.y) - 1)) * finalIrradiance;
++#		endif
+ #	endif
+ 	}
+ #endif  // !WATER"
+doodlum/skyrim-community-shaders,929,bb1835f63a74dcc0204a3bcab05c5247d4426084,features/Dynamic Cubemaps/Shaders/DynamicCubemaps/UpdateCubemapCS.hlsl,modified,10,1,11,"@@ -120,7 +120,16 @@ float smoothbumpstep(float edge0, float edge1, float x)
+ 
+ 	float4 color = DynamicCubemapRaw[ThreadID];
+ 
+-	float distanceFactor = sqrt(smoothbumpstep(0.0, 2.0, length(position.xyz)));
++	float distance = length(position.xyz);
++	float distanceFactor = smoothbumpstep(0.0, 2.0, distance);
++
++	if (distance < 1.0)
++		distanceFactor = sqrt(distanceFactor);
++
++#if defined(FAKEREFLECTIONS)
++	distanceFactor = max(distanceFactor, smoothstep(0.0, 2.0, distance));
++#endif
++
+ 	color *= distanceFactor;
+ 
+ 	DynamicCubemap[ThreadID] = max(0, color);"
+doodlum/skyrim-community-shaders,929,bb1835f63a74dcc0204a3bcab05c5247d4426084,features/Skylighting/Shaders/Skylighting/Skylighting.hlsli,modified,5,0,5,"@@ -1,3 +1,6 @@
++#ifndef __SKYLIGHTING_DEPENDENCY_HLSL__
++#define __SKYLIGHTING_DEPENDENCY_HLSL__
++
+ #include ""Common/Math.hlsli""
+ #include ""Common/Random.hlsli""
+ #include ""Common/SharedData.hlsli""
+@@ -138,3 +141,5 @@ namespace Skylighting
+ 		return SphericalHarmonics::Scale(sum, rcp(wsum + 1e-10));
+ 	}
+ }
++
++#endif
+\ No newline at end of file"
+doodlum/skyrim-community-shaders,929,bb1835f63a74dcc0204a3bcab05c5247d4426084,package/Shaders/AmbientCompositeCS.hlsl,modified,34,34,68,"@@ -6,8 +6,8 @@
+ #include ""Common/Spherical Harmonics/SphericalHarmonics.hlsli""
+ #include ""Common/VR.hlsli""
+ 
+-Texture2D<unorm half3> AlbedoTexture : register(t0);
+-Texture2D<unorm half3> NormalRoughnessTexture : register(t1);
++Texture2D<float3> AlbedoTexture : register(t0);
++Texture2D<float3> NormalRoughnessTexture : register(t1);
+ Texture2D<float> DepthTexture : register(t2);
+ 
+ #if defined(SKYLIGHTING)
+@@ -18,56 +18,56 @@ Texture2DArray<float3> stbn_vec3_2Dx1D_128x128x64 : register(t4);
+ 
+ #endif
+ 
+-Texture2D<unorm half3> Masks2Texture : register(t5);
++Texture2D<float3> Masks2Texture : register(t5);
+ 
+ #if defined(SSGI)
+-Texture2D<half> SsgiAoTexture : register(t6);
+-Texture2D<half4> SsgiYTexture : register(t7);
+-Texture2D<half2> SsgiCoCgTexture : register(t8);
++Texture2D<float> SsgiAoTexture : register(t6);
++Texture2D<float4> SsgiYTexture : register(t7);
++Texture2D<float2> SsgiCoCgTexture : register(t8);
+ #endif
+ 
+-RWTexture2D<half3> MainRW : register(u0);
++RWTexture2D<float4> MainRW : register(u0);
+ #if defined(SSGI)
+-RWTexture2D<half3> DiffuseAmbientRW : register(u1);
+-void SampleSSGI(uint2 pixCoord, float3 normalWS, out half ao, out half3 il)
++RWTexture2D<float3> DiffuseAmbientRW : register(u1);
++void SampleSSGI(uint2 pixCoord, float3 normalWS, out float ao, out float3 il)
+ {
+ 	ao = 1 - SsgiAoTexture[pixCoord];
+-	half4 ssgiIlYSh = SsgiYTexture[pixCoord];
++	float4 ssgiIlYSh = SsgiYTexture[pixCoord];
+ 	// without ZH hallucination
+-	// half ssgiIlY = SphericalHarmonics::FuncProductIntegral(ssgiIlYSh, SphericalHarmonics::EvaluateCosineLobe(normalWS));
+-	half ssgiIlY = SphericalHarmonics::SHHallucinateZH3Irradiance(ssgiIlYSh, normalWS);
+-	half2 ssgiIlCoCg = SsgiCoCgTexture[pixCoord];
++	// float ssgiIlY = SphericalHarmonics::FuncProductIntegral(ssgiIlYSh, SphericalHarmonics::EvaluateCosineLobe(normalWS));
++	float ssgiIlY = SphericalHarmonics::SHHallucinateZH3Irradiance(ssgiIlYSh, normalWS);
++	float2 ssgiIlCoCg = SsgiCoCgTexture[pixCoord];
+ 	il = max(0, Color::YCoCgToRGB(float3(ssgiIlY, ssgiIlCoCg)));
+ }
+ #endif
+ 
+ [numthreads(8, 8, 1)] void main(uint3 dispatchID
+ 								: SV_DispatchThreadID) {
+-	half2 uv = half2(dispatchID.xy + 0.5) * SharedData::BufferDim.zw;
++	float2 uv = float2(dispatchID.xy + 0.5) * SharedData::BufferDim.zw;
+ 	uint eyeIndex = Stereo::GetEyeIndexFromTexCoord(uv);
+ 	uv *= FrameBuffer::DynamicResolutionParams2.xy;  // adjust for dynamic res
+ 	uv = Stereo::ConvertFromStereoUV(uv, eyeIndex);
+ 
+-	half3 normalGlossiness = NormalRoughnessTexture[dispatchID.xy];
+-	half3 normalVS = GBuffer::DecodeNormal(normalGlossiness.xy);
++	float3 normalGlossiness = NormalRoughnessTexture[dispatchID.xy];
++	float3 normalVS = GBuffer::DecodeNormal(normalGlossiness.xy);
+ 
+-	half3 diffuseColor = MainRW[dispatchID.xy];
+-	half3 albedo = AlbedoTexture[dispatchID.xy];
+-	half3 masks2 = Masks2Texture[dispatchID.xy];
++	float3 diffuseColor = MainRW[dispatchID.xy];
++	float3 albedo = AlbedoTexture[dispatchID.xy];
++	float3 masks2 = Masks2Texture[dispatchID.xy];
+ 
+-	half pbrWeight = masks2.z;
++	float pbrWeight = masks2.z;
+ 
+-	half3 normalWS = normalize(mul(FrameBuffer::CameraViewInverse[eyeIndex], half4(normalVS, 0)).xyz);
++	float3 normalWS = normalize(mul(FrameBuffer::CameraViewInverse[eyeIndex], float4(normalVS, 0)).xyz);
+ 
+-	half3 directionalAmbientColor = mul(SharedData::DirectionalAmbient, half4(normalWS, 1.0));
++	float3 directionalAmbientColor = mul(SharedData::DirectionalAmbient, float4(normalWS, 1.0));
+ 
+-	half3 linAlbedo = Color::GammaToLinear(albedo) / Color::AlbedoPreMult;
+-	half3 linDirectionalAmbientColor = Color::GammaToLinear(directionalAmbientColor) / Color::LightPreMult;
+-	half3 linDiffuseColor = Color::GammaToLinear(diffuseColor);
++	float3 linAlbedo = Color::GammaToLinear(albedo) / Color::AlbedoPreMult;
++	float3 linDirectionalAmbientColor = Color::GammaToLinear(directionalAmbientColor) / Color::LightPreMult;
++	float3 linDiffuseColor = Color::GammaToLinear(diffuseColor);
+ 
+-	half3 linAmbient = lerp(Color::GammaToLinear(albedo * directionalAmbientColor), linAlbedo * linDirectionalAmbientColor, pbrWeight);
++	float3 linAmbient = lerp(Color::GammaToLinear(albedo * directionalAmbientColor), linAlbedo * linDirectionalAmbientColor, pbrWeight);
+ 
+-	half visibility = 1.0;
++	float visibility = 1.0;
+ #if defined(SKYLIGHTING)
+ 	float rawDepth = DepthTexture[dispatchID.xy];
+ 	float4 positionCS = float4(2 * float2(uv.x, -uv.y + 1) - 1, rawDepth, 1);
+@@ -78,7 +78,7 @@ void SampleSSGI(uint2 pixCoord, float3 normalWS, out half ao, out half3 il)
+ #	endif
+ 
+ 	sh2 skylighting = Skylighting::sample(SharedData::skylightingSettings, SkylightingProbeArray, stbn_vec3_2Dx1D_128x128x64, dispatchID.xy, positionMS.xyz, normalWS);
+-	half skylightingDiffuse = SphericalHarmonics::FuncProductIntegral(skylighting, SphericalHarmonics::EvaluateCosineLobe(float3(normalWS.xy, normalWS.z * 0.5 + 0.5))) / Math::PI;
++	float skylightingDiffuse = SphericalHarmonics::FuncProductIntegral(skylighting, SphericalHarmonics::EvaluateCosineLobe(float3(normalWS.xy, normalWS.z * 0.5 + 0.5))) / Math::PI;
+ 	skylightingDiffuse = lerp(1.0, skylightingDiffuse, Skylighting::getFadeOutFactor(positionMS.xyz));
+ 	skylightingDiffuse = Skylighting::mixDiffuse(SharedData::skylightingSettings, skylightingDiffuse);
+ 
+@@ -94,16 +94,16 @@ void SampleSSGI(uint2 pixCoord, float3 normalWS, out half ao, out half3 il)
+ 	uint2 pixCoord2 = (uint2)(uv2.xy / SharedData::BufferDim.zw - 0.5);
+ #	endif
+ 
+-	half ssgiAo;
+-	half3 ssgiIl;
++	float ssgiAo;
++	float3 ssgiIl;
+ 	SampleSSGI(dispatchID.xy, normalWS, ssgiAo, ssgiIl);
+ 
+ #	if defined(VR)
+-	half ssgiAo2;
+-	half3 ssgiIl2;
++	float ssgiAo2;
++	float3 ssgiIl2;
+ 	SampleSSGI(pixCoord2, normalWS, ssgiAo2, ssgiIl2);
+ 
+-	half4 ssgiMixed = Stereo::BlendEyeColors(uv1Mono, float4(ssgiIl, ssgiAo), uv2Mono, float4(ssgiIl2, ssgiAo2));
++	float4 ssgiMixed = Stereo::BlendEyeColors(uv1Mono, float4(ssgiIl, ssgiAo), uv2Mono, float4(ssgiIl2, ssgiAo2));
+ 	ssgiAo = ssgiMixed.a;
+ 	ssgiIl = ssgiMixed.rgb;
+ #	endif
+@@ -124,5 +124,5 @@ void SampleSSGI(uint2 pixCoord, float3 normalWS, out half ao, out half3 il)
+ 
+ 	diffuseColor = lerp(diffuseColor + directionalAmbientColor * albedo, Color::LinearToGamma(linDiffuseColor + linAmbient), pbrWeight);
+ 
+-	MainRW[dispatchID.xy] = diffuseColor;
++	MainRW[dispatchID.xy] = float4(diffuseColor, 1);
+ };
+\ No newline at end of file"
+doodlum/skyrim-community-shaders,929,bb1835f63a74dcc0204a3bcab05c5247d4426084,package/Shaders/Common/Permutation.hlsli,modified,4,3,7,"@@ -57,9 +57,10 @@ namespace Permutation
+ 	namespace ExtraFlags
+ 	{
+ 		static const uint InWorld = (1 << 0);
+-		static const uint IsBeastRace = (1 << 1);
+-		static const uint EffectShadows = (1 << 2);
+-		static const uint IsDecal = (1 << 3);
++		static const uint InReflection = (1 << 1);
++		static const uint IsBeastRace = (1 << 2);
++		static const uint EffectShadows = (1 << 3);
++		static const uint IsDecal = (1 << 4);
+ 	}
+ 
+ 	cbuffer PerShader : register(b4)"
+doodlum/skyrim-community-shaders,929,bb1835f63a74dcc0204a3bcab05c5247d4426084,package/Shaders/Common/ShadowSampling.hlsli,modified,9,4,13,"@@ -144,18 +144,23 @@ namespace ShadowSampling
+ 
+ 	float GetWorldShadow(float3 positionWS, float3 offset, uint eyeIndex)
+ 	{
++		if (SharedData::InInterior || SharedData::HideSky)
++			return 1.0;
++
+ 		float worldShadow = 1.0;
+ #if defined(TERRAIN_SHADOWS)
+ 		float terrainShadow = TerrainShadows::GetTerrainShadow(positionWS + offset, LinearSampler);
+ 		worldShadow = terrainShadow;
+ 		if (worldShadow == 0.0)
+-			return 0.0;
++			return worldShadow;
+ #endif
+ 
+ #if defined(CLOUD_SHADOWS)
+-		worldShadow *= CloudShadows::GetCloudShadowMult(positionWS, LinearSampler);
+-		if (worldShadow == 0.0)
+-			return 0.0;
++		if (!SharedData::InMapMenu) {
++			worldShadow *= CloudShadows::GetCloudShadowMult(positionWS, LinearSampler);
++			if (worldShadow == 0.0)
++				return worldShadow;
++		}
+ #endif
+ 
+ 		return worldShadow;"
+doodlum/skyrim-community-shaders,929,bb1835f63a74dcc0204a3bcab05c5247d4426084,package/Shaders/Common/SharedData.hlsli,modified,1,0,1,"@@ -21,6 +21,7 @@ namespace SharedData
+ 		uint FrameCountAlwaysActive;
+ 		bool InInterior;  // If the area lacks a directional shadow light e.g. the sun or moon
+ 		bool InMapMenu;   // If the world/local map is open (note that the renderer is still deferred here)
++		bool HideSky;     // HideSky flag in WorldSpace, e.g. Blackreach
+ 	};
+ 
+ 	struct GrassLightingSettings"
+doodlum/skyrim-community-shaders,929,bb1835f63a74dcc0204a3bcab05c5247d4426084,package/Shaders/DeferredCompositeCS.hlsl,modified,53,53,106,"@@ -7,21 +7,21 @@
+ #include ""Common/Spherical Harmonics/SphericalHarmonics.hlsli""
+ #include ""Common/VR.hlsli""
+ 
+-Texture2D<half3> SpecularTexture : register(t0);
+-Texture2D<unorm half3> AlbedoTexture : register(t1);
+-Texture2D<unorm half3> NormalRoughnessTexture : register(t2);
+-Texture2D<unorm half3> MasksTexture : register(t3);
+-Texture2D<unorm half3> Masks2Texture : register(t4);
+-
+-RWTexture2D<half3> MainRW : register(u0);
+-RWTexture2D<half4> NormalTAAMaskSpecularMaskRW : register(u1);
+-RWTexture2D<half2> MotionVectorsRW : register(u2);
++Texture2D<float3> SpecularTexture : register(t0);
++Texture2D<unorm float3> AlbedoTexture : register(t1);
++Texture2D<unorm float3> NormalRoughnessTexture : register(t2);
++Texture2D<unorm float3> MasksTexture : register(t3);
++Texture2D<unorm float3> Masks2Texture : register(t4);
++
++RWTexture2D<float4> MainRW : register(u0);
++RWTexture2D<float4> NormalTAAMaskSpecularMaskRW : register(u1);
++RWTexture2D<float2> MotionVectorsRW : register(u2);
+ Texture2D<float> DepthTexture : register(t5);
+ 
+ #if defined(DYNAMIC_CUBEMAPS)
+-Texture2D<half3> ReflectanceTexture : register(t6);
+-TextureCube<half3> EnvTexture : register(t7);
+-TextureCube<half3> EnvReflectionsTexture : register(t8);
++Texture2D<float3> ReflectanceTexture : register(t6);
++TextureCube<float3> EnvTexture : register(t7);
++TextureCube<float3> EnvReflectionsTexture : register(t8);
+ 
+ SamplerState LinearSampler : register(s0);
+ #endif
+@@ -35,19 +35,19 @@ Texture2DArray<float3> stbn_vec3_2Dx1D_128x128x64 : register(t10);
+ #endif
+ 
+ #if defined(SSGI)
+-Texture2D<half4> SsgiAoTexture : register(t11);
+-Texture2D<half4> SsgiYTexture : register(t12);
+-Texture2D<half4> SsgiCoCgTexture : register(t13);
+-Texture2D<half4> SsgiSpecularTexture : register(t14);
++Texture2D<float4> SsgiAoTexture : register(t11);
++Texture2D<float4> SsgiYTexture : register(t12);
++Texture2D<float4> SsgiCoCgTexture : register(t13);
++Texture2D<float4> SsgiSpecularTexture : register(t14);
+ 
+-void SampleSSGISpecular(uint2 pixCoord, sh2 lobe, out half ao, out half3 il)
++void SampleSSGISpecular(uint2 pixCoord, sh2 lobe, out float ao, out float3 il)
+ {
+ 	ao = 1 - SsgiAoTexture[pixCoord];
+ 	ao = pow(ao, 0.25);
+ 
+-	half4 ssgiIlYSh = SsgiYTexture[pixCoord];
+-	half ssgiIlY = SphericalHarmonics::FuncProductIntegral(ssgiIlYSh, lobe);
+-	half2 ssgiIlCoCg = SsgiCoCgTexture[pixCoord];
++	float4 ssgiIlYSh = SsgiYTexture[pixCoord];
++	float ssgiIlY = SphericalHarmonics::FuncProductIntegral(ssgiIlYSh, lobe);
++	float2 ssgiIlCoCg = SsgiCoCgTexture[pixCoord];
+ 	// specular is a bit too saturated, because CoCg are average over hemisphere
+ 	// we just cheese this bit
+ 	ssgiIlCoCg *= 0.8;
+@@ -58,67 +58,67 @@ void SampleSSGISpecular(uint2 pixCoord, sh2 lobe, out half ao, out half3 il)
+ 	il = max(0, Color::YCoCgToRGB(float3(ssgiIlY, ssgiIlCoCg / Math::PI)));
+ 
+ 	// HQ spec
+-	half4 hq_spec = SsgiSpecularTexture[pixCoord];
++	float4 hq_spec = SsgiSpecularTexture[pixCoord];
+ 	ao *= 1 - hq_spec.a;
+ 	il += hq_spec.rgb;
+ }
+ #endif
+ 
+ [numthreads(8, 8, 1)] void main(uint3 dispatchID
+ 								: SV_DispatchThreadID) {
+-	half2 uv = half2(dispatchID.xy + 0.5) * SharedData::BufferDim.zw;
++	float2 uv = float2(dispatchID.xy + 0.5) * SharedData::BufferDim.zw;
+ 	uint eyeIndex = Stereo::GetEyeIndexFromTexCoord(uv);
+ 	uv *= FrameBuffer::DynamicResolutionParams2.xy;  // Adjust for dynamic res
+ 	uv = Stereo::ConvertFromStereoUV(uv, eyeIndex);
+ 
+-	half3 normalGlossiness = NormalRoughnessTexture[dispatchID.xy];
+-	half3 normalVS = GBuffer::DecodeNormal(normalGlossiness.xy);
++	float3 normalGlossiness = NormalRoughnessTexture[dispatchID.xy];
++	float3 normalVS = GBuffer::DecodeNormal(normalGlossiness.xy);
+ 
+-	half3 diffuseColor = MainRW[dispatchID.xy];
+-	half3 specularColor = SpecularTexture[dispatchID.xy];
+-	half3 albedo = AlbedoTexture[dispatchID.xy];
+-	half3 masks2 = Masks2Texture[dispatchID.xy];
++	float3 diffuseColor = MainRW[dispatchID.xy];
++	float3 specularColor = SpecularTexture[dispatchID.xy];
++	float3 albedo = AlbedoTexture[dispatchID.xy];
++	float3 masks2 = Masks2Texture[dispatchID.xy];
+ 
+-	half depth = DepthTexture[dispatchID.xy];
+-	half4 positionWS = half4(2 * half2(uv.x, -uv.y + 1) - 1, depth, 1);
++	float depth = DepthTexture[dispatchID.xy];
++	float4 positionWS = float4(2 * float2(uv.x, -uv.y + 1) - 1, depth, 1);
+ 	positionWS = mul(FrameBuffer::CameraViewProjInverse[eyeIndex], positionWS);
+ 	positionWS.xyz = positionWS.xyz / positionWS.w;
+ 
+ 	if (depth == 1.0) {
+ 		MotionVectorsRW[dispatchID.xy] = MotionBlur::GetSSMotionVector(positionWS, positionWS, eyeIndex);  // Apply sky motion vectors
+ 	}
+ 
+-	half pbrWeight = masks2.z;
++	float pbrWeight = masks2.z;
+ 
+-	half glossiness = normalGlossiness.z;
++	float glossiness = normalGlossiness.z;
+ 
+-	half3 color = lerp(diffuseColor + specularColor, Color::LinearToGamma(Color::GammaToLinear(diffuseColor) + Color::GammaToLinear(specularColor)), pbrWeight);
++	float3 color = lerp(diffuseColor + specularColor, Color::LinearToGamma(Color::GammaToLinear(diffuseColor) + Color::GammaToLinear(specularColor)), pbrWeight);
+ 
+ #if defined(DYNAMIC_CUBEMAPS)
+ 
+-	half3 reflectance = ReflectanceTexture[dispatchID.xy];
++	float3 reflectance = ReflectanceTexture[dispatchID.xy];
+ 
+ 	if (reflectance.x > 0.0 || reflectance.y > 0.0 || reflectance.z > 0.0) {
+-		half3 normalWS = normalize(mul(FrameBuffer::CameraViewInverse[eyeIndex], half4(normalVS, 0)).xyz);
++		float3 normalWS = normalize(mul(FrameBuffer::CameraViewInverse[eyeIndex], float4(normalVS, 0)).xyz);
+ 
+-		half wetnessMask = MasksTexture[dispatchID.xy].z;
++		float wetnessMask = MasksTexture[dispatchID.xy].z;
+ 
+ 		normalWS = lerp(normalWS, float3(0, 0, 1), wetnessMask);
+ 
+ 		color = Color::GammaToLinear(color);
+ 
+-		half3 V = normalize(positionWS.xyz);
+-		half3 R = reflect(V, normalWS);
++		float3 V = normalize(positionWS.xyz);
++		float3 R = reflect(V, normalWS);
+ 
+-		half roughness = 1.0 - glossiness;
+-		half level = roughness * 7.0;
++		float roughness = 1.0 - glossiness;
++		float level = roughness * 7.0;
+ 
+ 		sh2 specularLobe = SphericalHarmonics::FauxSpecularLobe(normalWS, -V, roughness);
+ 
+-		half3 finalIrradiance = 0;
++		float3 finalIrradiance = 0;
+ 
+ #	if defined(INTERIOR)
+-		half3 specularIrradiance = EnvTexture.SampleLevel(LinearSampler, R, level).xyz;
++		float3 specularIrradiance = EnvTexture.SampleLevel(LinearSampler, R, level).xyz;
+ 		specularIrradiance = Color::GammaToLinear(specularIrradiance);
+ 
+ 		finalIrradiance += specularIrradiance;
+@@ -131,25 +131,25 @@ void SampleSSGISpecular(uint2 pixCoord, sh2 lobe, out half ao, out half3 il)
+ 
+ 		sh2 skylighting = Skylighting::sample(SharedData::skylightingSettings, SkylightingProbeArray, stbn_vec3_2Dx1D_128x128x64, dispatchID.xy, positionMS.xyz, normalWS);
+ 
+-		half skylightingSpecular = SphericalHarmonics::FuncProductIntegral(skylighting, specularLobe);
++		float skylightingSpecular = SphericalHarmonics::FuncProductIntegral(skylighting, specularLobe);
+ 		skylightingSpecular = Skylighting::mixSpecular(SharedData::skylightingSettings, skylightingSpecular);
+ 
+-		half3 specularIrradiance = 1;
++		float3 specularIrradiance = 1;
+ 
+ 		if (skylightingSpecular < 1.0) {
+ 			specularIrradiance = EnvTexture.SampleLevel(LinearSampler, R, level).xyz;
+ 			specularIrradiance = Color::GammaToLinear(specularIrradiance);
+ 		}
+ 
+-		half3 specularIrradianceReflections = 1.0;
++		float3 specularIrradianceReflections = 1.0;
+ 
+ 		if (skylightingSpecular > 0.0) {
+ 			specularIrradianceReflections = EnvReflectionsTexture.SampleLevel(LinearSampler, R, level).xyz;
+ 			specularIrradianceReflections = Color::GammaToLinear(specularIrradianceReflections);
+ 		}
+ 		finalIrradiance = finalIrradiance * skylightingSpecular + lerp(specularIrradiance, specularIrradianceReflections, skylightingSpecular);
+ #	else
+-		half3 specularIrradianceReflections = EnvReflectionsTexture.SampleLevel(LinearSampler, R, level).xyz;
++		float3 specularIrradianceReflections = EnvReflectionsTexture.SampleLevel(LinearSampler, R, level).xyz;
+ 		specularIrradianceReflections = Color::GammaToLinear(specularIrradianceReflections);
+ 
+ 		finalIrradiance += specularIrradianceReflections;
+@@ -164,15 +164,15 @@ void SampleSSGISpecular(uint2 pixCoord, sh2 lobe, out half ao, out half3 il)
+ 		uint2 pixCoord2 = (uint2)(uv2.xy / SharedData::BufferDim.zw - 0.5);
+ #		endif
+ 
+-		half ssgiAo;
+-		half3 ssgiIlSpecular;
++		float ssgiAo;
++		float3 ssgiIlSpecular;
+ 		SampleSSGISpecular(dispatchID.xy, specularLobe, ssgiAo, ssgiIlSpecular);
+ 
+ #		if defined(VR)
+-		half ssgiAo2;
+-		half3 ssgiIlSpecular2;
++		float ssgiAo2;
++		float3 ssgiIlSpecular2;
+ 		SampleSSGISpecular(pixCoord2, specularLobe, ssgiAo2, ssgiIlSpecular2);
+-		half4 ssgiMixed = Stereo::BlendEyeColors(uv1Mono, float4(ssgiIlSpecular, ssgiAo), uv2Mono, float4(ssgiIlSpecular2, ssgiAo2));
++		float4 ssgiMixed = Stereo::BlendEyeColors(uv1Mono, float4(ssgiIlSpecular, ssgiAo), uv2Mono, float4(ssgiIlSpecular2, ssgiAo2));
+ 		ssgiAo = ssgiMixed.a;
+ 		ssgiIlSpecular = ssgiMixed.rgb;
+ #		endif
+@@ -205,6 +205,6 @@ void SampleSSGISpecular(uint2 pixCoord, sh2 lobe, out half ao, out half3 il)
+ 
+ #endif
+ 
+-	MainRW[dispatchID.xy] = color;
+-	NormalTAAMaskSpecularMaskRW[dispatchID.xy] = half4(GBuffer::EncodeNormalVanilla(normalVS), 0.0, 0.0);
++	MainRW[dispatchID.xy] = float4(color, 1.0);
++	NormalTAAMaskSpecularMaskRW[dispatchID.xy] = float4(GBuffer::EncodeNormalVanilla(normalVS), 0.0, 0.0);
+ }
+\ No newline at end of file"
+doodlum/skyrim-community-shaders,929,bb1835f63a74dcc0204a3bcab05c5247d4426084,package/Shaders/DistantTree.hlsl,modified,10,14,24,"@@ -170,6 +170,10 @@ const static float DepthOffsets[16] = {
+ #		include ""CloudShadows/CloudShadows.hlsli""
+ #	endif
+ 
++#	define LinearSampler SampDiffuse
++
++#	include ""Common/ShadowSampling.hlsli""
++
+ PS_OUTPUT main(PS_INPUT input)
+ {
+ 	PS_OUTPUT psout;
+@@ -214,21 +218,11 @@ PS_OUTPUT main(PS_INPUT input)
+ 	float dirShadow = 1;
+ 
+ #			if defined(SCREEN_SPACE_SHADOWS)
+-	dirShadow = ScreenSpaceShadows::GetScreenSpaceShadow(input.Position.xyz, screenUV, screenNoise, eyeIndex);
++	dirShadow = lerp(1.0, ScreenSpaceShadows::GetScreenSpaceShadow(input.Position.xyz, screenUV, screenNoise, eyeIndex), 0.8);
+ #			endif
+ 
+-#			if defined(TERRAIN_SHADOWS)
+-	if (dirShadow > 0.0) {
+-		float terrainShadow = TerrainShadows::GetTerrainShadow(input.WorldPosition.xyz + FrameBuffer::CameraPosAdjust[eyeIndex].xyz, SampDiffuse);
+-		dirShadow = min(dirShadow, terrainShadow);
+-	}
+-#			endif
+-
+-#			if defined(CLOUD_SHADOWS)
+-	if (dirShadow > 0.0) {
+-		dirShadow *= CloudShadows::GetCloudShadowMult(input.WorldPosition.xyz, SampDiffuse);
+-	}
+-#			endif
++	if (dirShadow != 0.0)
++		dirShadow *= ShadowSampling::GetWorldShadow(input.WorldPosition, FrameBuffer::CameraPosAdjust[eyeIndex], eyeIndex);
+ 
+ 	float3 diffuseColor = SharedData::DirLightColor.xyz * dirShadow * 0.5;
+ 
+@@ -252,7 +246,9 @@ PS_OUTPUT main(PS_INPUT input)
+ 	psout.Albedo = float4(baseColor.xyz, 1);
+ 	psout.Masks = float4(0, 0, 1, 0);
+ #		else
+-	float3 diffuseColor = SharedData::DirLightColor.xyz * 0.5;
++	float dirShadow = ShadowSampling::GetWorldShadow(input.WorldPosition, FrameBuffer::CameraPosAdjust[eyeIndex], eyeIndex);
++
++	float3 diffuseColor = SharedData::DirLightColor.xyz * dirShadow * 0.5;
+ 
+ 	float3 ddx = ddx_coarse(input.WorldPosition.xyz);
+ 	float3 ddy = ddy_coarse(input.WorldPosition.xyz);"
+doodlum/skyrim-community-shaders,929,bb1835f63a74dcc0204a3bcab05c5247d4426084,package/Shaders/Effect.hlsl,modified,5,2,7,"@@ -528,7 +528,7 @@ float3 GetLightingColor(float3 msPosition, float3 worldPosition, float4 screenPo
+ 
+ 	float3 color = DLightColor.xyz;
+ 
+-	if ((Permutation::ExtraShaderDescriptor & Permutation::ExtraFlags::EffectShadows) && !SharedData::InMapMenu && !SharedData::InInterior) {
++	if ((Permutation::ExtraShaderDescriptor & Permutation::ExtraFlags::EffectShadows)) {
+ 		float3 dirLightColor = SharedData::DirLightColor * 0.5;
+ 		float3 ambientColor = mul(SharedData::DirectionalAmbient, float4(0, 0, 1, 1));
+ 
+@@ -549,7 +549,10 @@ float3 GetLightingColor(float3 msPosition, float3 worldPosition, float4 screenPo
+ 		color = Color::LinearToGamma(color);
+ #		endif
+ 
+-		color += dirLightColor * ShadowSampling::GetEffectShadow(worldPosition, normalize(worldPosition), screenPosition, eyeIndex);
++		if (!SharedData::InInterior)
++			color += dirLightColor * ShadowSampling::GetEffectShadow(worldPosition, normalize(worldPosition), screenPosition, eyeIndex);
++		else
++			color += dirLightColor;
+ 	} else {
+ #		if defined(SKYLIGHTING)
+ #			if defined(VR)"
+doodlum/skyrim-community-shaders,929,bb1835f63a74dcc0204a3bcab05c5247d4426084,package/Shaders/ISVolumetricLightingGenerateCS.hlsl,modified,1,1,2,"@@ -142,7 +142,7 @@ cbuffer PerTechnique : register(b0)
+ 	float phaseFactor = (1 - PhaseScattering * PhaseScattering) / (4 * Math::PI * (1 - LdotN * PhaseScattering));
+ 	float phaseContribution = lerp(1, phaseFactor, PhaseContribution);
+ 
+-	if (shadowContribution != 0.0)
++	if (shadowContribution != 0.0 && !SharedData::InInterior && !SharedData::HideSky)
+ 		shadowContribution *= ShadowSampling::GetWorldShadow(positionWS.xyz, PosAdjust[eyeIndex].xyz, eyeIndex);
+ 
+ 	float vl = shadowContribution * densityContribution * phaseContribution;"
+doodlum/skyrim-community-shaders,929,bb1835f63a74dcc0204a3bcab05c5247d4426084,package/Shaders/Lighting.hlsl,modified,35,55,90,"@@ -9,6 +9,8 @@
+ #include ""Common/SharedData.hlsli""
+ #include ""Common/Skinned.hlsli""
+ 
++#define LIGHTING
++
+ #if defined(FACEGEN) || defined(FACEGEN_RGB_TINT)
+ #	define SKIN
+ #endif
+@@ -1011,7 +1013,11 @@ PS_OUTPUT main(PS_INPUT input, bool frontFace
+ 	float2 screenUV = FrameBuffer::ViewToUV(viewPosition, true, eyeIndex);
+ 	float screenNoise = Random::InterleavedGradientNoise(input.Position.xy, SharedData::FrameCount);
+ 
+-	bool inWorld = Permutation::ExtraShaderDescriptor & Permutation::ExtraFlags::InWorld;
++#	if defined(DEFERRED)
++	const bool inWorld = true;
++#	else
++	const bool inWorld = (Permutation::ExtraShaderDescriptor & Permutation::ExtraFlags::InWorld);
++#	endif
+ 
+ 	float nearFactor = smoothstep(4096.0 * 2.5, 0.0, viewPosition.z);
+ 
+@@ -1928,75 +1934,42 @@ PS_OUTPUT main(PS_INPUT input, bool frontFace
+ 	float dirShadow = 1.0;
+ 	float parallaxShadow = 1;
+ 
+-#	if defined(DEFERRED)
+-#		if defined(SOFT_LIGHTING) || defined(BACK_LIGHTING) || defined(RIM_LIGHTING)
+-	bool extraDirShadows = !inDirShadow && inWorld;
+-#		else
+-	// If lighting cannot hit the backface of the object, do not render shadows
+-	bool extraDirShadows = !inDirShadow && dirLightAngle > 0.0 && inWorld;
+-#		endif
+-#	else
+-#		if defined(SOFT_LIGHTING) || defined(BACK_LIGHTING) || defined(RIM_LIGHTING)
+-	bool extraDirShadows = !inDirShadow && inWorld;
+-#		else
+-	bool extraDirShadows = !inDirShadow && dirLightAngle > 0.0 && inWorld;
+-#		endif
+-#	endif
++	bool inReflection = Permutation::ExtraShaderDescriptor & Permutation::ExtraFlags::InReflection;
+ 
+-	if (extraDirShadows) {
+ #	if defined(SCREEN_SPACE_SHADOWS)
+ #		if defined(DEFERRED)
+-		bool useScreenSpaceShadows = true;
++	bool useScreenSpaceShadows = true;
+ #		else
+-		bool useScreenSpaceShadows = Permutation::ExtraShaderDescriptor & Permutation::ExtraFlags::IsDecal;
+-#		endif
+-
+-#		if defined(SOFT_LIGHTING) || defined(BACK_LIGHTING) || defined(RIM_LIGHTING)
+-		useScreenSpaceShadows = useScreenSpaceShadows && (dirLightAngle > 0.0);
++	bool useScreenSpaceShadows = inWorld && !SharedData::InInterior && Permutation::ExtraShaderDescriptor & Permutation::ExtraFlags::IsDecal;
+ #		endif
+ 
+-		if (useScreenSpaceShadows) {
+-			dirDetailShadow = ScreenSpaceShadows::GetScreenSpaceShadow(input.Position.xyz, screenUV, screenNoise, eyeIndex);
+-#		if defined(TREE_ANIM)
+-			ShadowSampling::ShadowData sD = ShadowSampling::SharedShadowData[0];
+-			dirDetailShadow = lerp(1.0, dirDetailShadow, saturate(viewPosition.z / sqrt(sD.ShadowLightParam.z)));
+-#		endif
+-		}
++	if (useScreenSpaceShadows)
++		dirDetailShadow = ScreenSpaceShadows::GetScreenSpaceShadow(input.Position.xyz, screenUV, screenNoise, eyeIndex);
+ #	endif
+ 
+ #	if defined(EMAT) && (defined(SKINNED) || !defined(MODELSPACENORMALS))
+-		[branch] if (!inDirShadow && SharedData::extendedMaterialSettings.EnableShadows)
+-		{
+-			float3 dirLightDirectionTS = mul(refractedDirLightDirection, tbn).xyz;
++	[branch] if (inWorld && SharedData::extendedMaterialSettings.EnableShadows)
++	{
++		float3 dirLightDirectionTS = mul(refractedDirLightDirection, tbn).xyz;
+ #		if defined(LANDSCAPE)
+-			[branch] if (SharedData::extendedMaterialSettings.EnableTerrainParallax)
+-				parallaxShadow = ExtendedMaterials::GetParallaxSoftShadowMultiplierTerrain(input, uv, mipLevels, dirLightDirectionTS, sh0, parallaxShadowQuality, screenNoise, displacementParams);
++		[branch] if (SharedData::extendedMaterialSettings.EnableTerrainParallax)
++			parallaxShadow = ExtendedMaterials::GetParallaxSoftShadowMultiplierTerrain(input, uv, mipLevels, dirLightDirectionTS, sh0, parallaxShadowQuality, screenNoise, displacementParams);
+ #		elif defined(PARALLAX)
+-			[branch] if (SharedData::extendedMaterialSettings.EnableParallax)
+-				parallaxShadow = ExtendedMaterials::GetParallaxSoftShadowMultiplier(uv, mipLevel, dirLightDirectionTS, sh0, TexParallaxSampler, SampParallaxSampler, 0, lerp(parallaxShadowQuality, 1.0, SharedData::extendedMaterialSettings.ExtendShadows), screenNoise, displacementParams);
++		[branch] if (SharedData::extendedMaterialSettings.EnableParallax)
++			parallaxShadow = ExtendedMaterials::GetParallaxSoftShadowMultiplier(uv, mipLevel, dirLightDirectionTS, sh0, TexParallaxSampler, SampParallaxSampler, 0, lerp(parallaxShadowQuality, 1.0, SharedData::extendedMaterialSettings.ExtendShadows), screenNoise, displacementParams);
+ #		elif defined(EMAT_ENVMAP)
+-			[branch] if (complexMaterialParallax)
+-				parallaxShadow = ExtendedMaterials::GetParallaxSoftShadowMultiplier(uv, mipLevel, dirLightDirectionTS, sh0, TexEnvMaskSampler, SampEnvMaskSampler, 3, lerp(parallaxShadowQuality, 1.0, SharedData::extendedMaterialSettings.ExtendShadows), screenNoise, displacementParams);
++		[branch] if (complexMaterialParallax)
++			parallaxShadow = ExtendedMaterials::GetParallaxSoftShadowMultiplier(uv, mipLevel, dirLightDirectionTS, sh0, TexEnvMaskSampler, SampEnvMaskSampler, 3, lerp(parallaxShadowQuality, 1.0, SharedData::extendedMaterialSettings.ExtendShadows), screenNoise, displacementParams);
+ #		elif defined(TRUE_PBR) && !defined(LODLANDSCAPE)
+-			[branch] if (PBRParallax)
+-				parallaxShadow = ExtendedMaterials::GetParallaxSoftShadowMultiplier(uv, mipLevel, dirLightDirectionTS, sh0, TexParallaxSampler, SampParallaxSampler, 0, lerp(parallaxShadowQuality, 1.0, SharedData::extendedMaterialSettings.ExtendShadows), screenNoise, displacementParams);
++		[branch] if (PBRParallax)
++			parallaxShadow = ExtendedMaterials::GetParallaxSoftShadowMultiplier(uv, mipLevel, dirLightDirectionTS, sh0, TexParallaxSampler, SampParallaxSampler, 0, lerp(parallaxShadowQuality, 1.0, SharedData::extendedMaterialSettings.ExtendShadows), screenNoise, displacementParams);
+ #		endif  // LANDSCAPE
+-		}
++	}
+ #	endif  // defined(EMAT) && (defined (SKINNED) || !defined \
+ 				// (MODELSPACENORMALS))
+ 
+-#	if defined(TERRAIN_SHADOWS)
+-		float terrainShadow = TerrainShadows::GetTerrainShadow(input.WorldPosition.xyz + FrameBuffer::CameraPosAdjust[eyeIndex].xyz, SampColorSampler);
+-		dirShadow *= terrainShadow;
+-		inDirShadow = inDirShadow || dirShadow == 0.0;
+-#	endif
+-	}
+-
+-#	if defined(CLOUD_SHADOWS)
+-	if (!inDirShadow) {
+-		dirShadow *= CloudShadows::GetCloudShadowMult(input.WorldPosition.xyz, SampColorSampler);
+-	}
+-#	endif
++	if (dirShadow != 0.0 && (inWorld || inReflection))
++		dirShadow *= ShadowSampling::GetWorldShadow(input.WorldPosition, FrameBuffer::CameraPosAdjust[eyeIndex], eyeIndex);
+ 
+ 	dirLightColorMultiplier *= dirShadow;
+ 
+@@ -2348,6 +2321,9 @@ PS_OUTPUT main(PS_INPUT input, bool frontFace
+ #	if defined(ENVMAP) || defined(MULTI_LAYER_PARALLAX) || defined(EYE)
+ 	float envMask = EnvmapData.x * MaterialData.x;
+ 
++	float viewNormalAngle = dot(worldSpaceNormal.xyz, viewDirection);
++	float3 envSamplingPoint = (viewNormalAngle * 2) * modelNormal.xyz - viewDirection;
++
+ 	if (envMask > 0.0) {
+ 		if (EnvmapData.y) {
+ 			envMask *= TexEnvMaskSampler.Sample(SampEnvMaskSampler, uv).x;
+@@ -2407,15 +2383,19 @@ PS_OUTPUT main(PS_INPUT input, bool frontFace
+ #			endif
+ 
+ 				if (any(F0 > 0.0))
+-					envColor = DynamicCubemaps::GetDynamicCubemap(screenUV, worldSpaceNormal, worldSpaceVertexNormal, worldSpaceViewDirection, envRoughness, F0, diffuseColor, viewPosition.z) * envMask;
++#			if defined(SKYLIGHTING)
++					envColor = DynamicCubemaps::GetDynamicCubemap(worldSpaceNormal, worldSpaceVertexNormal, worldSpaceViewDirection, envRoughness, F0, skylightingSH) * envMask;
++#			else
++					envColor = DynamicCubemaps::GetDynamicCubemap(worldSpaceNormal, worldSpaceVertexNormal, worldSpaceViewDirection, envRoughness, F0, ) * envMask;
++#			endif
+ 				else
+ 					envColor = 0.0;
+ 			}
+ 		}
+ #		endif
+ 
+ 		if (!dynamicCubemap) {
+-			float3 envColorBase = TexEnvSampler.Sample(SampEnvSampler, reflect(-viewDirection.xyz, modelNormal.xyz));
++			float3 envColorBase = TexEnvSampler.Sample(SampEnvSampler, envSamplingPoint);
+ 			envColor = envColorBase.xyz * envMask;
+ 		}
+ 	}"
+doodlum/skyrim-community-shaders,929,bb1835f63a74dcc0204a3bcab05c5247d4426084,package/Shaders/RunGrass.hlsl,modified,8,24,32,"@@ -414,6 +414,10 @@ cbuffer AlphaTestRefCB : register(b11)
+ #		include ""WaterLighting/WaterCaustics.hlsli""
+ #	endif
+ 
++#	define LinearSampler SampBaseSampler
++
++#	include ""Common/ShadowSampling.hlsli""
++
+ #	ifdef GRASS_LIGHTING
+ #		if defined(TRUE_PBR)
+ 
+@@ -547,18 +551,8 @@ PS_OUTPUT main(PS_INPUT input, bool frontFace
+ #			endif  // SCREEN_SPACE_SHADOWS
+ 		}
+ 
+-#			if defined(TERRAIN_SHADOWS)
+-		if (dirShadow > 0.0) {
+-			float terrainShadow = TerrainShadows::GetTerrainShadow(input.WorldPosition.xyz + FrameBuffer::CameraPosAdjust[eyeIndex].xyz, SampBaseSampler);
+-			dirShadow *= terrainShadow;
+-		}
+-#			endif  // TERRAIN_SHADOWS
+-
+-#			if defined(CLOUD_SHADOWS)
+-		if (dirShadow > 0.0) {
+-			dirShadow *= CloudShadows::GetCloudShadowMult(input.WorldPosition.xyz, SampBaseSampler);
+-		}
+-#			endif  // CLOUD_SHADOWS
++		if (dirShadow != 0.0)
++			dirShadow *= ShadowSampling::GetWorldShadow(input.WorldPosition, FrameBuffer::CameraPosAdjust[eyeIndex], eyeIndex);
+ 
+ #			if defined(WATER_LIGHTING)
+ 		if (dirShadow > 0.0) {
+@@ -778,18 +772,8 @@ PS_OUTPUT main(PS_INPUT input)
+ 		dirDetailShadow = ScreenSpaceShadows::GetScreenSpaceShadow(input.HPosition.xyz, screenUV, screenNoise, eyeIndex);
+ #			endif  // SCREEN_SPACE_SHADOWS
+ 
+-#			if defined(TERRAIN_SHADOWS)
+-		if (dirShadow > 0.0) {
+-			float terrainShadow = TerrainShadows::GetTerrainShadow(input.WorldPosition.xyz + FrameBuffer::CameraPosAdjust[eyeIndex].xyz, SampBaseSampler);
+-			dirShadow *= terrainShadow;
+-		}
+-#			endif  // TERRAIN_SHADOWS
+-
+-#			if defined(CLOUD_SHADOWS)
+-		if (dirShadow > 0.0) {
+-			dirShadow *= CloudShadows::GetCloudShadowMult(input.WorldPosition.xyz, SampBaseSampler);
+-		}
+-#			endif  // CLOUD_SHADOWS
++		if (dirShadow != 0.0)
++			dirShadow *= ShadowSampling::GetWorldShadow(input.WorldPosition, FrameBuffer::CameraPosAdjust[eyeIndex], eyeIndex);
+ 
+ #			if defined(WATER_LIGHTING)
+ 		if (dirShadow > 0.0) {"
+doodlum/skyrim-community-shaders,929,bb1835f63a74dcc0204a3bcab05c5247d4426084,package/Shaders/Water.hlsl,modified,36,28,64,"@@ -535,51 +535,60 @@ float3 GetWaterSpecularColor(PS_INPUT input, float3 normal, float3 viewDirection
+ 		float3 finalSsrReflectionColor = 0.0.xxx;
+ 		float ssrFraction = 0;
+ 		float3 reflectionColor = 0;
+-		float3 R = reflect(viewDirection, normal);
++		float3 R = reflect(viewDirection, WaterParams.y * normal + float3(0, 0, 1 - WaterParams.y));
+ 
+ 		if (Permutation::PixelShaderDescriptor & Permutation::WaterFlags::Cubemap) {
+ #			if defined(DYNAMIC_CUBEMAPS)
+ #				if defined(SKYLIGHTING)
++
++			float3 dynamicCubemap;
++			if (SharedData::InInterior) {
++				dynamicCubemap = DynamicCubemaps::EnvTexture.SampleLevel(CubeMapSampler, R, 0).xyz;
++			} else {
+ #					if defined(VR)
+-			float3 positionMSSkylight = input.WPosition.xyz + FrameBuffer::CameraPosAdjust[eyeIndex].xyz - FrameBuffer::CameraPosAdjust[0].xyz;
++				float3 positionMSSkylight = input.WPosition.xyz + FrameBuffer::CameraPosAdjust[eyeIndex].xyz - FrameBuffer::CameraPosAdjust[0].xyz;
+ #					else
+-			float3 positionMSSkylight = input.WPosition.xyz;
++				float3 positionMSSkylight = input.WPosition.xyz;
+ #					endif
+ 
+-			sh2 skylighting = Skylighting::sample(SharedData::skylightingSettings, Skylighting::SkylightingProbeArray, Skylighting::stbn_vec3_2Dx1D_128x128x64, input.HPosition.xy, positionMSSkylight, R);
+-			sh2 specularLobe = SphericalHarmonics::FauxSpecularLobe(normal, -viewDirection, 0.0);
++				sh2 skylighting = Skylighting::sample(SharedData::skylightingSettings, Skylighting::SkylightingProbeArray, Skylighting::stbn_vec3_2Dx1D_128x128x64, input.HPosition.xy, positionMSSkylight, R);
++				sh2 specularLobe = SphericalHarmonics::FauxSpecularLobe(normal, -viewDirection, 0.0);
+ 
+-			float skylightingSpecular = SphericalHarmonics::FuncProductIntegral(skylighting, specularLobe);
+-			skylightingSpecular = lerp(1.0, skylightingSpecular, Skylighting::getFadeOutFactor(input.WPosition.xyz));
+-			skylightingSpecular = Skylighting::mixSpecular(SharedData::skylightingSettings, skylightingSpecular);
++				float skylightingSpecular = SphericalHarmonics::FuncProductIntegral(skylighting, specularLobe);
++				skylightingSpecular = lerp(1.0, skylightingSpecular, Skylighting::getFadeOutFactor(input.WPosition.xyz));
++				skylightingSpecular = Skylighting::mixSpecular(SharedData::skylightingSettings, skylightingSpecular);
+ 
+-			float3 specularIrradiance = 1;
++				float3 specularIrradiance = 1;
+ 
+-			if (skylightingSpecular < 1.0) {
+-				specularIrradiance = DynamicCubemaps::EnvTexture.SampleLevel(CubeMapSampler, R, 0).xyz;
+-				specularIrradiance = Color::GammaToLinear(specularIrradiance);
+-			}
++				if (skylightingSpecular < 1.0) {
++					specularIrradiance = DynamicCubemaps::EnvTexture.SampleLevel(CubeMapSampler, R, 0).xyz;
++					specularIrradiance = Color::GammaToLinear(specularIrradiance);
++				}
+ 
+-			float3 specularIrradianceReflections = 1.0;
++				float3 specularIrradianceReflections = 1.0;
+ 
+-			if (skylightingSpecular > 0.0) {
+-				specularIrradianceReflections = DynamicCubemaps::EnvReflectionsTexture.SampleLevel(CubeMapSampler, R, 0).xyz;
+-				specularIrradianceReflections = Color::GammaToLinear(specularIrradianceReflections);
+-			}
++				if (skylightingSpecular > 0.0) {
++					specularIrradianceReflections = DynamicCubemaps::EnvReflectionsTexture.SampleLevel(CubeMapSampler, R, 0).xyz;
++					specularIrradianceReflections = Color::GammaToLinear(specularIrradianceReflections);
++				}
+ 
+-			float3 dynamicCubemap = Color::LinearToGamma(lerp(specularIrradiance, specularIrradianceReflections, skylightingSpecular));
++				dynamicCubemap = Color::LinearToGamma(lerp(specularIrradiance, specularIrradianceReflections, skylightingSpecular));
++			}
+ #				else
+ 			float3 dynamicCubemap = DynamicCubemaps::EnvReflectionsTexture.SampleLevel(CubeMapSampler, R, 0);
+ #				endif
+ 
+ #				if defined(VR)
+ 			// Reflection cubemap is incorrect for interiors in VR, ignore it
+-			if (Permutation::PixelShaderDescriptor & Permutation::WaterFlags::Interior)
++			if (Permutation::PixelShaderDescriptor & Permutation::WaterFlags::Interior || SharedData::HideSky)
+ 				reflectionColor = dynamicCubemap.xyz;
+ 			else
+ 				reflectionColor = lerp(dynamicCubemap.xyz, CubeMapTex.SampleLevel(CubeMapSampler, R, 0).xyz, saturate(length(input.WPosition.xyz) / 1024.0));
+ #				else
+-			reflectionColor = lerp(dynamicCubemap.xyz, CubeMapTex.SampleLevel(CubeMapSampler, R, 0).xyz, saturate(length(input.WPosition.xyz) / 1024.0));
++			if (SharedData::HideSky)
++				reflectionColor = dynamicCubemap.xyz;
++			else
++				reflectionColor = lerp(dynamicCubemap.xyz, CubeMapTex.SampleLevel(CubeMapSampler, R, 0).xyz, saturate(length(input.WPosition.xyz) / 1024.0));
+ #				endif
+ #			else
+ 			reflectionColor = CubeMapTex.SampleLevel(CubeMapSampler, R, 0).xyz;
+@@ -599,17 +608,16 @@ float3 GetWaterSpecularColor(PS_INPUT input, float3 normal, float3 viewDirection
+ 		if (Permutation::PixelShaderDescriptor & Permutation::WaterFlags::Cubemap) {
+ 			float pointingDirection = dot(viewDirection, R);
+ 			float pointingAlignment = dot(reflect(viewDirection, float3(0, 0, 1)), R);
+-			if (SSRParams.x > 0.0 && pointingDirection > 0.0 && pointingAlignment > 0.0) {
+-				float2 ssrReflectionUv = ((FrameBuffer::DynamicResolutionParams2.xy * input.HPosition.xy) * SSRParams.zw) + SSRParams2.x * normal.xy;
++			float ssrAmount = min(pointingAlignment, pointingDirection);
++			if (SSRParams.x > 0.0 && ssrAmount > 0.0) {
++				float2 ssrReflectionUv = ((FrameBuffer::DynamicResolutionParams2.xy * input.HPosition.xy) * SSRParams.zw) + 0.05 * normal.xy;
+ 				float2 ssrReflectionUvDR = FrameBuffer::GetDynamicResolutionAdjustedScreenPosition(ssrReflectionUv);
+-				float4 ssrReflectionColorBlurred = SSRReflectionTex.Sample(SSRReflectionSampler, ssrReflectionUvDR);
++				float4 ssrReflectionColorBlurred = RawSSRReflectionTex.Sample(RawSSRReflectionSampler, ssrReflectionUvDR);
+ 				float4 ssrReflectionColorRaw = RawSSRReflectionTex.Sample(RawSSRReflectionSampler, ssrReflectionUvDR);
+-
+-				float effectiveBlurFactor = saturate(SSRParams.y);
+-				float4 ssrReflectionColor = lerp(ssrReflectionColorRaw, ssrReflectionColorBlurred, effectiveBlurFactor);
++				float4 ssrReflectionColor = lerp(ssrReflectionColorBlurred, ssrReflectionColorRaw, ssrAmount * 0.7);
+ 
+ 				finalSsrReflectionColor = max(0, ssrReflectionColor.xyz);
+-				ssrFraction = saturate(ssrReflectionColor.w * distanceFactor * SSRParams.x) * min(pointingDirection, pointingAlignment);
++				ssrFraction = saturate(ssrReflectionColor.w * distanceFactor * ssrAmount);
+ 			}
+ 		}
+ #			endif"
+doodlum/skyrim-community-shaders,929,bb1835f63a74dcc0204a3bcab05c5247d4426084,src/Deferred.cpp,modified,39,3,42,"@@ -219,14 +219,40 @@ void Deferred::CopyShadowData()
+ 	}
+ }
+ 
++void Deferred::ReflectionsPrepasses()
++{
++	auto& shaderCache = SIE::ShaderCache::Instance();
++
++	if (!shaderCache.IsEnabled())
++		return;
++
++	State::GetSingleton()->UpdateSharedData(false);
++
++	auto variableCache = VariableCache::GetSingleton();
++
++	ZoneScoped;
++	TracyD3D11Zone(variableCache->state->tracyCtx, ""Early Prepass"");
++
++	auto context = variableCache->context;
++	context->OMSetRenderTargets(0, nullptr, nullptr);  // Unbind all bound render targets
++
++	variableCache->stateUpdateFlags->set(RE::BSGraphics::ShaderFlags::DIRTY_RENDERTARGET);  // Run OMSetRenderTargets again
++
++	for (auto* feature : Feature::GetFeatureList()) {
++		if (feature->loaded) {
++			feature->ReflectionsPrepass();
++		}
++	}
++}
++
+ void Deferred::EarlyPrepasses()
+ {
+ 	auto& shaderCache = SIE::ShaderCache::Instance();
+ 
+ 	if (!shaderCache.IsEnabled())
+ 		return;
+ 
+-	State::GetSingleton()->UpdateSharedData();
++	State::GetSingleton()->UpdateSharedData(false);
+ 
+ 	auto variableCache = VariableCache::GetSingleton();
+ 
+@@ -273,7 +299,7 @@ void Deferred::PrepassPasses()
+ 
+ void Deferred::StartDeferred()
+ {
+-	State::GetSingleton()->UpdateSharedData();
++	State::GetSingleton()->UpdateSharedData(true);
+ 
+ 	auto shadowState = RE::BSGraphics::RendererShadowState::GetSingleton();
+ 	GET_INSTANCE_MEMBER(renderTargets, shadowState)
+@@ -793,4 +819,14 @@ void Deferred::Hooks::BSShaderAccumulator_ShadowMapOrMask_BlendedDecals::thunk(R
+ 	deferred->inBlendedDecals = false;
+ 	func(This, RenderFlags);
+ 	deferred->inDecals = false;
+-};
+\ No newline at end of file
++};
++
++void Deferred::Hooks::BSCubeMapCamera_RenderCubemap::thunk(RE::NiAVObject* camera, int a2, bool a3, bool a4, bool a5)
++{
++	auto deferred = VariableCache::GetSingleton()->deferred;
++
++	deferred->inReflections = true;
++	deferred->ReflectionsPrepasses();
++	func(camera, a2, a3, a4, a5);
++	deferred->inReflections = false;
++}"
+doodlum/skyrim-community-shaders,929,bb1835f63a74dcc0204a3bcab05c5247d4426084,src/Deferred.h,modified,10,0,10,"@@ -22,6 +22,7 @@ class Deferred
+ 
+ 	void SetupResources();
+ 	void CopyShadowData();
++	void ReflectionsPrepasses();
+ 	void EarlyPrepasses();
+ 	void StartDeferred();
+ 	void OverrideBlendStates();
+@@ -52,6 +53,7 @@ class Deferred
+ 	bool inWorld = false;
+ 	bool inBlendedDecals = false;
+ 	bool inDecals = false;
++	bool inReflections = false;
+ 	bool deferredPass = false;
+ 
+ 	Texture2D* prevDiffuseAmbientTexture = nullptr;
+@@ -123,8 +125,16 @@ class Deferred
+ 			static inline REL::Relocation<decltype(thunk)> func;
+ 		};
+ 
++		struct BSCubeMapCamera_RenderCubemap
++		{
++			static void thunk(RE::NiAVObject* camera, int a2, bool a3, bool a4, bool a5);
++			static inline REL::Relocation<decltype(thunk)> func;
++		};
++
+ 		static void Install()
+ 		{
++			stl::write_vfunc<0x35, BSCubeMapCamera_RenderCubemap>(RE::VTABLE_BSCubeMapCamera[0]);
++
+ 			stl::write_thunk_call<Main_RenderShadowMaps>(REL::RelocationID(35560, 36559).address() + REL::Relocate(0x2EC, 0x2EC, 0x248));
+ 
+ 			stl::write_thunk_call<Main_RenderWorld>(REL::RelocationID(35560, 36559).address() + REL::Relocate(0x831, 0x841, 0x791));"
+doodlum/skyrim-community-shaders,929,bb1835f63a74dcc0204a3bcab05c5247d4426084,src/Feature.h,modified,2,0,2,"@@ -31,6 +31,8 @@ struct Feature
+ 	virtual void Reset() {}
+ 
+ 	virtual void DrawSettings() {}
++
++	virtual void ReflectionsPrepass(){};
+ 	virtual void Prepass() {}
+ 	virtual void EarlyPrepass() {}
+ "
+doodlum/skyrim-community-shaders,929,bb1835f63a74dcc0204a3bcab05c5247d4426084,src/FeatureBuffer.cpp,modified,2,2,4,"@@ -26,7 +26,7 @@ std::pair<unsigned char*, size_t> _GetFeatureBufferData(Ts... feat_datas)
+ 	return std::make_pair(data, totalSize);
+ }
+ 
+-std::pair<unsigned char*, size_t> GetFeatureBufferData()
++std::pair<unsigned char*, size_t> GetFeatureBufferData(bool a_inWorld)
+ {
+ 	return _GetFeatureBufferData(
+ 		GrassLighting::GetSingleton()->settings,
+@@ -35,5 +35,5 @@ std::pair<unsigned char*, size_t> GetFeatureBufferData()
+ 		TerrainShadows::GetSingleton()->GetCommonBufferData(),
+ 		LightLimitFix::GetSingleton()->GetCommonBufferData(),
+ 		WetnessEffects::GetSingleton()->GetCommonBufferData(),
+-		Skylighting::GetSingleton()->GetCommonBufferData());
++		Skylighting::GetSingleton()->GetCommonBufferData(a_inWorld));
+ }
+\ No newline at end of file"
+doodlum/skyrim-community-shaders,929,bb1835f63a74dcc0204a3bcab05c5247d4426084,src/FeatureBuffer.h,modified,1,1,2,"@@ -1,3 +1,3 @@
+ #pragma once
+ 
+-std::pair<unsigned char*, size_t> GetFeatureBufferData();
+\ No newline at end of file
++std::pair<unsigned char*, size_t> GetFeatureBufferData(bool a_early);
+\ No newline at end of file"
+doodlum/skyrim-community-shaders,929,bb1835f63a74dcc0204a3bcab05c5247d4426084,src/Features/CloudShadows.cpp,modified,27,0,27,"@@ -74,6 +74,24 @@ void CloudShadows::ModifySky(RE::BSRenderPass* Pass)
+ 	}
+ }
+ 
++void CloudShadows::ReflectionsPrepass()
++{
++	Util::FrameChecker frameChecker;
++	if (frameChecker.IsNewFrame()) {
++		if ((RE::Sky::GetSingleton()->mode.get() != RE::Sky::Mode::kFull) ||
++			!RE::Sky::GetSingleton()->currentClimate)
++			return;
++
++		auto& context = State::GetSingleton()->context;
++
++		context->CopyResource(texCubemapCloudOccCopy->resource.get(), texCubemapCloudOcc->resource.get());
++
++		ID3D11ShaderResourceView* srv = texCubemapCloudOccCopy->srv.get();
++		context->PSSetShaderResources(25, 1, &srv);
++		context->CSSetShaderResources(25, 1, &srv);
++	}
++}
++
+ void CloudShadows::EarlyPrepass()
+ {
+ 	if ((RE::Sky::GetSingleton()->mode.get() != RE::Sky::Mode::kFull) ||
+@@ -112,6 +130,15 @@ void CloudShadows::SetupResources()
+ 			rtvDesc.Format = texDesc.Format;
+ 			DX::ThrowIfFailed(device->CreateRenderTargetView(texCubemapCloudOcc->resource.get(), &rtvDesc, cubemapCloudOccRTVs + i));
+ 		}
++
++		texCubemapCloudOccCopy = new Texture2D(texDesc);
++		texCubemapCloudOccCopy->CreateSRV(srvDesc);
++
++		for (int i = 0; i < 6; ++i) {
++			reflections.cubeSideRTV[i]->GetDesc(&rtvDesc);
++			rtvDesc.Format = texDesc.Format;
++			DX::ThrowIfFailed(device->CreateRenderTargetView(texCubemapCloudOccCopy->resource.get(), &rtvDesc, cubemapCloudOccCopyRTVs + i));
++		}
+ 	}
+ 	{
+ 		D3D11_BLEND_DESC blendDesc = {};"
+doodlum/skyrim-community-shaders,929,bb1835f63a74dcc0204a3bcab05c5247d4426084,src/Features/CloudShadows.h,modified,5,0,5,"@@ -20,14 +20,19 @@ struct CloudShadows : Feature
+ 	void SkyShaderHacks();
+ 
+ 	Texture2D* texCubemapCloudOcc = nullptr;
++	Texture2D* texCubemapCloudOccCopy = nullptr;
++
+ 	ID3D11RenderTargetView* cubemapCloudOccRTVs[6] = { nullptr };
++	ID3D11RenderTargetView* cubemapCloudOccCopyRTVs[6] = { nullptr };
++
+ 	ID3D11BlendState* cloudShadowBlendState = nullptr;
+ 
+ 	virtual void SetupResources() override;
+ 
+ 	void CheckResourcesSide(int side);
+ 	void ModifySky(RE::BSRenderPass* Pass);
+ 
++	virtual void ReflectionsPrepass() override;
+ 	virtual void EarlyPrepass() override;
+ 
+ 	virtual inline void PostPostLoad() override { Hooks::Install(); }"
+doodlum/skyrim-community-shaders,929,bb1835f63a74dcc0204a3bcab05c5247d4426084,src/Features/DynamicCubemaps.cpp,modified,37,10,47,"@@ -39,9 +39,6 @@ void DynamicCubemaps::DrawSettings()
+ 					ImGui::PopStyleColor();
+ 				}
+ 			}
+-			if (settings.EnabledSSR) {
+-				Util::RenderImGuiSettingsTree(SSRSettings, ""Skyrim SSR"");
+-			}
+ 			ImGui::TreePop();
+ 		}
+ 
+@@ -142,7 +139,6 @@ void DynamicCubemaps::DrawSettings()
+ void DynamicCubemaps::LoadSettings(json& o_json)
+ {
+ 	settings = o_json;
+-	Util::LoadGameSettings(SSRSettings);
+ 	if (REL::Module::IsVR()) {
+ 		Util::LoadGameSettings(iniVRCubeMapSettings);
+ 	}
+@@ -152,7 +148,6 @@ void DynamicCubemaps::LoadSettings(json& o_json)
+ void DynamicCubemaps::SaveSettings(json& o_json)
+ {
+ 	o_json = settings;
+-	Util::SaveGameSettings(SSRSettings);
+ 	if (REL::Module::IsVR()) {
+ 		Util::SaveGameSettings(iniVRCubeMapSettings);
+ 	}
+@@ -161,7 +156,6 @@ void DynamicCubemaps::SaveSettings(json& o_json)
+ void DynamicCubemaps::RestoreDefaultSettings()
+ {
+ 	settings = {};
+-	Util::ResetGameSettingsToDefaults(SSRSettings);
+ 	if (REL::Module::IsVR()) {
+ 		Util::ResetGameSettingsToDefaults(iniVRCubeMapSettings);
+ 		Util::ResetGameSettingsToDefaults(hiddenVRCubeMapSettings);
+@@ -234,6 +228,14 @@ void DynamicCubemaps::ClearShaderCache()
+ 		updateCubemapCS->Release();
+ 		updateCubemapCS = nullptr;
+ 	}
++	if (updateCubemapReflectionsCS) {
++		updateCubemapReflectionsCS->Release();
++		updateCubemapReflectionsCS = nullptr;
++	}
++	if (updateCubemapFakeReflectionsCS) {
++		updateCubemapFakeReflectionsCS->Release();
++		updateCubemapFakeReflectionsCS = nullptr;
++	}
+ 	if (inferCubemapCS) {
+ 		inferCubemapCS->Release();
+ 		inferCubemapCS = nullptr;
+@@ -242,6 +244,10 @@ void DynamicCubemaps::ClearShaderCache()
+ 		inferCubemapReflectionsCS->Release();
+ 		inferCubemapReflectionsCS = nullptr;
+ 	}
++	if (inferCubemapFakeReflectionsCS) {
++		inferCubemapFakeReflectionsCS->Release();
++		inferCubemapFakeReflectionsCS = nullptr;
++	}
+ 	if (specularIrradianceCS) {
+ 		specularIrradianceCS->Release();
+ 		specularIrradianceCS = nullptr;
+@@ -266,6 +272,15 @@ ID3D11ComputeShader* DynamicCubemaps::GetComputeShaderUpdateReflections()
+ 	return updateCubemapReflectionsCS;
+ }
+ 
++ID3D11ComputeShader* DynamicCubemaps::GetComputeShaderUpdateFakeReflections()
++{
++	if (!updateCubemapFakeReflectionsCS) {
++		logger::debug(""Compiling UpdateCubemapCS FAKEREFLECTIONS"");
++		updateCubemapFakeReflectionsCS = static_cast<ID3D11ComputeShader*>(Util::CompileShader(L""Data\\Shaders\\DynamicCubemaps\\UpdateCubemapCS.hlsl"", { { ""FAKEREFLECTIONS"", """" } }, ""cs_5_0""));
++	}
++	return updateCubemapFakeReflectionsCS;
++}
++
+ ID3D11ComputeShader* DynamicCubemaps::GetComputeShaderInferrence()
+ {
+ 	if (!inferCubemapCS) {
+@@ -284,6 +299,15 @@ ID3D11ComputeShader* DynamicCubemaps::GetComputeShaderInferrenceReflections()
+ 	return inferCubemapReflectionsCS;
+ }
+ 
++ID3D11ComputeShader* DynamicCubemaps::GetComputeShaderInferrenceFakeReflections()
++{
++	if (!inferCubemapFakeReflectionsCS) {
++		logger::debug(""Compiling InferCubemapCS FAKEREFLECTIONS"");
++		inferCubemapFakeReflectionsCS = static_cast<ID3D11ComputeShader*>(Util::CompileShader(L""Data\\Shaders\\DynamicCubemaps\\InferCubemapCS.hlsl"", { { ""FAKEREFLECTIONS"", """" } }, ""cs_5_0""));
++	}
++	return inferCubemapFakeReflectionsCS;
++}
++
+ ID3D11ComputeShader* DynamicCubemaps::GetComputeShaderSpecularIrradiance()
+ {
+ 	if (!specularIrradianceCS) {
+@@ -344,7 +368,7 @@ void DynamicCubemaps::UpdateCubemapCapture(bool a_reflections)
+ 
+ 	context->CSSetSamplers(0, 1, &computeSampler);
+ 
+-	context->CSSetShader(a_reflections ? GetComputeShaderUpdateReflections() : GetComputeShaderUpdate(), nullptr, 0);
++	context->CSSetShader(a_reflections ? (fakeReflections ? GetComputeShaderUpdateFakeReflections() : GetComputeShaderUpdateReflections()) : GetComputeShaderUpdate(), nullptr, 0);
+ 
+ 	context->Dispatch((uint32_t)std::ceil(envCaptureTexture->desc.Width / 8.0f), (uint32_t)std::ceil(envCaptureTexture->desc.Height / 8.0f), 6);
+ 
+@@ -385,7 +409,7 @@ void DynamicCubemaps::Inferrence(bool a_reflections)
+ 
+ 	context->CSSetSamplers(0, 1, &computeSampler);
+ 
+-	context->CSSetShader(a_reflections ? GetComputeShaderInferrenceReflections() : GetComputeShaderInferrence(), nullptr, 0);
++	context->CSSetShader(a_reflections ? (fakeReflections ? GetComputeShaderInferrenceFakeReflections() : GetComputeShaderInferrenceReflections()) : GetComputeShaderInferrence(), nullptr, 0);
+ 
+ 	context->Dispatch((uint32_t)std::ceil(envCaptureTexture->desc.Width / 8.0f), (uint32_t)std::ceil(envCaptureTexture->desc.Height / 8.0f), 6);
+ 
+@@ -631,8 +655,11 @@ void DynamicCubemaps::SetupResources()
+ 
+ void DynamicCubemaps::Reset()
+ {
+-	if (auto sky = RE::Sky::GetSingleton())
++	if (auto sky = RE::Sky::GetSingleton()) {
+ 		activeReflections = sky->mode.get() == RE::Sky::Mode::kFull;
+-	else
++		fakeReflections = activeReflections && sky->flags.any(RE::Sky::Flags::kHideSky);
++	} else {
+ 		activeReflections = false;
++		fakeReflections = false;
++	}
+ }"
+doodlum/skyrim-community-shaders,929,bb1835f63a74dcc0204a3bcab05c5247d4426084,src/Features/DynamicCubemaps.h,modified,8,7,15,"@@ -49,11 +49,13 @@ struct DynamicCubemaps : Feature
+ 
+ 	ID3D11ComputeShader* updateCubemapCS = nullptr;
+ 	ID3D11ComputeShader* updateCubemapReflectionsCS = nullptr;
++	ID3D11ComputeShader* updateCubemapFakeReflectionsCS = nullptr;
+ 
+ 	ConstantBuffer* updateCubemapCB = nullptr;
+ 
+ 	ID3D11ComputeShader* inferCubemapCS = nullptr;
+ 	ID3D11ComputeShader* inferCubemapReflectionsCS = nullptr;
++	ID3D11ComputeShader* inferCubemapFakeReflectionsCS = nullptr;
+ 
+ 	Texture2D* envCaptureTexture = nullptr;
+ 	Texture2D* envCaptureRawTexture = nullptr;
+@@ -68,6 +70,8 @@ struct DynamicCubemaps : Feature
+ 	ID3D11ShaderResourceView* defaultCubemap = nullptr;
+ 
+ 	bool activeReflections = false;
++	bool fakeReflections = false;
++
+ 	bool resetCapture[2] = { true, true };
+ 	bool recompileFlag = false;
+ 
+@@ -116,13 +120,6 @@ struct DynamicCubemaps : Feature
+ 	virtual void DataLoaded() override;
+ 	virtual void PostPostLoad() override;
+ 
+-	std::map<std::string, Util::GameSetting> SSRSettings{
+-		{ ""fWaterSSRNormalPerturbationScale:Display"", { ""Water Normal Perturbation Scale"", ""Controls the scale of normal perturbations for Screen Space Reflections (SSR) on water surfaces."", 0, 0.05f, 0.f, 1.f } },
+-		{ ""fWaterSSRBlurAmount:Display"", { ""Water SSR Blur Amount"", ""Defines the amount of blur applied to Screen Space Reflections on water surfaces."", 0, 0.3f, 0.f, 1.f } },
+-		{ ""fWaterSSRIntensity:Display"", { ""Water SSR Intensity"", ""Adjusts the intensity or strength of Screen Space Reflections on water."", 0, 1.3f, 0.f, 5.f } },
+-		{ ""bDownSampleNormalSSR:Display"", { ""Down Sample Normal SSR"", ""Enables or disables downsampling of normals for SSR to improve performance."", 0, true, false, true } }
+-	};
+-
+ 	std::map<std::string, Util::GameSetting> iniVRCubeMapSettings{
+ 		{ ""bAutoWaterSilhouetteReflections:Water"", { ""Auto Water Silhouette Reflections"", ""Automatically reflects silhouettes on water surfaces."", 0, true, false, true } },
+ 		{ ""bForceHighDetailReflections:Water"", { ""Force High Detail Reflections"", ""Forces the use of high-detail reflections on water surfaces."", 0, true, false, true } }
+@@ -140,8 +137,12 @@ struct DynamicCubemaps : Feature
+ 	virtual void ClearShaderCache() override;
+ 	ID3D11ComputeShader* GetComputeShaderUpdate();
+ 	ID3D11ComputeShader* GetComputeShaderUpdateReflections();
++	ID3D11ComputeShader* GetComputeShaderUpdateFakeReflections();
++
+ 	ID3D11ComputeShader* GetComputeShaderInferrence();
+ 	ID3D11ComputeShader* GetComputeShaderInferrenceReflections();
++	ID3D11ComputeShader* GetComputeShaderInferrenceFakeReflections();
++
+ 	ID3D11ComputeShader* GetComputeShaderSpecularIrradiance();
+ 
+ 	void UpdateCubemapCapture(bool a_reflections);"
+doodlum/skyrim-community-shaders,929,bb1835f63a74dcc0204a3bcab05c5247d4426084,src/Features/Skylighting.cpp,modified,2,3,5,"@@ -173,10 +173,9 @@ void Skylighting::CompileComputeShaders()
+ 	}
+ }
+ 
+-Skylighting::SkylightingCB Skylighting::GetCommonBufferData()
++Skylighting::SkylightingCB Skylighting::GetCommonBufferData(bool a_inWorld)
+ {
+-	static Util::FrameChecker frameChecker;
+-	if (frameChecker.IsNewFrame())
++	if (!a_inWorld)
+ 		return Skylighting::SkylightingCB{};
+ 
+ 	if (auto ui = RE::UI::GetSingleton())"
+doodlum/skyrim-community-shaders,929,bb1835f63a74dcc0204a3bcab05c5247d4426084,src/Features/Skylighting.h,modified,1,1,2,"@@ -61,7 +61,7 @@ struct Skylighting : Feature
+ 	};
+ 	static_assert(sizeof(SkylightingCB) % 16 == 0);
+ 
+-	SkylightingCB GetCommonBufferData();
++	SkylightingCB GetCommonBufferData(bool a_inWorld);
+ 
+ 	winrt::com_ptr<ID3D11SamplerState> comparisonSampler = nullptr;
+ "
+doodlum/skyrim-community-shaders,929,bb1835f63a74dcc0204a3bcab05c5247d4426084,src/Features/TerrainShadows.cpp,modified,27,0,27,"@@ -264,6 +264,14 @@ void TerrainShadows::Precompute()
+ 
+ 	logger::info(""Creating shadow texture..."");
+ 	{
++		if (texShadowHeight) {
++			auto context = State::GetSingleton()->context;
++
++			std::array<ID3D11ShaderResourceView*, 1> srvs = { nullptr };
++			context->PSSetShaderResources(60, (uint)srvs.size(), srvs.data());
++			context->CSSetShaderResources(60, (uint)srvs.size(), srvs.data());
++		}
++
+ 		texShadowHeight.release();
+ 
+ 		D3D11_TEXTURE2D_DESC texDesc = {
+@@ -307,6 +315,13 @@ void TerrainShadows::UpdateShadow()
+ 	constexpr uint logUpdateLength = std::bit_width(128u) - 1;  // integer log2, https://stackoverflow.com/questions/994593/how-to-do-an-integer-log2-in-c
+ 
+ 	auto& context = State::GetSingleton()->context;
++
++	if (texShadowHeight) {
++		std::array<ID3D11ShaderResourceView*, 1> srvs = { nullptr };
++		context->PSSetShaderResources(60, (uint)srvs.size(), srvs.data());
++		context->CSSetShaderResources(60, (uint)srvs.size(), srvs.data());
++	}
++
+ 	auto accumulator = RE::BSGraphics::BSShaderAccumulator::GetCurrentAccumulator();
+ 	auto sunLight = skyrim_cast<RE::NiDirectionalLight*>(accumulator->GetRuntimeData().activeShadowSceneNode->GetRuntimeData().sunLight->light.get());
+ 	if (!sunLight)
+@@ -382,6 +397,7 @@ void TerrainShadows::UpdateShadow()
+ 	} old, newer;
+ 
+ 	/* ---- DISPATCH ---- */
++
+ 	newer.srvs[0] = texHeightMap->srv.get();
+ 	newer.uavs[0] = texShadowHeight->uav.get();
+ 	newer.buffer = shadowUpdateCB->CB();
+@@ -399,6 +415,17 @@ void TerrainShadows::UpdateShadow()
+ 	context->CSSetConstantBuffers(0, 1, &old.buffer);
+ }
+ 
++void TerrainShadows::ReflectionsPrepass()
++{
++	if (texShadowHeight) {
++		auto context = State::GetSingleton()->context;
++
++		std::array<ID3D11ShaderResourceView*, 1> srvs = { texShadowHeight->srv.get() };
++		context->PSSetShaderResources(60, (uint)srvs.size(), srvs.data());
++		context->CSSetShaderResources(60, (uint)srvs.size(), srvs.data());
++	}
++}
++
+ void TerrainShadows::EarlyPrepass()
+ {
+ 	LoadHeightmap();"
+doodlum/skyrim-community-shaders,929,bb1835f63a74dcc0204a3bcab05c5247d4426084,src/Features/TerrainShadows.h,modified,2,0,2,"@@ -78,6 +78,8 @@ struct TerrainShadows : public Feature
+ 	void Precompute();
+ 	void UpdateShadow();
+ 
++	virtual void ReflectionsPrepass() override;
++
+ 	virtual void LoadSettings(json& o_json) override;
+ 	virtual void SaveSettings(json& o_json) override;
+ "
+doodlum/skyrim-community-shaders,929,bb1835f63a74dcc0204a3bcab05c5247d4426084,src/State.cpp,modified,23,13,36,"@@ -39,13 +39,18 @@ void State::Draw()
+ 
+ 		truePBR->SetShaderResouces(context);
+ 
+-		if (auto accumulator = RE::BSGraphics::BSShaderAccumulator::GetCurrentAccumulator()) {
+-			// Set an unused bit to indicate if we are rendering an object in the main rendering passes
+-			if (accumulator->GetRuntimeData().activeShadowSceneNode == smState->shadowSceneNode[0]) {
+-				currentExtraDescriptor |= (uint32_t)ExtraShaderDescriptors::InWorld;
++		if (!deferred->inReflections) {
++			if (auto accumulator = RE::BSGraphics::BSShaderAccumulator::GetCurrentAccumulator()) {
++				// Set an unused bit to indicate if we are rendering an object in the main rendering passes
++				if (accumulator->GetRuntimeData().activeShadowSceneNode == smState->shadowSceneNode[0]) {
++					currentExtraDescriptor |= (uint32_t)ExtraShaderDescriptors::InWorld;
++				}
+ 			}
+ 		}
+ 
++		if (deferred->inReflections)
++			currentExtraDescriptor |= (uint32_t)ExtraShaderDescriptors::IsReflections;
++
+ 		if (deferred->inDecals)
+ 			currentExtraDescriptor |= (uint32_t)ExtraShaderDescriptors::IsDecal;
+ 
+@@ -508,7 +513,7 @@ void State::SetupResources()
+ 	permutationCB = new ConstantBuffer(ConstantBufferDesc<PermutationCB>());
+ 	sharedDataCB = new ConstantBuffer(ConstantBufferDesc<SharedDataCB>());
+ 
+-	auto [data, size] = GetFeatureBufferData();
++	auto [data, size] = GetFeatureBufferData(false);
+ 	featureDataCB = new ConstantBuffer(ConstantBufferDesc((uint32_t)size));
+ 	delete[] data;
+ 
+@@ -658,7 +663,7 @@ void State::SetAdapterDescription(const std::wstring& description)
+ 	adapterDescription = converter.to_bytes(description);
+ }
+ 
+-void State::UpdateSharedData()
++void State::UpdateSharedData(bool a_inWorld)
+ {
+ 	{
+ 		SharedDataCB data{};
+@@ -691,17 +696,22 @@ void State::UpdateSharedData()
+ 		data.FrameCount = viewport->frameCount * (bTAA || State::GetSingleton()->upscalerLoaded);
+ 		data.FrameCountAlwaysActive = viewport->frameCount;
+ 
+-		for (int i = -2; i <= 2; i++) {
+-			for (int k = -2; k <= 2; k++) {
+-				int waterTile = (i + 2) + ((k + 2) * 5);
+-				data.WaterData[waterTile] = Util::TryGetWaterData((float)i * 4096.0f, (float)k * 4096.0f);
++		if (a_inWorld) {
++			for (int i = -2; i <= 2; i++) {
++				for (int k = -2; k <= 2; k++) {
++					int waterTile = (i + 2) + ((k + 2) * 5);
++					data.WaterData[waterTile] = Util::TryGetWaterData((float)i * 4096.0f, (float)k * 4096.0f);
++				}
+ 			}
+ 		}
+ 
+-		if (auto sky = RE::Sky::GetSingleton())
++		if (auto sky = RE::Sky::GetSingleton()) {
+ 			data.InInterior = sky->mode.get() != RE::Sky::Mode::kFull;
+-		else
++			data.HideSky = !data.InInterior && sky->flags.any(RE::Sky::Flags::kHideSky);
++		} else {
+ 			data.InInterior = true;
++			data.HideSky = true;
++		}
+ 
+ 		if (auto ui = RE::UI::GetSingleton())
+ 			data.InMapMenu = ui->IsMenuOpen(RE::MapMenu::MENU_NAME);
+@@ -712,7 +722,7 @@ void State::UpdateSharedData()
+ 	}
+ 
+ 	{
+-		auto [data, size] = GetFeatureBufferData();
++		auto [data, size] = GetFeatureBufferData(a_inWorld);
+ 
+ 		featureDataCB->Update(data, size);
+ "
+doodlum/skyrim-community-shaders,929,bb1835f63a74dcc0204a3bcab05c5247d4426084,src/State.h,modified,7,5,12,"@@ -121,12 +121,13 @@ class State
+ 	enum class ExtraShaderDescriptors : uint32_t
+ 	{
+ 		InWorld = 1 << 0,
+-		IsBeastRace = 1 << 1,
+-		EffectShadows = 1 << 2,
+-		IsDecal = 1 << 3
++		IsReflections = 1 << 1,
++		IsBeastRace = 1 << 2,
++		EffectShadows = 1 << 3,
++		IsDecal = 1 << 4
+ 	};
+ 
+-	void UpdateSharedData();
++	void UpdateSharedData(bool a_inWorld);
+ 
+ 	struct alignas(16) PermutationCB
+ 	{
+@@ -151,7 +152,8 @@ class State
+ 		uint FrameCountAlwaysActive;
+ 		uint InInterior;
+ 		uint InMapMenu;
+-		float3 pad0;
++		uint HideSky;
++		float2 pad0;
+ 	};
+ 
+ 	ConstantBuffer* sharedDataCB = nullptr;"

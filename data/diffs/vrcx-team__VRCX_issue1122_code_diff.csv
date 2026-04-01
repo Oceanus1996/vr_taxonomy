@@ -1,0 +1,524 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vrcx-team/VRCX,1122,d73bcd04c1bc850b26501302ec58fb6d7b22e704,src/app.js,modified,5,0,5,"@@ -9811,6 +9811,7 @@ console.log(`isLinux: ${LINUX}`);
+             privacy: '',
+             shortCode: ''
+         },
++        isRepresentedGroupLoading: false,
+         joinCount: 0,
+         timeSpent: 0,
+         lastSeen: '',
+@@ -10074,6 +10075,7 @@ console.log(`isLinux: ${LINUX}`);
+             shortName: '',
+             ref: {}
+         };
++        D.isRepresentedGroupLoading = true;
+         D.representedGroup = {
+             bannerUrl: '',
+             description: '',
+@@ -10298,6 +10300,9 @@ console.log(`isLinux: ${LINUX}`);
+                         }
+                         API.getRepresentedGroup({ userId }).then((args1) => {
+                             D.representedGroup = args1.json;
++                            if (!args1.json || !args1.json.isRepresenting) {
++                                D.isRepresentedGroupLoading = false;
++                            }
+                         });
+                         D.loading = false;
+                     });"
+vrcx-team/VRCX,1122,d73bcd04c1bc850b26501302ec58fb6d7b22e704,src/classes/uiComponents.js,modified,2,2,4,"@@ -566,7 +566,7 @@ export default class extends baseClass {
+             props: {
+                 userid: String,
+                 location: String,
+-                key: Number,
++                forceUpdateKey: Number,
+                 hint: {
+                     type: String,
+                     default: ''
+@@ -603,7 +603,7 @@ export default class extends baseClass {
+                 location() {
+                     this.parse();
+                 },
+-                key() {
++                forceUpdateKey() {
+                     this.parse();
+                 },
+                 userid() {"
+vrcx-team/VRCX,1122,d73bcd04c1bc850b26501302ec58fb6d7b22e704,src/components/sidebar/GroupsSidebar.vue,modified,14,3,17,"@@ -3,13 +3,16 @@
+         <template v-for=""(group, index) in groupedGroupInstances"">
+             <div
+                 :key=""getGroupId(group)""
+-                class=""x-friend-group x-link sidebar-group-title""
++                class=""x-friend-group x-link""
+                 :style=""{ paddingTop: index === 0 ? '0px' : '10px' }""
+             >
+                 <div @click=""toggleGroupSidebarCollapse(getGroupId(group))"" style=""display: flex; align-items: center"">
+                     <i
+                         class=""el-icon-arrow-right""
+-                        :class=""{ rotate: !groupInstancesCfg[getGroupId(group)].isCollapsed }""
++                        :style=""{
++                            transform: groupInstancesCfg[getGroupId(group)].isCollapsed ? '' : 'rotate(90deg)',
++                            transition: 'transform 0.3s'
++                        }""
+                     ></i>
+                     <span style=""margin-left: 5px"">{{ group[0].group.name }} – {{ group.length }}</span>
+                 </div>
+@@ -79,7 +82,6 @@
+                         };
+                     }
+                 });
+-
+                 return Array.from(groupMap.values()).sort(this.sortGroupInstancesByInGame);
+             }
+         },
+@@ -110,3 +112,12 @@
+         }
+     };
+ </script>
++
++<style scoped>
++    .x-link:hover {
++        text-decoration: none;
++    }
++    .x-link:hover span {
++        text-decoration: underline;
++    }
++</style>"
+vrcx-team/VRCX,1122,d73bcd04c1bc850b26501302ec58fb6d7b22e704,src/index.pug,modified,1,1,2,"@@ -36,7 +36,7 @@ html
+                         circle
+                         style='font-size: 14px; height: 50px; width: 50px')
+ 
+-                el-menu(ref='menu' collapse @select='selectMenu')
++                el-menu(ref='menu' collapse @select='selectMenu' default-active='feed')
+                     mixin menuitem(index, name, icon)
+                         el-menu-item(index=index)
+                             i(class=icon)"
+vrcx-team/VRCX,1122,d73bcd04c1bc850b26501302ec58fb6d7b22e704,src/mixins/dialogs/currentUser.pug,modified,51,46,97,"@@ -99,8 +99,9 @@ mixin currentUser
+                 size='mini'
+                 maxlength='512'
+                 show-word-limit
+-                :autosize='{ minRows: 2, maxRows: 5 }'
+-                :placeholder='$t(""dialog.bio.bio_placeholder"")')
++                :autosize='{ minRows: 5, maxRows: 20 }'
++                :placeholder='$t(""dialog.bio.bio_placeholder"")'
++                style='margin-bottom: 10px')
+             el-input(
+                 v-for='(link, index) in bioDialog.bioLinks'
+                 :key='index'
+@@ -147,7 +148,9 @@ mixin currentUser
+         ref='galleryDialog'
+         :visible.sync='galleryDialogVisible'
+         :title='$t(""dialog.gallery_icons.header"")'
+-        width='100%')
++        width='97vw'
++        top='5vh'
++        destroy-on-close)
+         el-tabs(type='card' ref='galleryTabs')
+             el-tab-pane(v-if='galleryDialogVisible' v-loading='galleryDialogGalleryLoading')
+                 span(slot='label') {{ $t('dialog.gallery_icons.gallery') }}
+@@ -199,7 +202,7 @@ mixin currentUser
+                             icon='el-icon-delete'
+                             circle
+                             style='margin-left: 5px')
+-            el-tab-pane(v-if='galleryDialogVisible' v-loading='galleryDialogIconsLoading')
++            el-tab-pane(v-if='galleryDialogVisible' v-loading='galleryDialogIconsLoading' lazy)
+                 span(slot='label') {{ $t('dialog.gallery_icons.icons') }}
+                     span(style='color: #909399; font-size: 12px; margin-left: 5px') {{ VRCPlusIconsTable.length }}/64
+                 input#VRCPlusIconUploadButton(
+@@ -249,35 +252,36 @@ mixin currentUser
+                             icon='el-icon-delete'
+                             circle
+                             style='margin-left: 5px')
+-            el-tab-pane(v-if='galleryDialogVisible' v-loading='galleryDialogEmojisLoading')
++            el-tab-pane(v-if='galleryDialogVisible' v-loading='galleryDialogEmojisLoading' lazy)
+                 span(slot='label') {{ $t('dialog.gallery_icons.emojis') }}
+                     span(style='color: #909399; font-size: 12px; margin-left: 5px') {{ emojiTable.length }}/9
+                 input#EmojiUploadButton(type='file' accept='image/*' @change='onFileChangeEmoji' style='display: none')
+                 span {{ $t('dialog.gallery_icons.recommended_image_size') }}: 1024x1024px (1:1)
+                 br
+                 br
+-                el-button-group(style='margin-right: 10px')
+-                    el-button(type='default' size='small' @click='refreshEmojiTable' icon='el-icon-refresh') {{ $t('dialog.gallery_icons.refresh') }}
+-                    el-button(
+-                        type='default'
+-                        size='small'
+-                        @click='displayEmojiUpload'
+-                        icon='el-icon-upload2'
+-                        :disabled='!API.currentUser.$isVRCPlus') {{ $t('dialog.gallery_icons.upload') }}
+-                el-select(v-model='emojiAnimationStyle' popper-class='max-height-el-select')
+-                    el-option-group {{ $t('dialog.gallery_icons.emoji_animation_styles') }}
+-                        el-option.x-friend-item(
+-                            v-for='(fileName, styleName) in emojiAnimationStyleList'
+-                            :key='fileName'
+-                            :label='styleName'
+-                            :value='styleName'
+-                            style='height: auto')
+-                            .avatar(style='width: 200px; height: 200px')
+-                                img(v-lazy='`${emojiAnimationStyleUrl}${fileName}`')
+-                            .detail
+-                                span.name(v-text='styleName' style='margin-right: 100px')
+-                el-checkbox(v-model='emojiAnimType' style='margin-left: 10px; margin-right: 10px')
+-                    span {{ $t('dialog.gallery_icons.emoji_animation_type') }}
++                div(style='display: flex; align-items: center')
++                    el-button-group(style='margin-right: 10px')
++                        el-button(type='default' size='small' @click='refreshEmojiTable' icon='el-icon-refresh') {{ $t('dialog.gallery_icons.refresh') }}
++                        el-button(
++                            type='default'
++                            size='small'
++                            @click='displayEmojiUpload'
++                            icon='el-icon-upload2'
++                            :disabled='!API.currentUser.$isVRCPlus') {{ $t('dialog.gallery_icons.upload') }}
++                    el-select(v-model='emojiAnimationStyle' popper-class='max-height-el-select')
++                        el-option-group {{ $t('dialog.gallery_icons.emoji_animation_styles') }}
++                            el-option.x-friend-item(
++                                v-for='(fileName, styleName) in emojiAnimationStyleList'
++                                :key='styleName'
++                                :label='styleName'
++                                :value='styleName'
++                                style='height: auto')
++                                .avatar(style='width: 200px; height: 200px')
++                                    img(v-lazy='`${emojiAnimationStyleUrl}${fileName}`')
++                                .detail
++                                    span.name(v-text='styleName' style='margin-right: 100px')
++                    el-checkbox(v-model='emojiAnimType' style='margin-left: 10px; margin-right: 10px')
++                        span {{ $t('dialog.gallery_icons.emoji_animation_type') }}
+                 template(v-if='emojiAnimType')
+                     span(style='margin-right: 10px') {{ $t('dialog.gallery_icons.emoji_animation_fps') }}
+                     el-input-number(
+@@ -333,7 +337,7 @@ mixin currentUser
+                             icon='el-icon-delete'
+                             circle
+                             style='margin-left: 5px')
+-            el-tab-pane(v-if='galleryDialogVisible' v-loading='galleryDialogStickersLoading')
++            el-tab-pane(v-if='galleryDialogVisible' v-loading='galleryDialogStickersLoading' lazy)
+                 span(slot='label') {{ $t('dialog.gallery_icons.stickers') }}
+                     span(style='color: #909399; font-size: 12px; margin-left: 5px') {{ stickerTable.length }}/9
+                 input#StickerUploadButton(
+@@ -377,30 +381,31 @@ mixin currentUser
+                             icon='el-icon-delete'
+                             circle
+                             style='margin-left: 5px')
+-            el-tab-pane(v-if='galleryDialogVisible' v-loading='galleryDialogPrintsLoading')
++            el-tab-pane(v-if='galleryDialogVisible' v-loading='galleryDialogPrintsLoading' lazy)
+                 span(slot='label') {{ $t('dialog.gallery_icons.prints') }}
+                     span(style='color: #909399; font-size: 12px; margin-left: 5px') {{ printTable.length }}/64
+                 input#PrintUploadButton(type='file' accept='image/*' @change='onFileChangePrint' style='display: none')
+                 span {{ $t('dialog.gallery_icons.recommended_image_size') }}: 1920x1080px (16:9)
+                 br
+                 br
+-                el-button-group
+-                    el-button(type='default' size='small' @click='refreshPrintTable' icon='el-icon-refresh') {{ $t('dialog.gallery_icons.refresh') }}
+-                    el-button(
+-                        type='default'
+-                        size='small'
+-                        @click='displayPrintUpload'
+-                        icon='el-icon-upload2'
+-                        :disabled='!API.currentUser.$isVRCPlus') {{ $t('dialog.gallery_icons.upload') }}
+-                el-input(
+-                    type='textarea'
+-                    v-model='printUploadNote'
+-                    size='mini'
+-                    rows='1'
+-                    resize='none'
+-                    maxlength='32'
+-                    style='margin-left: 10px; width: 300px'
+-                    :placeholder='$t(""dialog.gallery_icons.note"")')
++                div(style='display: flex; align-items: center')
++                    el-button-group
++                        el-button(type='default' size='small' @click='refreshPrintTable' icon='el-icon-refresh') {{ $t('dialog.gallery_icons.refresh') }}
++                        el-button(
++                            type='default'
++                            size='small'
++                            @click='displayPrintUpload'
++                            icon='el-icon-upload2'
++                            :disabled='!API.currentUser.$isVRCPlus') {{ $t('dialog.gallery_icons.upload') }}
++                    el-input(
++                        type='textarea'
++                        v-model='printUploadNote'
++                        size='mini'
++                        rows='1'
++                        resize='none'
++                        maxlength='32'
++                        style='margin-left: 10px; width: 300px'
++                        :placeholder='$t(""dialog.gallery_icons.note"")')
+                 br
+                 .x-friend-item(
+                     v-for='image in printTable'"
+vrcx-team/VRCX,1122,d73bcd04c1bc850b26501302ec58fb6d7b22e704,src/mixins/dialogs/favoritesDialog.pug,modified,2,1,3,"@@ -158,7 +158,8 @@ mixin favoritesDialog
+         ref='worldImportDialog'
+         :visible.sync='worldImportDialog.visible'
+         :title='$t(""dialog.world_import.header"")'
+-        width='650px')
++        width='650px'
++        top='10vh')
+         div(style='display: flex; align-items: center; justify-content: space-between')
+             div(style='font-size: 12px') {{ $t('dialog.world_import.description') }}
+             div(style='display: flex; align-items: center')"
+vrcx-team/VRCX,1122,d73bcd04c1bc850b26501302ec58fb6d7b22e704,src/mixins/dialogs/images.pug,modified,2,2,4,"@@ -136,7 +136,7 @@ mixin images
+         @mousedown.native='dialogMouseDown'
+         @mouseup.native='dialogMouseUp'
+         :visible.sync='fullscreenImageDialog.visible'
+-        top='3vh'
++        top='1vh'
+         width='97vw')
+         div(style='margin: 0 0 5px 5px')
+             el-button(@click='copyImageUrl(fullscreenImageDialog.imageUrl)' size='mini' icon='el-icon-s-order' circle)
+@@ -147,4 +147,4 @@ mixin images
+                 circle
+                 @click='downloadAndSaveImage(fullscreenImageDialog.imageUrl, fullscreenImageDialog.fileName)'
+                 style='margin-left: 5px')
+-        img(v-lazy='fullscreenImageDialog.imageUrl' style='width: 100%; height: 100vh; object-fit: contain')
++        img(v-lazy='fullscreenImageDialog.imageUrl' style='width: 100%; height: 85vh; object-fit: contain')"
+vrcx-team/VRCX,1122,d73bcd04c1bc850b26501302ec58fb6d7b22e704,src/mixins/dialogs/launch.pug,modified,14,9,23,"@@ -8,7 +8,7 @@ mixin launch
+         :visible.sync='launchDialog.visible'
+         :title='$t(""dialog.launch.header"")'
+         width='450px')
+-        el-form(:model='launchDialog' label-width='80px')
++        el-form(:model='launchDialog' label-width='100px')
+             el-form-item(:label='$t(""dialog.launch.url"")')
+                 el-input(
+                     v-model='launchDialog.url'
+@@ -20,22 +20,27 @@ mixin launch
+                         @click='copyInstanceMessage(launchDialog.url)'
+                         size='mini'
+                         icon='el-icon-s-order'
+-                        style='margin-right: 5px'
++                        style='margin-left: 5px'
+                         circle)
+-            el-form-item(v-if='launchDialog.shortUrl' :label='$t(""dialog.launch.short_url"")')
+-                el-tooltip(placement='top' style='margin-left: 5px' :content='$t(""dialog.launch.short_url_notice"")')
+-                    i.el-icon-warning
++            el-form-item(v-if='launchDialog.shortUrl')
++                template(#label)
++                    span {{ $t('dialog.launch.short_url') }}
++                    el-tooltip(
++                        placement='top'
++                        style='margin-left: 5px'
++                        :content='$t(""dialog.launch.short_url_notice"")')
++                        i.el-icon-warning
+                 el-input(
+                     v-model='launchDialog.shortUrl'
+                     size='mini'
+                     @click.native='$event.target.tagName === ""INPUT"" && $event.target.select()'
+-                    style='width: 241px')
++                    style='width: 260px')
+                 el-tooltip(placement='right' :content='$t(""dialog.launch.copy_tooltip"")' :disabled='hideTooltips')
+                     el-button(
+                         @click='copyInstanceMessage(launchDialog.shortUrl)'
+                         size='mini'
+                         icon='el-icon-s-order'
+-                        style='margin-right: 5px'
++                        style='margin-left: 5px'
+                         circle)
+             el-form-item(:label='$t(""dialog.launch.location"")')
+                 el-input(
+@@ -48,10 +53,10 @@ mixin launch
+                         @click='copyInstanceMessage(launchDialog.location)'
+                         size='mini'
+                         icon='el-icon-s-order'
+-                        style='margin-right: 5px'
++                        style='margin-left: 5px'
+                         circle)
++        el-checkbox(v-model='launchDialog.desktop' @change='saveLaunchDialog' style='float: left; margin-top: 5px') {{ $t('dialog.launch.start_as_desktop') }}
+         template(#footer)
+-            el-checkbox(v-model='launchDialog.desktop' @change='saveLaunchDialog' style='float: left; margin-top: 5px') {{ $t('dialog.launch.start_as_desktop') }}
+             el-button(size='small' @click='showPreviousInstanceInfoDialog(launchDialog.location)') {{ $t('dialog.launch.info') }}
+             el-button(
+                 size='small'"
+vrcx-team/VRCX,1122,d73bcd04c1bc850b26501302ec58fb6d7b22e704,src/mixins/dialogs/previousInstances.pug,modified,2,2,4,"@@ -32,7 +32,7 @@ mixin previousInstances
+                     display-name(
+                         :userid='scope.row.$location.userId'
+                         :location='scope.row.$location.tag'
+-                        :key='previousInstancesUserDialog.forceUpdate')
++                        :force-update-key='previousInstancesUserDialog.forceUpdate')
+             el-table-column(:label='$t(""table.previous_instances.time"")' prop='time' width='100' sortable)
+                 template(#default='scope')
+                     span(v-text='scope.row.timer')
+@@ -95,7 +95,7 @@ mixin previousInstances
+                     display-name(
+                         :userid='scope.row.$location.userId'
+                         :location='scope.row.$location.tag'
+-                        :key='previousInstancesWorldDialog.forceUpdate')
++                        :force-update-key='previousInstancesWorldDialog.forceUpdate')
+             el-table-column(:label='$t(""table.previous_instances.time"")' prop='time' width='100' sortable)
+                 template(#default='scope')
+                     span(v-text='scope.row.timer')"
+vrcx-team/VRCX,1122,d73bcd04c1bc850b26501302ec58fb6d7b22e704,src/mixins/dialogs/userDialog.pug,modified,12,7,19,"@@ -445,18 +445,23 @@ mixin userDialog
+                         .x-friend-item(style='width: 100%; cursor: default')
+                             .detail
+                                 span.name(style='margin-bottom: 5px') {{ $t('dialog.user.info.represented_group') }}
+-                                .extra(v-if='userDialog.representedGroup?.isRepresenting')
++                                .extra(
++                                    v-if='userDialog.isRepresentedGroupLoading || (userDialog.representedGroup && userDialog.representedGroup.isRepresenting)')
+                                     div(style='display: inline-block; flex: none; margin-right: 5px')
+                                         el-popover(placement='right' width='500px' trigger='click')
+-                                            img.x-link(
++                                            el-image.x-link(
+                                                 slot='reference'
++                                                v-loading='userDialog.isRepresentedGroupLoading'
+                                                 :src='userDialog.representedGroup.iconUrl'
+-                                                style='flex: none; width: 60px; height: 60px; border-radius: 4px; object-fit: cover')
++                                                style='flex: none; width: 60px; height: 60px; border-radius: 4px; object-fit: cover; background: #f5f7fa'
++                                                @load='userDialog.isRepresentedGroupLoading = false')
++                                                div(slot='error')
+                                             img.x-link(
+-                                                :src='userDialog.representedGroup.iconUrl'
++                                                v-lazy='userDialog.representedGroup.iconUrl'
+                                                 style='height: 500px'
+                                                 @click='showFullscreenImageDialog(userDialog.representedGroup.iconUrl)')
+                                     span(
++                                        v-if='userDialog.representedGroup.isRepresenting'
+                                         style='vertical-align: top; cursor: pointer'
+                                         @click='showGroupDialog(userDialog.representedGroup.groupId)')
+                                         span(
+@@ -691,12 +696,12 @@ mixin userDialog
+                                         el-button(
+                                             @click='moveGroupUp(group.id)'
+                                             size='mini'
+-                                            icon='el-icon-arrow-up'
+-                                            style='display: block; padding: 7px; font-size: 9px; margin-left: 0')
++                                            icon='el-icon-download'
++                                            style='display: block; padding: 7px; font-size: 9px; margin-left: 0; rotate: 180deg')
+                                         el-button(
+                                             @click='moveGroupDown(group.id)'
+                                             size='mini'
+-                                            icon='el-icon-arrow-down'
++                                            icon='el-icon-download'
+                                             style='display: block; padding: 7px; font-size: 9px; margin-left: 0')
+                                     div(@click.stop style='margin-right: 10px')
+                                         el-button("
+vrcx-team/VRCX,1122,d73bcd04c1bc850b26501302ec58fb6d7b22e704,src/mixins/friendsListSidebar.pug,modified,1,3,4,"@@ -169,9 +169,7 @@ mixin friendsListSidebar
+                                                         v-else
+                                                         v-text='friend.ref.displayName'
+                                                         :style='{ color: friend.ref.$userColour }')
+-                                                    i.el-icon-star-on(
+-                                                        v-if='friend.isVIP'
+-                                                        style='color: #ffd700; margin: 1px 0 0 2px')
++                                                    span(v-if='friend.isVIP' style='margin-left: 2px') ⭐
+                                                 span.extra(v-if='friend.pendingOffline') #[i.el-icon-warning-outline] {{ $t('side_panel.pending_offline') }}
+                                                 template(v-else)
+                                                     template(v-if='friend.ref.travelingToLocation')"
+vrcx-team/VRCX,1122,d73bcd04c1bc850b26501302ec58fb6d7b22e704,src/mixins/tabs/feed.pug,modified,33,30,63,"@@ -1,33 +1,32 @@
+ mixin feedTab
+     .x-container(v-show='$refs.menu && $refs.menu.activeIndex === \'feed\'')
+-        data-tables(v-bind='feedTable' v-loading='feedTable.loading')
+-            template(#tool)
+-                div(style='margin: 0 0 10px; display: flex; align-items: center')
+-                    div(style='flex: none; margin-right: 10px; display: flex; align-items: center')
+-                        el-tooltip(
+-                            placement='bottom'
+-                            :content='$t(""view.feed.favorites_only_tooltip"")'
+-                            :disabled='hideTooltips')
+-                            el-switch(v-model='feedTable.vip' @change='feedTableLookup' active-color='#13ce66')
+-                    el-select(
+-                        v-model='feedTable.filter'
+-                        @change='feedTableLookup'
+-                        multiple
+-                        clearable
+-                        style='flex: 1; height: 40px'
+-                        :placeholder='$t(""view.feed.filter_placeholder"")')
+-                        el-option(
+-                            v-for='type in [""GPS"", ""Online"", ""Offline"", ""Status"", ""Avatar"", ""Bio""]'
+-                            :key='type'
+-                            :label='$t(""view.feed.filters."" + type)'
+-                            :value='type')
+-                    el-input(
+-                        v-model='feedTable.search'
+-                        :placeholder='$t(""view.feed.search_placeholder"")'
+-                        @keyup.native.13='feedTableLookup'
+-                        @change='feedTableLookup'
+-                        clearable
+-                        style='flex: none; width: 150px; margin: 0 10px')
++        div(style='margin: 0 0 10px; display: flex; align-items: center')
++            div(style='flex: none; margin-right: 10px; display: flex; align-items: center')
++                el-tooltip(
++                    placement='bottom'
++                    :content='$t(""view.feed.favorites_only_tooltip"")'
++                    :disabled='hideTooltips')
++                    el-switch(v-model='feedTable.vip' @change='feedTableLookup' active-color='#13ce66')
++            el-select(
++                v-model='feedTable.filter'
++                @change='feedTableLookup'
++                multiple
++                clearable
++                style='flex: 1; height: 40px'
++                :placeholder='$t(""view.feed.filter_placeholder"")')
++                el-option(
++                    v-for='type in [""GPS"", ""Online"", ""Offline"", ""Status"", ""Avatar"", ""Bio""]'
++                    :key='type'
++                    :label='$t(""view.feed.filters."" + type)'
++                    :value='type')
++            el-input(
++                v-model='feedTable.search'
++                :placeholder='$t(""view.feed.search_placeholder"")'
++                @keyup.native.13='feedTableLookup'
++                @change='feedTableLookup'
++                clearable
++                style='flex: none; width: 150px; margin: 0 10px')
++        data-tables(v-bind='feedTable' v-loading='feedTable.loading' lazy) 
+             el-table-column(type='expand' width='20')
+                 template(#default='scope')
+                     div(style='position: relative; font-size: 14px')
+@@ -58,7 +57,9 @@ mixin feedTab
+                         template(v-else-if='scope.row.type === ""Avatar""')
+                             div(style='display: flex; align-items: center')
+                                 el-popover(placement='right' width='500px' trigger='click')
+-                                    div(slot='reference' style='display: inline-block; vertical-align: top; width: 160px')
++                                    div(
++                                        slot='reference'
++                                        style='display: inline-block; vertical-align: top; width: 160px')
+                                         template(v-if='scope.row.previousCurrentAvatarThumbnailImageUrl')
+                                             img.x-link(
+                                                 v-lazy='scope.row.previousCurrentAvatarThumbnailImageUrl'
+@@ -77,7 +78,9 @@ mixin feedTab
+                                 span(style='position: relative; margin: 0 10px')
+                                     i.el-icon-right
+                                 el-popover(placement='right' width='500px' trigger='click')
+-                                    div(slot='reference' style='display: inline-block; vertical-align: top; width: 160px')
++                                    div(
++                                        slot='reference'
++                                        style='display: inline-block; vertical-align: top; width: 160px')
+                                         template(v-if='scope.row.currentAvatarThumbnailImageUrl')
+                                             img.x-link(
+                                                 v-lazy='scope.row.currentAvatarThumbnailImageUrl'"
+vrcx-team/VRCX,1122,d73bcd04c1bc850b26501302ec58fb6d7b22e704,src/mixins/tabs/friendsList.pug,modified,8,3,11,"@@ -79,6 +79,7 @@ mixin friendsListTab
+             data-tables(
+                 v-bind='friendsListTable'
+                 @row-click='selectFriendsListRow'
++                :table-props='{ height: ""calc(100vh - 170px)"", size: ""mini"" }'
+                 style='margin-top: 10px; cursor: pointer')
+                 el-table-column(
+                     width='55'
+@@ -129,8 +130,10 @@ mixin friendsListTab
+                     sortable
+                     :sort-method='(a, b) => sortStatus(a.status, b.status)')
+                     template(#default='scope')
+-                        i.x-user-status(v-if='scope.row.status !== ""offline""' :class='statusClass(scope.row.status)')
+-                        span ‎
++                        i.x-user-status(
++                            v-if='scope.row.status !== ""offline""'
++                            :class='statusClass(scope.row.status)'
++                            style='margin-right: 3px')
+                         span(v-text='scope.row.statusDescription')
+                 el-table-column(
+                     :label='$t(""table.friendList.language"")'
+@@ -142,7 +145,9 @@ mixin friendsListTab
+                         el-tooltip(v-for='item in scope.row.$languages' :key='item.key' placement='top')
+                             template(#content)
+                                 span {{ item.value }} ({{ item.key }})
+-                            span.flags(:class='languageClass(item.key)' style='display: inline-block; margin-right: 5px')
++                            span.flags(
++                                :class='languageClass(item.key)'
++                                style='display: inline-block; margin-right: 5px')
+                 el-table-column(:label='$t(""table.friendList.bioLink"")' width='100' prop='bioLinks')
+                     template(#default='scope')
+                         el-tooltip(v-if='link' v-for='(link, index) in scope.row.bioLinks' :key='index')"
+vrcx-team/VRCX,1122,d73bcd04c1bc850b26501302ec58fb6d7b22e704,src/mixins/tabs/playerList.pug,modified,1,2,3,"@@ -448,8 +448,7 @@ mixin playerListTab
+                     el-table-column(:label='$t(""table.playerList.status"")' min-width='180' prop='ref.status')
+                         template(#default='scope')
+                             template(v-if='scope.row.ref.status')
+-                                i.x-user-status(:class='statusClass(scope.row.ref.status)')
+-                                span ‎
++                                i.x-user-status(:class='statusClass(scope.row.ref.status)' style='margin-right: 3px')
+                                 span(v-text='scope.row.ref.statusDescription')
+                     //- el-table-column(label=""Group"" min-width=""180"" prop=""groupOnNameplate"" sortable)
+                     //-     template(v-once #default=""scope"")"

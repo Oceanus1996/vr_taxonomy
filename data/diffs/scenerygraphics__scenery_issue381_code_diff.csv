@@ -1,0 +1,136 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+scenerygraphics/scenery,381,cf297d466bcf24774a8e5aecb65842f5e11961aa,src/main/kotlin/graphics/scenery/Camera.kt,modified,16,16,32,"@@ -185,22 +185,22 @@ open class Camera : DefaultNode(""Camera""), HasRenderable, HasMaterial, HasCustom
+      * Returns (worldPos, worldDir)
+      */
+     fun screenPointToRay(x: Int, y: Int): Pair<Vector3f, Vector3f> {
+-        val view = (if (targeted) target - spatial().position else  forward).normalize()
+-        var h = Vector3f(view).cross(up).normalize()
+-        var v = Vector3f(h).cross(view)
+-
+-        val fov = fov * Math.PI / 180.0f
+-        val lengthV = tan(fov / 2.0).toFloat() * nearPlaneDistance
+-        val lengthH = lengthV * (width / height)
+-
+-        v *= lengthV
+-        h *= lengthH
+-
+-        val posX = (x - width / 2.0f) / (width / 2.0f)
+-        val posY = -1.0f * (y - height / 2.0f) / (height / 2.0f)
+-
+-        val worldPos = spatial().position + view * nearPlaneDistance + h * posX + v * posY
+-        val worldDir = (worldPos - spatial().position).normalize()
++        // calculate aspect ratio, note here that both width and height
++        // are integers and need to be converted before the division, otherwise
++        // we end up with an incorrect (integer) result
++        val aspect: Float = width.toFloat() / height.toFloat()
++        val tanFov = tan(fov / 2.0f * PI.toFloat()/180.0f)
++
++        // shift the x and y coordinates to a [-1, 1] coordinate system,
++        // with 0,0 being center
++        val posX = (2.0f * (( x + 0.5f)/width) - 1) * tanFov * aspect
++        val posY = (1.0f - 2.0f * ((y + 0.5f)/height)) * tanFov
++
++        // transform both origin points and screen-space positions with the view matrix to world space
++        val worldPos = spatial().viewToWorld(Vector3f(posX, posY, -1.0f)).xyz()
++        val origin = spatial().viewToWorld(Vector3f(0.0f)).xyz()
++
++        val worldDir = (worldPos - origin).normalize()
+         return Pair(worldPos, worldDir)
+     }
+ "
+scenerygraphics/scenery,381,cf297d466bcf24774a8e5aecb65842f5e11961aa,src/main/kotlin/graphics/scenery/Scene.kt,modified,12,14,26,"@@ -209,11 +209,11 @@ open class Scene : DefaultNode(""RootNode""), HasRenderable, HasMaterial, HasSpati
+             indicatorMaterial.specular = Vector3f(1.0f, 0.2f, 0.2f)
+             indicatorMaterial.ambient = Vector3f(0.0f, 0.0f, 0.0f)
+ 
+-            for(it in 5..50) {
+-                val s = Box(Vector3f(0.08f, 0.08f, 0.08f))
++            for(it in 1..20) {
++                val s = Box(Vector3f(0.03f))
+                 s.setMaterial(indicatorMaterial)
+                 s.spatial {
+-                    this.position = position + direction * it.toFloat()
++                    this.position = position + direction * (it.toFloat() * 0.5f)
+                 }
+                 this.addChild(s)
+             }
+@@ -226,14 +226,14 @@ open class Scene : DefaultNode(""RootNode""), HasRenderable, HasMaterial, HasSpati
+                 Stream.concat(Stream.of(it as Node), it.instances.map { instanceNode -> instanceNode as Node }.stream())
+             else
+                 Stream.of(it)).asSequence()
+-        }.map {
+-            Pair(it, it.spatialOrNull()?.intersectAABB(position, direction))
+-        }.filter {
+-            it.first !is InstancedNode
+-        }.filter {
+-            it.second is MaybeIntersects.Intersection && (it.second as MaybeIntersects.Intersection).distance > 0.0f
+-        }.map {
+-            RaycastMatch(it.first, (it.second as MaybeIntersects.Intersection).distance)
++        }.mapNotNull {
++            val p = Pair(it, it.spatialOrNull()?.intersectAABB(position, direction))
++            if(p.first !is InstancedNode && p.second is MaybeIntersects.Intersection
++                && (p.second as MaybeIntersects.Intersection).distance > 0.0f) {
++                RaycastMatch(p.first, (p.second as MaybeIntersects.Intersection).distance)
++            } else {
++                null
++            }
+         }.sortedBy {
+             it.distance
+         }
+@@ -246,9 +246,7 @@ open class Scene : DefaultNode(""RootNode""), HasRenderable, HasMaterial, HasSpati
+             m.specular = Vector3f(0.0f, 0.0f, 0.0f)
+             m.ambient = Vector3f(0.0f, 0.0f, 0.0f)
+ 
+-            matches.firstOrNull()?.let {
+-                it.node.setMaterial(m)
+-            }
++            matches.firstOrNull()?.node?.setMaterial(m)
+         }
+ 
+         return RaycastResult(matches, position, direction)"
+scenerygraphics/scenery,381,cf297d466bcf24774a8e5aecb65842f5e11961aa,src/test/kotlin/graphics/scenery/tests/examples/advanced/MouseInputExample.kt,modified,3,3,6,"@@ -26,9 +26,9 @@ import kotlin.concurrent.thread
+  * @author Ulrik Günther <hello@ulrik.is>
+  * @author Jan Tiemann
+  */
+-class MouseInputExample : SceneryBase(""MouseInputExample"", wantREPL = true) {
++class MouseInputExample : SceneryBase(""MouseInputExample"", 1280, 720) {
+     override fun init() {
+-        renderer = hub.add(Renderer.createRenderer(hub, applicationName, scene, 512, 512))
++        renderer = hub.add(Renderer.createRenderer(hub, applicationName, scene, windowWidth, windowHeight))
+ 
+         for (i in 0 until 200) {
+             if (i % 2 == 0) {
+@@ -70,7 +70,7 @@ class MouseInputExample : SceneryBase(""MouseInputExample"", wantREPL = true) {
+         val cam: Camera = DetachedHeadCamera()
+         with(cam) {
+             spatial().position = Vector3f(0.0f, 0.0f, 5.0f)
+-            perspectiveCamera(50.0f, 512, 512)
++            perspectiveCamera(50.0f, windowWidth, windowHeight)
+ 
+             scene.addChild(this)
+         }"
+scenerygraphics/scenery,381,cf297d466bcf24774a8e5aecb65842f5e11961aa,src/test/kotlin/graphics/scenery/tests/unit/CameraTests.kt,modified,9,3,12,"@@ -84,7 +84,7 @@ class CameraTests {
+             val b = Box()
+             b.spatial().position = Vector3f(0.0f,
+                 0f,
+-                Random.randomFromRange(2.0f, 10.0f))
++                Random.randomFromRange(-2.0f, -10.0f))
+             s.addChild(b)
+             b
+         }
+@@ -108,8 +108,14 @@ class CameraTests {
+ 
+         val (pos,dir) = cam.screenPointToRay(1280/2,720/2)
+ 
+-        assertEquals(Vector3f(0f,0f,0.01f),pos, ""ray start position"")
+-        assertEquals(Vector3f(0f,0f,1f),dir, ""ray direction"")
++        val epsilon = 0.001f
++        assertEquals(0.0f, pos.x, epsilon, ""Position X"")
++        assertEquals(0.0f, pos.y, epsilon, ""Position Y"")
++        assertEquals(-1.0f, pos.z, epsilon, ""Position Z"")
++
++        assertEquals(0.0f, dir.x, epsilon, ""Direction X"")
++        assertEquals(0.0f, dir.y, epsilon, ""Direction Y"")
++        assertEquals(-1.0f, dir.z, epsilon, ""Direction Z"")
+ 
+     }
+ }"

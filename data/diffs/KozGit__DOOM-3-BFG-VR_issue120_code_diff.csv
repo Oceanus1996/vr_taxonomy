@@ -1,0 +1,84 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+KozGit/DOOM-3-BFG-VR,120,746c9ce20a5ae82fb820351f9d3b1e7f0baa8548,neo/idlib/Lib.cpp,modified,0,6,6,"@@ -29,12 +29,6 @@ If you have questions concerning this license or the applicable additional terms
+ #include ""precompiled.h""
+ #pragma hdrstop
+ 
+-#if defined( MACOS_X )
+-#include <signal.h>
+-#include <sys/types.h>
+-#include <unistd.h>
+-#endif
+-
+ /*
+ ===============================================================================
+ "
+KozGit/DOOM-3-BFG-VR,120,746c9ce20a5ae82fb820351f9d3b1e7f0baa8548,neo/idlib/math/Math.h,modified,0,7,7,"@@ -29,13 +29,6 @@ If you have questions concerning this license or the applicable additional terms
+ #ifndef __MATH_MATH_H__
+ #define __MATH_MATH_H__
+ 
+-#ifdef MACOS_X
+-// for square root estimate instruction
+-#include <ppc_intrinsics.h>
+-// for FLT_MIN
+-#include <float.h>
+-#endif
+-
+ /*
+ ===============================================================================
+ "
+KozGit/DOOM-3-BFG-VR,120,746c9ce20a5ae82fb820351f9d3b1e7f0baa8548,neo/idlib/math/Simd.cpp,modified,6,2,8,"@@ -30,6 +30,10 @@ If you have questions concerning this license or the applicable additional terms
+ #pragma hdrstop
+ #include ""precompiled.h""
+ 
++#ifdef __APPLE__
++#include <mach/mach_time.h>
++#endif
++
+ #include ""Simd_Generic.h""
+ #include ""Simd_SSE.h""
+ 
+@@ -167,7 +171,7 @@ long saved_ebx = 0;
+ 	__asm xor eax, eax						\
+ 	__asm cpuid
+ 
+-#elif MACOS_X // DG: versions for OSX and others from dhewm3
++#elif defined(__APPLE__) // DG: versions for OSX and others from dhewm3
+ 
+ double ticksPerNanosecond;
+ 
+@@ -179,7 +183,7 @@ double ticksPerNanosecond;
+ #define StopRecordTime( end )				\
+ 	end = mach_absolute_time();
+ 
+-#else // not _MSC_VER and _M_IX86 or MACOS_X
++#else // not _MSC_VER and _M_IX86 or __APPLE__
+ // FIXME: meaningful values/functions here for Linux?
+ #define TIME_TYPE int
+ "
+KozGit/DOOM-3-BFG-VR,120,746c9ce20a5ae82fb820351f9d3b1e7f0baa8548,neo/sys/common/socket_net.cpp,modified,2,2,4,"@@ -64,7 +64,7 @@ Note that other POSIX systems may need some small changes, e.g. in Sys_InitNetwo
+ #include <errno.h>
+ #include <sys/select.h>
+ #include <net/if.h>
+-#if defined(MACOS_X) || defined(__FreeBSD__)
++#if defined(__APPLE__) || defined(__FreeBSD__)
+ #include <ifaddrs.h>
+ #endif
+ 
+@@ -954,7 +954,7 @@ void Sys_InitNetworking()
+ 	}
+ 	free( pAdapterInfo );
+ 	
+-#elif defined(MACOS_X) || defined(__FreeBSD__)
++#elif defined(__APPLE__) || defined(__FreeBSD__)
+ 	// haven't been able to clearly pinpoint which standards or RFCs define SIOCGIFCONF, SIOCGIFADDR, SIOCGIFNETMASK ioctls
+ 	// it seems fairly widespread, in Linux kernel ioctl, and in BSD .. so let's assume it's always available on our targets
+ 	"
+KozGit/DOOM-3-BFG-VR,120,746c9ce20a5ae82fb820351f9d3b1e7f0baa8548,neo/sys/posix/posix_main.cpp,modified,1,1,2,"@@ -1349,7 +1349,7 @@ char* Posix_ConsoleInput()
+ 	{
+ 		// disabled on OSX. works fine from a terminal, but launching from Finder is causing trouble
+ 		// I'm pretty sure it could be re-enabled if needed, and just handling the Finder failure case right (TTimo)
+-#ifndef MACOS_X
++#ifndef __APPLE__
+ 		// no terminal support - read only complete lines
+ 		int				len;
+ 		fd_set			fdset;"

@@ -1,0 +1,32 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+cosmoscout/cosmoscout-vr,363,882850f,docs/changelog.md,modified,2,1,3,"@@ -55,8 +55,9 @@ SPDX-License-Identifier: CC-BY-4.0
+ 
+ #### Bug Fixes
+ 
+-* The user interface now avoids rerenders of components that did not change. This lead to the whole UI rerendering most of the time. 
++* The user interface now avoids rerenders of components that did not change. This lead to the whole UI rerendering most of the time.
+ * There were some scenarios where corrupt tiff files in the map-cache directory weren't removed. Appropriate error handling has been added.
++* Fixed an issue which caused the sunlight direction not to be updated after reloading a scene.
+ 
+ 
+ ## [v1.7.0](https://github.com/cosmoscout/cosmoscout-vr/releases)"
+cosmoscout/cosmoscout-vr,363,882850f,src/cs-core/SolarSystem.cpp,modified,13,0,13,"@@ -40,6 +40,19 @@ SolarSystem::SolarSystem(std::shared_ptr<Settings> settings,
+     , mTimeControl(std::move(timeControl))
+     , mSun(getObject(""Sun"")) {
+ 
++  // Make sure to update our pointer to the Sun if the settings are reloaded.
++  mSettings->mObjects.onAdd().connect([this](auto const& name, auto const& object) {
++    if (name == ""Sun"") {
++      mSun = object;
++    }
++  });
++
++  mSettings->mObjects.onRemove().connect([this](auto const& name, auto const& /*object*/) {
++    if (name == ""Sun"") {
++      mSun.reset();
++    }
++  });
++
+   // Tell the user what's going on.
+   logger().debug(""Creating SolarSystem."");
+ }"

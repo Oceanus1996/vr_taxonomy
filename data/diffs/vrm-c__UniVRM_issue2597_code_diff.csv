@@ -1,0 +1,45 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vrm-c/UniVRM,2597,7158deefc7044a0df95a29266a2bbd4473888341,Assets/VRM10/Runtime/IO/Material/BuiltInRP/Import/Materials/BuiltInVrm10MToonMaterialImporter.cs,modified,8,5,13,"@@ -36,7 +36,7 @@ public static bool TryCreateParam(GltfData data, int i, out MaterialDescriptor m
+                 null,
+                 Vrm10MToonTextureImporter.EnumerateAllTextures(data, m, mtoon).ToDictionary(tuple => tuple.key, tuple => tuple.Item2.Item2),
+                 TryGetAllFloats(m, mtoon).ToDictionary(tuple => tuple.key, tuple => tuple.value),
+-                TryGetAllColors(m, mtoon).ToDictionary(tuple => tuple.key, tuple => tuple.value),
++                TryGetAllColors(data, m, mtoon).ToDictionary(tuple => tuple.key, tuple => tuple.value),
+                 TryGetAllFloatArrays(m, mtoon).ToDictionary(tuple => tuple.key, tuple => tuple.value),
+                 new Action<Material>[]
+                 {
+@@ -50,7 +50,7 @@ public static bool TryCreateParam(GltfData data, int i, out MaterialDescriptor m
+             return true;
+         }
+ 
+-        public static IEnumerable<(string key, Color value)> TryGetAllColors(glTFMaterial material, VRMC_materials_mtoon mToon)
++        public static IEnumerable<(string key, Color value)> TryGetAllColors(GltfData data, glTFMaterial material, VRMC_materials_mtoon mToon)
+         {
+             const ColorSpace gltfColorSpace = ColorSpace.Linear;
+ 
+@@ -72,10 +72,13 @@ public static bool TryCreateParam(GltfData data, int i, out MaterialDescriptor m
+ 
+             // Emission
+             // Emissive factor should be stored in Linear space
+-            var emissionColor = material?.emissiveFactor?.ToColor3(gltfColorSpace, ColorSpace.Linear);
+-            if (emissionColor.HasValue)
++            if (material != null)
+             {
+-                yield return (MToon10Prop.EmissiveFactor.ToUnityShaderLabName(), emissionColor.Value);
++                var emissionColor = GltfMaterialImportUtils.ImportLinearEmissiveFactor(data, material);
++                if (emissionColor.HasValue)
++                {
++                    yield return (MToon10Prop.EmissiveFactor.ToUnityShaderLabName(), emissionColor.Value);
++                }
+             }
+ 
+             // Matcap"
+vrm-c/UniVRM,2597,7158deefc7044a0df95a29266a2bbd4473888341,Assets/VRM10/Runtime/IO/Material/URP/Import/Materials/UrpVrm10MToonMaterialImporter.cs,modified,1,1,2,"@@ -31,7 +31,7 @@ public static bool TryCreateParam(GltfData data, int i, out MaterialDescriptor m
+                 null,
+                 Vrm10MToonTextureImporter.EnumerateAllTextures(data, m, mtoon).ToDictionary(tuple => tuple.key, tuple => tuple.Item2.Item2),
+                 BuiltInVrm10MToonMaterialImporter.TryGetAllFloats(m, mtoon).ToDictionary(tuple => tuple.key, tuple => tuple.value),
+-                BuiltInVrm10MToonMaterialImporter.TryGetAllColors(m, mtoon).ToDictionary(tuple => tuple.key, tuple => tuple.value),
++                BuiltInVrm10MToonMaterialImporter.TryGetAllColors(data, m, mtoon).ToDictionary(tuple => tuple.key, tuple => tuple.value),
+                 BuiltInVrm10MToonMaterialImporter.TryGetAllFloatArrays(m, mtoon).ToDictionary(tuple => tuple.key, tuple => tuple.value),
+                 new Action<Material>[]
+                 {"

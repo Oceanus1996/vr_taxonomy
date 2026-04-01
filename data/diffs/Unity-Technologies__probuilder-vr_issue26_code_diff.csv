@@ -1,0 +1,50 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+Unity-Technologies/probuilder-vr,26,aeb153c0494d6198d4dd601b54571af7fd26f4aa,Assets/ProCore/ProBuilderVR/Tools/CreatePrimitive/Scripts/AShapeCreator.cs,modified,1,1,2,"@@ -35,7 +35,7 @@ public static void SetSnapIncrement(float inc)
+ 		/**
+ 		 * Handle drags after starting shape creation.
+ 		 */
+-		public abstract void HandleDrag(Ray ray);
++		public abstract bool HandleDrag(Ray ray, ref Vector3 planeIntersection);
+ 
+ 		/**
+ 		 * Finalize the shape."
+Unity-Technologies/probuilder-vr,26,aeb153c0494d6198d4dd601b54571af7fd26f4aa,Assets/ProCore/ProBuilderVR/Tools/CreatePrimitive/Scripts/CreateCube.cs,modified,9,10,19,"@@ -54,30 +54,29 @@ public override bool HandleStart(Ray ray, Plane drawPlane)
+ 			return true;
+ 		}
+ 
+-		public override void HandleDrag(Ray ray)
++		public override bool HandleDrag(Ray ray, ref Vector3 planeIntersection)
+ 		{
+-			Vector3 endPoint;
+-
+ 			if(state == State.Base)
+ 			{
+-				VRMath.GetPointOnPlane(ray, m_Plane, out endPoint);
+-
+-				// Apply simple smoothing to ray input.
+-				m_EndPoint = Vector3.Lerp(m_EndPoint, endPoint, .5f);
++				VRMath.GetPointOnPlane(ray, m_Plane, out planeIntersection);
++				m_EndPoint = planeIntersection;
+ 				m_EndPoint = Snapping.Snap(m_EndPoint, m_SnapIncrement, VECTOR3_ONE);
+ 			}
+ 			else
+ 			{
+-				endPoint = VRMath.CalculateNearestPointRayRay(ray.origin, ray.direction, m_BaseEndPoint, m_Plane.normal);
+-				Vector3 dir = endPoint - m_BaseEndPoint;
++				planeIntersection = VRMath.CalculateNearestPointRayRay(ray.origin, ray.direction, m_BaseEndPoint, m_Plane.normal);
++				Vector3 dir = planeIntersection - m_BaseEndPoint;
+ 				dir.Normalize();
+ 				float m = Vector3.Dot(m_Plane.normal, dir) / 1f;
+-				float distance = Vector3.Distance(endPoint, m_BaseEndPoint) * m;
++				float distance = Vector3.Distance(planeIntersection, m_BaseEndPoint) * m;
+ 				distance = Snapping.Snap(distance, m_SnapIncrement);
+ 				m_EndPoint = m_BaseEndPoint + (m_Plane.normal * distance);
+ 			}
+ 
+ 			UpdateShape();
++
++			// @todo sanity check ray input to prevent gigantic shapes
++			return true;
+ 		}
+ 
+ 		public override bool HandleTriggerRelease(Ray ray)"

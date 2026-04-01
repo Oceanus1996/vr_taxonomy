@@ -1,0 +1,215 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+secondlife/viewer,1067,977168e,indra/llui/lltextbase.cpp,modified,3,0,3,"@@ -168,6 +168,7 @@ LLTextBase::Params::Params()
+ 	trusted_content(""trusted_content"", true),
+ 	always_show_icons(""always_show_icons"", false),
+ 	use_ellipses(""use_ellipses"", false),
++	use_emoji(""use_emoji"", true),
+ 	use_color(""use_color"", true),
+ 	parse_urls(""parse_urls"", false),
+ 	force_urls_external(""force_urls_external"", false),
+@@ -227,6 +228,7 @@ LLTextBase::LLTextBase(const LLTextBase::Params &p)
+ 	mPlainText ( p.plain_text ),
+ 	mWordWrap(p.wrap),
+ 	mUseEllipses( p.use_ellipses ),
++	mUseEmoji(p.use_emoji),
+ 	mUseColor(p.use_color),
+ 	mParseHTML(p.parse_urls),
+ 	mForceUrlsExternal(p.force_urls_external),
+@@ -903,6 +905,7 @@ S32 LLTextBase::insertStringNoUndo(S32 pos, const LLWString &wstr, LLTextBase::s
+ 	}
+ 
+ 	// Insert special segments where necessary (insertSegment takes care of splitting normal text segments around them for us)
++	if (mUseEmoji)
+ 	{
+ 		LLStyleSP emoji_style;
+ 		LLEmojiDictionary* ed = LLEmojiDictionary::instanceExists() ? LLEmojiDictionary::getInstance() : NULL;"
+secondlife/viewer,1067,977168e,indra/llui/lltextbase.h,modified,9,4,13,"@@ -328,6 +328,7 @@ class LLTextBase
+ 								plain_text,
+ 								wrap,
+ 								use_ellipses,
++								use_emoji,
+ 								use_color,
+ 								parse_urls,
+ 								force_urls_external,
+@@ -407,12 +408,15 @@ class LLTextBase
+ 	virtual void			onSpellCheckPerformed(){}
+ 
+ 	// used by LLTextSegment layout code
+-	bool					getWordWrap() { return mWordWrap; }
+-	bool					getUseEllipses() { return mUseEllipses; }
+-	bool					getUseColor() { return mUseColor; }
++	bool					getWordWrap() const { return mWordWrap; }
++	bool					getUseEllipses() const { return mUseEllipses; }
++	bool					getUseEmoji() const { return mUseEmoji; }
++	void					setUseEmoji(bool value) { mUseEmoji = value; }
++	bool					getUseColor() const { return mUseColor; }
++	void					setUseColor(bool value) { mUseColor = value; }
+ 	bool					truncate(); // returns true of truncation occurred
+ 
+-	bool					isContentTrusted() {return mTrustedContent;}
++	bool					isContentTrusted() const { return mTrustedContent; }
+ 	void					setContentTrusted(bool trusted_content) { mTrustedContent = trusted_content; }
+ 
+ 	// TODO: move into LLTextSegment?
+@@ -715,6 +719,7 @@ class LLTextBase
+ 	bool						mParseHighlights;	// highlight user-defined keywords
+ 	bool                		mWordWrap;
+ 	bool						mUseEllipses;
++	bool						mUseEmoji;
+ 	bool						mUseColor;
+ 	bool						mTrackEnd;			// if true, keeps scroll position at end of document during resize
+ 	bool						mReadOnly;"
+secondlife/viewer,1067,977168e,indra/newview/lltoastnotifypanel.cpp,modified,15,21,36,"@@ -50,8 +50,8 @@ S32 BUTTON_WIDTH = 90;
+ 
+ 
+ //static
+-const LLFontGL* LLToastNotifyPanel::sFont = NULL;
+-const LLFontGL* LLToastNotifyPanel::sFontSmall = NULL;
++const std::string LLToastNotifyPanel::sFontDefault(""Emoji"");
++const std::string LLToastNotifyPanel::sFontScript(""SansSerif"");
+ 
+ LLToastNotifyPanel::button_click_signal_t LLToastNotifyPanel::sButtonClickSignal;
+ 
+@@ -85,11 +85,15 @@ LLButton* LLToastNotifyPanel::createButton(const LLSD& form_element, BOOL is_opt
+ 	mBtnCallbackData.push_back(userdata);
+ 
+ 	LLButton::Params p;
+-	bool make_small_btn = form_element[""index""].asInteger() == -1 || form_element[""index""].asInteger() == -2;
+-	const LLFontGL* font = make_small_btn ? sFontSmall: sFont; // for block and ignore buttons in script dialog
+-	p.name = form_element[""name""].asString();
+-	p.label = form_element[""text""].asString();
+-	p.tool_tip = form_element[""text""].asString();
++	S32 index = form_element[""index""].asInteger();
++	std::string name = form_element[""name""].asString();
++	std::string text = form_element[""text""].asString();
++	bool make_small_btn = index == -1 || index == -2; // for block and ignore buttons in script dialog
++	const LLFontGL* font = LLFontGL::getFont(LLFontDescriptor(
++		mIsScriptDialog ? sFontScript : sFontDefault, make_small_btn ? ""Small"" : ""Medium"", 0));
++	p.name = name;
++	p.label = text;
++	p.tool_tip = text;
+ 	p.font = font;
+ 	p.rect.height = BTN_HEIGHT;
+ 	p.click_callback.function(boost::bind(&LLToastNotifyPanel::onClickButton, userdata));
+@@ -256,19 +260,12 @@ void LLToastNotifyPanel::init( LLRect rect, bool show_images )
+ {
+     deleteAllChildren();
+ 
+-    mTextBox = NULL;
+-    mInfoPanel = NULL;
+-    mControlPanel = NULL;
+-    mNumOptions = 0;
+-    mNumButtons = 0;
+-    mAddedDefaultBtn = false;
+-
+ 	LLRect current_rect = getRect();
+ 
+ 	setXMLFilename("""");
+ 	buildFromFile(""panel_notification.xml"");
+ 
+-    if(rect != LLRect::null)
++    if (rect != LLRect::null)
+     {
+         this->setShape(rect);
+     }
+@@ -295,12 +292,6 @@ void LLToastNotifyPanel::init( LLRect rect, bool show_images )
+     // setup parameters
+     // get a notification message
+     mMessage = mNotification->getMessage();
+-    // init font variables
+-    if (!sFont)
+-    {
+-        sFont = LLFontGL::getFontSansSerif();
+-        sFontSmall = LLFontGL::getFontSansSerifSmall();
+-    }
+     // initialize
+     setFocusRoot(!mIsTip);
+     // get a form for the notification
+@@ -318,15 +309,18 @@ void LLToastNotifyPanel::init( LLRect rect, bool show_images )
+     if (mIsCaution && !mIsTip)
+     {
+         mTextBox = getChild<LLTextBox>(""caution_text_box"");
++        mTextBox->setFont(LLFontGL::getFont(LLFontDescriptor(mIsScriptDialog ? sFontScript : sFontDefault, ""Medium"", LLFontGL::BOLD)));
+     }
+     else
+     {
+         mTextBox = getChild<LLTextEditor>(""text_editor_box""); 
++        mTextBox->setFont(LLFontGL::getFont(LLFontDescriptor(mIsScriptDialog ? sFontScript : sFontDefault, ""Medium"", 0)));
+     }
+ 
+     mTextBox->setMaxTextLength(LLToastPanel::MAX_TEXT_LENGTH);
+     mTextBox->setVisible(TRUE);
+     mTextBox->setPlainText(!show_images);
++    mTextBox->setUseEmoji(!mIsScriptDialog);
+     mTextBox->setContentTrusted(is_content_trusted);
+     mTextBox->setValue(mNotification->getMessage());
+ 	mTextBox->setIsFriendCallback(LLAvatarActions::isFriend);"
+secondlife/viewer,1067,977168e,indra/newview/lltoastnotifypanel.h,modified,11,11,22,"@@ -102,9 +102,9 @@ class LLToastNotifyPanel: public LLCheckBoxToastPanel, public LLInstanceTracker<
+ 	//std::vector<index_button_pair_t> mButtons;
+ 
+ 	// panel elements
+-	LLTextBase*		mTextBox;
+-	LLPanel*		mInfoPanel;		// a panel, that contains an information
+-	LLPanel*		mControlPanel;	// a panel, that contains buttons (if present)
++	LLTextBase* mTextBox { nullptr };
++	LLPanel* mInfoPanel { nullptr };    // panel for text information
++	LLPanel* mControlPanel { nullptr }; // panel for buttons (if present)
+ 
+ 	// internal handler for button being clicked
+ 	static void onClickButton(void* data);
+@@ -124,17 +124,17 @@ class LLToastNotifyPanel: public LLCheckBoxToastPanel, public LLInstanceTracker<
+ 	 */
+ 	//void disableRespondedOptions(const LLNotificationPtr& notification);
+ 
+-	bool mIsTip;
+-	bool mAddedDefaultBtn;
+-	bool mIsScriptDialog;
+-	bool mIsCaution; 
++    bool mIsTip { false };
++	bool mAddedDefaultBtn { false };
++	bool mIsScriptDialog { false };
++	bool mIsCaution { false };
+ 
+ 	std::string mMessage;
+-	S32 mNumOptions;
+-	S32 mNumButtons;
++	S32 mNumOptions { 0 };
++	S32 mNumButtons { 0 };
+ 
+-	static const LLFontGL* sFont;
+-	static const LLFontGL* sFontSmall;
++	static const std::string sFontDefault;
++	static const std::string sFontScript;
+ };
+ 
+ class LLIMToastNotifyPanel : public LLToastNotifyPanel"
+secondlife/viewer,1067,977168e,indra/newview/skins/default/xui/en/panel_notification.xml,modified,0,16,16,"@@ -32,21 +32,6 @@
+     <text
+       border_visible=""false""
+       follows=""left|right|top|bottom""
+-      font=""SansSerif""
+-      height=""85""
+-      layout=""topleft""
+-      left=""10""
+-      name=""text_box""
+-      read_only=""true""
+-      text_color=""White""
+-      top=""10""
+-      visible=""false"" 
+-      width=""285""
+-      wrap=""true""/>
+-    <text
+-      border_visible=""false""
+-      follows=""left|right|top|bottom""
+-      font=""SansSerifBold""
+       height=""85""
+       layout=""topleft""
+       left=""10""
+@@ -64,7 +49,6 @@
+       embedded_items=""false""
+       enabled=""false""
+       follows=""left|right|top|bottom""
+-      font=""SansSerif""
+       height=""85"" 
+       layout=""topleft""
+       left=""10"""

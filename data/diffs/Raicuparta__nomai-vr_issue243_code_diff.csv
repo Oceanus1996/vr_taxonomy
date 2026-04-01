@@ -1,0 +1,657 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+Raicuparta/nomai-vr,243,0315e4d7093aca35f04364ae89b6c41012533445,NomaiVR/EffectFixes/CameraMaskFix.cs,modified,13,0,13,"@@ -13,6 +13,7 @@ public class Behaviour : MonoBehaviour
+             private static float _farClipPlane = -1;
+             public static int cullingMask = -1;
+             private static Behaviour _instance;
++            private bool _isPaused;
+ 
+             private void Start()
+             {
+@@ -30,6 +31,18 @@ private void Update()
+             {
+                 _camera.postProcessingSettings.chromaticAberrationEnabled = false;
+                 _camera.postProcessingSettings.vignetteEnabled = false;
++
++                if (InputHelper.IsUIInteractionMode() && !_isPaused)
++                {
++                    _isPaused = true;
++                    cullingMask = Camera.main.cullingMask;
++                    Camera.main.cullingMask = LayerMask.GetMask(""UI"");
++                }
++                if (!InputHelper.IsUIInteractionMode() && _isPaused)
++                {
++                    _isPaused = false;
++                    Camera.main.cullingMask = cullingMask;
++                }
+             }
+ 
+             private void CloseEyesDelayed()"
+Raicuparta/nomai-vr,243,0315e4d7093aca35f04364ae89b6c41012533445,NomaiVR/EffectFixes/FogFix.cs,modified,8,0,8,"@@ -38,11 +38,19 @@ private static bool PatchResetFog()
+ 
+                 private static bool PatchUpdateFog()
+                 {
++                    if (InputHelper.IsUIInteractionMode())
++                    {
++                        return false;
++                    }
+                     return Camera.current.stereoActiveEye != Camera.MonoOrStereoscopicEye.Right;
+                 }
+ 
+                 private static bool PatchOverrideFog()
+                 {
++                    if (InputHelper.IsUIInteractionMode())
++                    {
++                        return false;
++                    }
+                     return Camera.current.stereoActiveEye != Camera.MonoOrStereoscopicEye.Right;
+                 }
+             }"
+Raicuparta/nomai-vr,243,0315e4d7093aca35f04364ae89b6c41012533445,NomaiVR/Hands/Hand.cs,modified,4,4,8,"@@ -32,20 +32,20 @@ void setupHandModel(Transform model)
+             setupHandModel(hand);
+             setupHandModel(glove);
+ 
+-            transform.gameObject.SetActive(false);
++            gameObject.SetActive(false);
+             var poseDriver = transform.gameObject.AddComponent<SteamVR_Behaviour_Pose>();
+             poseDriver.poseAction = pose;
+-            transform.gameObject.SetActive(true);
++            gameObject.SetActive(true);
+         }
+ 
+         private bool ShouldRenderGloves()
+         {
+-            return Locator.GetPlayerSuit().IsWearingSuit(true);
++            return SceneHelper.IsInGame() && Locator.GetPlayerSuit().IsWearingSuit(true);
+         }
+ 
+         private bool ShouldRenderHands()
+         {
+-            return !Locator.GetPlayerSuit().IsWearingSuit(true);
++            return !SceneHelper.IsInGame() || !Locator.GetPlayerSuit().IsWearingSuit(true);
+         }
+     }
+ }"
+Raicuparta/nomai-vr,243,0315e4d7093aca35f04364ae89b6c41012533445,NomaiVR/Hands/HandsController.cs,modified,57,8,65,"@@ -7,7 +7,7 @@ namespace NomaiVR
+     public class HandsController : NomaiVRModule<HandsController.Behaviour, NomaiVRModule.EmptyPatch>
+     {
+         protected override bool isPersistent => false;
+-        protected override OWScene[] scenes => PlayableScenes;
++        protected override OWScene[] scenes => AllScenes;
+ 
+         public class Behaviour : MonoBehaviour
+         {
+@@ -16,9 +16,64 @@ public class Behaviour : MonoBehaviour
+             private Transform _wrapper;
+ 
+             private void Start()
++            {
++                if (SceneHelper.IsInTitle())
++                {
++                    SetUpWrapperTittle();
++                }
++
++                if (SceneHelper.IsInGame())
++                {
++                    SetUpWrapperInGame();
++                    HideBody();
++                }
++
++                SetUpHands();
++            }
++
++            private void SetUpWrapperTittle()
++            {
++                var activeCamera = Locator.GetActiveCamera();
++                activeCamera.gameObject.SetActive(false);
++                _wrapper = activeCamera.transform.parent;
++                var cameraObject = new GameObject();
++                cameraObject.SetActive(false);
++                cameraObject.tag = ""MainCamera"";
++                var camera = cameraObject.AddComponent<Camera>();
++                camera.transform.parent = _wrapper;
++                camera.transform.localPosition = Vector3.zero;
++                camera.transform.localRotation = Quaternion.identity;
++
++                camera.nearClipPlane = activeCamera.nearClipPlane;
++                camera.farClipPlane = activeCamera.farClipPlane;
++                camera.clearFlags = activeCamera.clearFlags;
++                camera.backgroundColor = activeCamera.backgroundColor;
++                camera.cullingMask = activeCamera.cullingMask;
++                camera.depth = activeCamera.mainCamera.depth;
++                camera.tag = activeCamera.tag;
++
++                var owCamera = cameraObject.AddComponent<OWCamera>();
++                owCamera.renderSkybox = true;
++
++                var flashbackEffect = cameraObject.AddComponent<FlashbackScreenGrabImageEffect>();
++                flashbackEffect._downsampleShader = cameraObject.GetComponent<FlashbackScreenGrabImageEffect>()._downsampleShader;
++
++                cameraObject.AddComponent<FlareLayer>();
++                cameraObject.SetActive(true);
++
++                cameraObject.AddComponent<Light>();
++            }
++
++            private void SetUpWrapperInGame()
+             {
+                 _wrapper = new GameObject().transform;
++                _wrapper.parent = Camera.main.transform.parent;
++                _wrapper.localRotation = Quaternion.identity;
++                _wrapper.localPosition = Camera.main.transform.localPosition;
++            }
+ 
++            private void SetUpHands()
++            {
+                 var right = new GameObject().AddComponent<Hand>();
+                 right.pose = SteamVR_Actions.default_RightHand;
+                 right.transform.parent = _wrapper;
+@@ -37,12 +92,6 @@ private void Start()
+                 left.handPrefab = AssetLoader.HandPrefab;
+                 left.glovePrefab = AssetLoader.GlovePrefab;
+                 LeftHand = left.transform;
+-
+-                _wrapper.parent = Camera.main.transform.parent;
+-                _wrapper.localRotation = Quaternion.identity;
+-                _wrapper.localPosition = Camera.main.transform.localPosition;
+-
+-                HideBody();
+             }
+ 
+             private void HideBody()
+@@ -79,7 +128,7 @@ private void HideBody()
+ 
+             private void Update()
+             {
+-                if (_wrapper && Camera.main)
++                if (SceneHelper.IsInGame() && _wrapper && Camera.main)
+                 {
+                     _wrapper.localPosition = Camera.main.transform.localPosition - InputTracking.GetLocalPosition(XRNode.CenterEye);
+                 }"
+Raicuparta/nomai-vr,243,0315e4d7093aca35f04364ae89b6c41012533445,NomaiVR/Hands/LaserPointer.cs,modified,73,18,91,"@@ -8,51 +8,102 @@ namespace NomaiVR
+     public class LaserPointer : NomaiVRModule<LaserPointer.Behaviour, LaserPointer.Behaviour.Patch>
+     {
+         protected override bool isPersistent => false;
+-        protected override OWScene[] scenes => PlayableScenes;
++        protected override OWScene[] scenes => AllScenes;
+ 
+         public class Behaviour : MonoBehaviour
+         {
+             public static Transform Laser;
+             private static FirstPersonManipulator _manipulator;
+             private LineRenderer _lineRenderer;
+             private const float _gameLineLength = 0.5f;
+-            private const float _menuLineLength = 1.5f;
++            private const float _menuLineLength = 2f;
+             private TabButton[] _tabButtons;
++            private bool _isReady;
+ 
+             private void Start()
++            {
++                SetUpLaserObject();
++                SetUpLineRenderer();
++                UpdateLineAppearance();
++                DisableReticule();
++                CreateButtonColliders();
++
++                if (SceneHelper.IsInGame())
++                {
++                    SetUpFirstPersonManipulator();
++                }
++
++                if (SceneHelper.IsInTitle())
++                {
++                    SetUpTitleAnimationHandler();
++                }
++            }
++
++            private void SetUpLaserObject()
+             {
+                 Laser = new GameObject(""Laser"").transform;
++                Laser.gameObject.layer = LayerMask.NameToLayer(""UI"");
+                 Laser.gameObject.AddComponent<FollowTarget>();
+                 Laser.transform.parent = HandsController.Behaviour.RightHand;
+                 Laser.transform.localPosition = new Vector3(0f, -0.05f, 0.01f);
+                 Laser.transform.localRotation = Quaternion.Euler(45f, 0, 0);
++            }
+ 
++            private void SetUpLineRenderer()
++            {
+                 _lineRenderer = Laser.gameObject.AddComponent<LineRenderer>();
+                 _lineRenderer.useWorldSpace = false;
+                 _lineRenderer.SetPositions(new[] { Vector3.zero, Vector3.zero });
+                 _lineRenderer.startWidth = 0.005f;
+                 _lineRenderer.endWidth = 0.001f;
++                _lineRenderer.endColor = new Color(1, 1, 1, 0.3f);
++                _lineRenderer.startColor = Color.clear;
++            }
++
++            private void SetUpFirstPersonManipulator()
++            {
+                 FindObjectOfType<FirstPersonManipulator>().enabled = false;
+                 _manipulator = Laser.gameObject.AddComponent<FirstPersonManipulator>();
+-                _lineRenderer.material = Canvas.GetDefaultCanvasMaterial();
+-                UpdateLineAppearance();
++                _isReady = true;
++            }
+ 
+-                DisableReticule();
++            private void SetUpTitleAnimationHandler()
++            {
++                var titleAnimationController = FindObjectOfType<TitleAnimationController>();
++                titleAnimationController.OnTitleMenuAnimationComplete += () => _isReady = true;
++            }
++
++            private void CreateButtonColliders()
++            {
++                _tabButtons = Resources.FindObjectsOfTypeAll<TabButton>();
+ 
+                 var selectables = Resources.FindObjectsOfTypeAll<Selectable>();
+                 foreach (var selectable in selectables)
+                 {
++                    var tooltipSelectable = selectable.GetComponent<TooltipSelectable>();
++                    if (tooltipSelectable != null)
++                    {
++                        // Move children to avoid ray z-fighting;
++                        foreach (Transform child in selectable.transform)
++                        {
++                            child.localPosition += Vector3.forward;
++                        }
++                    }
++
+                     var collider = selectable.gameObject.AddComponent<BoxCollider>();
+-                    var rect = selectable.GetComponent<RectTransform>();
+-                    collider.size = new Vector3(rect.sizeDelta.x, rect.sizeDelta.y, 10f);
+-                }
+ 
+-                _tabButtons = Resources.FindObjectsOfTypeAll<TabButton>();
++                    var rectTransform = selectable.GetComponent<RectTransform>();
++                    var thickness = 10f;
++                    var height = Math.Max(60f, rectTransform.rect.height);
++                    var width = Math.Max(60f, rectTransform.rect.width);
++                    collider.size = new Vector3(width, height, thickness);
++                    collider.center = new Vector3(0, 0, thickness * 0.5f);
++                }
+             }
+ 
+             private void UpdateUiRayCast()
+             {
+-                if (OWInput.GetInputMode() != InputMode.Menu)
++                if (!_isReady || !InputHelper.IsUIInteractionMode())
+                 {
+                     return;
+                 }
+@@ -123,31 +174,35 @@ private void SetLineLength(float length)
+ 
+             private void UpdateLineAppearance()
+             {
+-                if (OWInput.IsInputMode(InputMode.Menu))
++                if (InputHelper.IsUIInteractionMode())
+                 {
+                     SetLineLength(_menuLineLength);
+-                    _lineRenderer.endColor = Color.white;
+-                    _lineRenderer.startColor = new Color(1, 1, 1, 0.5f);
++                    _lineRenderer.material.shader = Shader.Find(""Unlit/Color"");
++                    _lineRenderer.material.SetColor(""_Color"", new Color(0.8f, 0.8f, 0.8f));
+                 }
+                 else
+                 {
+                     SetLineLength(_gameLineLength);
+-                    _lineRenderer.endColor = new Color(1, 1, 1, 0.3f);
+-                    _lineRenderer.startColor = Color.clear;
++                    _lineRenderer.material.shader = Shader.Find(""Particles/Alpha Blended Premultiply"");
+                 }
+             }
+ 
+-            private void Update()
++            private void UpdateLineVisibility()
+             {
+-                if (_lineRenderer.enabled && ToolHelper.IsUsingAnyTool())
++                var isUsingTool = SceneHelper.IsInGame() && ToolHelper.IsUsingAnyTool();
++                if (_lineRenderer.enabled && isUsingTool)
+                 {
+                     _lineRenderer.enabled = false;
+                 }
+-                else if (!_lineRenderer.enabled && !ToolHelper.IsUsingAnyTool())
++                else if (!_lineRenderer.enabled && !isUsingTool)
+                 {
+                     _lineRenderer.enabled = true;
+                 }
++            }
+ 
++            private void Update()
++            {
++                UpdateLineVisibility();
+                 UpdateLineAppearance();
+                 UpdateUiRayCast();
+             }"
+Raicuparta/nomai-vr,243,0315e4d7093aca35f04364ae89b6c41012533445,NomaiVR/Helpers/InputHelper.cs,added,10,0,10,"@@ -0,0 +1,10 @@
++﻿namespace NomaiVR
++{
++    public static class InputHelper
++    {
++        public static bool IsUIInteractionMode()
++        {
++            return OWInput.IsInputMode(InputMode.Menu | InputMode.KeyboardInput);
++        }
++    }
++}"
+Raicuparta/nomai-vr,243,0315e4d7093aca35f04364ae89b6c41012533445,NomaiVR/Helpers/MaterialHelper.cs,added,26,0,26,"@@ -0,0 +1,26 @@
++﻿using UnityEngine;
++using UnityEngine.Rendering;
++
++namespace NomaiVR
++{
++    public static class MaterialHelper
++    {
++        private static Material _overlayMaterial;
++
++        public static Material GetOverlayMaterial()
++        {
++            if (_overlayMaterial == null)
++            {
++                _overlayMaterial = new Material(Canvas.GetDefaultCanvasMaterial());
++                MakeMaterialDrawOnTop(_overlayMaterial);
++            }
++            return _overlayMaterial;
++        }
++
++        public static void MakeMaterialDrawOnTop(Material material)
++        {
++            material.shader = Canvas.GetDefaultCanvasMaterial().shader;
++            material.SetInt(""unity_GUIZTestMode"", (int)CompareFunction.Always);
++        }
++    }
++}"
+Raicuparta/nomai-vr,243,0315e4d7093aca35f04364ae89b6c41012533445,NomaiVR/Helpers/SceneHelper.cs,modified,4,0,4,"@@ -7,5 +7,9 @@ public static bool IsInGame()
+             var scene = LoadManager.GetCurrentScene();
+             return scene == OWScene.SolarSystem || scene == OWScene.EyeOfTheUniverse;
+         }
++        public static bool IsInTitle()
++        {
++            return LoadManager.GetCurrentScene() == OWScene.TitleScreen;
++        }
+     }
+ }"
+Raicuparta/nomai-vr,243,0315e4d7093aca35f04364ae89b6c41012533445,NomaiVR/Input/ControllerInput.cs,modified,10,8,18,"@@ -53,6 +53,8 @@ private void Start()
+                 SteamVR_Actions.default_Look.onChange += CreateDoubleAxisHandler(XboxAxis.rightStick, XboxAxis.rightStickX, XboxAxis.rightStickY);
+ 
+                 GlobalMessenger.AddListener(""WakeUp"", OnWakeUp);
++
++                OWInput.EnableListenForAllJoysticks(true);
+             }
+ 
+             private void OnWakeUp()
+@@ -212,7 +214,8 @@ public override void ApplyPatches()
+                 {
+                     NomaiVR.Pre<SingleAxisCommand>(""Update"", typeof(Patch), nameof(SingleAxisUpdate));
+                     NomaiVR.Pre<OWInput>(""UpdateActiveInputDevice"", typeof(Patch), nameof(OWInputUpdate));
+-                    NomaiVR.Pre<OWInput>(""Awake"", typeof(Patch), nameof(EnableListenForAllJoysticks));
++                    NomaiVR.Pre<OWInput>(""EnableListenForAllJoysticks"", typeof(Patch), nameof(PostEnableListanForAllJoysticks));
++                    NomaiVR.Pre<OWInput>(""Awake"", typeof(Patch), nameof(PostEnableListanForAllJoysticks));
+                     NomaiVR.Post<PadEZ.PadManager>(""GetAxis"", typeof(Patch), nameof(GetAxis));
+                     NomaiVR.Post<PlayerResources>(""Awake"", typeof(Patch), nameof(PlayerResourcesAwake));
+ 
+@@ -320,17 +323,16 @@ private static bool OWInputUpdate(ref bool ____usingGamepad)
+                     return false;
+                 }
+ 
+-                private static void EnableListenForAllJoysticks()
++                private static void PostEnableListanForAllJoysticks()
+                 {
+                     InputLibrary.landingCamera.ChangeBinding(XboxButton.DPadDown, KeyCode.None);
+                     InputLibrary.signalscope.ChangeBinding(XboxButton.DPadRight, KeyCode.None);
+ 
+-                    // TODO: uncomment this after laser is implemented in main menu.
+-                    //InputLibrary.tabL.ChangeBinding(XboxButton.None, KeyCode.None);
+-                    //InputLibrary.tabR.ChangeBinding(XboxButton.None, KeyCode.None);
+-                    //InputLibrary.setDefaults.ChangeBinding(XboxButton.None, KeyCode.None);
+-                    //InputLibrary.confirm.ChangeBinding(XboxButton.None, KeyCode.None);
+-                    //InputLibrary.confirm2.ChangeBinding(XboxButton.None, KeyCode.None);
++                    InputLibrary.tabL.ChangeBinding(XboxButton.None, KeyCode.None);
++                    InputLibrary.tabR.ChangeBinding(XboxButton.None, KeyCode.None);
++                    InputLibrary.setDefaults.ChangeBinding(XboxButton.None, KeyCode.None);
++                    InputLibrary.confirm.ChangeBinding(XboxButton.None, KeyCode.None);
++                    InputLibrary.confirm2.ChangeBinding(XboxButton.None, KeyCode.None);
+                 }
+             }
+         }"
+Raicuparta/nomai-vr,243,0315e4d7093aca35f04364ae89b6c41012533445,NomaiVR/NomaiVR.csproj,modified,2,0,2,"@@ -101,7 +101,9 @@
+     <Compile Include=""EffectFixes\ProjectionStoneCameraFix.cs"" />
+     <Compile Include=""EffectFixes\CameraMaskFix.cs"" />
+     <Compile Include=""EffectFixes\WaterFix.cs"" />
++    <Compile Include=""Helpers\InputHelper.cs"" />
+     <Compile Include=""Helpers\LayerHelper.cs"" />
++    <Compile Include=""Helpers\MaterialHelper.cs"" />
+     <Compile Include=""Helpers\PlayerHelper.cs"" />
+     <Compile Include=""Helpers\SceneHelper.cs"" />
+     <Compile Include=""Helpers\TimerHelper.cs"" />"
+Raicuparta/nomai-vr,243,0315e4d7093aca35f04364ae89b6c41012533445,NomaiVR/Player/FeetMarker.cs,modified,1,1,2,"@@ -18,7 +18,7 @@ private void Start()
+                 marker.localScale *= 0.75f;
+                 LayerHelper.ChangeLayerRecursive(marker.gameObject, ""VisibleToPlayer"");
+ 
+-                marker.GetComponentInChildren<SpriteRenderer>().material = Canvas.GetDefaultCanvasMaterial();
++                marker.GetComponentInChildren<SpriteRenderer>().material = MaterialHelper.GetOverlayMaterial();
+             }
+         }
+     }"
+Raicuparta/nomai-vr,243,0315e4d7093aca35f04364ae89b6c41012533445,NomaiVR/ReusableBehaviours/DebugTransform.cs,modified,1,1,2,"@@ -6,7 +6,7 @@ internal class DebugTransform : MonoBehaviour
+     {
+         private bool _angleMode;
+         public float positionDelta = 0.02f;
+-        public float angleDelta = 10;
++        public float angleDelta = 10f;
+         public Vector3 scaleDelta = Vector3.one * 0.02f;
+ 
+         private float Round(float value)"
+Raicuparta/nomai-vr,243,0315e4d7093aca35f04364ae89b6c41012533445,NomaiVR/UI/HelmetHUD.cs,modified,4,6,10,"@@ -1,6 +1,5 @@
+ ﻿using OWML.ModHelper.Events;
+ using UnityEngine;
+-using UnityEngine.Rendering;
+ 
+ namespace NomaiVR
+ {
+@@ -58,11 +57,10 @@ private void Awake()
+                 var notifications = FindObjectOfType<SuitNotificationDisplay>().GetComponent<RectTransform>();
+                 notifications.anchoredPosition = new Vector2(-200, -100);
+ 
+-                // Use default UI material so it doesn't look funky in stereo.
+-                var surfaceMaterial = surface.gameObject.GetComponent<MeshRenderer>().material;
+-                surfaceMaterial.shader = Canvas.GetDefaultCanvasMaterial().shader;
+-                surfaceMaterial.SetInt(""unity_GUIZTestMode"", (int)CompareFunction.Always);
+-                surfaceMaterial.SetColor(""_Color"", new Color(1.5f, 1.5f, 1.5f, 1));
++                // Default HUD shader looks funky in stereo, so we need to replace it with something more standard.
++                var surfaceRenderer = surface.gameObject.GetComponent<MeshRenderer>();
++                surfaceRenderer.material.SetColor(""_Color"", new Color(1.5f, 1.5f, 1.5f, 1));
++                MaterialHelper.MakeMaterialDrawOnTop(surfaceRenderer.material);
+ 
+                 var playerHUD = GameObject.Find(""PlayerHUD"");
+ "
+Raicuparta/nomai-vr,243,0315e4d7093aca35f04364ae89b6c41012533445,NomaiVR/UI/LookArrow.cs,modified,2,2,4,"@@ -24,10 +24,10 @@ private void Start()
+                 _wrapper.localRotation = Quaternion.identity;
+ 
+                 _rightArrow = canvas.transform.Find(""look-right"");
+-                _rightArrow.GetComponent<SpriteRenderer>().material = Canvas.GetDefaultCanvasMaterial();
++                _rightArrow.GetComponent<SpriteRenderer>().material = MaterialHelper.GetOverlayMaterial();
+                 _rightArrow.gameObject.SetActive(false);
+                 _leftArrow = canvas.transform.Find(""look-left"");
+-                _leftArrow.GetComponent<SpriteRenderer>().material = Canvas.GetDefaultCanvasMaterial();
++                _leftArrow.GetComponent<SpriteRenderer>().material = MaterialHelper.GetOverlayMaterial();
+                 _leftArrow.gameObject.SetActive(false);
+ 
+             }"
+Raicuparta/nomai-vr,243,0315e4d7093aca35f04364ae89b6c41012533445,NomaiVR/UI/Menus.cs,modified,56,63,119,"@@ -1,7 +1,4 @@
+-﻿using OWML.Common;
+-using UnityEngine;
+-using UnityEngine.Rendering;
+-using UnityEngine.UI;
++﻿using UnityEngine;
+ 
+ namespace NomaiVR
+ {
+@@ -12,83 +9,72 @@ public class Menus : NomaiVRModule<Menus.Behaviour, Menus.Behaviour.Patch>
+ 
+         public class Behaviour : MonoBehaviour
+         {
+-            private void Awake()
+-            {
+-                NomaiVR.Helper.Events.Subscribe<CanvasMarkerManager>(Events.AfterStart);
+-                NomaiVR.Helper.Events.OnEvent += OnEvent;
+-            }
++            private static bool _shouldRenderStarLogos;
+ 
+             private void Start()
+             {
+-                // Make UI elements draw on top of everything.
+-                Canvas.GetDefaultCanvasMaterial().SetInt(""unity_GUIZTestMode"", (int)CompareFunction.Always);
+-
+                 var scene = LoadManager.GetCurrentScene();
+ 
+                 if (scene == OWScene.SolarSystem)
+                 {
+-                    // Make sleep timer canvas visible while eyes closed.
+-                    Locator.GetUIStyleManager().transform.Find(""SleepTimerCanvas"").gameObject.layer = LayerMask.NameToLayer(""VisibleToPlayer"");
++                    FixSleepTimerCanvas();
+                 }
+                 else if (scene == OWScene.TitleScreen)
+                 {
+-                    var animatedTitle = GameObject.Find(""TitleCanvasHack"").GetComponent<Canvas>();
+-                    animatedTitle.renderMode = RenderMode.ScreenSpaceOverlay;
+-
+-                    var animatedTitleChild = animatedTitle.transform.GetChild(0).GetComponent<RectTransform>();
+-                    animatedTitleChild.anchorMax = Vector2.one * 0.5f;
+-                    animatedTitleChild.anchorMin = Vector2.one * 0.5f;
++                    FixTitleMenuCanvases();
++                    FixStarLogos();
+ 
+-                    var mainMenu = GameObject.Find(""TitleLayoutGroup"").GetComponent<RectTransform>();
+-                    mainMenu.position = Vector3.zero;
++                }
++                ScreenCanvasesToWorld();
++            }
+ 
+-                    // Cant't get the footer to look good, so I'm hiding it.
+-                    GameObject.Find(""FooterBlock"").SetActive(false);
++            private void FixStarLogo(string objectName)
++            {
++                var logo = GameObject.Find(objectName).transform;
++                logo.localRotation *= Quaternion.Euler(30, 0, 0);
++                logo.gameObject.AddComponent<ConditionalRenderer>().getShouldRender = () => _shouldRenderStarLogos;
++            }
+ 
+-                    // Make the camera start looking forward instead of some random direction.
+-                    var cameraSocket = GameObject.Find(""CameraSocket"").transform;
+-                    cameraSocket.rotation = Quaternion.identity;
+-                }
++            private void FixStarLogos()
++            {
++                FixStarLogo(""StarfieldMobius_Pivot"");
++                FixStarLogo(""StarfieldAnnapurna_Pivot"");
++            }
+ 
+-                ScreenCanvasesToWorld();
++            private void FixSleepTimerCanvas()
++            {
++                // Make sleep timer canvas visible while eyes closed.
++                Locator.GetUIStyleManager().transform.Find(""SleepTimerCanvas"").gameObject.layer = LayerMask.NameToLayer(""VisibleToPlayer"");
+             }
+ 
+-            private void OnEvent(MonoBehaviour behaviour, Events ev)
++            private void FixTitleMenuCanvases()
+             {
+-                if (behaviour.GetType() == typeof(CanvasMarkerManager) && ev == Events.AfterStart)
+-                {
+-                    var canvas = GameObject.Find(""CanvasMarkerManager"").GetComponent<Canvas>();
+-                    canvas.planeDistance = 5;
+-                }
++                var titleMenu = GameObject.Find(""TitleMenu"").transform;
++
++                // Hide the main menu while other menus are open,
++                // to prevent selecting with laser.
++                var titleCanvas = titleMenu.Find(""TitleCanvas"");
++                titleMenu.Find(""TitleCanvas"").gameObject.AddComponent<ConditionalRenderer>().getShouldRender = () =>
++                    MenuStackManager.SharedInstance.GetMenuCount() == 0;
++
++                // Cant't get the footer to look good, so I'm hiding it.
++                titleCanvas.Find(""FooterBlock"").gameObject.SetActive(false);
+             }
+ 
+             private void ScreenCanvasesToWorld()
+             {
+                 var canvases = FindObjectsOfType<Canvas>();
+                 foreach (var canvas in canvases)
+                 {
+-                    if (canvas.renderMode == RenderMode.ScreenSpaceOverlay && canvas.name != ""PauseBackdropCanvas"")
++                    if (canvas.renderMode == RenderMode.ScreenSpaceOverlay)
+                     {
+                         canvas.renderMode = RenderMode.WorldSpace;
+-                        canvas.transform.position = Camera.main.transform.position + Camera.main.transform.forward;
+-                        canvas.transform.rotation = Camera.main.transform.rotation;
+                         canvas.transform.localScale *= 0.001f;
+                         var followTarget = canvas.gameObject.AddComponent<FollowTarget>();
+-                        followTarget.positionSmoothTime = 0.2f;
+-                        followTarget.rotationSmoothTime = 0.1f;
+-                        followTarget.target = SceneHelper.IsInGame() ? Locator.GetPlayerTransform() : Camera.main.transform;
+-                        followTarget.localPosition = SceneHelper.IsInGame() ? Vector3.forward + Vector3.up * 0.5f : Vector3.forward;
+-
+-                        // Masks are used for hiding the overflowing elements in scrollable menus.
+-                        // Apparently masks change the material of the canvas element being masked,
+-                        // and I'm not sure how to change unity_GUIZTestMode there.
+-                        // So for now I'm disabling the mask completely, which breaks some menus.
+-                        var masks = canvas.GetComponentsInChildren<Mask>(true);
+-                        foreach (var mask in masks)
+-                        {
+-                            mask.enabled = false;
+-                            mask.graphic.enabled = false;
+-                        }
++                        followTarget.target = SceneHelper.IsInGame() ? Locator.GetPlayerTransform() : Camera.main.transform.parent;
++                        var z = SceneHelper.IsInGame() ? 1f : 1.5f;
++                        var y = SceneHelper.IsInGame() ? 0.5f : 1f;
++                        followTarget.localPosition = new Vector3(0, y, z);
+                     }
+                 }
+             }
+@@ -98,20 +84,22 @@ public class Patch : NomaiVRPatch
+                 public override void ApplyPatches()
+                 {
+                     NomaiVR.Post<ProfileMenuManager>(""PopulateProfiles"", typeof(Patch), nameof(PostPopulateProfiles));
+-
+-                    // Make options menu background color transparent,
+-                    // to prevent obscuring the laser
+-                    NomaiVR.Post<TabbedOptionMenu>(""Initialize"", typeof(Patch), nameof(PostOptionMenuInitialize));
++                    NomaiVR.Post<CanvasMarkerManager>(""Start"", typeof(Patch), nameof(PostMarkerManagerStart));
++                    NomaiVR.Post<TitleScreenAnimation>(""FadeInMusic"", typeof(Patch), nameof(PostTitleScreenFadeInMusic));
++                    NomaiVR.Post<PopupMenu>(""SetUpPopupCommands"", typeof(Patch), nameof(PostSetPopupCommands));
+                 }
+ 
+-                private static void PostOptionMenuInitialize(TabbedOptionMenu __instance)
++                private static void PostSetPopupCommands(SingleAxisCommand okCommand, ref SingleAxisCommand ____okCommand)
+                 {
+-                    var displayPanel = __instance.transform.Find(""OptionsDisplayPanel"");
+-                    displayPanel.GetComponent<Image>().color = new Color(0, 0, 0, 0.78f);
+-                    displayPanel.Find(""Background"").gameObject.SetActive(false);
++                    if (okCommand == InputLibrary.select)
++                    {
++                        ____okCommand = InputLibrary.confirm;
++                    }
++                }
+ 
+-                    var tabsBackground = __instance.transform.Find(""Tabs/Background"");
+-                    tabsBackground.GetComponent<Image>().color = new Color(0, 0, 0, 0.78f);
++                private static void PostTitleScreenFadeInMusic()
++                {
++                    _shouldRenderStarLogos = true;
+                 }
+ 
+                 private static void PostPopulateProfiles(GameObject ____profileListRoot)
+@@ -123,6 +111,11 @@ private static void PostPopulateProfiles(GameObject ____profileListRoot)
+                         child.localScale = Vector3.one;
+                     }
+                 }
++
++                private static void PostMarkerManagerStart(CanvasMarkerManager __instance)
++                {
++                    __instance.GetComponent<Canvas>().planeDistance = 5;
++                }
+             }
+         }
+     }"

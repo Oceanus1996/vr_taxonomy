@@ -1,0 +1,420 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch,gpt_bug_detection
+frustra/strayphotons,575,ac9afc43d3adc78dfc994a56a4364215bd1eef41,assets/scenes/menu.json,modified,5,2,7,"@@ -95,7 +95,8 @@
+ 				""scale"": 0.1
+ 			},
+ 			""renderable"": {
+-				""model"": ""box""
++				""model"": ""box"",
++				""visibility"": ""DirectCamera|DirectEye|LightingShadow""
+ 			},
+ 			""physics"": {
+ 				""shapes"": {
+@@ -168,7 +169,9 @@
+ 				""translate"": [0, 2.5, -4]
+ 			},
+ 			""renderable"": {
+-				""model"": ""box""
++				""model"": ""box"",
++				""visibility"": ""Transparent"",
++				""metallic_roughness_override"": [0.9, 0.1]
+ 			},
+ 			""physics"": {
+ 				""type"": ""Static"",","{""has_bug"": true, ""bugs"": [{""line_start"": 270, ""line_end"": 270, ""description"": ""The condition in 'scene_connection' may lead to a logic error due to the use of '||' without proper grouping, which can cause unexpected evaluation order."", ""buggy_code"": ""\""station-center\"": \""global:ship_airlock.triggerzone/trigger_player_count || global:ship_airlock.elevator_doors.left_door.lock/animation_state != 0 || global:ship_airlock.elevator_doors.right_door.lock/animation_state != 0\""""}, {""line_start"": 340, ""line_end"": 342, ""description"": ""Potential null reference issue if 'airlock_in_signal_display/value' or 'airlock_in_button_sensor.Icosphere/light_value_r' are not defined or return null."", ""buggy_code"": ""\""text_color_g\"": \""airlock_in_signal_display/value >= 1\"", \""text_color_r\"": \""airlock_in_signal_display/value < 1\"", \""value\"": \""airlock_in_button_sensor.Icosphere/light_value_r\""""}]}"
+frustra/strayphotons,575,ac9afc43d3adc78dfc994a56a4364215bd1eef41,shaders/vulkan/screen_cover.vert,modified,4,3,7,"@@ -19,9 +19,10 @@ vec2 uvs[3] = vec2[](vec2(-0.5, 1), vec2(1.5, 1), vec2(0.5, -1));
+ 
+ vec2 uvsFlipped[3] = vec2[](vec2(-0.5, 0), vec2(1.5, 0), vec2(0.5, 2));
+ 
+-const bool flipped = false;
++layout(constant_id = 0) const bool FLIPPED = false;
++layout(constant_id = 1) const float DRAW_DEPTH = 0.0;
+ 
+ void main() {
+-    outTexCoord = flipped ? uvsFlipped[gl_VertexIndex] : uvs[gl_VertexIndex];
+-    gl_Position = vec4(positions[gl_VertexIndex], 0.0, 1.0);
++    outTexCoord = FLIPPED ? uvsFlipped[gl_VertexIndex] : uvs[gl_VertexIndex];
++    gl_Position = vec4(positions[gl_VertexIndex], DRAW_DEPTH, 1.0);
+ }","{""has_bug"": true, ""bugs"": [{""line_start"": 12, ""line_end"": 12, ""description"": ""Incorrect usage of 'out' declaration for gl_PerVertex. It should be declared as a struct instead of using 'out'."", ""buggy_code"": ""out gl_PerVertex {""}, {""line_start"": 26, ""line_end"": 26, ""description"": ""Potential out-of-bounds access on uvs and uvsFlipped arrays. gl_VertexIndex should be checked to ensure it is within the bounds of the arrays."", ""buggy_code"": ""outTexCoord = FLIPPED ? uvsFlipped[gl_VertexIndex] : uvs[gl_VertexIndex];""}]}"
+frustra/strayphotons,575,ac9afc43d3adc78dfc994a56a4364215bd1eef41,shaders/vulkan/skybox.frag,added,68,0,68,"@@ -0,0 +1,68 @@
++/*
++ * Stray Photons - Copyright (C) 2025 Jacob Wirth
++ *
++ * This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
++ * If a copy of the MPL was not distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/.
++ */
++
++#version 450
++
++#extension GL_OVR_multiview2 : enable
++layout(num_views = 2) in;
++
++#include ""../lib/types_common.glsl""
++#include ""../lib/util.glsl""
++
++INCLUDE_LAYOUT(binding = 0)
++#include ""lib/view_states_uniform.glsl""
++
++INCLUDE_LAYOUT(binding = 1)
++#include ""lib/exposure_state.glsl""
++
++layout(location = 0) in vec2 inTexCoord;
++layout(location = 0) out vec4 outFragColor;
++
++layout(push_constant) uniform PushConstants {
++    mat4 rotation;
++    uint index;
++    float brightness;
++    float density;
++    float starSize;
++};
++
++const vec3[3] colorTints = vec3[](vec3(255, 182, 119) / 255, vec3(255, 252, 246) / 255, vec3(188, 210, 255) / 255);
++
++void main() {
++    ViewState view = views[gl_ViewID_OVR];
++
++    vec2 flippedCoord = vec2(inTexCoord.x, 1 - inTexCoord.y);
++    vec3 rayDir = normalize(
++        mat3(rotation) * mat3(view.invViewMat) * ScreenPosToViewPos(flippedCoord, 1, view.invProjMat));
++    rayDir = clamp(rayDir, -1, 1);
++
++    float latitude = atan(rayDir.z, rayDir.x) * (0.5 / M_PI) + 0.5;
++    float longitude = asin(rayDir.y) * (1 / M_PI) + 0.5;
++
++    vec2 cellSize = vec2(1.5, 1.0) * density;
++    float distFromEquator = floor(abs(cellSize.y * 0.5 - longitude * cellSize.y)) / cellSize.y;
++    float rowScale = ceil(cos(distFromEquator * M_PI) * cellSize.x);
++    vec2 viewPos = vec2(latitude * rowScale, longitude * cellSize.y);
++
++    ivec2 cellNum = ivec2(viewPos);
++
++    vec4 rng = randState(cellNum.xyx);
++    float pointSize = rand2(rng) * starSize;
++    vec2 offsetPos = vec2(rand2(rng), rand2(rng));
++    offsetPos *= clamp(1 - (pointSize * 100), 0, 1);
++    offsetPos += clamp(pointSize * 50, 0, 0.5);
++    vec2 starAngle = (cellNum + offsetPos) / vec2(rowScale, cellSize.y);
++    starAngle.x = (starAngle.x - 0.5) * M_PI * 2;
++    starAngle.y = (starAngle.y - 0.5) * M_PI;
++    vec3 starDir = vec3(cos(starAngle.x), sin(starAngle.y), sin(starAngle.x));
++    starDir.xz *= cos(starAngle.y);
++
++    vec3 color = colorTints[int(rand2(rng) * 3)].rgb * brightness * rand2(rng);
++    float pointDist = smoothstep(1 - pointSize / sqrt(length(view.extents)), 1, dot(starDir, rayDir));
++    outFragColor = vec4(color * pointDist * exposure, 1.0);
++    // outFragColor = vec4(vec3(fract(viewPos), 0) * exposure, 1.0);
++}","{""has_bug"": true, ""bugs"": [{""line_start"": 23, ""line_end"": 23, ""description"": ""Output variable 'outFragColor' is declared with the same location as input variable 'inTexCoord', which can lead to undefined behavior."", ""buggy_code"": ""layout(location = 0) out vec4 outFragColor;""}, {""line_start"": 64, ""line_end"": 64, ""description"": ""The variable 'exposure' is used without being defined or declared in the shader, which will lead to a compilation error."", ""buggy_code"": ""outFragColor = vec4(color * pointDist * exposure, 1.0);""}]}"
+frustra/strayphotons,575,ac9afc43d3adc78dfc994a56a4364215bd1eef41,src/core/assets/AssetManager.cc,modified,30,20,50,"@@ -106,37 +106,47 @@ namespace sp {
+     }
+ 
+     std::vector<std::string> AssetManager::ListBundledAssets(std::string_view prefix,
+-        std::string_view extension) const {
++        std::string_view extension,
++        size_t maxDepth) const {
+         std::vector<std::string> results;
+-        if (std::filesystem::is_directory(OVERRIDE_ASSETS_DIR / prefix)) {
+-            for (auto &entry : std::filesystem::directory_iterator(OVERRIDE_ASSETS_DIR / prefix)) {
+-                if (entry.is_regular_file() && (extension.empty() || entry.path().extension() == extension)) {
+-                    auto path = entry.path().lexically_relative(OVERRIDE_ASSETS_DIR).string();
+-                    std::replace(path.begin(), path.end(), (char)std::filesystem::path::preferred_separator, '/');
+-                    results.emplace_back(path);
+-                }
+-            }
+-        }
+-        if (std::filesystem::is_directory(assetsPath / prefix)) {
+-            for (auto &entry : std::filesystem::directory_iterator(assetsPath / prefix)) {
+-                auto path = entry.path().lexically_relative(assetsPath);
+-                if (std::filesystem::is_regular_file(OVERRIDE_ASSETS_DIR / path)) continue;
+-                if (entry.is_regular_file() && (extension.empty() || entry.path().extension() == extension)) {
+-                    std::string pathStr = path.string();
+-                    std::replace(pathStr.begin(), pathStr.end(), (char)std::filesystem::path::preferred_separator, '/');
+-                    results.emplace_back(pathStr);
++        std::optional<std::filesystem::path> ignorePrefix;
++        std::function<void(std::filesystem::path, const std::filesystem::path &, size_t)> appendDirectoryFiles =
++            [&](auto dir, auto &base, size_t depth) {
++                if (std::filesystem::is_directory(dir)) {
++                    for (auto &entry : std::filesystem::directory_iterator(dir)) {
++                        if (entry.is_regular_file() && (extension.empty() || entry.path().extension() == extension)) {
++                            auto path = entry.path().lexically_relative(base).string();
++                            std::replace(path.begin(),
++                                path.end(),
++                                (char)std::filesystem::path::preferred_separator,
++                                '/');
++                            results.emplace_back(path);
++                        } else if (entry.is_directory() && depth < maxDepth) {
++                            appendDirectoryFiles(entry.path(), base, depth + 1);
++                        }
++                    }
+                 }
+-            }
+-        }
++            };
++        appendDirectoryFiles(OVERRIDE_ASSETS_DIR / prefix, OVERRIDE_ASSETS_DIR, 0);
++        ignorePrefix = OVERRIDE_ASSETS_DIR;
++        appendDirectoryFiles(assetsPath / prefix, assetsPath, 0);
+         if (!bundleIndex.empty()) {
+             for (auto &[path, range] : bundleIndex) {
+                 if (starts_with(path, prefix)) {
++                    size_t depth = 0;
++                    size_t sep = prefix.length();
++                    while (depth <= maxDepth && sep != std::string::npos) {
++                        sep = path.find('/', sep + 1);
++                        depth++;
++                    }
++                    if (sep != std::string::npos) continue;
+                     if (std::filesystem::is_regular_file(OVERRIDE_ASSETS_DIR / std::string_view(path))) continue;
+                     if (std::filesystem::is_regular_file(assetsPath / std::string_view(path))) continue;
+                     results.emplace_back(path);
+                 }
+             }
+         }
++        std::sort(results.begin(), results.end());
+         return results;
+     }
+ ","{""has_bug"": true, ""bugs"": [{""line_start"": 37, ""line_end"": 37, ""description"": ""Incorrect preprocessor directive condition. It should be UNDEFINE_WIN32 instead of UNDEFINE_WIN22."", ""buggy_code"": ""#ifdef UNDEFINE_WIN22""}, {""line_start"": 176, ""line_end"": 176, ""description"": ""Potential null reference issue. The stream is opened without checking if assetsPath is a valid file path."", ""buggy_code"": ""stream.open(assetsPath, std::ios::in | std::ios::binary);""}, {""line_start"": 188, ""line_end"": 188, ""description"": ""Incomplete code. The function is not properly closed, leading to potential undefined behavior."", ""buggy_code"": ""stream.seek""}]}"
+frustra/strayphotons,575,ac9afc43d3adc78dfc994a56a4364215bd1eef41,src/core/assets/AssetManager.hh,modified,3,1,4,"@@ -50,7 +50,9 @@ namespace sp {
+         void Shutdown();
+ 
+         std::filesystem::path GetExternalPath(std::string_view path) const;
+-        std::vector<std::string> ListBundledAssets(std::string_view prefix, std::string_view extension = """") const;
++        std::vector<std::string> ListBundledAssets(std::string_view prefix,
++            std::string_view extension = """",
++            size_t maxDepth = 4) const;
+ 
+         AsyncPtr<Asset> Load(std::string_view path, AssetType type = AssetType::Bundled, bool reload = false);
+         AsyncPtr<Gltf> LoadGltf(std::string_view name);","{""has_bug"": false, ""bugs"": []}"
+frustra/strayphotons,575,ac9afc43d3adc78dfc994a56a4364215bd1eef41,src/graphics/graphics/gui/MenuGuiManager.cc,modified,1,1,2,"@@ -340,7 +340,7 @@ namespace sp {
+             {""Cornell Box Mirror"", ""cornell-box-3""},
+             {""Test 1"", ""test1""},
+         };
+-        auto sceneAssets = Assets().ListBundledAssets(""scenes/"", "".json"");
++        auto sceneAssets = Assets().ListBundledAssets(""scenes/"", "".json"", 0);
+         for (auto &path : sceneAssets) {
+             if (starts_with(path, ""scenes/"") && ends_with(path, "".json"")) {
+                 std::string scene = path.substr(7, path.length() - 5 - 7);","{""has_bug"": true, ""bugs"": [{""line_start"": 136, ""line_end"": 136, ""description"": ""Potential null reference when loading texture if logoTex is not initialized."", ""buggy_code"": ""if (!logoTex) logoTex = graphics.context->LoadTexture(Assets().LoadImage(\""logos/sp-menu.png\"")->Get());""}, {""line_start"": 194, ""line_end"": 194, ""description"": ""Incomplete function call for ImGui::Button, leading to a compilation error."", ""buggy_code"": ""if (ImGui::Butto""}]}"
+frustra/strayphotons,575,ac9afc43d3adc78dfc994a56a4364215bd1eef41,src/graphics/graphics/gui/definitions/EditorControls.cc,modified,4,1,5,"@@ -281,9 +281,12 @@ namespace sp {
+                 lock.GetInstance().GetInstanceId());
+         }
+ 
+-        if (!this->target.Has<ecs::SceneInfo>(lock)) {
++        if (!this->target.Exists(lock)) {
+             ImGui::Text(""Missing Entity: %s"", ecs::ToString(lock, this->target).c_str());
+             return;
++        } else if (!this->target.Has<ecs::SceneInfo>(lock)) {
++            ImGui::Text(""Entity has no SceneInfo: %s"", ecs::ToString(lock, this->target).c_str());
++            return;
+         }
+ 
+         if (ecs::IsLive(this->target)) {","{""has_bug"": true, ""bugs"": [{""line_start"": 102, ""line_end"": 102, ""description"": ""Potential null reference issue. 'target' is used without being defined in the current scope."", ""buggy_code"": ""if (!foundExact && target.Has<ecs::SceneInfo>(lock)) {""}, {""line_start"": 161, ""line_end"": 161, ""description"": ""Possible type mismatch. 'newRef' is created but not checked for validity before being used."", ""buggy_code"": ""ecs::SignalRef newRef(ref.GetEntity(), signalName);""}]}"
+frustra/strayphotons,575,ac9afc43d3adc78dfc994a56a4364215bd1eef41,src/graphics/graphics/vulkan/Renderer.cc,modified,2,0,2,"@@ -26,6 +26,7 @@
+ #include ""graphics/vulkan/render_passes/LightSensors.hh""
+ #include ""graphics/vulkan/render_passes/Mipmap.hh""
+ #include ""graphics/vulkan/render_passes/Outline.hh""
++#include ""graphics/vulkan/render_passes/Skybox.hh""
+ #include ""graphics/vulkan/render_passes/Tonemap.hh""
+ #include ""graphics/vulkan/render_passes/VisualizeBuffer.hh""
+ #include ""graphics/vulkan/scene/Mesh.hh""
+@@ -609,6 +610,7 @@ namespace sp::vulkan {
+         chrono_clock::duration elapsedTime) {
+         renderer::AddExposureState(graph);
+         lighting.AddLightingPass(graph);
++        renderer::AddSkyboxPass(graph);
+         transparency.AddPass(graph, view);
+         emissive.AddPass(graph, lock, elapsedTime);
+         voxels.AddDebugPass(graph);","{""has_bug"": true, ""bugs"": [{""line_start"": 78, ""line_end"": 78, ""description"": ""Dereferencing a pointer instead of using it directly. 'device' should not be dereferenced with '->' as it is a reference."", ""buggy_code"": ""device->waitIdle();""}, {""line_start"": 182, ""line_end"": 182, ""description"": ""Potential null reference issue. If 'device.LoadAssetImage' returns null, dereferencing it with '->Get()' will lead to a crash."", ""buggy_code"": ""logoTex = device.LoadAssetImage(sp::Assets().LoadImage(\""logos/splash.png\"")->Get(), true);""}]}"
+frustra/strayphotons,575,ac9afc43d3adc78dfc994a56a4364215bd1eef41,src/graphics/graphics/vulkan/render_passes/CMakeLists.txt,modified,1,0,1,"@@ -13,6 +13,7 @@ target_sources(${PROJECT_GRAPHICS_VULKAN_CORE_LIB} PRIVATE
+     Exposure.cc
+     Mipmap.cc
+     Screenshots.cc
++    Skybox.cc
+     SMAA.cc
+     Lighting.cc
+     LightSensors.cc","{""has_bug"": false, ""bugs"": []}"
+frustra/strayphotons,575,ac9afc43d3adc78dfc994a56a4364215bd1eef41,src/graphics/graphics/vulkan/render_passes/Crosshair.cc,modified,14,11,25,"@@ -7,64 +7,67 @@
+ 
+ #include ""Crosshair.hh""
+ 
++#include ""graphics/core/GraphicsContext.hh""
+ #include ""graphics/vulkan/core/CommandContext.hh""
+ 
+ namespace sp::vulkan::renderer {
+-    static void drawDots(CommandContext &cmd, vk::Offset2D offset, uint32 spread, uint32 size) {
++    static void drawDots(CommandContext &cmd, vk::Offset2D offset, glm::vec2 spread, glm::vec2 size) {
+         vk::Rect2D viewport;
+-        viewport.extent.width = size;
+-        viewport.extent.height = size;
++        viewport.extent.width = (uint32_t)glm::round(size.x);
++        viewport.extent.height = (uint32_t)glm::round(size.y);
+         viewport.offset = offset;
+ 
+         cmd.SetViewport(viewport);
+         cmd.Draw(3);
+ 
+-        viewport.offset.x = offset.x + spread;
++        viewport.offset.x = (int32_t)glm::round((float)offset.x + spread.x);
+         cmd.SetViewport(viewport);
+         cmd.Draw(3);
+ 
+-        viewport.offset.x = offset.x - spread;
++        viewport.offset.x = (int32_t)glm::round((float)offset.x - spread.x);
+         cmd.SetViewport(viewport);
+         cmd.Draw(3);
+ 
+         viewport.offset.x = offset.x;
+-        viewport.offset.y = offset.y + spread;
++        viewport.offset.y = (int32_t)glm::round((float)offset.y + spread.y);
+         cmd.SetViewport(viewport);
+         cmd.Draw(3);
+ 
+-        viewport.offset.y = offset.y - spread;
++        viewport.offset.y = (int32_t)glm::round((float)offset.y - spread.y);
+         cmd.SetViewport(viewport);
+         cmd.Draw(3);
+     }
+ 
+     void AddCrosshair(RenderGraph &graph) {
++        auto windowScale = CVarWindowScale.Get();
+         graph.AddPass(""Crosshair"")
+             .Build([&](PassBuilder &builder) {
+                 builder.SetColorAttachment(0, builder.LastOutputID(), {LoadOp::Load, StoreOp::Store});
+             })
+-            .Execute([](Resources &resources, CommandContext &cmd) {
++            .Execute([windowScale](Resources &resources, CommandContext &cmd) {
+                 cmd.SetDepthTest(false, false);
+                 cmd.SetShaders(""screen_cover.vert"", ""solid_color.frag"");
+ 
+                 auto extent = cmd.GetFramebufferExtent();
+                 auto center = vk::Offset2D{(int)extent.width / 2, (int)extent.height / 2};
+-                auto spread = extent.width / 100;
++                glm::vec2 spread = windowScale * (float)std::min(extent.width, extent.height) / 100.0f;
++                glm::vec2 dotSize = glm::min(spread * 0.4f, windowScale * 2.0f);
+ 
+                 cmd.PushConstants(glm::vec4(1, 1, 0.95, 0.3));
+                 cmd.SetBlendFuncSeparate(vk::BlendFactor::eSrcAlpha,
+                     vk::BlendFactor::eOne,
+                     vk::BlendFactor::eZero,
+                     vk::BlendFactor::eOne);
+                 cmd.SetBlending(true, vk::BlendOp::eAdd);
+-                drawDots(cmd, center, spread, 2);
++                drawDots(cmd, center, spread, dotSize);
+ 
+                 cmd.PushConstants(glm::vec4(0.6, 0.6, 0.5, 1));
+                 cmd.SetBlendFuncSeparate(vk::BlendFactor::eSrcAlpha,
+                     vk::BlendFactor::eZero,
+                     vk::BlendFactor::eZero,
+                     vk::BlendFactor::eOne);
+                 cmd.SetBlending(true, vk::BlendOp::eMin);
+-                drawDots(cmd, center, spread, 2);
++                drawDots(cmd, center, spread, dotSize);
+             });
+     }
+ } // namespace sp::vulkan::renderer","{""has_bug"": true, ""bugs"": [{""line_start"": 52, ""line_end"": 52, ""description"": ""Potential integer division issue leading to incorrect center calculation."", ""buggy_code"": ""auto center = vk::Offset2D{(int)extent.width / 2, (int)extent.height / 2};""}, {""line_start"": 53, ""line_end"": 53, ""description"": ""Possible type mismatch if windowScale is not a float, leading to incorrect spread calculation."", ""buggy_code"": ""glm::vec2 spread = windowScale * (float)std::min(extent.width, extent.height) / 100.0f;""}]}"
+frustra/strayphotons,575,ac9afc43d3adc78dfc994a56a4364215bd1eef41,src/graphics/graphics/vulkan/render_passes/Skybox.cc,added,89,0,89,"@@ -0,0 +1,89 @@
++/*
++ * Stray Photons - Copyright (C) 2025 Jacob Wirth
++ *
++ * This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
++ * If a copy of the MPL was not distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/.
++ */
++
++#include ""Skybox.hh""
++
++#include ""ecs/EcsImpl.hh""
++#include ""ecs/components/View.hh""
++#include ""graphics/vulkan/core/CommandContext.hh""
++#include ""graphics/vulkan/core/DeviceContext.hh""
++#include ""graphics/vulkan/core/PerfTimer.hh""
++#include ""graphics/vulkan/render_passes/Lighting.hh""
++
++#include <glm/glm.hpp>
++
++namespace sp::vulkan::renderer {
++    static CVar<bool> CVarDrawSkybox0(""r.DrawSkybox0"", true, ""Enable drawing the first skybox"");
++    static CVar<bool> CVarDrawSkybox1(""r.DrawSkybox1"", true, ""Enable drawing the first skybox"");
++    static CVar<bool> CVarDrawSkybox2(""r.DrawSkybox2"", true, ""Enable drawing the first skybox"");
++    static CVar<float> CVarSkyboxStarBrightness(""r.SkyboxStarBrightness"",
++        0.08f,
++        ""Brightness scaling value for star skybox"");
++    static CVar<float> SkyboxStarDensity(""r.SkyboxStarDensity"", 100.0f, ""Star tile density for skybox rendering"");
++    static CVar<float> CVarSkyboxStarSize(""r.SkyboxStarSize"", 0.0001f, ""Star size for skybox rendering"");
++
++    void AddSkyboxPass(RenderGraph &graph) {
++        static const std::array<glm::vec4, 3> rotations = {
++            glm::vec4(1.0, 0.0, 0.0, M_2_PI),
++            glm::vec4(glm::normalize(glm::vec3(1.0, 0.0, 1.0)), M_PI_2),
++            glm::vec4(0.0, 0.0, 1.0, M_2_PI),
++        };
++        std::array<bool, 3> enabled = {
++            CVarDrawSkybox0.Get(),
++            CVarDrawSkybox1.Get(),
++            CVarDrawSkybox2.Get(),
++        };
++        bool first = true;
++        float brightness = CVarSkyboxStarBrightness.Get();
++        float density = SkyboxStarDensity.Get();
++        float starSize = CVarSkyboxStarSize.Get();
++        for (size_t i = 0; i < rotations.size(); i++) {
++            if (!enabled[i]) continue;
++            graph.AddPass(""Skybox"" + std::to_string(i))
++                .Build([&](rg::PassBuilder &builder) {
++                    builder.Read(""ExposureState"", Access::FragmentShaderReadStorage);
++                    builder.ReadUniform(""ViewState"");
++
++                    builder.SetColorAttachment(0, builder.LastOutputID(), {LoadOp::Load, StoreOp::Store});
++                    builder.SetDepthAttachment(""GBufferDepthStencil"", {LoadOp::Load, StoreOp::ReadOnly});
++                })
++                .Execute([i, first, brightness, density, starSize](rg::Resources &resources, CommandContext &cmd) {
++                    cmd.SetShaders(""screen_cover.vert"", ""skybox.frag"");
++
++                    cmd.SetShaderConstant(ShaderStage::Vertex, ""DRAW_DEPTH"", 1.0f);
++
++                    if (!first) {
++                        cmd.SetBlending(true, vk::BlendOp::eMax);
++                        cmd.SetBlendFunc(vk::BlendFactor::eSrcAlpha, vk::BlendFactor::eOne);
++                    }
++
++                    cmd.SetDepthTest(true, false);
++                    cmd.SetDepthCompareOp(vk::CompareOp::eEqual);
++
++                    cmd.SetStorageBuffer(""ExposureState"", ""ExposureState"");
++                    cmd.SetUniformBuffer(""ViewStates"", ""ViewState"");
++
++                    struct {
++                        glm::mat4 rotation;
++                        uint32_t index;
++                        float brightness, density, starSize;
++                    } constants = {
++                        glm::mat4(glm::angleAxis(rotations[i].w, glm::vec3(rotations[i]))),
++                        (uint32_t)i,
++                        brightness,
++                        density,
++                        starSize,
++                    };
++
++                    cmd.PushConstants(constants);
++
++                    cmd.Draw(3);
++                });
++            first = false;
++        }
++    }
++} // namespace sp::vulkan::renderer","{""has_bug"": true, ""bugs"": [{""line_start"": 31, ""line_end"": 31, ""description"": ""Potential logic error in rotation definition. The last parameter of glm::vec4 should represent a scalar, but M_2_PI is used which may not be intended as a rotation angle."", ""buggy_code"": ""glm::vec4(1.0, 0.0, 0.0, M_2_PI)""}, {""line_start"": 32, ""line_end"": 32, ""description"": ""Potential logic error in rotation definition. The last parameter of glm::vec4 should represent a scalar, but M_PI_2 is used which may not be intended as a rotation angle."", ""buggy_code"": ""glm::vec4(glm::normalize(glm::vec3(1.0, 0.0, 1.0)), M_PI_2)""}, {""line_start"": 33, ""line_end"": 33, ""description"": ""Potential logic error in rotation definition. The last parameter of glm::vec4 should represent a scalar, but M_2_PI is used which may not be intended as a rotation angle."", ""buggy_code"": ""glm::vec4(0.0, 0.0, 1.0, M_2_PI)""}, {""line_start"": 68, ""line_end"": 68, ""description"": ""Possible null reference issue. The uniform buffer 'ViewStates' is being set, but it is unclear if it has been properly initialized or allocated before this point."", ""buggy_code"": ""cmd.SetUniformBuffer(\""ViewStates\"", \""ViewState\"");""}]}"
+frustra/strayphotons,575,ac9afc43d3adc78dfc994a56a4364215bd1eef41,src/graphics/graphics/vulkan/render_passes/Skybox.hh,added,19,0,19,"@@ -0,0 +1,19 @@
++/*
++ * Stray Photons - Copyright (C) 2025 Jacob Wirth
++ *
++ * This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
++ * If a copy of the MPL was not distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/.
++ */
++
++#pragma once
++
++#include ""Common.hh""
++#include ""graphics/vulkan/scene/GPUScene.hh""
++
++namespace ecs {
++    struct View;
++}
++
++namespace sp::vulkan::renderer {
++    void AddSkyboxPass(RenderGraph &graph);
++} // namespace sp::vulkan::renderer","{""has_bug"": false, ""bugs"": []}"

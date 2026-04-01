@@ -1,0 +1,204 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vrm-c/UniVRM,1142,df101a6daf0df0feb5ff87f4d493ef417db6bcec,Assets/VRM10/Editor/Components/Expression/ReorderableMaterialColorBindingList.cs,modified,2,2,4,"@@ -72,11 +72,11 @@ static bool DrawMaterialValueBinding(Rect position, SerializedProperty property,
+             return changed;
+         }
+ 
+-        public bool Draw()
++        public bool Draw(string label)
+         {
+             m_changed = false;
+             m_list.DoLayoutList();
+-            if (GUILayout.Button(""Clear MaterialColor""))
++            if (GUILayout.Button($""Clear {label}""))
+             {
+                 m_changed = true;
+                 m_serializedProperty.arraySize = 0;"
+vrm-c/UniVRM,1142,df101a6daf0df0feb5ff87f4d493ef417db6bcec,Assets/VRM10/Editor/Components/Expression/ReorderableMaterialUVBindingList.cs,modified,2,2,4,"@@ -80,11 +80,11 @@ static bool DrawMaterialUVBinding(Rect position, SerializedProperty property,
+             return changed;
+         }
+ 
+-        public bool Draw()
++        public bool Draw(string label)
+         {
+             m_changed = false;
+             m_list.DoLayoutList();
+-            if (GUILayout.Button(""Clear MaterialUV""))
++            if (GUILayout.Button($""Clear {label}""))
+             {
+                 m_changed = true;
+                 m_serializedProperty.arraySize = 0;"
+vrm-c/UniVRM,1142,df101a6daf0df0feb5ff87f4d493ef417db6bcec,Assets/VRM10/Editor/Components/Expression/ReorderableMorphTargetBindingList.cs,modified,2,2,4,"@@ -103,11 +103,11 @@ public void SetValues(MorphTargetBinding[] bindings)
+ 
+         }
+ 
+-        public bool Draw()
++        public bool Draw(string label)
+         {
+             m_changed = false;
+             m_ValuesList.DoLayoutList();
+-            if (GUILayout.Button(""Clear BlendShape""))
++            if (GUILayout.Button($""Clear {label}""))
+             {
+                 m_changed = true;
+                 m_valuesProp.arraySize = 0;"
+vrm-c/UniVRM,1142,df101a6daf0df0feb5ff87f4d493ef417db6bcec,Assets/VRM10/Editor/Components/Expression/SerializedExpressionEditor.cs,modified,35,40,75,"@@ -33,44 +33,33 @@ public class SerializedExpressionEditor
+ 
+         bool m_changed;
+ 
+-        public struct EditorStatus
+-        {
+-            public int Mode;
+-            public bool MorphTargetFoldout;
+-            public bool AdvancedFoldout;
+-
+-            public static EditorStatus Default => new EditorStatus
+-            {
+-                MorphTargetFoldout = true,
+-            };
+-        }
+-        EditorStatus m_status = EditorStatus.Default;
+-
+-        public EditorStatus Status => m_status;
++        static int s_Mode;
++        static bool s_MorphTargetFoldout = true;
++        static bool s_OptionFoldout;
++        static bool s_ListFoldout;
+ 
+         static string[] MODES = new[]{
+             ""MorphTarget"",
+             ""Material Color"",
+-            ""Material UV""
++            ""Texture Transform""
+         };
+ 
+         PreviewMeshItem[] m_items;
+         #endregion
+ 
+         public SerializedExpressionEditor(SerializedObject serializedObject,
+             PreviewSceneManager previewSceneManager) : this(
+-                serializedObject, (VRM10Expression)serializedObject.targetObject, previewSceneManager, EditorStatus.Default)
++                serializedObject, (VRM10Expression)serializedObject.targetObject, previewSceneManager)
+         { }
+ 
+         public SerializedExpressionEditor(VRM10Expression expression,
+-            PreviewSceneManager previewSceneManager, EditorStatus status) : this(
+-                new SerializedObject(expression), expression, previewSceneManager, status)
++            PreviewSceneManager previewSceneManager) : this(
++                new SerializedObject(expression), expression, previewSceneManager)
+         { }
+ 
+         public SerializedExpressionEditor(SerializedObject serializedObject, VRM10Expression targetObject,
+-            PreviewSceneManager previewSceneManager, EditorStatus status)
++            PreviewSceneManager previewSceneManager)
+         {
+-            m_status = status;
+             this.m_serializedObject = serializedObject;
+             this.m_targetObject = targetObject;
+ 
+@@ -100,8 +89,8 @@ public bool Draw(out VRM10Expression bakeValue)
+                 m_targetObject, typeof(VRM10Expression), false);
+             GUI.enabled = true;
+ 
+-            m_status.MorphTargetFoldout = CustomUI.Foldout(Status.MorphTargetFoldout, ""MorphTarget"");
+-            if (Status.MorphTargetFoldout)
++            s_MorphTargetFoldout = CustomUI.Foldout(s_MorphTargetFoldout, ""MorphTarget"");
++            if (s_MorphTargetFoldout)
+             {
+                 EditorGUI.indentLevel++;
+                 var changed = MorphTargetBindsGUI();
+@@ -116,27 +105,17 @@ public bool Draw(out VRM10Expression bakeValue)
+                 EditorGUI.indentLevel--;
+             }
+ 
+-            m_status.AdvancedFoldout = CustomUI.Foldout(Status.AdvancedFoldout, ""Advanced"");
+-            if (Status.AdvancedFoldout)
++            s_ListFoldout = CustomUI.Foldout(s_ListFoldout, ""List"");
++            if (s_ListFoldout)
+             {
+                 EditorGUI.indentLevel++;
+-
+-                // v0.45 Added. Binary flag
+-                EditorGUILayout.PropertyField(m_isBinaryProp, true);
+-
+-                // v1.0 Ignore State
+-                EditorGUILayout.PropertyField(m_ignoreBlinkProp, true);
+-                EditorGUILayout.PropertyField(m_ignoreLookAtProp, true);
+-                EditorGUILayout.PropertyField(m_ignoreMouthProp, true);
+-
+-                EditorGUILayout.Space();
+-                m_status.Mode = GUILayout.Toolbar(Status.Mode, MODES);
+-                switch (Status.Mode)
++                s_Mode = GUILayout.Toolbar(s_Mode, MODES);
++                switch (s_Mode)
+                 {
+                     case 0:
+                         // MorphTarget
+                         {
+-                            if (m_morphTargetBindings.Draw())
++                            if (m_morphTargetBindings.Draw(""MorphTarget""))
+                             {
+                                 m_changed = true;
+                             }
+@@ -146,23 +125,39 @@ public bool Draw(out VRM10Expression bakeValue)
+                     case 1:
+                         // Material
+                         {
+-                            if (m_materialColorBindings.Draw())
++                            if (m_materialColorBindings.Draw(""MaterialColor""))
+                             {
+                                 m_changed = true;
+                             }
+                         }
+                         break;
+ 
+                     case 2:
+-                        // MaterialUV
++                        // TextureTransform
+                         {
+-                            if (m_materialUVBindings.Draw())
++                            if (m_materialUVBindings.Draw(""TextureTransform""))
+                             {
+                                 m_changed = true;
+                             }
+                         }
+                         break;
+                 }
++                EditorGUI.indentLevel--;
++            }
++
++            s_OptionFoldout = CustomUI.Foldout(s_OptionFoldout, ""Option"");
++            if (s_OptionFoldout)
++            {
++                EditorGUI.indentLevel++;
++
++                // v0.45 Added. Binary flag
++                EditorGUILayout.PropertyField(m_isBinaryProp, true);
++
++                // v1.0 Ignore State
++                EditorGUILayout.PropertyField(m_ignoreBlinkProp, true);
++                EditorGUILayout.PropertyField(m_ignoreLookAtProp, true);
++                EditorGUILayout.PropertyField(m_ignoreMouthProp, true);
++
+ 
+                 EditorGUI.indentLevel--;
+             }"
+vrm-c/UniVRM,1142,df101a6daf0df0feb5ff87f4d493ef417db6bcec,Assets/VRM10/Editor/Components/Expression/VRM10ExpressionEditor.cs,modified,0,13,13,"@@ -214,19 +214,6 @@ public override void OnPreviewGUI(Rect r, GUIStyle background)
+             }
+         }
+ 
+-        // public static VRM10Expression CreateExpression(string path)
+-        // {
+-        //     //Debug.LogFormat(""{0}"", path);
+-        //     var clip = ScriptableObject.CreateInstance<VRM10Expression>();
+-        //     clip.name = Path.GetFileNameWithoutExtension(path);
+-        //     AssetDatabase.CreateAsset(clip, path);
+-        //     AssetDatabase.ImportAsset(path);
+-        //     return clip;
+-        //     //Clips.Add(clip);
+-        //     //EditorUtility.SetDirty(this);
+-        //     //AssetDatabase.SaveAssets();
+-        // }
+-
+         SerializedExpressionEditor m_serializedEditor;
+ 
+         VRM10Expression m_target;"

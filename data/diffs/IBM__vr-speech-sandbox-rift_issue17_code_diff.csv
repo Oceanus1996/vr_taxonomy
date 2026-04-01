@@ -1,0 +1,427 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+IBM/vr-speech-sandbox-rift,17,c37ba67,Creation Sandbox/Assets/Prefabs/CreatableObjects/Ball.prefab,modified,0,0,0,
+IBM/vr-speech-sandbox-rift,17,c37ba67,Creation Sandbox/Assets/Prefabs/CreatableObjects/Cube.prefab,modified,0,0,0,
+IBM/vr-speech-sandbox-rift,17,c37ba67,Creation Sandbox/Assets/Scripts/SpeechSandboxStreaming.cs,modified,14,10,24,"@@ -27,7 +27,7 @@
+ using FullSerializer;
+ using IBM.Watson.DeveloperCloud.Connection;
+ 
+-public class ExampleStreaming : MonoBehaviour
++public class SpeechSandboxStreaming : MonoBehaviour
+ {
+   
+     public GameManager gameManager;
+@@ -38,14 +38,22 @@ public class ExampleStreaming : MonoBehaviour
+ 
+     [SerializeField]
+     private fsSerializer _serializer = new fsSerializer();
++    private SpeechToText _speechToText;
++    private Conversation _conversation;
++
+     private string stt_username = """";
+     private string stt_password = """";
++    // Change stt_url if different from below
+     private string stt_url = ""https://stream.watsonplatform.net/speech-to-text/api"";
+-
++     
+     private string convo_username = """";
+     private string convo_password = """";
++    // Change convo_url if different from below
+     private string convo_url = ""https://gateway.watsonplatform.net/conversation/api"";
+- 
++    // Change  _conversationVersionDate if different from below
++    private string _conversationVersionDate = ""2017-05-26"";
++    private string convo_workspaceId = """";
++
+     public Text ResultsField;
+ 
+     private int _recordingRoutine = 0;
+@@ -54,11 +62,7 @@ public class ExampleStreaming : MonoBehaviour
+     private int _recordingBufferSize = 1;
+     private int _recordingHZ = 22050;
+ 
+-    private SpeechToText _speechToText;
+-    private Conversation _conversation;
+-    private string _conversationVersionDate = ""2017-05-26"";
+-    private string convo_workspaceId = """";
+-
++   
+     void Start()
+     {
+         LogSystem.InstallDefaultReactors();
+@@ -192,7 +196,7 @@ private IEnumerator RecordingHandler()
+         yield break;
+     }
+ 
+-    private void OnRecognize(SpeechRecognitionEvent result)
++    private void OnRecognize(SpeechRecognitionEvent result, Dictionary<string, object> customData = null)
+     {
+         if (result != null && result.results.Length > 0)
+         {
+@@ -304,7 +308,7 @@ void OnMessage(object resp, Dictionary<string, object> customData)
+         }
+     }
+ 
+-    private void OnRecognizeSpeaker(SpeakerRecognitionEvent result)
++    private void OnRecognizeSpeaker(SpeakerRecognitionEvent result, Dictionary<string, object> customData = null)
+     {
+         if (result != null)
+         {"
+IBM/vr-speech-sandbox-rift,17,c37ba67,Creation Sandbox/Assets/SteamVR/Scripts/SteamVR.cs,modified,2,2,4,"@@ -19,7 +19,7 @@ public static bool enabled
+ 	{
+ 		get
+ 		{
+-			if (!UnityEngine.VR.VRSettings.enabled)
++			if (!UnityEngine.XR.XRSettings.enabled)
+ 				enabled = false;
+ 			return _enabled;
+ 		}
+@@ -58,7 +58,7 @@ public static SteamVR instance
+ 
+ 	public static bool usingNativeSupport
+ 	{
+-		get { return UnityEngine.VR.VRDevice.GetNativePtr() != System.IntPtr.Zero; }
++		get { return UnityEngine.XR.XRDevice.GetNativePtr() != System.IntPtr.Zero; }
+ 	}
+ 
+ 	static SteamVR CreateInstance()"
+IBM/vr-speech-sandbox-rift,17,c37ba67,Creation Sandbox/Assets/SteamVR/Scripts/SteamVR_Camera.cs,modified,2,2,4,"@@ -33,8 +33,8 @@ public Ray GetRay()
+ 
+ 	static public float sceneResolutionScale
+ 	{
+-		get { return UnityEngine.VR.VRSettings.renderScale; }
+-		set { UnityEngine.VR.VRSettings.renderScale = value; }
++		get { return UnityEngine.XR.XRSettings.eyeTextureResolutionScale; }
++		set { UnityEngine.XR.XRSettings.eyeTextureResolutionScale = value; }
+ 	}
+ 
+ 	#region Enable / Disable"
+IBM/vr-speech-sandbox-rift,17,c37ba67,Creation Sandbox/Assets/SteamVR/Scripts/SteamVR_Render.cs,modified,2,2,4,"@@ -312,13 +312,13 @@ void Awake()
+ 		}
+ 	}
+ 
+-#if !(UNITY_5_6)
++#if !(UNITY_5_6_OR_NEWER)
+ 	private SteamVR_UpdatePoses poseUpdater;
+ #endif
+ 
+ 	void Update()
+ 	{
+-#if !(UNITY_5_6)
++#if !(UNITY_5_6_OR_NEWER)
+ 		if (poseUpdater == null)
+ 		{
+ 			var go = new GameObject(""poseUpdater"");"
+IBM/vr-speech-sandbox-rift,17,c37ba67,Creation Sandbox/Assets/SteamVR/Scripts/SteamVR_UpdatePoses.cs,modified,1,1,2,"@@ -10,7 +10,7 @@
+ [RequireComponent(typeof(Camera))]
+ public class SteamVR_UpdatePoses : MonoBehaviour
+ {
+-#if !(UNITY_5_6)
++#if !(UNITY_5_6_OR_NEWER)
+ 	void Awake()
+ 	{
+ 		var camera = GetComponent<Camera>();"
+IBM/vr-speech-sandbox-rift,17,c37ba67,Creation Sandbox/Assets/VRTK/Scripts/VRTK_AdaptiveQuality.cs,modified,16,16,32,"@@ -139,7 +139,7 @@ public sealed class VRTK_AdaptiveQuality : MonoBehaviour
+         /// </remarks>
+         public float currentRenderScale
+         {
+-            get { return VRSettings.renderScale * VRSettings.renderViewportScale; }
++            get { return UnityEngine.XR.XRSettings.eyeTextureResolutionScale * UnityEngine.XR.XRSettings.renderViewportScale; }
+         }
+ 
+         /// <summary>
+@@ -203,8 +203,8 @@ public VRTK_AdaptiveQuality()
+         /// </returns>
+         public static Vector2 RenderTargetResolutionForRenderScale(float renderScale)
+         {
+-            return new Vector2((int)(VRSettings.eyeTextureWidth / VRSettings.renderScale * renderScale),
+-                               (int)(VRSettings.eyeTextureHeight / VRSettings.renderScale * renderScale));
++            return new Vector2((int)(UnityEngine.XR.XRSettings.eyeTextureWidth / UnityEngine.XR.XRSettings.eyeTextureResolutionScale * renderScale),
++                               (int)(UnityEngine.XR.XRSettings.eyeTextureHeight / UnityEngine.XR.XRSettings.eyeTextureResolutionScale * renderScale));
+         }
+ 
+         /// <summary>
+@@ -216,15 +216,15 @@ public static Vector2 RenderTargetResolutionForRenderScale(float renderScale)
+         /// </returns>
+         public float BiggestAllowedMaximumRenderScale()
+         {
+-            if (VRSettings.eyeTextureWidth == 0 || VRSettings.eyeTextureHeight == 0)
++            if (UnityEngine.XR.XRSettings.eyeTextureWidth == 0 || UnityEngine.XR.XRSettings.eyeTextureHeight == 0)
+             {
+                 return maximumRenderScale;
+             }
+ 
+-            float maximumHorizontalRenderScale = maximumRenderTargetDimension * VRSettings.renderScale
+-                                                 / VRSettings.eyeTextureWidth;
+-            float maximumVerticalRenderScale = maximumRenderTargetDimension * VRSettings.renderScale
+-                                               / VRSettings.eyeTextureHeight;
++            float maximumHorizontalRenderScale = maximumRenderTargetDimension * UnityEngine.XR.XRSettings.eyeTextureResolutionScale
++                                                 / UnityEngine.XR.XRSettings.eyeTextureWidth;
++            float maximumVerticalRenderScale = maximumRenderTargetDimension * UnityEngine.XR.XRSettings.eyeTextureResolutionScale
++                                               / UnityEngine.XR.XRSettings.eyeTextureHeight;
+             return Mathf.Min(maximumHorizontalRenderScale, maximumVerticalRenderScale);
+         }
+ 
+@@ -276,8 +276,8 @@ public override string ToString()
+         private void OnEnable()
+         {
+             hmdDisplayIsOnDesktop = VRTK_SDK_Bridge.IsDisplayOnDesktop();
+-            singleFrameDurationInMilliseconds = VRDevice.refreshRate > 0.0f
+-                                                ? 1000.0f / VRDevice.refreshRate
++            singleFrameDurationInMilliseconds = UnityEngine.XR.XRDevice.refreshRate > 0.0f
++                                                ? 1000.0f / UnityEngine.XR.XRDevice.refreshRate
+                                                 : DefaultFrameDurationInMilliseconds;
+ 
+             HandleCommandLineArguments();
+@@ -477,7 +477,7 @@ private void UpdateRenderScale()
+ 
+             // Add latest timing to ring buffer
+             frameTimeRingBufferIndex = (frameTimeRingBufferIndex + 1) % frameTimeRingBuffer.Length;
+-            frameTimeRingBuffer[frameTimeRingBufferIndex] = VRStats.gpuTimeLastFrame;
++            frameTimeRingBuffer[frameTimeRingBufferIndex] = UnityEngine.XR.XRStats.gpuTimeLastFrame;
+ 
+             // Rendering in low resolution means adaptive quality needs to scale back the render scale target to free up gpu cycles
+             bool renderInLowResolution = VRTK_SDK_Bridge.ShouldAppRenderWithLowResources();
+@@ -595,13 +595,13 @@ private void UpdateRenderScale()
+ 
+         private static void SetRenderScale(float renderScale, float renderViewportScale)
+         {
+-            if (Mathf.Abs(VRSettings.renderScale - renderScale) > float.Epsilon)
++            if (Mathf.Abs(UnityEngine.XR.XRSettings.eyeTextureResolutionScale - renderScale) > float.Epsilon)
+             {
+-                VRSettings.renderScale = renderScale;
++                UnityEngine.XR.XRSettings.eyeTextureResolutionScale = renderScale;
+             }
+-            if (Mathf.Abs(VRSettings.renderViewportScale - renderViewportScale) > float.Epsilon)
++            if (Mathf.Abs(UnityEngine.XR.XRSettings.renderViewportScale - renderViewportScale) > float.Epsilon)
+             {
+-                VRSettings.renderViewportScale = renderViewportScale;
++                UnityEngine.XR.XRSettings.renderViewportScale = renderViewportScale;
+             }
+         }
+ 
+@@ -666,7 +666,7 @@ private void UpdateDebugVisualization()
+                 return;
+             }
+ 
+-            int lastFrameIsInBudget = interleavedReprojectionEnabled || VRStats.gpuTimeLastFrame > singleFrameDurationInMilliseconds
++            int lastFrameIsInBudget = interleavedReprojectionEnabled || UnityEngine.XR.XRStats.gpuTimeLastFrame > singleFrameDurationInMilliseconds
+                                       ? 0
+                                       : 1;
+ "
+IBM/vr-speech-sandbox-rift,17,c37ba67,Creation Sandbox/ProjectSettings/ProjectSettings.asset,modified,0,0,0,
+IBM/vr-speech-sandbox-rift,17,c37ba67,Creation Sandbox/ProjectSettings/ProjectVersion.txt,modified,1,1,2,"@@ -1 +1 @@
+-m_EditorVersion: 5.6.1f1
++m_EditorVersion: 2017.3.1f1"
+IBM/vr-speech-sandbox-rift,17,b01dbca,Creation Sandbox/Assets/Prefabs/CreatableObjects/Ball.prefab,modified,0,0,0,
+IBM/vr-speech-sandbox-rift,17,b01dbca,Creation Sandbox/Assets/Prefabs/CreatableObjects/Cube.prefab,modified,0,0,0,
+IBM/vr-speech-sandbox-rift,17,b01dbca,Creation Sandbox/Assets/Scripts/SpeechSandboxStreaming.cs,modified,14,10,24,"@@ -27,7 +27,7 @@
+ using FullSerializer;
+ using IBM.Watson.DeveloperCloud.Connection;
+ 
+-public class ExampleStreaming : MonoBehaviour
++public class SpeechSandboxStreaming : MonoBehaviour
+ {
+   
+     public GameManager gameManager;
+@@ -38,14 +38,22 @@ public class ExampleStreaming : MonoBehaviour
+ 
+     [SerializeField]
+     private fsSerializer _serializer = new fsSerializer();
++    private SpeechToText _speechToText;
++    private Conversation _conversation;
++
+     private string stt_username = """";
+     private string stt_password = """";
++    // Change stt_url if different from below
+     private string stt_url = ""https://stream.watsonplatform.net/speech-to-text/api"";
+-
++     
+     private string convo_username = """";
+     private string convo_password = """";
++    // Change convo_url if different from below
+     private string convo_url = ""https://gateway.watsonplatform.net/conversation/api"";
+- 
++    // Change  _conversationVersionDate if different from below
++    private string _conversationVersionDate = ""2017-05-26"";
++    private string convo_workspaceId = """";
++
+     public Text ResultsField;
+ 
+     private int _recordingRoutine = 0;
+@@ -54,11 +62,7 @@ public class ExampleStreaming : MonoBehaviour
+     private int _recordingBufferSize = 1;
+     private int _recordingHZ = 22050;
+ 
+-    private SpeechToText _speechToText;
+-    private Conversation _conversation;
+-    private string _conversationVersionDate = ""2017-05-26"";
+-    private string convo_workspaceId = """";
+-
++   
+     void Start()
+     {
+         LogSystem.InstallDefaultReactors();
+@@ -192,7 +196,7 @@ private IEnumerator RecordingHandler()
+         yield break;
+     }
+ 
+-    private void OnRecognize(SpeechRecognitionEvent result)
++    private void OnRecognize(SpeechRecognitionEvent result, Dictionary<string, object> customData = null)
+     {
+         if (result != null && result.results.Length > 0)
+         {
+@@ -304,7 +308,7 @@ void OnMessage(object resp, Dictionary<string, object> customData)
+         }
+     }
+ 
+-    private void OnRecognizeSpeaker(SpeakerRecognitionEvent result)
++    private void OnRecognizeSpeaker(SpeakerRecognitionEvent result, Dictionary<string, object> customData = null)
+     {
+         if (result != null)
+         {"
+IBM/vr-speech-sandbox-rift,17,b01dbca,Creation Sandbox/Assets/SteamVR/Scripts/SteamVR.cs,modified,2,2,4,"@@ -19,7 +19,7 @@ public static bool enabled
+ 	{
+ 		get
+ 		{
+-			if (!UnityEngine.VR.VRSettings.enabled)
++			if (!UnityEngine.XR.XRSettings.enabled)
+ 				enabled = false;
+ 			return _enabled;
+ 		}
+@@ -58,7 +58,7 @@ public static SteamVR instance
+ 
+ 	public static bool usingNativeSupport
+ 	{
+-		get { return UnityEngine.VR.VRDevice.GetNativePtr() != System.IntPtr.Zero; }
++		get { return UnityEngine.XR.XRDevice.GetNativePtr() != System.IntPtr.Zero; }
+ 	}
+ 
+ 	static SteamVR CreateInstance()"
+IBM/vr-speech-sandbox-rift,17,b01dbca,Creation Sandbox/Assets/SteamVR/Scripts/SteamVR_Camera.cs,modified,2,2,4,"@@ -33,8 +33,8 @@ public Ray GetRay()
+ 
+ 	static public float sceneResolutionScale
+ 	{
+-		get { return UnityEngine.VR.VRSettings.renderScale; }
+-		set { UnityEngine.VR.VRSettings.renderScale = value; }
++		get { return UnityEngine.XR.XRSettings.eyeTextureResolutionScale; }
++		set { UnityEngine.XR.XRSettings.eyeTextureResolutionScale = value; }
+ 	}
+ 
+ 	#region Enable / Disable"
+IBM/vr-speech-sandbox-rift,17,b01dbca,Creation Sandbox/Assets/SteamVR/Scripts/SteamVR_Render.cs,modified,2,2,4,"@@ -312,13 +312,13 @@ void Awake()
+ 		}
+ 	}
+ 
+-#if !(UNITY_5_6)
++#if !(UNITY_5_6_OR_NEWER)
+ 	private SteamVR_UpdatePoses poseUpdater;
+ #endif
+ 
+ 	void Update()
+ 	{
+-#if !(UNITY_5_6)
++#if !(UNITY_5_6_OR_NEWER)
+ 		if (poseUpdater == null)
+ 		{
+ 			var go = new GameObject(""poseUpdater"");"
+IBM/vr-speech-sandbox-rift,17,b01dbca,Creation Sandbox/Assets/SteamVR/Scripts/SteamVR_UpdatePoses.cs,modified,1,1,2,"@@ -10,7 +10,7 @@
+ [RequireComponent(typeof(Camera))]
+ public class SteamVR_UpdatePoses : MonoBehaviour
+ {
+-#if !(UNITY_5_6)
++#if !(UNITY_5_6_OR_NEWER)
+ 	void Awake()
+ 	{
+ 		var camera = GetComponent<Camera>();"
+IBM/vr-speech-sandbox-rift,17,b01dbca,Creation Sandbox/Assets/VRTK/Scripts/VRTK_AdaptiveQuality.cs,modified,16,16,32,"@@ -139,7 +139,7 @@ public sealed class VRTK_AdaptiveQuality : MonoBehaviour
+         /// </remarks>
+         public float currentRenderScale
+         {
+-            get { return VRSettings.renderScale * VRSettings.renderViewportScale; }
++            get { return UnityEngine.XR.XRSettings.eyeTextureResolutionScale * UnityEngine.XR.XRSettings.renderViewportScale; }
+         }
+ 
+         /// <summary>
+@@ -203,8 +203,8 @@ public VRTK_AdaptiveQuality()
+         /// </returns>
+         public static Vector2 RenderTargetResolutionForRenderScale(float renderScale)
+         {
+-            return new Vector2((int)(VRSettings.eyeTextureWidth / VRSettings.renderScale * renderScale),
+-                               (int)(VRSettings.eyeTextureHeight / VRSettings.renderScale * renderScale));
++            return new Vector2((int)(UnityEngine.XR.XRSettings.eyeTextureWidth / UnityEngine.XR.XRSettings.eyeTextureResolutionScale * renderScale),
++                               (int)(UnityEngine.XR.XRSettings.eyeTextureHeight / UnityEngine.XR.XRSettings.eyeTextureResolutionScale * renderScale));
+         }
+ 
+         /// <summary>
+@@ -216,15 +216,15 @@ public static Vector2 RenderTargetResolutionForRenderScale(float renderScale)
+         /// </returns>
+         public float BiggestAllowedMaximumRenderScale()
+         {
+-            if (VRSettings.eyeTextureWidth == 0 || VRSettings.eyeTextureHeight == 0)
++            if (UnityEngine.XR.XRSettings.eyeTextureWidth == 0 || UnityEngine.XR.XRSettings.eyeTextureHeight == 0)
+             {
+                 return maximumRenderScale;
+             }
+ 
+-            float maximumHorizontalRenderScale = maximumRenderTargetDimension * VRSettings.renderScale
+-                                                 / VRSettings.eyeTextureWidth;
+-            float maximumVerticalRenderScale = maximumRenderTargetDimension * VRSettings.renderScale
+-                                               / VRSettings.eyeTextureHeight;
++            float maximumHorizontalRenderScale = maximumRenderTargetDimension * UnityEngine.XR.XRSettings.eyeTextureResolutionScale
++                                                 / UnityEngine.XR.XRSettings.eyeTextureWidth;
++            float maximumVerticalRenderScale = maximumRenderTargetDimension * UnityEngine.XR.XRSettings.eyeTextureResolutionScale
++                                               / UnityEngine.XR.XRSettings.eyeTextureHeight;
+             return Mathf.Min(maximumHorizontalRenderScale, maximumVerticalRenderScale);
+         }
+ 
+@@ -276,8 +276,8 @@ public override string ToString()
+         private void OnEnable()
+         {
+             hmdDisplayIsOnDesktop = VRTK_SDK_Bridge.IsDisplayOnDesktop();
+-            singleFrameDurationInMilliseconds = VRDevice.refreshRate > 0.0f
+-                                                ? 1000.0f / VRDevice.refreshRate
++            singleFrameDurationInMilliseconds = UnityEngine.XR.XRDevice.refreshRate > 0.0f
++                                                ? 1000.0f / UnityEngine.XR.XRDevice.refreshRate
+                                                 : DefaultFrameDurationInMilliseconds;
+ 
+             HandleCommandLineArguments();
+@@ -477,7 +477,7 @@ private void UpdateRenderScale()
+ 
+             // Add latest timing to ring buffer
+             frameTimeRingBufferIndex = (frameTimeRingBufferIndex + 1) % frameTimeRingBuffer.Length;
+-            frameTimeRingBuffer[frameTimeRingBufferIndex] = VRStats.gpuTimeLastFrame;
++            frameTimeRingBuffer[frameTimeRingBufferIndex] = UnityEngine.XR.XRStats.gpuTimeLastFrame;
+ 
+             // Rendering in low resolution means adaptive quality needs to scale back the render scale target to free up gpu cycles
+             bool renderInLowResolution = VRTK_SDK_Bridge.ShouldAppRenderWithLowResources();
+@@ -595,13 +595,13 @@ private void UpdateRenderScale()
+ 
+         private static void SetRenderScale(float renderScale, float renderViewportScale)
+         {
+-            if (Mathf.Abs(VRSettings.renderScale - renderScale) > float.Epsilon)
++            if (Mathf.Abs(UnityEngine.XR.XRSettings.eyeTextureResolutionScale - renderScale) > float.Epsilon)
+             {
+-                VRSettings.renderScale = renderScale;
++                UnityEngine.XR.XRSettings.eyeTextureResolutionScale = renderScale;
+             }
+-            if (Mathf.Abs(VRSettings.renderViewportScale - renderViewportScale) > float.Epsilon)
++            if (Mathf.Abs(UnityEngine.XR.XRSettings.renderViewportScale - renderViewportScale) > float.Epsilon)
+             {
+-                VRSettings.renderViewportScale = renderViewportScale;
++                UnityEngine.XR.XRSettings.renderViewportScale = renderViewportScale;
+             }
+         }
+ 
+@@ -666,7 +666,7 @@ private void UpdateDebugVisualization()
+                 return;
+             }
+ 
+-            int lastFrameIsInBudget = interleavedReprojectionEnabled || VRStats.gpuTimeLastFrame > singleFrameDurationInMilliseconds
++            int lastFrameIsInBudget = interleavedReprojectionEnabled || UnityEngine.XR.XRStats.gpuTimeLastFrame > singleFrameDurationInMilliseconds
+                                       ? 0
+                                       : 1;
+ "
+IBM/vr-speech-sandbox-rift,17,b01dbca,Creation Sandbox/ProjectSettings/ProjectSettings.asset,modified,0,0,0,
+IBM/vr-speech-sandbox-rift,17,b01dbca,Creation Sandbox/ProjectSettings/ProjectVersion.txt,modified,1,1,2,"@@ -1 +1 @@
+-m_EditorVersion: 5.6.1f1
++m_EditorVersion: 2017.3.1f1"

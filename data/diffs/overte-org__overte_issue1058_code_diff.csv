@@ -1,0 +1,181 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+overte-org/overte,1058,493c9c9,interface/resources/shaders/errorShader.frag,added,30,0,30,"@@ -0,0 +1,30 @@
++vec3 getErrorColor() {
++    vec3 positionWS = iWorldOrientation * (_positionMS.xyz * iWorldScale) + iWorldPosition;
++    float checkSize = 0.1;
++    vec3 edges = round(mod(positionWS, vec3(checkSize)) / checkSize);
++    float checkerboard = mod(edges.x + edges.y + edges.z, 2.0);
++    return mix(vec3(1, 0, 1), vec3(0.0), checkerboard);
++}
++
++// version 1
++vec3 getProceduralColor() {
++    return getErrorColor();
++}
++
++// version 2
++float getProceduralColors(inout vec3 diffuse, inout vec3 specular, inout float shininess) {
++    diffuse = getErrorColor();
++    return 1.0;
++}
++
++// version 3
++float getProceduralFragment(inout ProceduralFragment data) {
++    data.emissive = getErrorColor();
++    return 1.0;
++}
++
++// version 4
++float getProceduralFragmentWithPosition(inout ProceduralFragmentWithPosition data) {
++    data.emissive = getErrorColor();
++    return 1.0;
++}"
+overte-org/overte,1058,493c9c9,interface/resources/shaders/errorSkyboxShader.frag,added,7,0,7,"@@ -0,0 +1,7 @@
++vec3 getSkyboxColor() {
++    vec3 normal = normalize(_normal);
++    float checkSize = 0.1;
++    vec3 edges = round(mod(normal, vec3(checkSize)) / checkSize);
++    float checkerboard = mod(edges.x + edges.y + edges.z, 2.0);
++    return mix(vec3(1, 0, 1), vec3(0.0), checkerboard);
++}"
+overte-org/overte,1058,493c9c9,interface/src/Menu.cpp,modified,1,1,2,"@@ -540,7 +540,7 @@ Menu::Menu() {
+ 
+     action = addCheckableActionToQMenuAndActionHash(renderOptionsMenu, MenuOption::MaterialProceduralShaders, 0, false);
+     connect(action, &QAction::triggered, [action] {
+-        ModelMeshPartPayload::enableMaterialProceduralShaders = action->isChecked();
++        Procedural::enableProceduralShaders = action->isChecked();
+     });
+ 
+     {"
+overte-org/overte,1058,493c9c9,libraries/procedural/src/procedural/Procedural.cpp,modified,33,1,34,"@@ -28,6 +28,8 @@
+ 
+ Q_LOGGING_CATEGORY(proceduralLog, ""hifi.gpu.procedural"")
+ 
++bool Procedural::enableProceduralShaders = false;
++
+ // User-data parsing constants
+ static const QString PROCEDURAL_USER_DATA_KEY = ""ProceduralEntity"";
+ static const QString VERTEX_URL_KEY = ""vertexShaderURL"";
+@@ -377,6 +379,27 @@ void Procedural::prepare(gpu::Batch& batch,
+ 
+         _proceduralPipelines[key] = gpu::Pipeline::create(program, key.isTransparent() ? _transparentState : _opaqueState);
+ 
++        // Error fallback: pink checkerboard
++        if (_errorFallbackFragmentSource.isEmpty()) {
++            QFile file(_errorFallbackFragmentPath);
++            file.open(QIODevice::ReadOnly);
++            _errorFallbackFragmentSource = QTextStream(&file).readAll();
++        }
++        vertexSource.replacements.erase(PROCEDURAL_BLOCK);
++        fragmentSource.replacements[PROCEDURAL_BLOCK] = _errorFallbackFragmentSource.toStdString();
++        gpu::ShaderPointer errorVertexShader = gpu::Shader::createVertex(vertexSource);
++        gpu::ShaderPointer errorFragmentShader = gpu::Shader::createPixel(fragmentSource);
++        gpu::ShaderPointer errorProgram = gpu::Shader::createProgram(errorVertexShader, errorFragmentShader);
++        _errorPipelines[key] = gpu::Pipeline::create(errorProgram, _opaqueState);
++
++        // Disabled fallback: nothing
++        vertexSource.replacements.erase(PROCEDURAL_BLOCK);
++        fragmentSource.replacements.erase(PROCEDURAL_BLOCK);
++        gpu::ShaderPointer disabledVertexShader = gpu::Shader::createVertex(vertexSource);
++        gpu::ShaderPointer disabledFragmentShader = gpu::Shader::createPixel(fragmentSource);
++        gpu::ShaderPointer disabledProgram = gpu::Shader::createProgram(disabledVertexShader, disabledFragmentShader);
++        _disabledPipelines[key] = gpu::Pipeline::create(disabledProgram, _opaqueState);
++
+         _lastCompile = usecTimestampNow();
+         if (_firstCompile == 0) {
+             _firstCompile = _lastCompile;
+@@ -385,8 +408,15 @@ void Procedural::prepare(gpu::Batch& batch,
+         recompiledShader = true;
+     }
+ 
++    gpu::PipelinePointer finalPipeline = recompiledShader ? _proceduralPipelines[key] : pipeline->second;
++    if (!enableProceduralShaders) {
++        finalPipeline = _disabledPipelines[key];
++    } else if (!finalPipeline || finalPipeline->getProgram()->compilationHasFailed()) {
++        finalPipeline = _errorPipelines[key];
++    }
++
+     // FIXME: need to handle forward rendering
+-    batch.setPipeline(recompiledShader ? _proceduralPipelines[key] : pipeline->second);
++    batch.setPipeline(finalPipeline);
+ 
+     bool recreateUniforms = _shaderDirty || _uniformsDirty || recompiledShader || _prevKey != key;
+     if (recreateUniforms) {
+@@ -533,4 +563,6 @@ void graphics::ProceduralMaterial::initializeProcedural() {
+     // FIXME: Setup proper uniform slots and use correct pipelines for forward rendering
+     _procedural._opaqueFragmentSource = gpu::Shader::getFragmentShaderSource(shader::render_utils::fragment::simple_procedural);
+     _procedural._transparentFragmentSource = gpu::Shader::getFragmentShaderSource(shader::render_utils::fragment::simple_procedural_translucent);
++
++    _procedural._errorFallbackFragmentPath = "":"" + QUrl(""qrc:///shaders/errorShader.frag"").path();
+ }
+\ No newline at end of file"
+overte-org/overte,1058,493c9c9,libraries/procedural/src/procedural/Procedural.h,modified,8,0,8,"@@ -124,12 +124,16 @@ struct Procedural {
+     gpu::Shader::Source _opaqueFragmentSource;
+     gpu::Shader::Source _transparentFragmentSource;
+ 
++    QString _errorFallbackFragmentPath;
++
+     gpu::StatePointer _opaqueState { std::make_shared<gpu::State>() };
+     gpu::StatePointer _transparentState { std::make_shared<gpu::State>() };
+ 
+     static std::function<void(gpu::StatePointer)> opaqueStencil;
+     static std::function<void(gpu::StatePointer)> transparentStencil;
+ 
++    static bool enableProceduralShaders;
++
+ protected:
+     // DO NOT TOUCH
+     // We have to pack these in a particular way to match the ProceduralCommon.slh
+@@ -176,11 +180,15 @@ struct Procedural {
+     bool _shaderDirty { true };
+     bool _uniformsDirty { true };
+ 
++    QString _errorFallbackFragmentSource;
++
+     // Rendering objects
+     UniformLambdas _uniforms;
+     NetworkTexturePointer _channels[MAX_PROCEDURAL_TEXTURE_CHANNELS];
+ 
+     std::unordered_map<ProceduralProgramKey, gpu::PipelinePointer> _proceduralPipelines;
++    std::unordered_map<ProceduralProgramKey, gpu::PipelinePointer> _errorPipelines;
++    std::unordered_map<ProceduralProgramKey, gpu::PipelinePointer> _disabledPipelines;
+ 
+     StandardInputs _standardInputs;
+     gpu::BufferPointer _standardInputsBuffer;"
+overte-org/overte,1058,493c9c9,libraries/procedural/src/procedural/ProceduralSkybox.cpp,modified,2,0,2,"@@ -22,6 +22,8 @@ ProceduralSkybox::ProceduralSkybox(uint64_t created) : graphics::Skybox(), _crea
+     _procedural._vertexSource = shader::Source::get(shader::graphics::vertex::skybox);
+     _procedural._opaqueFragmentSource = shader::Source::get(shader::procedural::fragment::proceduralSkybox);
+ 
++    _procedural._errorFallbackFragmentPath = "":"" + QUrl(""qrc:///shaders/errorSkyboxShader.frag"").path();
++
+     _procedural.setDoesFade(false);
+ 
+     // Adjust the pipeline state for background using the stencil test"
+overte-org/overte,1058,493c9c9,libraries/render-utils/src/MeshPartPayload.cpp,modified,0,5,5,"@@ -25,8 +25,6 @@
+ 
+ using namespace render;
+ 
+-bool ModelMeshPartPayload::enableMaterialProceduralShaders = false;
+-
+ ModelMeshPartPayload::ModelMeshPartPayload(ModelPointer model, int meshIndex, int partIndex, int shapeIndex,
+                                            const Transform& transform, const uint64_t& created) :
+     _meshIndex(meshIndex),
+@@ -345,9 +343,6 @@ void ModelMeshPartPayload::render(RenderArgs* args) {
+     }
+ 
+     if (_shapeKey.hasOwnPipeline()) {
+-        if (!(enableMaterialProceduralShaders)) {
+-            return;
+-        }
+         auto procedural = std::static_pointer_cast<graphics::ProceduralMaterial>(_drawMaterials.top().material);
+         auto& schema = _drawMaterials.getSchemaBuffer().get<graphics::MultiMaterial::Schema>();
+         glm::vec4 outColor = glm::vec4(ColorUtils::tosRGBVec3(schema._albedo), schema._opacity);"
+overte-org/overte,1058,493c9c9,libraries/render-utils/src/MeshPartPayload.h,modified,0,2,2,"@@ -68,8 +68,6 @@ class ModelMeshPartPayload {
+ 
+     void setBlendshapeBuffer(const std::unordered_map<int, gpu::BufferPointer>& blendshapeBuffers, const QVector<int>& blendedMeshSizes);
+ 
+-    static bool enableMaterialProceduralShaders;
+-
+ private:
+     void initCache(const ModelPointer& model, int shapeID);
+ "

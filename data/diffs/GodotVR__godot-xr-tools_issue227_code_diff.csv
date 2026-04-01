@@ -1,0 +1,62 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+GodotVR/godot-xr-tools,227,cf815b19042a0fd8b3b5a101bb3e670908847bd3,VERSIONS.md,modified,1,0,1,"@@ -1,5 +1,6 @@
+ # 3.1.0 (Development)
+ - Improvements to our 2D in 3D viewport
++- Fixed editor preview system for our 2D in 3D viewport
+ - Use value based grip input with threshold
+ - Improved pointer demo supporting left hand with switching
+ - Enhanced pointer laser visibility options for colliding with targets."
+GodotVR/godot-xr-tools,227,cf815b19042a0fd8b3b5a101bb3e670908847bd3,addons/godot-xr-tools/objects/viewport_2d_in_3d.gd,modified,15,4,19,"@@ -55,10 +55,6 @@ var material : SpatialMaterial
+ 
+ # Called when the node enters the scene tree for the first time.
+ func _ready():
+-	# Do not initialize if in the editor
+-	if Engine.editor_hint:
+-		return
+-
+ 	is_ready = true
+ 
+ 	# Setup our viewport texture and material
+@@ -106,6 +102,11 @@ func _input(event):
+ 
+ # Process event
+ func _process(delta):
++	if Engine.editor_hint:
++		# Don't run in editor (will auto run on load)
++		set_process(false)
++		return
++
+ 	if update_mode == UpdateMode.UPDATE_THROTTLED:
+ 		var frame_time = 1.0 / throttle_fps
+ 		time_since_last_update += delta
+@@ -171,6 +172,9 @@ func set_collision_layer(new_layer: int) -> void:
+ 
+ # Enabled update handler
+ func _update_enabled() -> void:
++	if Engine.editor_hint:
++		return
++
+ 	$StaticBody/CollisionShape.disabled = !enabled
+ 
+ 
+@@ -212,13 +216,20 @@ func _update_scene() -> void:
+ 		scene_node = scene.instance()
+ 		$Viewport.add_child(scene_node)
+ 
++	# make sure we update atleast once
++	$Viewport.render_target_update_mode = Viewport.UPDATE_ONCE
++
+ # Filter update handler
+ func _update_filter() -> void:
+ 	if viewport_texture:
+ 		viewport_texture.flags = Texture.FLAG_FILTER if filter else 0
+ 
+ # Update mode handler
+ func _update_update_mode() -> void:
++	if Engine.editor_hint:
++		$Viewport.render_target_update_mode = Viewport.UPDATE_ONCE
++		return
++
+ 	if update_mode == UpdateMode.UPDATE_ONCE:
+ 		# this will trigger redrawing our screen
+ 		$Viewport.render_target_update_mode = Viewport.UPDATE_ONCE"

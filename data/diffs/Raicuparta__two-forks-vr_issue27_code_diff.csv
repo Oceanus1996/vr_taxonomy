@@ -1,0 +1,55 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+Raicuparta/two-forks-vr,27,3e36f0f2813255102557cd701d0c3dee9ba1509a,TwoForksVR/src/Hands/VRHand.cs,modified,2,2,4,"@@ -91,7 +91,7 @@ private Transform SetUpArmBone(Transform playerRootBone)
+         private void SetUpHandLid(Transform armBone)
+         {
+             var handLid = Instantiate(VRAssetLoader.HandLid).transform;
+-            handLid.Find(""HandLidModel"").gameObject.layer = LayerMask.NameToLayer(""UI"");
++            handLid.Find(""HandLidModel"").gameObject.layer = LayerFromName.PlayerBody;
+             handLid.SetParent(armBone, false);
+             if (isLeft) handLid.localScale = new Vector3(1, 1, -1);
+         }
+@@ -106,7 +106,7 @@ private void SetUpShoeLid(Transform playerRootBone)
+                 return;
+             }
+             var handLid = Instantiate(VRAssetLoader.ShoeLid).transform;
+-            handLid.Find(""ShoeLidModel"").gameObject.layer = LayerMask.NameToLayer(""UI"");
++            handLid.Find(""ShoeLidModel"").gameObject.layer = LayerFromName.PlayerBody;
+             handLid.SetParent(shoeBone, false);
+             if (isLeft) handLid.localScale = new Vector3(1, 1, -1);
+         }"
+Raicuparta/two-forks-vr,27,3e36f0f2813255102557cd701d0c3dee9ba1509a,TwoForksVR/src/Helpers/LayerFromName.cs,modified,5,1,6,"@@ -4,6 +4,10 @@ namespace TwoForksVr.Helpers
+ {
+     public static class LayerFromName
+     {
+-        public static int UI = LayerMask.NameToLayer(""UI"");
++        // TODO: rewrite this to be helpful for culling masks too, not just individual layers.
++    
++        public static readonly int UI = LayerMask.NameToLayer(""UI"");
++        public static readonly int MenuBackground = LayerMask.NameToLayer(""MenuBackground"");
++        public static readonly int PlayerBody = 17;
+     }
+ }"
+Raicuparta/two-forks-vr,27,3e36f0f2813255102557cd701d0c3dee9ba1509a,TwoForksVR/src/PlayerBody/VRBodyManager.cs,modified,1,1,2,"@@ -19,7 +19,7 @@ public static void Create(vgPlayerController playerController)
+         {
+             var playerTransform = playerController.transform;
+             var playerBody = playerTransform.Find(""henry/body"").gameObject;
+-            playerBody.layer = LayerMask.NameToLayer(""UI"");
++            playerBody.layer = LayerFromName.PlayerBody;
+             var existingBodyManager = playerBody.GetComponent<VRBodyManager>();
+             if (existingBodyManager) return;
+ "
+Raicuparta/two-forks-vr,27,3e36f0f2813255102557cd701d0c3dee9ba1509a,TwoForksVR/src/PlayerCamera/Patches/GameCameraPatches.cs,modified,1,0,1,"@@ -1,4 +1,5 @@
+ ﻿using HarmonyLib;
++using TwoForksVr.Helpers;
+ using TwoForksVr.Stage;
+ using UnityEngine;
+ "
+Raicuparta/two-forks-vr,27,3e36f0f2813255102557cd701d0c3dee9ba1509a,TwoForksVR/src/PlayerCamera/VRCameraManager.cs,modified,1,1,2,"@@ -28,7 +28,7 @@ private void UpdateCulling()
+             if (cameraCullingMask == 0 && vgPauseManager.Instance.isPaused)
+             {
+                 cameraCullingMask = camera.cullingMask;
+-                camera.cullingMask = LayerMask.GetMask(""UI"", ""MenuBackground"");
++                camera.cullingMask = LayerMask.GetMask(""UI"", ""MenuBackground"") | (1 << LayerFromName.PlayerBody);
+             }
+             else if (cameraCullingMask != 0 && !vgPauseManager.Instance.isPaused)
+             {"

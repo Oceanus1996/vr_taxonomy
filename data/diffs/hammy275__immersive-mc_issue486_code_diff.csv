@@ -1,0 +1,96 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+hammy275/immersive-mc,486,d79db509fecf93e1578854eb81807feeef9ad3f2,common/src/main/java/com/hammy275/immersivemc/client/ClientUtil.java,modified,18,0,18,"@@ -13,6 +13,9 @@
+ import com.hammy275.immersivemc.common.util.Util;
+ import com.hammy275.immersivemc.common.vr.VRPlugin;
+ import com.hammy275.immersivemc.common.vr.VRPluginVerify;
++import com.mojang.datafixers.util.Pair;
++import net.blf02.vrapi.api.data.IVRData;
++import net.blf02.vrapi.api.data.IVRPlayer;
+ import net.minecraft.client.Minecraft;
+ import net.minecraft.client.renderer.LightTexture;
+ import net.minecraft.core.BlockPos;
+@@ -51,6 +54,21 @@ public static Vec3 lerpVec3(Vec3 start, Vec3 end, float partialTick) {
+         );
+     }
+ 
++    /**
++     * Get ray trace start and end for VR.
++     * @param device Device. -1 for HMD, 0 for c0, 1 for c1.
++     * @return Pair containing start and end positions.
++     */
++    public static Pair<Vec3, Vec3> getVRStartAndEnd(int device) {
++        IVRPlayer vrPlayer = VRPlugin.API.getVRPlayer(Minecraft.getInstance().player);
++        IVRData vrData = device == -1 ? vrPlayer.getHMD() : vrPlayer.getController(device);
++        double dist = Minecraft.getInstance().player.blockInteractionRange();
++        Vec3 start = vrData.position();
++        Vec3 look = vrData.getLookAngle();
++        Vec3 end = vrData.position().add(look.x * dist, look.y * dist, look.z * dist);
++        return new Pair<>(start, end);
++    }
++
+     public static void clearDisabledImmersives() {
+         for (Immersive<?, ?> immersive : Immersives.IMMERSIVES) {
+             if (!immersive.getHandler().enabledInConfig(Minecraft.getInstance().player)) {"
+hammy275/immersive-mc,486,d79db509fecf93e1578854eb81807feeef9ad3f2,common/src/main/java/com/hammy275/immersivemc/client/immersive/Immersives.java,modified,13,3,16,"@@ -12,6 +12,7 @@
+ import com.hammy275.immersivemc.api.client.immersive.ImmersiveInfo;
+ import com.hammy275.immersivemc.api.client.immersive.RelativeHitboxInfoBuilder;
+ import com.hammy275.immersivemc.api.common.immersive.NetworkStorage;
++import com.hammy275.immersivemc.client.ClientUtil;
+ import com.hammy275.immersivemc.client.api_impl.ImmersiveMCClientRegistrationImpl;
+ import com.hammy275.immersivemc.client.config.ClientConstants;
+ import com.hammy275.immersivemc.client.immersive.book.ClientBookData;
+@@ -208,7 +209,10 @@ public class Immersives {
+             }, ClientConstants.itemScaleSizeETable).holdsItems(true).textSupplier((info) -> {
+                 EnchantingData.ETableData data = ((EnchantingData) info.getExtraData()).weakData;
+                 List<Pair<Component, Vec3>> texts = new ArrayList<>();
+-                if (!info.isSlotHovered(1)) {
++                if (!info.isSlotHovered(1) && (!VRPluginVerify.clientInVR() || (
++                        Util.rayTraceClosest(ClientUtil.getVRStartAndEnd(-1), info.getAllHitboxes().get(1).getHitbox()).isEmpty() &&
++                                Util.rayTraceClosest(ClientUtil.getVRStartAndEnd(0), info.getAllHitboxes().get(1).getHitbox()).isEmpty() &&
++                                Util.rayTraceClosest(ClientUtil.getVRStartAndEnd(1), info.getAllHitboxes().get(1).getHitbox()).isEmpty()))) {
+                     return null;
+                 }
+                 if (data.isPresent()) {
+@@ -231,7 +235,10 @@ public class Immersives {
+             }, ClientConstants.itemScaleSizeETable).holdsItems(true).textSupplier((info) -> {
+                 EnchantingData.ETableData data = ((EnchantingData) info.getExtraData()).midData;
+                 List<Pair<Component, Vec3>> texts = new ArrayList<>();
+-                if (!info.isSlotHovered(2)) {
++                if (!info.isSlotHovered(2) && (!VRPluginVerify.clientInVR() || (
++                        Util.rayTraceClosest(ClientUtil.getVRStartAndEnd(-1), info.getAllHitboxes().get(2).getHitbox()).isEmpty() &&
++                                Util.rayTraceClosest(ClientUtil.getVRStartAndEnd(0), info.getAllHitboxes().get(2).getHitbox()).isEmpty() &&
++                                Util.rayTraceClosest(ClientUtil.getVRStartAndEnd(1), info.getAllHitboxes().get(2).getHitbox()).isEmpty()))) {
+                     return null;
+                 }
+                 if (data.isPresent()) {
+@@ -254,7 +261,10 @@ public class Immersives {
+             }, ClientConstants.itemScaleSizeETable).holdsItems(true).textSupplier((info) -> {
+                 EnchantingData.ETableData data = ((EnchantingData) info.getExtraData()).strongData;
+                 List<Pair<Component, Vec3>> texts = new ArrayList<>();
+-                if (!info.isSlotHovered(3)) {
++                if (!info.isSlotHovered(3) && (!VRPluginVerify.clientInVR() || (
++                        Util.rayTraceClosest(ClientUtil.getVRStartAndEnd(-1), info.getAllHitboxes().get(3).getHitbox()).isEmpty() &&
++                                Util.rayTraceClosest(ClientUtil.getVRStartAndEnd(0), info.getAllHitboxes().get(3).getHitbox()).isEmpty() &&
++                                Util.rayTraceClosest(ClientUtil.getVRStartAndEnd(1), info.getAllHitboxes().get(3).getHitbox()).isEmpty()))) {
+                     return null;
+                 }
+                 if (data.isPresent()) {"
+hammy275/immersive-mc,486,d79db509fecf93e1578854eb81807feeef9ad3f2,common/src/main/java/com/hammy275/immersivemc/common/util/Util.java,modified,5,0,5,"@@ -13,6 +13,7 @@
+ import com.hammy275.immersivemc.common.immersive.ImmersiveCheckers;
+ import com.hammy275.immersivemc.common.immersive.handler.ImmersiveHandlers;
+ import com.hammy275.immersivemc.server.immersive.TrackedImmersives;
++import com.mojang.datafixers.util.Pair;
+ import net.minecraft.core.BlockPos;
+ import net.minecraft.core.Direction;
+ import net.minecraft.nbt.CompoundTag;
+@@ -213,6 +214,10 @@ public static boolean canPickUpItem(ItemEntity item, Player player) {
+                 && Math.abs(item.getDeltaMovement().x) <= 0.01 && Math.abs(item.getDeltaMovement().z) <= 0.01;
+     }
+ 
++    public static Optional<Integer> rayTraceClosest(Pair<Vec3, Vec3> rayStartAndEnd, BoundingBox... targets) {
++        return rayTraceClosest(rayStartAndEnd.getFirst(), rayStartAndEnd.getSecond(), targets);
++    }
++
+     /**
+      * Find the closest BoundingBox that is ray traced through the ray.
+      * @param rayStart Start of the ray."

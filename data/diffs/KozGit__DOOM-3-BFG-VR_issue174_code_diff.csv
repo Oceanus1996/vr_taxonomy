@@ -1,0 +1,63 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+KozGit/DOOM-3-BFG-VR,174,9e32b00c8717cadedfcde33d6682173c1c5e3794,neo/CMakeLists.txt,modified,7,0,7,"@@ -18,6 +18,9 @@ option(OPENAL
+ option(FFMPEG
+ 		""Use FMPEG to render Bink videos"" ON)
+ 
++option(ONATIVE
++		""Optimize for the host CPU"" OFF)
++
+ if(UNIX)
+ 	set(OPENAL TRUE)
+ endif()
+@@ -68,6 +71,10 @@ if(CMAKE_COMPILER_IS_GNUCC OR CMAKE_C_COMPILER_ID STREQUAL ""Clang"")
+ 		set(my_warn_flags ""${my_warn_flags} -Wno-local-type-template-args -Wno-unknown-warning-option -Wno-inline-new-delete"")
+ 	endif()
+ 	
++	if(NOT CMAKE_CROSSCOMPILING AND ONATIVE)
++		add_definitions(-march=native)
++	endif()
++
+ 	set(CMAKE_C_FLAGS_DEBUG ""${CMAKE_C_FLAGS_DEBUG} -D_DEBUG -O0 -ggdb -fno-strict-aliasing ${my_warn_flags}"")
+ 	#set(CMAKE_C_FLAGS_DEBUGALL ""${CMAKE_C_FLAGS_DEBUGALL} -g -ggdb -D_DEBUG -fno-strict-aliasing ${my_warn_flags}"")
+ 	#set(CMAKE_C_FLAGS_PROFILE ""${CMAKE_C_FLAGS_PROFILE} -g -ggdb -D_DEBUG -O1 -fno-omit-frame-pointer -fno-strict-aliasing ${my_warn_flags}"")"
+KozGit/DOOM-3-BFG-VR,174,9e32b00c8717cadedfcde33d6682173c1c5e3794,neo/framework/FileSystem.cpp,modified,3,3,6,"@@ -846,14 +846,14 @@ void idFileSystemLocal::AddRenderProgs( idStrList& files )
+ 	idStrList work;
+ 	
+ 	// grab all the renderprogs
+-	idStr path = RelativePathToOSPath( ""renderprogs/cgb"", ""fs_basepath"" );
++	idStr path = RelativePathToOSPath( ""renderprogs/cgb"", ""fs_savepath"" );
+ 	ListOSFiles( path, ""*.cgb"", work );
+ 	for( int i = 0; i < work.Num(); i++ )
+ 	{
+ 		files.Append( idStr( ""renderprogs/cgb/"" ) + work[i] );
+ 	}
+ 	
+-	path = RelativePathToOSPath( ""renderprogs/hlsl"", ""fs_basepath"" );
++	path = RelativePathToOSPath( ""renderprogs/hlsl"", ""fs_savepath"" );
+ 	ListOSFiles( path, ""*.v360"", work );
+ 	for( int i = 0; i < work.Num(); i++ )
+ 	{
+@@ -865,7 +865,7 @@ void idFileSystemLocal::AddRenderProgs( idStrList& files )
+ 		files.Append( idStr( ""renderprogs/hlsl/"" ) + work[i] );
+ 	}
+ 	
+-	path = RelativePathToOSPath( ""renderprogs/gl"", ""fs_basepath"" );
++	path = RelativePathToOSPath( ""renderprogs/gl"", ""fs_savepath"" );
+ 	ListOSFiles( path, ""*.*"", work );
+ 	for( int i = 0; i < work.Num(); i++ )
+ 	{"
+KozGit/DOOM-3-BFG-VR,174,9e32b00c8717cadedfcde33d6682173c1c5e3794,neo/renderer/RenderProgs_GLSL.cpp,modified,3,3,6,"@@ -1772,11 +1772,11 @@ GLuint idRenderProgManager::LoadGLSLShader( GLenum target, const char* name, con
+ 		idStr programHLSL = StripDeadCode( hlslCode, inFile, compileMacros, builtin );
+ 		programGLSL = ConvertCG2GLSL( programHLSL, inFile, target == GL_VERTEX_SHADER, programUniforms );
+ 		
+-		fileSystem->WriteFile( outFileHLSL, programHLSL.c_str(), programHLSL.Length(), ""fs_basepath"" );
+-		fileSystem->WriteFile( outFileGLSL, programGLSL.c_str(), programGLSL.Length(), ""fs_basepath"" );
++		fileSystem->WriteFile( outFileHLSL, programHLSL.c_str(), programHLSL.Length(), ""fs_savepath"" );
++		fileSystem->WriteFile( outFileGLSL, programGLSL.c_str(), programGLSL.Length(), ""fs_savepath"" );
+ 		if( r_useUniformArrays.GetBool() )
+ 		{
+-			fileSystem->WriteFile( outFileUniforms, programUniforms.c_str(), programUniforms.Length(), ""fs_basepath"" );
++			fileSystem->WriteFile( outFileUniforms, programUniforms.c_str(), programUniforms.Length(), ""fs_savepath"" );
+ 		}
+ 	}
+ 	else"

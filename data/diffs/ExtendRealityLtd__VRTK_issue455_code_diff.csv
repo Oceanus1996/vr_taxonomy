@@ -1,0 +1,64 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+ExtendRealityLtd/VRTK,455,87c182d,Assets/VRTK/Scripts/VRTK_PlayerPresence.cs,modified,17,9,26,"@@ -66,7 +66,7 @@ public void StartPhysicsFall(Vector3 velocity)
+ 
+                 isFalling = true;
+                 EnablePhysics();
+-                if(rb)
++                if (rb)
+                 {
+                     rb.velocity = velocity + new Vector3(0.0f, -0.001f, 0.0f);
+                 }
+@@ -154,22 +154,27 @@ private void InitHeadsetListeners(bool state)
+ 
+         private void OnGrabObject(object sender, ObjectInteractEventArgs e)
+         {
+-            if (e.target.GetComponent<Collider>())
++            if(e.target)
+             {
+-                Physics.IgnoreCollision(GetComponent<Collider>(), e.target.GetComponent<Collider>(), true);
++                IgnoreCollisions(e.target.GetComponents<Collider>(), true);
++                IgnoreCollisions(e.target.GetComponentsInChildren<Collider>(), true);
+             }
++        }
+ 
+-            foreach (var childCollider in e.target.GetComponentsInChildren<Collider>())
++        private void OnUngrabObject(object sender, ObjectInteractEventArgs e)
++        {
++            if (e.target && e.target.GetComponent<VRTK_InteractableObject>())
+             {
+-                Physics.IgnoreCollision(GetComponent<Collider>(), childCollider, true);
++                IgnoreCollisions(e.target.GetComponents<Collider>(), false);
++                IgnoreCollisions(e.target.GetComponentsInChildren<Collider>(), false);
+             }
+         }
+ 
+-        private void OnUngrabObject(object sender, ObjectInteractEventArgs e)
++        private void IgnoreCollisions(Collider[] colliders, bool state)
+         {
+-            if (e.target && e.target.GetComponent<VRTK_InteractableObject>() && !e.target.GetComponent<VRTK_InteractableObject>().IsGrabbed())
++            foreach (var controllerCollider in colliders)
+             {
+-                Physics.IgnoreCollision(GetComponent<Collider>(), e.target.GetComponent<Collider>(), false);
++                Physics.IgnoreCollision(GetComponent<Collider>(), controllerCollider, state);
+             }
+         }
+ 
+@@ -252,7 +257,7 @@ private void UpdateCollider()
+             var newBCYSize = (headset.transform.position.y - headsetYOffset) - transform.position.y;
+             var newBCYCenter = (newBCYSize != 0 ? (newBCYSize / 2) + playAreaHeightAdjustment : 0);
+ 
+-            if(bc)
++            if (bc)
+             {
+                 bc.size = new Vector3(bc.size.x, newBCYSize, bc.size.z);
+                 bc.center = new Vector3(headset.localPosition.x, newBCYCenter, headset.localPosition.z);
+@@ -303,6 +308,9 @@ private void InitControllerListeners(GameObject controller, bool state)
+         {
+             if (controller)
+             {
++                IgnoreCollisions(controller.GetComponents<Collider>(), true);
++                IgnoreCollisions(controller.GetComponentsInChildren<Collider>(), true);
++
+                 var grabbingController = controller.GetComponent<VRTK_InteractGrab>();
+                 if (grabbingController && ignoreGrabbedCollisions)
+                 {"

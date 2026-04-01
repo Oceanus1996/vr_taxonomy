@@ -1,0 +1,1378 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Assets/AnimationPanelController.cs,added,48,0,48,"@@ -0,0 +1,48 @@
++﻿using System;
++using UnityEngine;
++using UnityEngine.UI;
++
++public class AnimationPanelController : MonoBehaviour
++{
++    public Dropdown Dropdown;
++    public InputField AlphaEnd;
++    public InputField AlphaSpeed;
++    public InputField ScaleEnd;
++    public InputField ScaleSpeed;
++
++    public GameObject AlphaScalePanel;
++    public GameObject DodgeGazePanel;
++    public GameObject NonePanel;
++
++    public void OnValueChanges()
++    {
++        if (Dropdown == null) return;
++        var parsed = (HOTK_Overlay.AnimationType) Enum.Parse(typeof(HOTK_Overlay.AnimationType), Dropdown.options[Dropdown.value].text);
++        switch (parsed)
++        {
++            case HOTK_Overlay.AnimationType.None:
++                AlphaScalePanel.SetActive(false);
++                DodgeGazePanel.SetActive(false);
++                NonePanel.SetActive(true);
++                break;
++            case HOTK_Overlay.AnimationType.Alpha:
++            case HOTK_Overlay.AnimationType.Scale:
++            case HOTK_Overlay.AnimationType.AlphaAndScale:
++                AlphaEnd.interactable = parsed == HOTK_Overlay.AnimationType.Alpha || parsed == HOTK_Overlay.AnimationType.AlphaAndScale;
++                AlphaSpeed.interactable = parsed == HOTK_Overlay.AnimationType.Alpha || parsed == HOTK_Overlay.AnimationType.AlphaAndScale;
++                ScaleEnd.interactable = parsed == HOTK_Overlay.AnimationType.Scale || parsed == HOTK_Overlay.AnimationType.AlphaAndScale;
++                ScaleSpeed.interactable = parsed == HOTK_Overlay.AnimationType.Scale || parsed == HOTK_Overlay.AnimationType.AlphaAndScale;
++                DodgeGazePanel.SetActive(false);
++                NonePanel.SetActive(false);
++                AlphaScalePanel.SetActive(true);
++                break;
++            case HOTK_Overlay.AnimationType.DodgeGaze:
++                AlphaScalePanel.SetActive(false);
++                NonePanel.SetActive(false);
++                DodgeGazePanel.SetActive(true);
++                break;
++            default:
++                throw new ArgumentOutOfRangeException();
++        }
++    }
++}"
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Assets/AnimationPanelController.cs.meta,added,12,0,12,"@@ -0,0 +1,12 @@
++fileFormatVersion: 2
++guid: b9491880450b0ba41b36818318697b0e
++timeCreated: 1472124141
++licenseType: Free
++MonoImporter:
++  serializedVersion: 2
++  defaultReferences: []
++  executionOrder: 0
++  icon: {instanceID: 0}
++  userData: 
++  assetBundleName: 
++  assetBundleVariant: "
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Assets/Editor/HOTK/Example Content/UI Scripts/InputFieldScrollScriptEditor.cs,modified,2,1,3,"@@ -18,7 +18,8 @@ public override void OnInspectorGUI()
+         }
+ 
+         var field = (InputFieldScrollScript)target;
+-        EditorGUILayout.PropertyField(serializedObject.FindProperty(""UseInt""), new GUIContent() { text = ""Use Integer Values"" });
++        if (!EditorGUILayout.PropertyField(serializedObject.FindProperty(""UseInt""), new GUIContent() { text = ""Use Integer Values"" }))
++            EditorGUILayout.PropertyField(serializedObject.FindProperty(""TwoDecimalPlaces""), new GUIContent() { text = ""Use Two Decimal Places"" });
+         EditorGUILayout.PropertyField(serializedObject.FindProperty(""ValMultiplier""), new GUIContent() { text = ""Scroll Value Multiplier"" });
+ 
+         field.UseLimits = EditorGUILayout.Foldout(field.UseLimits, ""Use Limits"", _boldFoldoutStyle);"
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Assets/HOTK/Example Content/HOTK_DisplayMirror.unity,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Assets/HOTK/Example Content/UI Scripts/AlphaMatchInputField.cs,modified,12,0,12,"@@ -13,6 +13,9 @@ public InputField InputField
+         get { return _inputField ?? (_inputField = GetComponent<InputField>()); }
+     }
+ 
++    public InputField LinkedField;
++    public InputField LinkedField2;
++
+     private InputField _inputField;
+ 
+     private float _lastSafeValue;
+@@ -42,6 +45,10 @@ public void OnAlphaChanged()
+         if (!float.TryParse(InputField.text, out f))
+         {
+             InputField.text = _lastSafeValue.ToString();
++            if (LinkedField != null)
++                LinkedField.text = InputField.text;
++            if (LinkedField2 != null)
++                LinkedField2.text = InputField.text;
+             return;
+         }
+         if (Overlay == null) return;
+@@ -86,6 +93,11 @@ public void OnAlphaChanged()
+             default:
+                 throw new ArgumentOutOfRangeException();
+         }
++
++        if (LinkedField != null)
++            LinkedField.text = InputField.text;
++        if (LinkedField2 != null)
++            LinkedField2.text = InputField.text;
+     }
+ 
+     public enum InputValue"
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Assets/HOTK/Example Content/UI Scripts/DodgeMatchInputField.cs,added,77,0,77,"@@ -0,0 +1,77 @@
++﻿using System;
++using UnityEngine;
++using UnityEngine.UI;
++
++[RequireComponent(typeof(InputField))]
++public class DodgeMatchInputField : MonoBehaviour
++{
++    public HOTK_Overlay Overlay;
++    public InputValue Value;
++
++    public InputField InputField
++    {
++        get { return _inputField ?? (_inputField = GetComponent<InputField>()); }
++    }
++    
++    private InputField _inputField;
++
++    private float _lastSafeValue;
++
++    public void OnEnable()
++    {
++        if (Overlay == null) return;
++        switch (Value)
++        {
++            case InputValue.X:
++                InputField.text = Overlay.DodgeGazeOffset.x.ToString();
++                break;
++            case InputValue.Y:
++                InputField.text = Overlay.DodgeGazeOffset.y.ToString();
++                break;
++            case InputValue.Speed:
++                if (Overlay.DodgeGazeSpeed < 0f) Overlay.DodgeGazeSpeed = 0f;
++                if (Overlay.DodgeGazeSpeed > 1f) Overlay.DodgeGazeSpeed = 1f;
++                InputField.text = Overlay.DodgeGazeSpeed.ToString();
++                break;
++            default:
++                throw new ArgumentOutOfRangeException();
++        }
++    }
++
++    public void OnDodgeChanged()
++    {
++        float f;
++        if (!float.TryParse(InputField.text, out f))
++        {
++            InputField.text = _lastSafeValue.ToString();
++            return;
++        }
++        if (Overlay == null) return;
++        switch (Value)
++        {
++            case InputValue.X:
++                Overlay.DodgeGazeOffset.x = f;
++                _lastSafeValue = f;
++                break;
++            case InputValue.Y:
++                Overlay.DodgeGazeOffset.y = f;
++                _lastSafeValue = f;
++                break;
++            case InputValue.Speed:
++                if (f < 0f) f = 0f;
++                if (f > 1f) f = 1f;
++                Overlay.DodgeGazeSpeed = f;
++                _lastSafeValue = f;
++                break;
++            default:
++                throw new ArgumentOutOfRangeException();
++        }
++    }
++
++    public enum InputValue
++    {
++        X,
++        Y,
++        Speed,
++    }
++}"
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Assets/HOTK/Example Content/UI Scripts/DodgeMatchInputField.cs.meta,added,12,0,12,"@@ -0,0 +1,12 @@
++fileFormatVersion: 2
++guid: a51cd1de3373d1b4dbadc24eb6cdeb13
++timeCreated: 1472128436
++licenseType: Free
++MonoImporter:
++  serializedVersion: 2
++  defaultReferences: []
++  executionOrder: 0
++  icon: {instanceID: 0}
++  userData: 
++  assetBundleName: 
++  assetBundleVariant: "
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Assets/HOTK/Example Content/UI Scripts/DropdownSaveLoadController.cs,modified,48,1,49,"@@ -3,6 +3,7 @@
+ using UnityEngine;
+ using UnityEngine.EventSystems;
+ using UnityEngine.UI;
++using Valve.VR;
+ 
+ [RequireComponent(typeof(Dropdown))]
+ public class DropdownSaveLoadController : MonoBehaviour
+@@ -28,6 +29,15 @@ public class DropdownSaveLoadController : MonoBehaviour
+     public InputField ScaleEndField;
+     public InputField ScaleSpeedField;
+ 
++    public InputField AlphaDodgeField;
++    public InputField ScaleDodgeField;
++    public InputField AlphaNoneField;
++    public InputField ScaleNoneField;
++
++    public InputField DodgeXField;
++    public InputField DodgeYField;
++    public InputField DodgeSpeedField;
++
+     public Button SaveButton;
+     public Button LoadButton;
+     public Button DeleteButton;
+@@ -157,6 +167,13 @@ public void OnLoadPressed(bool startup = false) // Loads an existing save
+             settings.HapticsEnabled = true;
+             settings.SaveFileVersion = 5;
+         }
++        if (settings.SaveFileVersion == 5)
++        {
++            settings.DodgeOffsetX = 2f;
++            settings.DodgeOffsetY = 0f;
++            settings.DodgeOffsetSpeed = 0.1f;
++            settings.SaveFileVersion = 6;
++        }
+         DesktopPortalController.Instance.ScreenOffsetPerformed = settings.ScreenOffsetPerformed;
+ 
+         // Recenter XYZ Sliders
+@@ -184,7 +201,10 @@ public void OnLoadPressed(bool startup = false) // Loads an existing save
+         if (RYSlider.RotationField != null) RYSlider.RotationField.SetSafeValue(settings.RY);
+         if (RZSlider.RotationField != null) RZSlider.RotationField.SetSafeValue(settings.RZ);
+ 
+-        DeviceDropdown.SetToOption(settings.Device.ToString());
++        // Swap Selected Controllers when Saved Controller is absent and the other Controller is present
++        DeviceDropdown.SetToOption(((settings.Device == HOTK_Overlay.AttachmentDevice.LeftController && HOTK_TrackedDeviceManager.Instance.LeftIndex == OpenVR.k_unTrackedDeviceIndexInvalid && HOTK_TrackedDeviceManager.Instance.RightIndex != OpenVR.k_unTrackedDeviceIndexInvalid) ? HOTK_Overlay.AttachmentDevice.RightController : // Left Controller not found but Right Controller found. Use Right Controller.
++                                   ((settings.Device == HOTK_Overlay.AttachmentDevice.RightController && HOTK_TrackedDeviceManager.Instance.RightIndex == OpenVR.k_unTrackedDeviceIndexInvalid && HOTK_TrackedDeviceManager.Instance.LeftIndex != OpenVR.k_unTrackedDeviceIndexInvalid) ? HOTK_Overlay.AttachmentDevice.LeftController : // Right Controller not found but Left Controller found. Use Left Controller.
++                                     settings.Device)).ToString()); // Use Device setting otherwise
+         PointDropdown.SetToOption(settings.Point.ToString());
+         AnimationDropdown.SetToOption(settings.Animation.ToString());
+ 
+@@ -195,13 +215,32 @@ public void OnLoadPressed(bool startup = false) // Loads an existing save
+         ScaleEndField.text = settings.ScaleEnd.ToString();
+         ScaleSpeedField.text = settings.ScaleSpeed.ToString();
+ 
++        AlphaDodgeField.text = settings.AlphaStart.ToString();
++        ScaleDodgeField.text = settings.ScaleStart.ToString();
++        AlphaNoneField.text = settings.AlphaStart.ToString();
++        ScaleNoneField.text = settings.ScaleStart.ToString();
++
++        DodgeXField.text = settings.DodgeOffsetX.ToString();
++        DodgeYField.text = settings.DodgeOffsetY.ToString();
++        DodgeSpeedField.text = settings.DodgeOffsetSpeed.ToString();
++
+         AlphaStartField.onEndEdit.Invoke("""");
+         AlphaEndField.onEndEdit.Invoke("""");
+         AlphaSpeedField.onEndEdit.Invoke("""");
+         ScaleStartField.onEndEdit.Invoke("""");
+         ScaleEndField.onEndEdit.Invoke("""");
+         ScaleSpeedField.onEndEdit.Invoke("""");
+ 
++        AlphaDodgeField.onEndEdit.Invoke("""");
++        ScaleDodgeField.onEndEdit.Invoke("""");
++        AlphaNoneField.onEndEdit.Invoke("""");
++        ScaleNoneField.onEndEdit.Invoke("""");
++
++        DodgeXField.onEndEdit.Invoke("""");
++        DodgeYField.onEndEdit.Invoke("""");
++        DodgeSpeedField.onEndEdit.Invoke("""");
++
++
+         DesktopPortalController.Instance.OutlineColorDefault =  new Color(settings.OutlineDefaultR,     settings.OutlineDefaultG,   settings.OutlineDefaultB,   settings.OutlineDefaultA);
+         DesktopPortalController.Instance.OutlineColorAiming =   new Color(settings.OutlineAimingR,      settings.OutlineAimingG,    settings.OutlineAimingB,    settings.OutlineAimingA);
+         DesktopPortalController.Instance.OutlineColorTouching = new Color(settings.OutlineTouchingR,    settings.OutlineTouchingG,  settings.OutlineTouchingB,  settings.OutlineTouchingA);
+@@ -316,6 +355,10 @@ public void OnSavePressed()
+             settings.ScaleEnabled = DesktopPortalController.Instance.ScaleEnabledToggle.isOn;
+             settings.HapticsEnabled = DesktopPortalController.Instance.HapticsEnabledToggle.isOn;
+ 
++            settings.DodgeOffsetX = OverlayToSave.DodgeGazeOffset.x;
++            settings.DodgeOffsetY = OverlayToSave.DodgeGazeOffset.y;
++            settings.DodgeOffsetSpeed = OverlayToSave.DodgeGazeSpeed;
++
+             PortalSettingsSaver.SaveProfiles();
+         }
+     }
+@@ -383,6 +426,10 @@ public void OnSaveNewPressed()
+             GrabEnabled = DesktopPortalController.Instance.GrabEnabledToggle.isOn,
+             ScaleEnabled = DesktopPortalController.Instance.ScaleEnabledToggle.isOn,
+             HapticsEnabled = DesktopPortalController.Instance.HapticsEnabledToggle.isOn,
++
++            DodgeOffsetX = o.DodgeGazeOffset.x,
++            DodgeOffsetY = o.DodgeGazeOffset.y,
++            DodgeOffsetSpeed = o.DodgeGazeSpeed,
+         };
+     }
+ "
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Assets/HOTK/Example Content/UI Scripts/InputFieldScrollScript.cs,modified,9,6,15,"@@ -7,12 +7,14 @@
+ public class InputFieldScrollScript : MonoBehaviour
+ {
+     public bool UseInt;
++    [Tooltip(""Should the InputField use Two Decimal Places (e.g. X.YY)?"")]
++    public bool TwoDecimalPlaces;
+     public float ValMultiplier = 10f;
+     public bool UseLimits;
+     public bool UseLowerLimit;
+     public bool UseUpperLimit;
+-    public int MinVal;
+-    public int MaxVal;
++    public float MinVal;
++    public float MaxVal;
+ 
+     public InputField InputField
+     {
+@@ -33,11 +35,11 @@ public void OnScrollWheel()
+             {
+                 if (v < 0)
+                 {
+-                    if (UseLowerLimit) val = Math.Max(MinVal, val + v); // Return the larger of the two numbers
++                    if (UseLowerLimit) val = Math.Max((int)MinVal, val + v); // Return the larger of the two numbers
+                     else val += v;
+                 }else if (v > 0)
+                 {
+-                    if (UseUpperLimit) val = Math.Min(MaxVal, val + v); // Return the smaller of the two numbers
++                    if (UseUpperLimit) val = Math.Min((int)MaxVal, val + v); // Return the smaller of the two numbers
+                     else val += v;
+                 }else return;
+             }
+@@ -67,8 +69,9 @@ public void OnScrollWheel()
+             }
+             else if (v != 0) val += v;
+             else return;
+-
+-            val = (int)(val*10f)/10f; // floor to nearest 1/10th
++            
++            if (TwoDecimalPlaces) val = Mathf.Round(val * 100f) / 100f; // floor to nearest 1/10th
++            else val = ((int)Mathf.Round(val * 10f) * 10) / 100f; // floor to nearest 1/10th
+ 
+             InputField.text = val.ToString(CultureInfo.InvariantCulture);
+         }"
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Assets/HOTK/Example Content/UI Scripts/ScaleMatchInputField.cs,modified,12,0,12,"@@ -13,6 +13,9 @@ public InputField InputField
+         get { return _inputField ?? (_inputField = GetComponent<InputField>()); }
+     }
+ 
++    public InputField LinkedField;
++    public InputField LinkedField2;
++
+     private InputField _inputField;
+ 
+     private float _lastSafeValue;
+@@ -42,6 +45,10 @@ public void OnScaleChanged()
+         if (!float.TryParse(InputField.text, out f))
+         {
+             InputField.text = _lastSafeValue.ToString();
++            if (LinkedField != null)
++                LinkedField.text = InputField.text;
++            if (LinkedField2 != null)
++                LinkedField2.text = InputField.text;
+             return;
+         }
+         if (Overlay == null) return;
+@@ -86,6 +93,11 @@ public void OnScaleChanged()
+             default:
+                 throw new ArgumentOutOfRangeException();
+         }
++
++        if (LinkedField != null)
++            LinkedField.text = InputField.text;
++        if (LinkedField2 != null)
++            LinkedField2.text = InputField.text;
+     }
+ 
+     public enum InputValue"
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Assets/HOTK/Example Content/chain-broken.png,added,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Assets/HOTK/Example Content/chain-broken.png.meta,added,57,0,57,"@@ -0,0 +1,57 @@
++fileFormatVersion: 2
++guid: a38ce071a36187b4f88b2c1a42fa4e52
++timeCreated: 1472145865
++licenseType: Free
++TextureImporter:
++  fileIDToRecycleName: {}
++  serializedVersion: 2
++  mipmaps:
++    mipMapMode: 0
++    enableMipMap: 0
++    linearTexture: 0
++    correctGamma: 0
++    fadeOut: 0
++    borderMipMap: 0
++    mipMapFadeDistanceStart: 1
++    mipMapFadeDistanceEnd: 3
++  bumpmap:
++    convertToNormalMap: 0
++    externalNormalMap: 0
++    heightScale: 0.25
++    normalMapFilter: 0
++  isReadable: 0
++  grayScaleToAlpha: 0
++  generateCubemap: 0
++  cubemapConvolution: 0
++  cubemapConvolutionSteps: 7
++  cubemapConvolutionExponent: 1.5
++  seamlessCubemap: 0
++  textureFormat: -1
++  maxTextureSize: 32
++  textureSettings:
++    filterMode: -1
++    aniso: 16
++    mipBias: -1
++    wrapMode: 1
++  nPOTScale: 0
++  lightmap: 0
++  rGBM: 0
++  compressionQuality: 50
++  allowsAlphaSplitting: 0
++  spriteMode: 1
++  spriteExtrude: 1
++  spriteMeshType: 1
++  alignment: 0
++  spritePivot: {x: 0.5, y: 0.5}
++  spriteBorder: {x: 0, y: 0, z: 0, w: 0}
++  spritePixelsToUnits: 100
++  alphaIsTransparency: 1
++  textureType: 8
++  buildTargetSettings: []
++  spriteSheet:
++    sprites: []
++    outline: []
++  spritePackingTag: 
++  userData: 
++  assetBundleName: 
++  assetBundleVariant: "
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Assets/HOTK/Example Content/chain.png,added,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Assets/HOTK/Example Content/chain.png.meta,added,57,0,57,"@@ -0,0 +1,57 @@
++fileFormatVersion: 2
++guid: f8922c6705e20c54388f1cb71c3148ad
++timeCreated: 1472145865
++licenseType: Free
++TextureImporter:
++  fileIDToRecycleName: {}
++  serializedVersion: 2
++  mipmaps:
++    mipMapMode: 0
++    enableMipMap: 0
++    linearTexture: 0
++    correctGamma: 0
++    fadeOut: 0
++    borderMipMap: 0
++    mipMapFadeDistanceStart: 1
++    mipMapFadeDistanceEnd: 3
++  bumpmap:
++    convertToNormalMap: 0
++    externalNormalMap: 0
++    heightScale: 0.25
++    normalMapFilter: 0
++  isReadable: 0
++  grayScaleToAlpha: 0
++  generateCubemap: 0
++  cubemapConvolution: 0
++  cubemapConvolutionSteps: 7
++  cubemapConvolutionExponent: 1.5
++  seamlessCubemap: 0
++  textureFormat: -1
++  maxTextureSize: 32
++  textureSettings:
++    filterMode: -1
++    aniso: -1
++    mipBias: -1
++    wrapMode: 1
++  nPOTScale: 0
++  lightmap: 0
++  rGBM: 0
++  compressionQuality: 50
++  allowsAlphaSplitting: 0
++  spriteMode: 1
++  spriteExtrude: 1
++  spriteMeshType: 1
++  alignment: 0
++  spritePivot: {x: 0.5, y: 0.5}
++  spriteBorder: {x: 0, y: 0, z: 0, w: 0}
++  spritePixelsToUnits: 100
++  alphaIsTransparency: 1
++  textureType: 8
++  buildTargetSettings: []
++  spriteSheet:
++    sprites: []
++    outline: []
++  spritePackingTag: 
++  userData: 
++  assetBundleName: 
++  assetBundleVariant: "
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Assets/HOTK/Example Content/refresh.png.meta,modified,1,1,2,"@@ -26,7 +26,7 @@ TextureImporter:
+   cubemapConvolutionSteps: 7
+   cubemapConvolutionExponent: 1.5
+   seamlessCubemap: 0
+-  textureFormat: -2
++  textureFormat: -1
+   maxTextureSize: 32
+   textureSettings:
+     filterMode: 1"
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Assets/HOTK/HOTK_CompanionOverlay.cs,modified,51,29,80,"@@ -7,21 +7,12 @@ public class HOTK_CompanionOverlay : HOTK_OverlayBase
+     public HOTK_Overlay Overlay;
+     public Texture OverlayTexture;
+     public VROverlayInputMethod InputMethod = VROverlayInputMethod.None;
+-    public Vector3 CompanionOffset;
+ 
+-    public CompanionMode OverlayMode
+-    {
+-        get { return _overlayMode; }
+-        set
+-        {
+-            if (_overlayMode == CompanionMode.Backside)
+-            {
+-                
+-            }
+-        }
+-    }
++    public CompanionMode OverlayMode;
+     private CompanionMode _overlayMode;
+ 
++    public Action<HOTK_OverlayBase, bool> OnOverlayGazed;
++
+     private bool _subscribed;
+     
+     private float _alpha;   // These are used to cache values and check for changes
+@@ -57,6 +48,7 @@ public void OnEnable()
+             Overlay.OnOverlayAttachmentChanges += AttachToOverlay;
+             Overlay.OnOverlayAlphaChanges += OverlayAlphaChanges;
+             Overlay.OnOverlayScaleChanges += OverlayScaleChanges;
++            Overlay.OnOverlayPositionChanges += OverlayPositionChanges;
+             Overlay.OnOverlayRotationChanges += OverlayRotationChanges;
+         }
+         updateCompanion = true;
+@@ -77,13 +69,14 @@ public void OnDisable()
+ 
+     public void Update()
+     {
++        CheckCompanionModeChanged();
+         // Check if our Overlay's Texture has changed
+-        CheckOverlayTextureChanged(ref updateCompanion);
++        CheckOverlayTextureChanged();
+         // Check if our Overlay's Anchor has changed
+         //CheckOverlayAnchorChanged(ref changed);
+         // Check if our Overlay's rotation or position changed
+         //CheckOverlayRotationChanged(ref changed);
+-        //CheckOverlayPositionChanged(ref changed);
++        CheckOverlayPositionChanged();
+         // Check if our Overlay's Alpha or Scale changed
+         //CheckOverlayAlphaAndScale(ref changed);
+         // Check if our Overlay is being Gazed at, or has been recently and is still animating
+@@ -112,17 +105,40 @@ public void DoUpdateOverlay()
+         updateCompanion = true;
+     }
+ 
+-    private void CheckOverlayTextureChanged(ref bool changed)
++    private void CheckCompanionModeChanged()
++    {
++        if (_overlayMode == OverlayMode) return;
++        _overlayMode = OverlayMode;
++
++        if (Overlay != null)
++            AttachToOverlay(Overlay);
++    }
++
++    private void CheckOverlayTextureChanged()
+     {
+-        if (_overlayTexture == OverlayTexture && _uvOffset == Overlay.UvOffset) return;
++        if (((OverlayTexture is RenderTexture || OverlayTexture is MovieTexture) && !AutoUpdateRenderTextures) && _overlayTexture == OverlayTexture && _uvOffset == Overlay.UvOffset) return;
+         _overlayTexture = OverlayTexture;
+         _uvOffset = Overlay.UvOffset;
+-        changed = true;
++        updateCompanion = true;
+ 
+         //if (MeshRenderer != null) // If our texture changes, change our MeshRenderer's texture also. The MeshRenderer is optional.
+             //MeshRenderer.material.mainTexture = OverlayTexture;
+     }
+ 
++    private void CheckOverlayPositionChanged()
++    {
++        if (_objectPosition == gameObject.transform.localPosition) return;
++        if (OverlayMode == CompanionMode.Backside) gameObject.transform.localPosition = Vector3.zero;
++        _objectPosition = gameObject.transform.localPosition;
++        updateCompanion = true;
++    }
++
++    public override void UpdateGaze(bool wasHit)
++    {
++        if (OnOverlayGazed != null)
++            OnOverlayGazed(this, wasHit);
++    }
++
+     /// <summary>
+     /// Update the Overlay's Position and return the resulting HmdMatrix34_t
+     /// </summary>
+@@ -131,6 +147,7 @@ private HmdMatrix34_t GetOverlayPosition()
+     {
+         if (_anchor == OpenVR.k_unTrackedDeviceIndexInvalid)
+         {
++            //Debug.Log(OverlayReference.transform.position + "" "" + transform.position);
+             var offset = new SteamVR_Utils.RigidTransform(OverlayReference.transform, transform);
+             offset.pos.x /= OverlayReference.transform.localScale.x;
+             offset.pos.y /= OverlayReference.transform.localScale.y;
+@@ -176,20 +193,22 @@ private void AttachToOverlay(HOTK_OverlayBase o)
+                 break;
+             case HOTK_Overlay.AttachmentDevice.World:
+                 _anchor = OpenVR.k_unTrackedDeviceIndexInvalid;
+-                gameObject.transform.localRotation = OverlayMode == CompanionMode.Backside ? Quaternion.AngleAxis(180f, Vector3.up) : Quaternion.identity;
++                gameObject.transform.parent = OverlayMode == CompanionMode.DodgeOnGaze ? o.gameObject.transform.parent : o.gameObject.transform;
++                gameObject.transform.localPosition = OverlayMode == CompanionMode.DodgeOnGaze ? o.gameObject.transform.localPosition : Vector3.zero;
++                gameObject.transform.localRotation = OverlayMode == CompanionMode.Backside ? Quaternion.AngleAxis(180f, Vector3.up) : OverlayMode == CompanionMode.DodgeOnGaze ? o.gameObject.transform.localRotation : Quaternion.identity;
+                 OverlayReference.transform.localRotation = Quaternion.identity;
+                 break;
+             case HOTK_Overlay.AttachmentDevice.LeftController:
+                 _anchor = HOTK_TrackedDeviceManager.Instance.LeftIndex;
+                 gameObject.transform.localRotation = Quaternion.identity;
+                 OverlayReference.transform.localRotation = OverlayMode == CompanionMode.Backside ? Quaternion.AngleAxis(180f, Vector3.up) : Quaternion.identity;
+-                OverlayRotationChanges(true); // Force rotational update
++                OverlayRotationChanges(); // Force rotational update
+                 break;
+             case HOTK_Overlay.AttachmentDevice.RightController:
+                 _anchor = HOTK_TrackedDeviceManager.Instance.RightIndex;
+                 gameObject.transform.localRotation = Quaternion.identity;
+                 OverlayReference.transform.localRotation = OverlayMode == CompanionMode.Backside ? Quaternion.AngleAxis(180f, Vector3.up) : Quaternion.identity;
+-                OverlayRotationChanges(true); // Force rotational update
++                OverlayRotationChanges(); // Force rotational update
+                 break;
+             default:
+                 throw new ArgumentOutOfRangeException(""device"", _anchorDevice, null);
+@@ -215,23 +234,25 @@ private void OverlayScaleChanges(HOTK_Overlay o, float scale)
+ 
+     private void OverlayPositionChanges(HOTK_Overlay o, Vector3 pos)
+     {
+-        gameObject.transform.localPosition = pos;
++        if (OverlayMode != CompanionMode.DodgeOnGaze) return;
++        if (_anchorDevice == HOTK_Overlay.AttachmentDevice.World)
++            gameObject.transform.localPosition = pos;
+         updateCompanion = true;
+     }
+ 
+     private void OverlayRotationChanges(HOTK_Overlay o, Quaternion rot)
+     {
+-        //_anchorRotation = rot;
++        if (OverlayMode == CompanionMode.DodgeOnGaze)
++        {
++            if (_anchorDevice == HOTK_Overlay.AttachmentDevice.World)
++                gameObject.transform.localRotation = rot;
++        }
+         OverlayRotationChanges();
+     }
+ 
+-    private void OverlayRotationChanges(bool force = false)
++    private void OverlayRotationChanges()
+     {
+-        var gameObjectChanged = _objectRotation != gameObject.transform.localRotation;
+-        if (gameObjectChanged)
+-        {
+-            _objectRotation = gameObject.transform.localRotation;
+-        }
++        _objectRotation = gameObject.transform.localRotation;
+         updateCompanion = true;
+     }
+ 
+@@ -319,6 +340,7 @@ private void UpdateOverlay()
+     public enum CompanionMode
+     {
+         Backside,
+-        VRInterface
++        VRInterface,
++        DodgeOnGaze
+     }
+ }"
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Assets/HOTK/HOTK_Overlay.cs,modified,112,3,115,"@@ -17,6 +17,7 @@ public class HOTK_Overlay : HOTK_OverlayBase
+     public Texture OverlayTexture;
+     [Tooltip(""How, if at all, the Overlay is animated when being looked at."")]
+     public AnimationType AnimateOnGaze = AnimationType.None;
++    private AnimationType _animateOnGaze;
+     [Tooltip(""The alpha at which the Overlay will be drawn."")]
+     public float Alpha = 1.0f;			// opacity 0..1
+     [Tooltip(""The alpha at which the Overlay will be drawn."")]
+@@ -40,6 +41,8 @@ public class HOTK_Overlay : HOTK_OverlayBase
+     public Vector2 MouseScale = Vector3.one;
+     public Vector2 CurvedRange = new Vector2(1, 2);
+     public VROverlayInputMethod InputMethod = VROverlayInputMethod.None;
++    public Vector2 DodgeGazeOffset = Vector2.zero;
++    public float DodgeGazeSpeed = 0.1f;
+ 
+     [Tooltip(""Controls where the Overlay will be drawn."")]
+     public AttachmentDevice AnchorDevice = AttachmentDevice.Screen;
+@@ -50,6 +53,7 @@ public class HOTK_Overlay : HOTK_OverlayBase
+     public FramerateMode Framerate = FramerateMode._30FPS;
+     #endregion
+ 
++    public Action<HOTK_Overlay> OnOverlayAnimationChanges;
+     public Action<HOTK_Overlay, Vector3> OnOverlayPositionChanges;
+     public Action<HOTK_Overlay, Quaternion> OnOverlayRotationChanges;
+     public Action<HOTK_Overlay, float> OnOverlayAlphaChanges;
+@@ -139,6 +143,7 @@ public void DoUpdate()
+     public void Update()
+     {
+         var changed = false;
++        CheckAnimationChanged(ref changed);
+         // Check if our Overlay's Texture has changed
+         CheckOverlayTextureChanged(ref changed);
+         // Check if our Overlay's Anchor has changed
+@@ -164,7 +169,17 @@ public void Update()
+         }
+     }
+ 
+-    public void UpdateGaze(bool hit)
++    private void CheckAnimationChanged(ref bool changed)
++    {
++        if (_animateOnGaze == AnimateOnGaze) return;
++        StopDodging();
++        _animateOnGaze = AnimateOnGaze;
++        changed = true;
++        if (OnOverlayAnimationChanges != null)
++            OnOverlayAnimationChanges(this);
++    }
++
++    public override void UpdateGaze(bool hit)
+     {
+         IsBeingGazed = hit;
+         HandleAnimateOnGaze(hit);
+@@ -220,7 +235,7 @@ public void OnEnable()
+         #pragma warning restore 0168
+         if (_handle != OpenVR.k_ulOverlayHandleInvalid)
+         {
+-            HOTK_TrackedDeviceManager.Instance.SetOverlayCanGaze(this);
++            HOTK_TrackedDeviceManager.Instance.SetOverlayCanGaze(this, AnimateOnGaze != AnimationType.DodgeGaze);
+             HOTK_TrackedDeviceManager.Instance.SetOverlayCanAim(this);
+         }
+         if (error == EVROverlayError.None) return;
+@@ -272,6 +287,8 @@ public void AttachTo(AttachmentDevice device, float scale, AttachmentPoint point
+     /// <param name=""point""></param>
+     public void AttachTo(AttachmentDevice device, float scale, Vector3 offset, AttachmentPoint point = AttachmentPoint.Center)
+     {
++        StopDodging();
++
+         // Update Overlay Anchor position
+         GetOverlayPosition();
+ 
+@@ -296,11 +313,13 @@ public void AttachTo(AttachmentDevice device, float scale, Vector3 offset, Attac
+             case AttachmentDevice.Screen:
+                 _anchor = OpenVR.k_unTrackedDeviceIndexInvalid;
+                 gameObject.transform.localPosition = offset;
++                OverlayReference.transform.localPosition = Vector3.zero;
+                 OverlayReference.transform.localRotation = Quaternion.identity;
+                 break;
+             case AttachmentDevice.World:
+                 _anchor = OpenVR.k_unTrackedDeviceIndexInvalid;
+                 gameObject.transform.localPosition = offset;
++                OverlayReference.transform.localPosition = Vector3.zero;
+                 OverlayReference.transform.localRotation = Quaternion.identity;
+                 break;
+             case AttachmentDevice.LeftController:
+@@ -418,6 +437,7 @@ private void CheckOverlayAlphaAndScale(ref bool changed)
+         {
+             if (_alpha != Alpha) // Loss of precision but it should work
+             {
++                StopDodging();
+                 _alpha = Alpha;
+                 changed = true;
+             }
+@@ -426,6 +446,7 @@ private void CheckOverlayAlphaAndScale(ref bool changed)
+         {
+             if (_scale != Scale) // Loss of precision but it should work
+             {
++                StopDodging();
+                 _scale = Scale;
+                 changed = true;
+             }
+@@ -468,12 +489,13 @@ private void CheckOverlayRotationChanged(ref bool changed, bool force = false)
+         var gameObjectChanged = _objectRotation != gameObject.transform.localRotation;
+         if (gameObjectChanged)
+         {
++            StopDodging();
+             _objectRotation = gameObject.transform.localRotation;
+             if (OnOverlayRotationChanges != null)
+                 OnOverlayRotationChanges(this, _objectRotation);
+             changed = true;
+         }
+-        if (_anchor == OpenVR.k_unTrackedDeviceIndexInvalid || OverlayReference == null) return; // This part below is only for Controllers
++        if (_anchor == OpenVR.k_unTrackedDeviceIndexInvalid) return; // This part below is only for Controllers
+         if (!force && !gameObjectChanged && OverlayReference.transform.localRotation == _anchorRotation * _objectRotation) return;
+         OverlayReference.transform.localRotation = _anchorRotation * _objectRotation;
+         changed = true;
+@@ -530,6 +552,92 @@ private HmdMatrix34_t GetOverlayPosition()
+         }
+     }
+ 
++    private bool _dodging;
++    private Vector3 _dodgingBase;
++    private Vector3 _dodgingTarget;
++    private float _dodgingVal;
++    private float _dodgingOffsetX;
++    private float _dodgingOffsetY;
++    private bool _dodgingFull;
++
++    public void GazeDetectorGazed(HOTK_OverlayBase o, bool wasHit)
++    {
++        var changed = false;
++
++        if (_dodging && (_dodgingOffsetX != DodgeGazeOffset.x || _dodgingOffsetY != DodgeGazeOffset.y))
++        {
++            _dodgingOffsetX = DodgeGazeOffset.x;
++            _dodgingOffsetY = DodgeGazeOffset.y;
++            AnchorDodge();
++            if (_dodgingFull)
++            {
++                OverlayReference.transform.localPosition = _dodgingTarget;
++                changed = true;
++            }
++        }
++
++        if (wasHit)
++        {
++            if (!_dodging)
++            {
++                _dodging = true;
++                _dodgingBase = OverlayReference.transform.localPosition;
++                AnchorDodge();
++                _dodgingVal = 0f;
++            }else if (_dodgingVal < 1f)
++            {
++                _dodgingVal += DodgeGazeSpeed;
++                if (_dodgingVal > 1f)
++                    _dodgingVal = 1f;
++                OverlayReference.transform.localPosition = Vector3.Lerp(_dodgingBase, _dodgingTarget, _dodgingVal);
++                changed = true;
++            }
++            else _dodgingFull = true;
++        }
++        else
++        {
++            _dodgingFull = false;
++            if (_dodging)
++            {
++                if (_dodgingVal > 0f)
++                {
++                    _dodgingVal -= DodgeGazeSpeed;
++                    if (_dodgingVal < 0f)
++                        _dodgingVal = 0f;
++                    OverlayReference.transform.localPosition = Vector3.Lerp(_dodgingBase, _dodgingTarget, _dodgingVal);
++                    changed = true;
++                }
++                else
++                {
++                    _dodging = false;
++                    OverlayReference.transform.localPosition = _dodgingBase;
++                }
++            }
++        }
++
++        if (changed)
++            DoUpdate();
++    }
++
++    private void AnchorDodge()
++    {
++        _dodgingOffsetX = DodgeGazeOffset.x;
++        _dodgingOffsetY = DodgeGazeOffset.y;
++        var aspect = (float) OverlayTexture.height/(float) OverlayTexture.width;
++        if (_anchorDevice == AttachmentDevice.LeftController || _anchorDevice == AttachmentDevice.RightController)
++            _dodgingTarget = _dodgingBase + (OverlayReference.transform.right * _dodgingOffsetX * Scale) + (OverlayReference.transform.up * _dodgingOffsetY * Scale * aspect);
++        else _dodgingTarget = _dodgingBase - (gameObject.transform.right * _dodgingOffsetX * Scale) - (gameObject.transform.up * _dodgingOffsetY * Scale * aspect);
++    }
++
++    public void StopDodging()
++    {
++        if (_dodging)
++        {
++            OverlayReference.transform.localPosition = _dodgingBase;
++            _dodging = false;
++        }
++    }
++
+     /// <summary>
+     /// Animate this Overlay, based on it's AnimateOnGaze setting.
+     /// </summary>
+@@ -857,6 +965,7 @@ public enum AnimationType
+         /// Animate this Overlay by changing its Alpha and scaling it.
+         /// </summary>
+         AlphaAndScale,
++        DodgeGaze,
+     }
+ 
+     public enum FramerateMode"
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Assets/HOTK/HOTK_OverlayBase.cs,modified,3,1,4,"@@ -28,7 +28,7 @@ public GameObject OverlayReference
+     {
+         get
+         {
+-            return _overlayReference ?? (_overlayReference = new GameObject(""Overlay Reference"" + GetType()));// { hideFlags = HideFlags.HideInHierarchy };
++            return _overlayReference ?? (_overlayReference = new GameObject(""Overlay Reference "" + gameObject.name));// { hideFlags = HideFlags.HideInHierarchy };
+         }
+     }
+     private GameObject _overlayReference;
+@@ -50,4 +50,6 @@ public GameObject OverlayReference
+     protected Vector3 _objectPosition = Vector3.zero;     // These are used to cache values and check for changes
+     protected Quaternion _anchorRotation = Quaternion.identity;   // These are used to cache values and check for changes
+     protected Quaternion _objectRotation = Quaternion.identity;   // These are used to cache values and check for changes
++
++    public virtual void UpdateGaze(bool wasHit) { }
+ }"
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Assets/HOTK/HOTK_TrackedDeviceManager.cs,modified,68,8,76,"@@ -77,6 +77,7 @@ public uint HMDIndex
+     private uint _hmdIndex = OpenVR.k_unTrackedDeviceIndexInvalid;
+ 
+     private readonly List<HOTK_Overlay> _gazeableOverlays = new List<HOTK_Overlay>();
++    private readonly List<HOTK_OverlayBase> _gazeableCompanionOverlays = new List<HOTK_OverlayBase>();
+     private readonly List<HOTK_OverlayBase> _interactableOverlays = new List<HOTK_OverlayBase>();
+ 
+     public void Start()
+@@ -113,6 +114,24 @@ public void SetOverlayCanGaze(HOTK_Overlay overlay, bool isInteractable = true)
+         }
+     }
+ 
++    public void SetCompanionCanGaze(HOTK_OverlayBase overlayBase, bool isInteractable = true)
++    {
++        if (isInteractable)
++        {
++            if (!_gazeableCompanionOverlays.Contains(overlayBase))
++            {
++                _gazeableCompanionOverlays.Add(overlayBase);
++            }
++        }
++        else
++        {
++            if (_gazeableCompanionOverlays.Contains(overlayBase))
++            {
++                _gazeableCompanionOverlays.Remove(overlayBase);
++            }
++        }
++    }
++
+     public void SetOverlayCanAim(HOTK_OverlayBase overlay, bool isInteractable = true)
+     {
+         if (isInteractable)
+@@ -616,19 +635,60 @@ private bool ComputeIntersection(HOTK_OverlayBase hotkOverlay, Vector3 source, V
+     private void UpdateGaze()
+     {
+         FindTracker(ref _hmdTracker, HOTK_TrackedDevice.EType.HMD);
++        HOTK_Overlay hitOverlay = null;
++        HOTK_OverlayBase hitOverlayBase = null;
++        SteamVR_Overlay.IntersectionResults? hitResult = null;
++
++        // Test Overlays
+         foreach (var overlay in _gazeableOverlays)
+         {
+             if (overlay.AnimateOnGaze == HOTK_Overlay.AnimationType.None) continue;
+-            var hit = overlay.GazeLocked && overlay.GazeLockedOn;
+-            if (!overlay.GazeLocked && _hmdTracker != null && _hmdTracker.IsValid)
++            if (overlay.GazeLocked || _hmdTracker == null || !_hmdTracker.IsValid) continue;
++            if (!(Vector3.Angle(_hmdTracker.transform.forward, overlay.RotationTracker.transform.forward) <= 90f))
++                continue;
++            var result = new SteamVR_Overlay.IntersectionResults();
++            var hit = ComputeIntersection(overlay, _hmdTracker.gameObject.transform.position, _hmdTracker.gameObject.transform.forward, ref result);
++            if (!hit || (hitResult != null && !(result.distance < hitResult.Value.distance))) continue;
++            hitOverlay = overlay;
++            hitResult = result;
++        }
++        // Test Companions
++        foreach (var overlay in _gazeableCompanionOverlays)
++        {
++            if (_hmdTracker == null || !_hmdTracker.IsValid) continue;
++            if (!(Vector3.Angle(_hmdTracker.transform.forward, overlay.RotationTracker.transform.forward) <= 90f))
++                continue;
++            var result = new SteamVR_Overlay.IntersectionResults();
++            var hit = ComputeIntersection(overlay, _hmdTracker.gameObject.transform.position, _hmdTracker.gameObject.transform.forward, ref result);
++            if (!hit || (hitResult != null && !(result.distance < hitResult.Value.distance))) continue;
++            hitOverlay = null;
++            hitOverlayBase = overlay;
++            hitResult = result;
++        }
++
++        if (hitOverlay != null)
++        {
++            foreach (var overlay in _gazeableOverlays)
+             {
+-                if (Vector3.Angle(_hmdTracker.transform.forward, overlay.RotationTracker.transform.forward) <= 90f)
+-                {
+-                    var result = new SteamVR_Overlay.IntersectionResults();
+-                    hit = ComputeIntersection(overlay, _hmdTracker.gameObject.transform.position, _hmdTracker.gameObject.transform.forward, ref result);
+-                }
++                overlay.UpdateGaze((overlay.GazeLocked && overlay.GazeLockedOn) || (!overlay.GazeLocked && overlay == hitOverlay));
+             }
+-            overlay.UpdateGaze(hit);
++            foreach (var companion in _gazeableCompanionOverlays)
++                companion.UpdateGaze(false);
++        }
++        else if (hitOverlayBase != null)
++        {
++            foreach (var overlay in _gazeableOverlays)
++                overlay.UpdateGaze(overlay.GazeLocked && overlay.GazeLockedOn);
++            foreach (var companion in _gazeableCompanionOverlays.Where(o => o != hitOverlayBase))
++                companion.UpdateGaze(false);
++            hitOverlayBase.UpdateGaze(true);
++        }
++        else
++        {
++            foreach (var overlay in _gazeableOverlays)
++                overlay.UpdateGaze(overlay.GazeLocked && overlay.GazeLockedOn);
++            foreach (var companion in _gazeableCompanionOverlays)
++                companion.UpdateGaze(false);
+         }
+     }
+ "
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Assets/HOTK/Portal/AutoResizeRenderTextureForBacksideCamera.cs,modified,2,1,3,"@@ -26,7 +26,7 @@ public void ResizeRenderTexture(int width, int height)
+         script.Camera.targetTexture = Texture;
+         script.ResizeCamera(Texture, 2f);
+         if (tex != null) tex.Release();
+-
++        script.Camera.enabled = true;
+         BacksideOverlay.OverlayTexture = Texture;
+         StartCoroutine(UpdateAfterFrame());
+     }
+@@ -35,5 +35,6 @@ private IEnumerator UpdateAfterFrame()
+     {
+         yield return new WaitForEndOfFrame();
+         BacksideOverlay.DoUpdateOverlay();
++        script.Camera.enabled = false;
+     }
+ }
+\ No newline at end of file"
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Assets/HOTK/Portal/AutoResizeRenderTextureForPrimaryCamera.cs,modified,9,1,10,"@@ -8,11 +8,19 @@ public class AutoResizeRenderTextureForPrimaryCamera : MonoBehaviour
+ 
+     private float _width;
+     private float _height;
++
++    private bool skipUpdate;
+ 	
+ 	public void Update ()
+     {
+ 	    if (_width == transform.localScale.x && _height == transform.localScale.y) return;
+-	    _width = transform.localScale.x;
++	    if (skipUpdate)
++	    {
++	        skipUpdate = false;
++	        return;
++        }
++        skipUpdate = true;
++        _width = transform.localScale.x;
+ 	    _height = transform.localScale.y;
+ 	    var marginX = Math.Max(4, (((int) (transform.localScale.x/100f)) / 2) * 2);
+ 	    var marginY = Math.Max(4, (((int) (transform.localScale.y/100f)) / 2) * 2);"
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Assets/HOTK/Portal/DesktopPortalController.cs,modified,56,18,74,"@@ -30,6 +30,9 @@ public class DesktopPortalController : MonoBehaviour
+     public Image SizeLockSprite;
+     public Sprite LockSprite;
+     public Sprite UnlockSprite;
++    public Image AspectLinkedSprite;
++    public Sprite AspectLockSprite;
++    public Sprite AspectUnlockSprite;
+ 
+     public Material OutlineMaterial; // Material used for the outline
+ 
+@@ -74,6 +77,8 @@ public class DesktopPortalController : MonoBehaviour
+     public Material BacksideDisplayMaterial; // The Material we are drawing to
+     public Texture[] BacksideTextures;
+ 
++    public HOTK_CompanionOverlay DodgeGazeDetector;
++
+     public DropdownMatchEnumOptions ClickAPIDropdown;
+     public Toggle WindowOnTopToggle;
+     public Toggle MoveDesktopCursorToggle;
+@@ -242,8 +247,7 @@ public BacksideTexture CurrentBacksideTexture
+     private static readonly float[] FramerateFractions = {
+         1f, 1f/2f, 1f/5f, 1f/10f, 1/15f, 1/24f, 1f/30f, 1f/60f, 1f/90f, 1f/120f
+     };
+-
+-    private bool _started;
++    
+     #endregion
+ 
+     #region Unity Methods
+@@ -254,7 +258,6 @@ public void OnEnable()
+         if (Overlay == null) return;
+         SaveLoad.Load();
+         Overlay.OverlayTexture = RenderTexture;
+-        _started = true;
+         _bitmap = CaptureScreen.CaptureDesktop();
+         _texture = new Texture2D(_bitmap.Width, _bitmap.Height) { filterMode = SelectedWindowSettings != null ? SelectedWindowSettings.filterMode : FilterMode.Point };
+ 
+@@ -279,21 +282,22 @@ public void OnEnable()
+             _currentWindowWidth = 0; // Tricks the system into recalculating the size of the Overlay before capturing.
+             StartCoroutine(""CaptureWindow"");
+         }
+-        if (!_subscribed)
+-        {
+-            _subscribed = true;
+-            HOTK_TrackedDeviceManager.OnControllerTriggerClicked += SingleClickApplication;
+-            HOTK_TrackedDeviceManager.OnControllerTriggerDoubleClicked += DoubleClickApplication;
+-            HOTK_TrackedDeviceManager.OnControllerTouchpadClicked += RightClickApplication;
+-            HOTK_TrackedDeviceManager.OnControllerGripsClicked += MiddleClickApplication;
+-            HOTK_TrackedDeviceManager.OnControllerTriggerDown += TriggerDown;
+-            HOTK_TrackedDeviceManager.OnControllerTriggerUp += TriggerUp;
+-            HOTK_TrackedDeviceManager.OnControllerTouchpadDown += TouchpadDown;
+-            Overlay.OnControllerHitsOverlay += AimAtApplication;
+-            Overlay.OnControllerUnhitsOverlay += UnsetLastHit;
+-            Overlay.OnControllerTouchesOverlay += TouchOverlay;
+-            Overlay.OnControllerStopsTouchingOverlay += UnTouchOverlay;
+-        }
++        if (_subscribed) return;
++        _subscribed = true;
++        HOTK_TrackedDeviceManager.OnControllerTriggerClicked += SingleClickApplication;
++        HOTK_TrackedDeviceManager.OnControllerTriggerDoubleClicked += DoubleClickApplication;
++        HOTK_TrackedDeviceManager.OnControllerTouchpadClicked += RightClickApplication;
++        HOTK_TrackedDeviceManager.OnControllerGripsClicked += MiddleClickApplication;
++        HOTK_TrackedDeviceManager.OnControllerTriggerDown += TriggerDown;
++        HOTK_TrackedDeviceManager.OnControllerTriggerUp += TriggerUp;
++        HOTK_TrackedDeviceManager.OnControllerTouchpadDown += TouchpadDown;
++        Overlay.OnControllerHitsOverlay += AimAtApplication;
++        Overlay.OnControllerUnhitsOverlay += UnsetLastHit;
++        Overlay.OnControllerTouchesOverlay += TouchOverlay;
++        Overlay.OnControllerStopsTouchingOverlay += UnTouchOverlay;
++        Overlay.OnOverlayAnimationChanges += AnimationChanges;
++
++        DodgeGazeDetector.OnOverlayGazed += Overlay.GazeDetectorGazed;
+     }
+ 
+     public void OnDisable()
+@@ -442,6 +446,14 @@ private void UnTouchOverlay(HOTK_OverlayBase o, HOTK_TrackedDevice tracker)
+         _touchingOverlay = null;
+         if (!_didHitOverlay) StartCoroutine(""GoToDefaultColor"");
+     }
++
++    private void AnimationChanges(HOTK_Overlay o)
++    {
++        DodgeGazeDetector.gameObject.SetActive(o.AnimateOnGaze == HOTK_Overlay.AnimationType.DodgeGaze);
++        HOTK_TrackedDeviceManager.Instance.SetOverlayCanGaze(o, o.AnimateOnGaze != HOTK_Overlay.AnimationType.DodgeGaze);
++        HOTK_TrackedDeviceManager.Instance.SetCompanionCanGaze(DodgeGazeDetector, o.AnimateOnGaze == HOTK_Overlay.AnimationType.DodgeGaze);
++    }
++
+     /// <summary>
+     /// Occurs when a controller is aiming at an Overlay
+     /// </summary>
+@@ -930,6 +942,7 @@ private RenderTexture NewRenderTexture()
+     /// </summary>
+     public RenderTexture GetNewRenderTexture(int width = 0, int height = 0)
+     {
++        Overlay.StopDodging();
+         _renderTextureMarginWidth = width;
+         _renderTextureMarginHeight = height;
+         _renderTexture = null;
+@@ -1178,6 +1191,18 @@ public void ToggleSizeLocked()
+         SaveLoad.Save();
+     }
+ 
++    public void ToggleAspectLocked()
++    {
++        if (_selectedWindow == IntPtr.Zero) return;
++        SelectedWindowSettings.windowAspectLocked = !SelectedWindowSettings.windowAspectLocked;
++        var r = CaptureScreen.GetWindowRect(_selectedWindow);
++        SelectedWindowSettings.windowAspectW = (float)r.Height / (float)r.Width;
++        SelectedWindowSettings.windowAspectH = (float)r.Width / (float)r.Height;
++        AspectLinkedSprite.sprite = SelectedWindowSettings.windowAspectLocked ? AspectLockSprite : AspectUnlockSprite;
++
++        SaveLoad.Save();
++    }
++
+     public void WindowSettingConfirmed(string setting)
+     {
+         if (_selectedWindow == IntPtr.Zero) return;
+@@ -1222,6 +1247,12 @@ public void WindowSettingConfirmed(string setting)
+                     {
+                         r.Width = v;
+                         SelectedWindowSettings.offsetWidth = v;
++                        if (SelectedWindowSettings.windowAspectLocked)
++                        {
++                            r.Height = (int)(r.Width * SelectedWindowSettings.windowAspectW);
++                            OffsetHeightField.text = r.Height.ToString();
++                            SelectedWindowSettings.offsetHeight = r.Height;
++                        }
+                         if (SelectedWindowSettings.offsetHeight <= 0) SelectedWindowSettings.offsetHeight = r.Height;
+                         SetWindowSize(r);
+                     }
+@@ -1245,6 +1276,12 @@ public void WindowSettingConfirmed(string setting)
+                     {
+                         r.Height = v;
+                         SelectedWindowSettings.offsetHeight = v;
++                        if (SelectedWindowSettings.windowAspectLocked)
++                        {
++                            r.Width = (int)(r.Height * SelectedWindowSettings.windowAspectH);
++                            OffsetWidthField.text = r.Width.ToString();
++                            SelectedWindowSettings.offsetWidth = r.Width;
++                        }
+                         if (SelectedWindowSettings.offsetWidth <= 0) SelectedWindowSettings.offsetWidth = r.Width;
+                         SetWindowSize(r);
+                     }
+@@ -1334,6 +1371,7 @@ public WindowSettings LoadConfig(string configName)
+         OffsetRightField.text = settings.offsetRight.ToString();
+         OffsetBottomField.text = settings.offsetBottom.ToString();
+         SizeLockSprite.sprite = settings.windowSizeLocked ? LockSprite : UnlockSprite;
++        AspectLinkedSprite.sprite = settings.windowAspectLocked ? AspectLockSprite : AspectUnlockSprite;
+         CaptureModeDropdown.SetToOption(DropdownMatchEnumOptions.CaptureModeNames[(int) settings.captureMode], true);
+         FramerateModeDropdown.SetToOption(DropdownMatchEnumOptions.FramerateModeNames[(int) settings.framerateMode], true);
+ "
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Assets/HOTK/Portal/PortalSettingsSaver.cs,modified,39,3,42,"@@ -16,7 +16,7 @@ public class ProgramSettings
+ [System.Serializable]
+ public class PortalSettings
+ {
+-    public const uint CurrentSaveVersion = 5;
++    public const uint CurrentSaveVersion = 6;
+ 
+     public uint SaveFileVersion;
+     
+@@ -53,6 +53,10 @@ public class PortalSettings
+     public bool ScaleEnabled;
+ 
+     public bool HapticsEnabled;
++
++    public float DodgeOffsetX;
++    public float DodgeOffsetY;
++    public float DodgeOffsetSpeed;
+ }
+ 
+ public static class PortalSettingsSaver
+@@ -179,6 +183,10 @@ public static void LoadDefaultProfiles()
+             GrabEnabled = true,
+             ScaleEnabled = true,
+             HapticsEnabled = true,
++
++            DodgeOffsetX = 2f,
++            DodgeOffsetY = 0f,
++            DodgeOffsetSpeed = 0.1f,
+         });
+         SavedProfiles.Add(""World - Right Wall"", new PortalSettings()
+         {
+@@ -205,6 +213,10 @@ public static void LoadDefaultProfiles()
+             GrabEnabled = true,
+             ScaleEnabled = true,
+             HapticsEnabled = true,
++
++            DodgeOffsetX = 2f,
++            DodgeOffsetY = 0f,
++            DodgeOffsetSpeed = 0.1f,
+         });
+         SavedProfiles.Add(""World - Back Wall"", new PortalSettings()
+         {
+@@ -231,6 +243,10 @@ public static void LoadDefaultProfiles()
+             GrabEnabled = true,
+             ScaleEnabled = true,
+             HapticsEnabled = true,
++
++            DodgeOffsetX = 2f,
++            DodgeOffsetY = 0f,
++            DodgeOffsetSpeed = 0.1f,
+         });
+         SavedProfiles.Add(""World - Left Wall"", new PortalSettings()
+         {
+@@ -257,8 +273,12 @@ public static void LoadDefaultProfiles()
+             GrabEnabled = true,
+             ScaleEnabled = true,
+             HapticsEnabled = true,
++
++            DodgeOffsetX = 2f,
++            DodgeOffsetY = 0f,
++            DodgeOffsetSpeed = 0.1f,
+         });
+-        SavedProfiles.Add(""Controller - Back Side"", new PortalSettings()
++        SavedProfiles.Add(""Left Controller - Back Side"", new PortalSettings()
+         {
+             SaveFileVersion = PortalSettings.CurrentSaveVersion,
+ 
+@@ -283,8 +303,12 @@ public static void LoadDefaultProfiles()
+             GrabEnabled = true,
+             ScaleEnabled = true,
+             HapticsEnabled = true,
++
++            DodgeOffsetX = 2f,
++            DodgeOffsetY = 0f,
++            DodgeOffsetSpeed = 0.1f,
+         });
+-        SavedProfiles.Add(""Controller - Right Side"", new PortalSettings()
++        SavedProfiles.Add(""Left Controller - Right Side"", new PortalSettings()
+         {
+             SaveFileVersion = PortalSettings.CurrentSaveVersion,
+ 
+@@ -309,6 +333,10 @@ public static void LoadDefaultProfiles()
+             GrabEnabled = true,
+             ScaleEnabled = true,
+             HapticsEnabled = true,
++
++            DodgeOffsetX = 2f,
++            DodgeOffsetY = 0f,
++            DodgeOffsetSpeed = 0.1f,
+         });
+         SavedProfiles.Add(""Screen - Bottom Left"", new PortalSettings()
+         {
+@@ -335,6 +363,10 @@ public static void LoadDefaultProfiles()
+             GrabEnabled = true,
+             ScaleEnabled = true,
+             HapticsEnabled = true,
++
++            DodgeOffsetX = 2f,
++            DodgeOffsetY = 0f,
++            DodgeOffsetSpeed = 0.1f,
+         });
+         SavedProfiles.Add(""Screen - Bottom Right"", new PortalSettings()
+         {
+@@ -361,6 +393,10 @@ public static void LoadDefaultProfiles()
+             GrabEnabled = true,
+             ScaleEnabled = true,
+             HapticsEnabled = true,
++
++            DodgeOffsetX = 2f,
++            DodgeOffsetY = 0f,
++            DodgeOffsetSpeed = 0.1f,
+         });
+     }
+ "
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Assets/ScreenCapture/WindowSettings.cs,modified,3,0,3,"@@ -31,4 +31,7 @@ public class WindowSettings
+     public int offsetBottom = 0;
+     public int offsetWidth = 0;
+     public int offsetHeight = 0;
++    public bool windowAspectLocked = false;
++    public float windowAspectW = 1.7777f;
++    public float windowAspectH = 0.5625f;
+ }
+\ No newline at end of file"
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Library/CrashedAssetImports.txt,removed,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Library/CurrentLayout.dwlt,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Library/EditorUserBuildSettings.asset,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Library/InspectorExpandedItems.asset,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Library/ScriptAssemblies/Assembly-CSharp-Editor.dll,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Library/ScriptAssemblies/Assembly-CSharp-Editor.dll.mdb,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Library/ScriptAssemblies/Assembly-CSharp-firstpass.dll,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Library/ScriptAssemblies/Assembly-CSharp-firstpass.dll.mdb,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Library/ScriptAssemblies/Assembly-CSharp.dll,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Library/ScriptAssemblies/Assembly-CSharp.dll.mdb,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Library/assetDatabase3,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Library/expandedItems,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Library/metadata/00/00000000000000004000000000000000,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Library/metadata/00/00000000000000006100000000000000,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Library/metadata/21/21dce3b8933b53346a1bcb37545a71bb,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Library/metadata/32/32bc114e88674934fb2107a2351fcdc4,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Library/metadata/32/32bc114e88674934fb2107a2351fcdc4.info,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Library/metadata/33/33d8c19d68c600c409b31f8385f2122c,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Library/metadata/47/475be3254cf652b44b776bb295b6d9a5,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Library/metadata/48/48b5bcc676d3b6b48aa4f2d01cb6b7e0,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Library/metadata/52/522a0f01881e9184480d9dee30fe9666,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Library/metadata/7c/7c3fc6c1d4abf7948b2c42b19221d52b,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Library/metadata/89/89651f47f29678549a9fa0eb1af24d38,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Library/metadata/8b/8b72d788cb25ab84196f8ec5f7785a56,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Library/metadata/a3/a38ce071a36187b4f88b2c1a42fa4e52,added,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Library/metadata/a3/a38ce071a36187b4f88b2c1a42fa4e52.info,added,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Library/metadata/a5/a51cd1de3373d1b4dbadc24eb6cdeb13,added,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Library/metadata/a5/a51cd1de3373d1b4dbadc24eb6cdeb13.info,added,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Library/metadata/ad/ad1c5ea0176b4cd49bb9a8376812e487,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Library/metadata/ae/ae39e63b45422554bb277cb9c86b536c,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Library/metadata/b0/b0919ad450f1b9c4d9c160d25f1b8c6c,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Library/metadata/b9/b9491880450b0ba41b36818318697b0e,added,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Library/metadata/b9/b9491880450b0ba41b36818318697b0e.info,added,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Library/metadata/bd/bddbba5183a197b40ae655405f425f16,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Library/metadata/c4/c491ee1b6fa8f3d468759ed2c58cea87,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Library/metadata/d0/d06e6722c08b8c04bb397e32d3db40a0,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Library/metadata/f8/f8922c6705e20c54388f1cb71c3148ad,added,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Library/metadata/f8/f8922c6705e20c54388f1cb71c3148ad.info,added,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,Library/metadata/fb/fb4e3b1f85575064d83fabf25fdf1285,modified,0,0,0,
+Hotrian/OpenVRDesktopDisplayPortal,44,c8a9b607def642d65d85f6335ff14898a3f64ed6,OpenVRDesktopDisplayPortal-master.CSharp.csproj,modified,2,0,2,"@@ -78,13 +78,15 @@
+     </ProjectReference>
+   </ItemGroup>
+   <ItemGroup>
++    <Compile Include=""Assets\AnimationPanelController.cs"" />
+     <Compile Include=""Assets\HOTK\Example Content\DesktopCameraScript.cs"" />
+     <Compile Include=""Assets\HOTK\Example Content\UI Scripts\AlphaMatchInputField.cs"" />
+     <Compile Include=""Assets\HOTK\Example Content\UI Scripts\ApplicationDropdownScript.cs"" />
+     <Compile Include=""Assets\HOTK\Example Content\UI Scripts\AttachUIToScreen.cs"" />
+     <Compile Include=""Assets\HOTK\Example Content\UI Scripts\ButtonHideWhenNotController.cs"" />
+     <Compile Include=""Assets\HOTK\Example Content\UI Scripts\ButtonSwapControllers.cs"" />
+     <Compile Include=""Assets\HOTK\Example Content\UI Scripts\DisableOnEventTrigger.cs"" />
++    <Compile Include=""Assets\HOTK\Example Content\UI Scripts\DodgeMatchInputField.cs"" />
+     <Compile Include=""Assets\HOTK\Example Content\UI Scripts\DropdownApplicationModeController.cs"" />
+     <Compile Include=""Assets\HOTK\Example Content\UI Scripts\DropdownHideWhenNotController.cs"" />
+     <Compile Include=""Assets\HOTK\Example Content\UI Scripts\DropdownMatchEnumOptions.cs"" />"

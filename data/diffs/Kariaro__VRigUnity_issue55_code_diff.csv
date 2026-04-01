@@ -1,0 +1,141 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+Kariaro/VRigUnity,55,13484c6e162e9fe90fa4b4807f477781f3261c30,Assets/Scenes/Prefabs/Customizable Panel.prefab,modified,3,3,6,"@@ -1182,7 +1182,7 @@ GameObject:
+   - component: {fileID: 6447137187690980418}
+   - component: {fileID: 6447137187690980420}
+   - component: {fileID: 6447137187690980421}
+-  m_Layer: 5
++  m_Layer: 0
+   m_Name: BackgroundImage
+   m_TagString: Untagged
+   m_Icon: {fileID: 0}
+@@ -1343,7 +1343,7 @@ GameObject:
+   - component: {fileID: 6447137188151484115}
+   - component: {fileID: 6447137188151484117}
+   - component: {fileID: 3743528749840115948}
+-  m_Layer: 5
++  m_Layer: 0
+   m_Name: BackgroundColor
+   m_TagString: Untagged
+   m_Icon: {fileID: 0}
+@@ -1567,7 +1567,7 @@ GameObject:
+   - component: {fileID: 6447137188617013784}
+   - component: {fileID: 6447137188617013789}
+   - component: {fileID: 6447137188617013788}
+-  m_Layer: 5
++  m_Layer: 0
+   m_Name: Capture Canvas
+   m_TagString: Untagged
+   m_Icon: {fileID: 0}"
+Kariaro/VRigUnity,55,13484c6e162e9fe90fa4b4807f477781f3261c30,Assets/Scripts/CustomizableView/CustomizableCanvas.cs,modified,2,2,4,"@@ -59,8 +59,8 @@ public void ReadSync(TextureFrame textureFrame) {
+ 		}
+ 
+ 		void Update() {
+-			if (streamCamera.enabled != Settings.VirtualCamera) {
+-				streamCamera.enabled = Settings.VirtualCamera;
++			if (streamCamera.enabled != Settings.Temporary.VirtualCamera) {
++				streamCamera.enabled = Settings.Temporary.VirtualCamera;
+ 			}
+ 		}
+ "
+Kariaro/VRigUnity,55,13484c6e162e9fe90fa4b4807f477781f3261c30,Assets/Scripts/UI/Tab/GUITabAdvancedConfig.cs,modified,0,17,17,"@@ -44,23 +44,6 @@ protected override void InitializeSettings() {
+ 			CreateSetting(""Show Model"", builder => {
+ 				return builder.AddToggle((_, value) => Settings.ShowModel = value, Settings.ShowModel, FieldData.None);
+ 			});
+-			CreateSetting(""Custom Background"", builder => {
+-				return builder
+-					.AddToggle((_, value) => guiMain.SetShowBackgroundImage(value), Settings.ShowCustomBackground, FieldData.None)
+-					.AddButton(""Select Image"", (_) => {
+-						var extensions = new [] {
+-							new CustomExtensionFilter(""Image Files"", new string[] { ""png"", ""jpg"", ""jpeg"" }),
+-							new CustomExtensionFilter(""All Files"", ""*""),
+-						};
+-			
+-						FileDialogUtils.OpenFilePanel(this, ""Open Image"", Settings.ImageFile, extensions, false, (paths) => {
+-							if (paths.Length > 0) {
+-								string filePath = paths[0];
+-								guiMain.LoadCustomImage(filePath);
+-							}
+-						});
+-					}, FieldData.None);
+-			});
+ 			CreateSetting(""Gui Scale"", builder => {
+ 				return builder.AddIntSlider((_, value) => Settings.GuiScale = value, 1, 10, Settings.GuiScale, FieldData.None);
+ 			});"
+Kariaro/VRigUnity,55,13484c6e162e9fe90fa4b4807f477781f3261c30,Assets/Scripts/UI/Tab/GUITabCameraConfig.cs,modified,21,1,22,"@@ -4,6 +4,7 @@
+ using System.Linq;
+ using UnityEngine;
+ using UnityEngine.UI;
++using static HardCoded.VRigUnity.FileDialogUtils;
+ using static HardCoded.VRigUnity.SettingsFieldTemplate;
+ 
+ namespace HardCoded.VRigUnity {
+@@ -63,11 +64,30 @@ protected override void InitializeSettings() {
+ 			});
+ 			CreateSetting(""Virtual Camera"", builder => {
+ 				return builder
+-					.AddToggle((_, value) => Settings.VirtualCamera = value, Settings.VirtualCamera, new(24))
++					.AddToggle((_, value) => Settings.Temporary.VirtualCamera = value, Settings.Temporary.VirtualCamera, new(24))
+ 					.AddButton(""Install"", (_) => CameraCapture.InstallVirtualCamera(), FieldData.None)
+ 					.AddButton(""Uninstall"", (_) => CameraCapture.UninstallVirtualCamera(), FieldData.None);
+ 			});
+ 
++			AddDivider(""Effects"");
++			CreateSetting(""Custom Background"", builder => {
++				return builder
++					.AddToggle((_, value) => guiMain.SetShowBackgroundImage(value), Settings.ShowCustomBackground, new(24))
++					.AddButton(""Select Image"", (_) => {
++						var extensions = new [] {
++							new CustomExtensionFilter(""Image Files"", new string[] { ""png"", ""jpg"", ""jpeg"" }),
++							new CustomExtensionFilter(""All Files"", ""*""),
++						};
++			
++						FileDialogUtils.OpenFilePanel(this, ""Open Image"", Settings.ImageFile, extensions, false, (paths) => {
++							if (paths.Length > 0) {
++								string filePath = paths[0];
++								guiMain.LoadCustomImage(filePath);
++							}
++						});
++					}, FieldData.None);
++			});
++
+ 			ReloadContents();
+ 		}
+ "
+Kariaro/VRigUnity,55,13484c6e162e9fe90fa4b4807f477781f3261c30,Assets/Scripts/Utils/Settings/Settings.cs,modified,4,6,10,"@@ -17,12 +17,15 @@ public static void Init() {
+ 			BoneMask = BoneSettings.Default;
+ 		}
+ 
++		public static class Temporary {
++			public static bool VirtualCamera = false;
++		}
++
+ 		// Camera Settings
+ 		public static Text _CameraName = new(""camera.name"", """");
+ 		public static Bool _CameraFlipped = new(""camera.flipped"", false);
+ 		public static Text _CameraResolution = new(""camera.resolution"", """");
+ 		public static Bool _CameraCustomResolution = new(""camera.resolution.custom"", false);
+-		public static Bool _VirtualCamera = new(""camera.virtual"", false);
+ 
+ 		public static string CameraName {
+ 			get => _CameraName.Get();
+@@ -44,11 +47,6 @@ public static bool CameraCustomResolution {
+ 			set => _CameraCustomResolution.Set(value);
+ 		}
+ 
+-		public static bool VirtualCamera {
+-			get => _VirtualCamera.Get();
+-			set => _VirtualCamera.Set(value);
+-		}
+-
+ 		// Tracking Settings
+ 		public static Text _TrackingBox = new(""tracking.box"", ""0,0,5000,5000"");
+ 		public static Bool _TrackingBoxEnabled = new(""tracking.box.enable"", false);"
+Kariaro/VRigUnity,55,13484c6e162e9fe90fa4b4807f477781f3261c30,Assets/UnityCapture/UnityCapture.cs,modified,1,1,2,"@@ -86,7 +86,7 @@ void OnPreRender() {
+ 	}
+ 
+ 	void OnPostRender() {
+-		if (!HardCoded.VRigUnity.Settings.VirtualCamera) {
++		if (!HardCoded.VRigUnity.Settings.Temporary.VirtualCamera) {
+ 			return;
+ 		}
+ "

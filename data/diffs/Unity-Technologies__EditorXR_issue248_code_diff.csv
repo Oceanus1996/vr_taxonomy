@@ -1,0 +1,73 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+Unity-Technologies/EditorXR,248,7553044747c71cbf351328c8169ac6da25736a26,Workspaces/HierarchyWorkspace/Prefabs/HierarchyListItem.prefab,modified,5,2,7,"@@ -407,8 +407,11 @@ MonoBehaviour:
+   m_NoClipExpandArrow: {fileID: 2100000, guid: d066c89af6b2b864cb02f409d89ce3ba, type: 2}
+   m_NoClipBackingCube: {fileID: 2100000, guid: 1a070009f7968b74abbf1a1ae823b472, type: 2}
+   m_NoClipText: {fileID: 2100000, guid: 0b1d2d3c4b2d7d948bcd67e085daa7d4, type: 2}
+-  m_HoverColor: {r: 0.20344828, g: 0.20344828, b: 0.20344828, a: 0}
+-  m_SelectedColor: {r: 0.36896548, g: 0.36896548, b: 0.36896548, a: 0}
++  m_HoverColor: {r: 0.15686275, g: 0.15686275, b: 0.15686275, a: 0}
++  m_SelectedColor: {r: 0.23529412, g: 0.23529412, b: 0.23529412, a: 0}
++  m_SelectedHoverColor: {r: 0.3137255, g: 0.3137255, b: 0.3137255, a: 0}
++  m_PrefabTextColor: {r: 0.28627452, g: 0.45490196, b: 0.7490196, a: 1}
++  m_SelectedPrefabTextColor: {r: 0.382199, g: 0.60733, b: 1, a: 1}
+   m_StackingFraction: 0.3
+ --- !u!114 &114000011951837648
+ MonoBehaviour:"
+Unity-Technologies/EditorXR,248,7553044747c71cbf351328c8169ac6da25736a26,Workspaces/HierarchyWorkspace/Scripts/HierarchyListItem.cs,modified,25,3,28,"@@ -46,11 +46,21 @@ sealed class HierarchyListItem : DraggableListItem<HierarchyData, int>, IUsesVie
+ 		[SerializeField]
+ 		Color m_SelectedColor;
+ 
++		[SerializeField]
++		Color m_SelectedHoverColor;
++
++		[SerializeField]
++		Color m_PrefabTextColor;
++
++		[SerializeField]
++		Color m_SelectedPrefabTextColor;
++
+ 		[Tooltip(""The fraction of the cube height to use for stacking grabbed rows"")]
+ 		[SerializeField]
+ 		float m_StackingFraction = 0.3f;
+ 
+ 		Color m_NormalColor;
++		Color m_NormalTextColor;
+ 		Renderer m_CubeRenderer;
+ 		Transform m_CubeTransform;
+ 		Transform m_DropZoneTransform;
+@@ -134,6 +144,8 @@ public override void Setup(HierarchyData data)
+ 				m_DropZone.canDrop = CanDrop;
+ 				m_DropZone.receiveDrop = ReceiveDrop;
+ 				m_DropZone.getDropObject = GetDropObject;
++
++				m_NormalTextColor = m_Text.color;
+ 			}
+ 
+ 			m_CubeTransform = m_Cube.transform;
+@@ -191,13 +203,23 @@ public void UpdateSelf(float width, int depth, bool? expanded, bool selected, bo
+ 
+ 			UpdateArrow(expanded);
+ 
++			var isPrefab = PrefabUtility.GetPrefabType(data.gameObject) == PrefabType.PrefabInstance;
+ 			// Set selected/hover/normal color
+-			if (hovering)
++			if (selected)
++			{
++				cubeMaterial.color = hovering ? m_SelectedHoverColor : m_SelectedColor;
++				m_Text.color = isPrefab ? m_SelectedPrefabTextColor : m_NormalTextColor;
++			}
++			else if (hovering)
++			{
+ 				cubeMaterial.color = m_HoverColor;
+-			else if (selected)
+-				cubeMaterial.color = m_SelectedColor;
++				m_Text.color = isPrefab ? m_PrefabTextColor : m_NormalTextColor;
++			}
+ 			else
++			{
+ 				cubeMaterial.color = m_NormalColor;
++				m_Text.color = isPrefab ? m_PrefabTextColor : m_NormalTextColor;
++			}
+ 		}
+ 
+ 		public void UpdateArrow(bool? expanded, bool immediate = false)"

@@ -1,0 +1,232 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe-inspector,664,e8798c73b6abd51566107e21a007f6fe90fbb5ad,src/components/Collapsible.js,modified,3,1,4,"@@ -22,7 +22,9 @@ export default class Collapsible extends React.Component {
+     };
+   }
+ 
+-  toggleVisibility = () => {
++  toggleVisibility = (event) => {
++    // Don't collapse if we click on actions like clipboard
++    if (event.target.nodeName === 'A') return;
+     this.setState({ collapsed: !this.state.collapsed });
+     if (typeof ga !== 'undefined') {
+       ga('send', 'event', 'Components', 'collapse');"
+aframevr/aframe-inspector,664,e8798c73b6abd51566107e21a007f6fe90fbb5ad,src/components/components/CommonComponents.js,modified,0,5,5,"@@ -115,14 +115,9 @@ export default class CommonComponents extends React.Component {
+           <img src={GLTFIcon} />
+         </a>
+         <a
+-          href=""#""
+           title=""Copy entity HTML to clipboard""
+           data-action=""copy-entity-to-clipboard""
+           className=""button fa fa-clipboard""
+-          onClick={(event) => {
+-            event.preventDefault();
+-            event.stopPropagation();
+-          }}
+         />
+       </div>
+     );"
+aframevr/aframe-inspector,664,e8798c73b6abd51566107e21a007f6fe90fbb5ad,src/components/components/Component.js,modified,0,5,5,"@@ -153,11 +153,6 @@ export default class Component extends React.Component {
+               data-action=""copy-component-to-clipboard""
+               data-component={subComponentName || componentName}
+               className=""button fa fa-clipboard""
+-              href=""#""
+-              onClick={(event) => {
+-                event.preventDefault();
+-                event.stopPropagation();
+-              }}
+             />
+             <a
+               title=""Remove component"""
+aframevr/aframe-inspector,664,e8798c73b6abd51566107e21a007f6fe90fbb5ad,src/components/modals/ModalTextures.js,modified,4,4,8,"@@ -71,17 +71,17 @@ export default class ModalTextures extends React.Component {
+     this.generateFromAssets();
+   }
+ 
+-  componentDidUpdate() {
++  componentDidUpdate(prevProps) {
+     if (this.state.isOpen && !AFRAME.INSPECTOR.assetsLoader.hasLoaded) {
+       AFRAME.INSPECTOR.assetsLoader.load();
+     }
++    if (this.state.isOpen && this.state.isOpen !== prevProps.isOpen) {
++      this.generateFromAssets();
++    }
+   }
+ 
+   static getDerivedStateFromProps(props, state) {
+     if (state.isOpen !== props.isOpen) {
+-      if (props.isOpen) {
+-        this.generateFromAssets();
+-      }
+       return { isOpen: props.isOpen };
+     }
+     return null;"
+aframevr/aframe-inspector,664,e8798c73b6abd51566107e21a007f6fe90fbb5ad,src/components/widgets/BooleanWidget.js,modified,3,4,7,"@@ -19,11 +19,10 @@ export default class BooleanWidget extends React.Component {
+     this.state = { value: this.props.value };
+   }
+ 
+-  static getDerivedStateFromProps(props, state) {
+-    if (props.value !== state.value) {
+-      return { value: props.value };
++  componentDidUpdate(prevProps) {
++    if (this.props.value !== prevProps.value) {
++      this.setState({ value: this.props.value });
+     }
+-    return null;
+   }
+ 
+   onChange = (e) => {"
+aframevr/aframe-inspector,664,e8798c73b6abd51566107e21a007f6fe90fbb5ad,src/components/widgets/ColorWidget.js,modified,2,2,4,"@@ -39,8 +39,8 @@ export default class ColorWidget extends React.Component {
+     }
+   }
+ 
+-  componentDidUpdate() {
+-    if (this.props.value !== this.state.value) {
++  componentDidUpdate(prevProps) {
++    if (this.props.value !== prevProps.value) {
+       this.setState({
+         value: this.props.value,
+         pickerValue: this.getHexString(this.props.value)"
+aframevr/aframe-inspector,664,e8798c73b6abd51566107e21a007f6fe90fbb5ad,src/components/widgets/InputWidget.js,modified,3,4,7,"@@ -23,11 +23,10 @@ export default class InputWidget extends React.Component {
+     }
+   };
+ 
+-  static getDerivedStateFromProps(props, state) {
+-    if (props.value !== state.value) {
+-      return { value: props.value };
++  componentDidUpdate(prevProps) {
++    if (this.props.value !== prevProps.value) {
++      this.setState({ value: this.props.value });
+     }
+-    return null;
+   }
+ 
+   render() {"
+aframevr/aframe-inspector,664,e8798c73b6abd51566107e21a007f6fe90fbb5ad,src/components/widgets/NumberWidget.js,modified,6,7,13,"@@ -110,16 +110,15 @@ export default class NumberWidget extends React.Component {
+     }
+   }
+ 
+-  static getDerivedStateFromProps(props, state) {
++  componentDidUpdate(prevProps) {
+     // This will be triggered typically when the element is changed directly with
+     // element.setAttribute.
+-    if (props.value !== state.value) {
+-      return {
+-        value: props.value,
+-        displayValue: props.value.toFixed(props.precision)
+-      };
++    if (this.props.value !== prevProps.value) {
++      this.setState({
++        value: this.props.value,
++        displayValue: this.props.value.toFixed(this.props.precision)
++      });
+     }
+-    return null;
+   }
+ 
+   onBlur = () => {"
+aframevr/aframe-inspector,664,e8798c73b6abd51566107e21a007f6fe90fbb5ad,src/components/widgets/SelectWidget.js,modified,10,9,19,"@@ -19,19 +19,20 @@ export default class SelectWidget extends React.Component {
+   }
+ 
+   onChange = (value) => {
+-    this.setState({ value: value });
+-    if (this.props.onChange) {
+-      this.props.onChange(this.props.name, value.value);
+-    }
++    this.setState({ value: value }, () => {
++      if (this.props.onChange) {
++        this.props.onChange(this.props.name, value.value);
++      }
++    });
+   };
+ 
+-  static getDerivedStateFromProps(props, state) {
+-    if (props.value !== state.value.value) {
+-      return {
++  componentDidUpdate(prevProps) {
++    const props = this.props;
++    if (props.value !== prevProps.value) {
++      this.setState({
+         value: { value: props.value, label: props.value }
+-      };
++      });
+     }
+-    return null;
+   }
+ 
+   render() {"
+aframevr/aframe-inspector,664,e8798c73b6abd51566107e21a007f6fe90fbb5ad,src/components/widgets/Vec2Widget.js,modified,5,5,10,"@@ -27,14 +27,14 @@ export default class Vec2Widget extends React.Component {
+     });
+   };
+ 
+-  static getDerivedStateFromProps(props, state) {
+-    if (state.x !== props.value.x || state.y !== props.value.y) {
+-      return {
++  componentDidUpdate() {
++    const props = this.props;
++    if (props.value.x !== this.state.x || props.value.y !== this.state.y) {
++      this.setState({
+         x: props.value.x,
+         y: props.value.y
+-      };
++      });
+     }
+-    return null;
+   }
+ 
+   render() {"
+aframevr/aframe-inspector,664,e8798c73b6abd51566107e21a007f6fe90fbb5ad,src/components/widgets/Vec3Widget.js,modified,7,7,14,"@@ -28,19 +28,19 @@ export default class Vec3Widget extends React.Component {
+     });
+   };
+ 
+-  static getDerivedStateFromProps(props, state) {
++  componentDidUpdate() {
++    const props = this.props;
+     if (
+-      state.x !== props.value.x ||
+-      state.y !== props.value.y ||
+-      state.z !== props.value.z
++      props.value.x !== this.state.x ||
++      props.value.y !== this.state.y ||
++      props.value.z !== this.state.z
+     ) {
+-      return {
++      this.setState({
+         x: props.value.x,
+         y: props.value.y,
+         z: props.value.z
+-      };
++      });
+     }
+-    return null;
+   }
+ 
+   render() {"
+aframevr/aframe-inspector,664,e8798c73b6abd51566107e21a007f6fe90fbb5ad,src/components/widgets/Vec4Widget.js,modified,8,8,16,"@@ -29,21 +29,21 @@ export default class Vec4Widget extends React.Component {
+     });
+   };
+ 
+-  static getDerivedStateFromProps(props, state) {
++  componentDidUpdate() {
++    const props = this.props;
+     if (
+-      state.x !== props.value.x ||
+-      state.y !== props.value.y ||
+-      state.z !== props.value.z ||
+-      state.w !== props.value.w
++      props.value.x !== this.state.x ||
++      props.value.y !== this.state.y ||
++      props.value.z !== this.state.z ||
++      props.value.w !== this.state.w
+     ) {
+-      return {
++      this.setState({
+         x: props.value.x,
+         y: props.value.y,
+         z: props.value.z,
+         w: props.value.w
+-      };
++      });
+     }
+-    return null;
+   }
+ 
+   render() {"

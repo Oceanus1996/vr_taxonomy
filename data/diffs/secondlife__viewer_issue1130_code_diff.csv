@@ -1,0 +1,661 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+secondlife/viewer,1130,7ef2b43,indra/newview/app_settings/shaders/class3/deferred/reflectionProbeF.glsl,modified,1,1,2,"@@ -717,7 +717,7 @@ void tapHeroProbe(inout vec3 glossenv, vec3 pos, vec3 norm, float glossiness)
+     clipDist = clipDist * 0.95 + 0.05;
+     clipDist = clamp(clipDist * falloffMult, 0, 1);
+     w = clamp(w * falloffMult * clipDist, 0, 1);
+-
++    w = mix(0, w, clamp(glossiness - 0.75, 0, 1) * 4); // We only generate a quarter of the mips for the hero probes.  Linearly interpolate between normal probes and hero probes based upon glossiness.
+     glossenv = mix(glossenv, textureLod(heroProbes, vec4(env_mat * refnormpersp, 0), (1.0-glossiness)*heroMipCount).xyz, w);
+ }
+ "
+secondlife/viewer,1130,7ef2b43,indra/newview/featuretable.txt,modified,38,0,38,"@@ -107,6 +107,11 @@ WLSkyDetail					1	96
+ RenderFSAASamples			1	0
+ RenderScreenSpaceReflections 1  0
+ RenderReflectionProbeLevel  1   0
++RenderMirrors				1	0
++RenderHeroProbeResolution	1	256
++RenderHeroProbeDistance		1	4
++RenderHeroProbeUpdateRate	1	4
++RenderHeroProbeConservativeUpdateMultiplier 1 16
+ 
+ //
+ // Medium Low Graphics Settings
+@@ -138,6 +143,11 @@ WLSkyDetail					1	96
+ RenderFSAASamples			1	0
+ RenderScreenSpaceReflections 1  0
+ RenderReflectionProbeLevel  1   0
++RenderMirrors				1	0
++RenderHeroProbeResolution	1	256
++RenderHeroProbeDistance		1	6
++RenderHeroProbeUpdateRate	1	3
++RenderHeroProbeConservativeUpdateMultiplier 1 16
+ 
+ //
+ // Medium Graphics Settings (standard)
+@@ -169,6 +179,11 @@ RenderReflectionsEnabled    1   1
+ RenderReflectionProbeDetail	1	0
+ RenderScreenSpaceReflections 1  0
+ RenderReflectionProbeLevel  1   1
++RenderMirrors				1	0
++RenderHeroProbeResolution	1	512
++RenderHeroProbeDistance		1	6
++RenderHeroProbeUpdateRate	1	3
++RenderHeroProbeConservativeUpdateMultiplier 1 16
+ 
+ //
+ // Medium High Graphics Settings
+@@ -200,6 +215,11 @@ RenderReflectionsEnabled    1   1
+ RenderReflectionProbeDetail	1	1
+ RenderScreenSpaceReflections 1  0
+ RenderReflectionProbeLevel  1   2
++RenderMirrors				1	0
++RenderHeroProbeResolution	1	512
++RenderHeroProbeDistance		1	6
++RenderHeroProbeUpdateRate	1	2
++RenderHeroProbeConservativeUpdateMultiplier 1 8
+ 
+ //
+ // High Graphics Settings (SSAO + sun shadows)
+@@ -231,6 +251,11 @@ RenderReflectionsEnabled    1   1
+ RenderReflectionProbeDetail	1	1
+ RenderScreenSpaceReflections 1  0
+ RenderReflectionProbeLevel  1   3
++RenderMirrors				1	0
++RenderHeroProbeResolution	1	1024
++RenderHeroProbeDistance		1	8
++RenderHeroProbeUpdateRate	1	2
++RenderHeroProbeConservativeUpdateMultiplier 1 8
+ 
+ //
+ // High Ultra Graphics Settings (deferred + SSAO + all shadows)
+@@ -262,6 +287,11 @@ RenderReflectionsEnabled    1   1
+ RenderReflectionProbeDetail	1	1
+ RenderScreenSpaceReflections 1  0
+ RenderReflectionProbeLevel  1   3
++RenderMirrors				1	0
++RenderHeroProbeResolution	1	1024
++RenderHeroProbeDistance		1	16
++RenderHeroProbeUpdateRate	1	1
++RenderHeroProbeConservativeUpdateMultiplier 1 4
+ 
+ //
+ // Ultra graphics (REALLY PURTY!)
+@@ -293,6 +323,11 @@ RenderReflectionsEnabled    1   1
+ RenderReflectionProbeDetail	1	1
+ RenderScreenSpaceReflections 1  0
+ RenderReflectionProbeLevel  1   3
++RenderMirrors				1	1
++RenderHeroProbeResolution	1	2048
++RenderHeroProbeDistance		1	16
++RenderHeroProbeUpdateRate	1	1
++RenderHeroProbeConservativeUpdateMultiplier 1 4
+ 
+ //
+ // Class Unknown Hardware (unknown)
+@@ -301,6 +336,7 @@ list Unknown
+ RenderShadowDetail			1	0
+ RenderDeferredSSAO			1	0
+ RenderUseAdvancedAtmospherics 1 0
++RenderMirrors				1	0
+ 
+ //
+ // VRAM > 512MB
+@@ -322,6 +358,7 @@ RenderTransparentWater      1   0
+ RenderDeferredSSAO			0	0
+ RenderShadowDetail			0	0
+ RenderReflectionProbeDetail	0	-1
++RenderMirrors				0	0
+ 
+ list Intel
+ RenderAnisotropic			1	0
+@@ -336,6 +373,7 @@ list GL3
+ RenderFSAASamples           0   0
+ RenderReflectionsEnabled    0   0
+ RenderReflectionProbeDetail	0	0
++RenderMirrors				0	0
+ 
+ list TexUnit16orLess
+ RenderTerrainPBRDetail      1   -1"
+secondlife/viewer,1130,7ef2b43,indra/newview/featuretable_mac.txt,modified,38,0,38,"@@ -105,6 +105,11 @@ RenderReflectionsEnabled    1   1
+ RenderReflectionProbeDetail	1	0
+ RenderScreenSpaceReflections 1  0
+ RenderReflectionProbeLevel  1   0
++RenderMirrors				1	0
++RenderHeroProbeResolution	1	256
++RenderHeroProbeDistance		1	4
++RenderHeroProbeUpdateRate	1	4
++RenderHeroProbeConservativeUpdateMultiplier 1 16
+ 
+ //
+ // Medium Low Graphics Settings
+@@ -136,6 +141,11 @@ RenderReflectionsEnabled    1   1
+ RenderReflectionProbeDetail	1	0
+ RenderScreenSpaceReflections 1  0
+ RenderReflectionProbeLevel  1   0
++RenderMirrors				1	0
++RenderHeroProbeResolution	1	256
++RenderHeroProbeDistance		1	6
++RenderHeroProbeUpdateRate	1	3
++RenderHeroProbeConservativeUpdateMultiplier 1 16
+ 
+ //
+ // Medium Graphics Settings (standard)
+@@ -167,6 +177,11 @@ RenderReflectionsEnabled    1   1
+ RenderReflectionProbeDetail	1	0
+ RenderScreenSpaceReflections 1  0
+ RenderReflectionProbeLevel  1   0
++RenderMirrors				1	0
++RenderHeroProbeResolution	1	512
++RenderHeroProbeDistance		1	6
++RenderHeroProbeUpdateRate	1	3
++RenderHeroProbeConservativeUpdateMultiplier 1 16
+ 
+ //
+ // Medium High Graphics Settings
+@@ -198,6 +213,11 @@ RenderReflectionsEnabled    1   1
+ RenderReflectionProbeDetail	1	0
+ RenderScreenSpaceReflections 1  0
+ RenderReflectionProbeLevel  1   0
++RenderMirrors				1	0
++RenderHeroProbeResolution	1	512
++RenderHeroProbeDistance		1	6
++RenderHeroProbeUpdateRate	1	2
++RenderHeroProbeConservativeUpdateMultiplier 1 8
+ 
+ //
+ // High Graphics Settings (SSAO + sun shadows)
+@@ -229,6 +249,11 @@ RenderReflectionsEnabled    1   1
+ RenderReflectionProbeDetail	1	1
+ RenderScreenSpaceReflections 1  0
+ RenderReflectionProbeLevel  1   1
++RenderMirrors				1	0
++RenderHeroProbeResolution	1	1024
++RenderHeroProbeDistance		1	8
++RenderHeroProbeUpdateRate	1	2
++RenderHeroProbeConservativeUpdateMultiplier 1 8
+ 
+ //
+ // High Ultra Graphics Settings (SSAO + all shadows)
+@@ -260,6 +285,11 @@ RenderReflectionsEnabled    1   1
+ RenderReflectionProbeDetail	1	1
+ RenderScreenSpaceReflections 1  0
+ RenderReflectionProbeLevel  1   2
++RenderMirrors				1	0
++RenderHeroProbeResolution	1	1024
++RenderHeroProbeDistance		1	16
++RenderHeroProbeUpdateRate	1	1
++RenderHeroProbeConservativeUpdateMultiplier 1 4
+ 
+ //
+ // Ultra graphics (REALLY PURTY!)
+@@ -291,6 +321,11 @@ RenderReflectionsEnabled    1   1
+ RenderReflectionProbeDetail	1	1
+ RenderScreenSpaceReflections 1  0
+ RenderReflectionProbeLevel  1   3
++RenderMirrors				1	1
++RenderHeroProbeResolution	1	2048
++RenderHeroProbeDistance		1	16
++RenderHeroProbeUpdateRate	1	1
++RenderHeroProbeConservativeUpdateMultiplier 1 4
+ 
+ //
+ // Class Unknown Hardware (unknown)
+@@ -299,6 +334,7 @@ list Unknown
+ RenderShadowDetail			1	0
+ RenderDeferredSSAO			1	0
+ RenderUseAdvancedAtmospherics 1 0
++RenderMirrors				1	0
+ 
+ 
+ //
+@@ -320,6 +356,7 @@ RenderTerrainDetail 		1	0
+ RenderDeferredSSAO			0	0
+ RenderUseAdvancedAtmospherics 0 0
+ RenderShadowDetail			0	0
++RenderMirrors				0	0
+ 
+ list TexUnit8orLess
+ RenderDeferredSSAO			0	0
+@@ -338,3 +375,4 @@ list GL3
+ RenderFSAASamples           0   0
+ RenderReflectionProbeDetail	0	0
+ RenderReflectionsEnabled    0   0
++RenderMirrors				0	0"
+secondlife/viewer,1130,7ef2b43,indra/newview/llheroprobemanager.cpp,modified,24,6,30,"@@ -64,6 +64,14 @@ LLHeroProbeManager::LLHeroProbeManager()
+ {
+ }
+ 
++LLHeroProbeManager::~LLHeroProbeManager()
++{
++	cleanup();
++
++    mHeroVOList.clear();
++    mNearestHero = nullptr;
++}
++
+ // helper class to seed octree with probes
+ void LLHeroProbeManager::update()
+ {
+@@ -84,8 +92,7 @@ void LLHeroProbeManager::update()
+     if (!mRenderTarget.isComplete())
+     {
+         U32 color_fmt = GL_RGBA16F;
+-        U32 targetRes = mProbeResolution; // super sample
+-        mRenderTarget.allocate(targetRes, targetRes, color_fmt, true);
++        mRenderTarget.allocate(mProbeResolution, mProbeResolution, color_fmt, true);
+     }
+ 
+     if (mMipChain.empty())
+@@ -472,12 +479,19 @@ void LLHeroProbeManager::renderDebug()
+     gDebugProgram.unbind();
+ }
+ 
++
+ void LLHeroProbeManager::initReflectionMaps()
+ {
+     U32 count = LL_MAX_HERO_PROBE_COUNT;
+ 
+-    if (mTexture.isNull() || mReflectionProbeCount != count || mReset)
++    if ((mTexture.isNull() || mReflectionProbeCount != count || mReset) && LLPipeline::RenderMirrors)
+     {
++
++        if (mReset)
++        {
++            cleanup();
++        }
++
+         mReset = false;
+         mReflectionProbeCount = count;
+         mProbeResolution      = gSavedSettings.getS32(""RenderHeroProbeResolution"");
+@@ -546,9 +560,8 @@ void LLHeroProbeManager::cleanup()
+     
+     mDefaultProbe = nullptr;
+     mUpdatingProbe = nullptr;
+-    
+-    mHeroVOList.clear();
+-    mNearestHero = nullptr;
++    /*
++    */
+ }
+ 
+ void LLHeroProbeManager::doOcclusion()
+@@ -565,6 +578,11 @@ void LLHeroProbeManager::doOcclusion()
+     }
+ }
+ 
++void LLHeroProbeManager::reset()
++{
++    mReset = true;
++}
++
+ bool LLHeroProbeManager::registerViewerObject(LLVOVolume* drawablep)
+ {
+     llassert(drawablep != nullptr);"
+secondlife/viewer,1130,7ef2b43,indra/newview/llheroprobemanager.h,modified,3,0,3,"@@ -60,6 +60,7 @@ class alignas(16) LLHeroProbeManager
+ 
+     // allocate an environment map of the given resolution 
+     LLHeroProbeManager();
++    ~LLHeroProbeManager();
+ 
+     // release any GL state 
+     void cleanup();
+@@ -77,6 +78,8 @@ class alignas(16) LLHeroProbeManager
+     // perform occlusion culling on all active reflection probes
+     void doOcclusion();
+ 
++    void reset();
++
+     bool registerViewerObject(LLVOVolume *drawablep);
+     void unregisterViewerObject(LLVOVolume* drawablep);
+ "
+secondlife/viewer,1130,7ef2b43,indra/newview/llviewercontrol.cpp,modified,14,0,14,"@@ -437,6 +437,19 @@ static bool handleReflectionProbeDetailChanged(const LLSD& newvalue)
+         gPipeline.createGLBuffers();
+         LLViewerShaderMgr::instance()->setShaders();
+         gPipeline.mReflectionMapManager.reset();
++        gPipeline.mHeroProbeManager.reset();
++    }
++    return true;
++}
++
++static bool handleHeroProbeResolutionChanged(const LLSD &newvalue)
++{
++    if (gPipeline.isInit())
++    {
++        LLPipeline::refreshCachedSettings();
++        gPipeline.mHeroProbeManager.reset();
++        gPipeline.releaseGLBuffers();
++        gPipeline.createGLBuffers();
+     }
+     return true;
+ }
+@@ -752,6 +765,7 @@ void settings_setup_listeners()
+     setting_setup_signal_listener(gSavedSettings, ""RenderReflectionProbeDetail"", handleReflectionProbeDetailChanged);
+     setting_setup_signal_listener(gSavedSettings, ""RenderReflectionsEnabled"", handleReflectionProbeDetailChanged);
+     setting_setup_signal_listener(gSavedSettings, ""RenderScreenSpaceReflections"", handleReflectionProbeDetailChanged);
++    setting_setup_signal_listener(gSavedSettings, ""RenderHeroProbeResolution"", handleHeroProbeResolutionChanged);
+     setting_setup_signal_listener(gSavedSettings, ""RenderShadowDetail"", handleSetShaderChanged);
+     setting_setup_signal_listener(gSavedSettings, ""RenderDeferredSSAO"", handleSetShaderChanged);
+     setting_setup_signal_listener(gSavedSettings, ""RenderPerformanceTest"", handleRenderPerfTestChanged);"
+secondlife/viewer,1130,7ef2b43,indra/newview/llvoavatarself.cpp,modified,1,1,2,"@@ -1062,7 +1062,7 @@ void LLVOAvatarSelf::updateAttachmentVisibility(U32 camera_mode)
+ 			switch (camera_mode)
+ 			{
+ 				case CAMERA_MODE_MOUSELOOK:
+-					if (LLVOAvatar::sVisibleInFirstPerson && attachment->getVisibleInFirstPerson())
++					if ((LLVOAvatar::sVisibleInFirstPerson && attachment->getVisibleInFirstPerson()) || gPipeline.mHeroProbeManager.isMirrorPass())
+ 					{
+ 						attachment->setAttachmentVisibility(TRUE);
+ 					}"
+secondlife/viewer,1130,7ef2b43,indra/newview/pipeline.cpp,modified,7,0,7,"@@ -793,6 +793,7 @@ bool LLPipeline::allocateScreenBuffer(U32 resX, U32 resY, U32 samples)
+ 
+ 		if (RenderMirrors)
+         {
++            mHeroProbeManager.initReflectionMaps();
+             res = mHeroProbeManager.mProbeResolution;  // We also scale the hero probe RT to the probe res since we don't super sample it.
+             mRT = &mHeroProbeRT;
+             allocateScreenBuffer(res, res, samples);
+@@ -1153,6 +1154,12 @@ void LLPipeline::releaseScreenBuffers()
+     mRT->fxaaBuffer.release();
+     mRT->deferredScreen.release();
+     mRT->deferredLight.release();
++
++	mHeroProbeRT.uiScreen.release();
++	mHeroProbeRT.screen.release();
++	mHeroProbeRT.fxaaBuffer.release();
++	mHeroProbeRT.deferredScreen.release();
++	mHeroProbeRT.deferredLight.release();
+ }
+ 
+ void LLPipeline::releaseSunShadowTarget(U32 index)"
+secondlife/viewer,1130,7ef2b43,indra/newview/skins/default/xui/en/floater_preferences_graphics_advanced.xml,modified,133,50,183,"@@ -335,66 +335,33 @@
+       name=""FSAADisabled""
+       value=""0"" />
+     <combo_box.item
+-      label=""2x""
+-      name=""2x""
++      label=""FXAA""
++      name=""FXAA""
+       value=""2"" />
+-    <combo_box.item
+-     label=""4x""
+-     name=""4x""
+-     value=""4"" />
+-    <combo_box.item
+-     label=""8x""
+-     name=""8x""
+-     value=""8"" />
+-    <combo_box.item
+-     label=""16x""
+-     name=""16x""
+-     value=""16"" />
+   </combo_box>
+-  <text
+-    type=""string""
+-    length=""1""
+-    follows=""left|top""
+-    height=""16""
+-    layout=""topleft""
+-    left_pad=""10""
+-    name=""antialiasing restart""
+-    top_delta=""0""
+-    width=""130"">
+-     (requires restart)
+-  </text>
+-   <view_border
+-      bevel_style=""in""
+-      height=""322""
+-      layout=""topleft""
+-      left=""385""
+-      name=""vert_border""
+-      top=""16""      
+-      width=""0""/>
+   <text
+     type=""string""
+     length=""1""
+     follows=""left|top""
+     height=""16""
+     layout=""topleft""
+     name=""MeshText""
+-    top_delta=""20""
+-    left=""400""
+-  	top=""21""
++    top_delta=""16""
++    left=""10""
+     width=""128"">
+-     Mesh
++    Mesh
+   </text>
+ 
+   <slider
+     control_name=""RenderTerrainLODFactor""
+-    follows=""left|top""
++    follows=""topleft""
+     height=""16""
+     increment=""0.125""
+     initial_value=""160""
+     label=""Terrain Mesh Detail:""
+     label_width=""185""
+     layout=""topleft""
+-    left=""420""
++    left=""30""
+     min_val=""1""
+     max_val=""2""
+     name=""TerrainMeshDetail""
+@@ -408,27 +375,27 @@
+   <text
+     type=""string""
+     length=""1""
+-    follows=""left|top""
++    follows=""topleft""
+     height=""16""
+     layout=""topleft""
+     name=""TerrainMeshDetailText""
+     text_readonly_color=""LabelDisabledColor""
+     top_delta=""0""
+     left_delta=""304""
+     width=""65"">
+-       Low
++    Low
+   </text>
+ 
+   <slider
+     control_name=""RenderTreeLODFactor""
+-    follows=""left|top""
++    follows=""topleft""
+     height=""16""
+     increment=""0.125""
+     initial_value=""160""
+     label=""Trees:""
+     label_width=""185""
+     layout=""topleft""
+-    left=""420""
++    left=""30""
+     name=""TreeMeshDetail""
+     show_text=""false""
+     top_delta=""16""
+@@ -447,7 +414,7 @@
+     top_delta=""0""
+     left_delta=""304""
+     width=""65"">
+-       Low
++    Low
+   </text>
+ 
+   <slider
+@@ -459,7 +426,7 @@
+     label=""Objects:""
+     label_width=""185""
+     layout=""topleft""
+-    left=""420""
++    left=""30""
+     min_val=""0""
+     max_val=""4""
+     name=""ObjectMeshDetail""
+@@ -480,7 +447,7 @@
+     top_delta=""0""
+     left_delta=""304""
+     width=""65"">
+-       Low
++    Low
+   </text>
+ 
+   <slider
+@@ -491,7 +458,7 @@
+     label=""Flexiprims:""
+     label_width=""185""
+     layout=""topleft""
+-    left=""420""
++    left=""30""
+     name=""FlexibleMeshDetail""
+     show_text=""false""
+     top_delta=""16""
+@@ -510,8 +477,28 @@
+     top_delta=""0""
+     left_delta=""304""
+     width=""65"">
+-       Low
++    Low
+   </text>
++  <text
++    type=""string""
++    length=""1""
++    follows=""left|top""
++    height=""16""
++    layout=""topleft""
++    left_pad=""10""
++    name=""antialiasing restart""
++    top_delta=""0""
++    width=""130"">
++     (requires restart)
++  </text>
++   <view_border
++      bevel_style=""in""
++      height=""322""
++      layout=""topleft""
++      left=""385""
++      name=""vert_border""
++      top=""16""      
++      width=""0""/>
+   
+   <text
+     type=""string""
+@@ -520,7 +507,7 @@
+     height=""16""
+     layout=""topleft""
+     name=""ShadersText""
+-    top_delta=""20""
++    top_delta=""-10""
+     left=""400""
+     width=""128"">
+      Shaders
+@@ -747,6 +734,102 @@
+     width=""260"">
+   </slider>
+ 
++  <!-- Mirror settings. -->
++  <check_box
++    control_name=""RenderMirrors""
++    height=""16""
++    initial_value=""false""
++    label=""Mirrors""
++    layout=""topleft""
++    left=""420""
++    name=""Mirrors""
++    top_delta=""24""
++    width=""240"">
++    <check_box.commit_callback
++      function=""Pref.RenderOptionUpdate"" />
++  </check_box>
++
++  <text
++    type=""string""
++    length=""1""
++    follows=""left|top""
++    height=""16""
++    layout=""topleft""
++    left=""420""
++    name=""MirrorResolutionText""
++    text_readonly_color=""LabelDisabledColor""
++    top_delta=""22""
++    width=""128"">
++    Mirror Resolution:
++  </text>
++
++  <combo_box
++   control_name=""RenderHeroProbeResolution""
++   height=""18""
++   layout=""topleft""
++   left_delta=""130""
++   top_delta=""0""
++   name=""MirrorResolution""
++   width=""150"">
++    <combo_box.item
++      label=""256""
++      name=""0""
++      value=""256""/>
++    <combo_box.item
++      label=""512""
++      name=""1""
++      value=""512""/>
++    <combo_box.item
++      label=""1024""
++      name=""2""
++      value=""1024""/>
++    <combo_box.item
++      label=""2048""
++      name=""3""
++      value=""2048""/>
++  </combo_box>
++
++  <text
++    type=""string""
++    length=""1""
++    follows=""left|top""
++    height=""16""
++    layout=""topleft""
++    left=""420""
++    name=""HeroProbeUpdateText""
++    text_readonly_color=""LabelDisabledColor""
++    top_delta=""22""
++    width=""128"">
++    Mirror Update Rate:
++  </text>
++
++  <combo_box
++   control_name=""RenderHeroProbeUpdateRate""
++   height=""18""
++   layout=""topleft""
++   left_delta=""130""
++   top_delta=""0""
++   name=""HeroProbeUpdateRate""
++   width=""150"">
++    <combo_box.item
++      label=""Every Frame""
++      name=""0""
++      value=""1""/>
++    <combo_box.item
++      label=""Every 2nd Frame""
++      name=""1""
++      value=""2""/>
++    <combo_box.item
++      label=""Every 3rd Frame""
++      name=""2""
++      value=""3""/>
++    <combo_box.item
++      label=""Every 4th Frame""
++      name=""3""
++      value=""4""/>
++  </combo_box>
++  <!-- End of mirror settings -->
++
+   <!-- End of Advanced Settings block -->
+ 	<view_border
+       bevel_style=""in"""
+secondlife/viewer,1130,c7e6db9,indra/newview/llvoavatarself.cpp,modified,1,1,2,"@@ -1062,7 +1062,7 @@ void LLVOAvatarSelf::updateAttachmentVisibility(U32 camera_mode)
+ 			switch (camera_mode)
+ 			{
+ 				case CAMERA_MODE_MOUSELOOK:
+-					if (LLVOAvatar::sVisibleInFirstPerson && attachment->getVisibleInFirstPerson())
++					if ((LLVOAvatar::sVisibleInFirstPerson && attachment->getVisibleInFirstPerson()) || gPipeline.mHeroProbeManager.isMirrorPass())
+ 					{
+ 						attachment->setAttachmentVisibility(TRUE);
+ 					}"

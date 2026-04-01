@@ -1,0 +1,606 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vizorvr/patches,1559,0264c6c,browser/plugins/three_text_geometry.plugin.js,modified,15,22,37,"@@ -6,10 +6,6 @@
+ 			name: 'text',
+ 			dt: E2.dt.TEXT,
+ 			def: 'hello world'
+-		}, {
+-			name: 'font',
+-			dt: E2.dt.TEXT,
+-			def: 'helvetiker'
+ 		}, {
+ 			name: 'size',
+ 			dt: E2.dt.FLOAT,
+@@ -19,14 +15,6 @@
+ 			dt: E2.dt.FLOAT,
+ 			def: 4/*,
+ 			validate: function(v) {return Math.floor(Math.min(Math.max(1, v), 10))}*/
+-		}, {
+-			name: 'weight',
+-			dt: E2.dt.TEXT,
+-			def: 'normal'
+-		}, {
+-			name: 'style',
+-			dt: E2.dt.TEXT,
+-			def: 'normal'
+ 		}, {
+ 			name: 'line spacing',
+ 			dt: E2.dt.FLOAT,
+@@ -42,13 +30,6 @@
+ 		}]
+ 
+ 		this.desc = 'Generate text'
+-
+-		var that = this
+-
+-		var fontLoader = new THREE.FontLoader()
+-		fontLoader.load(""/data/fonts/helvetiker_regular.typeface.js"", function(font) {
+-			that.font = font
+-		})
+ 	}
+ 
+ 	ThreeTextGeometry.prototype = Object.create(Plugin.prototype)
+@@ -77,11 +58,8 @@
+ 		}
+ 
+ 		var parameters = {
+-			font: this.inputValues.font,
+ 			curveSegments: this.inputValues.segments,
+ 			size: this.inputValues.size,
+-			weight: this.inputValues.weight,
+-			style: this.inputValues.style
+ 		}
+ 
+ 		var lines = this.inputValues.text.split('\n')
+@@ -129,4 +107,19 @@
+ 
+ 		this.dirty = false
+ 	}
++
++	ThreeTextGeometry.prototype.state_changed = function(ui) {
++		if (ui) {
++			return
++		}
++
++		var that = this
++
++		if (!this.font) {
++			var fontLoader = new THREE.FontLoader()
++			fontLoader.load(""/data/fonts/helvetiker_regular.typeface.js"", function(font) {
++				that.font = font
++			})
++		}
++	}
+ })()"
+vizorvr/patches,1559,0264c6c,browser/test/integration/helpers.js,modified,7,0,7,"@@ -127,6 +127,13 @@ exports.reset = function() {
+ 		NO_DPDB_FETCH: true
+ 	}
+ 
++	global.XMLHttpRequest = function() {
++		this.overrideMimeType = function() {}
++		this.open = function() {}
++		this.addEventListener = function(name, callback) {}
++		this.send = function() {}
++	}
++
+ 	exports.runScript(browserPath+'dist/engine.js')
+ 	exports.mockE2Classes()
+ "
+vizorvr/patches,1559,9747083,browser/data/fonts/helvetiker_bold.typeface.js,renamed,0,0,0,
+vizorvr/patches,1559,9747083,browser/data/fonts/helvetiker_regular.typeface.js,renamed,0,0,0,
+vizorvr/patches,1559,9747083,browser/plugins/three_text_geometry.plugin.js,modified,20,16,36,"@@ -6,10 +6,6 @@
+ 			name: 'text',
+ 			dt: E2.dt.TEXT,
+ 			def: 'hello world'
+-		}, {
+-			name: 'font',
+-			dt: E2.dt.TEXT,
+-			def: 'helvetiker'
+ 		}, {
+ 			name: 'size',
+ 			dt: E2.dt.FLOAT,
+@@ -19,14 +15,6 @@
+ 			dt: E2.dt.FLOAT,
+ 			def: 4/*,
+ 			validate: function(v) {return Math.floor(Math.min(Math.max(1, v), 10))}*/
+-		}, {
+-			name: 'weight',
+-			dt: E2.dt.TEXT,
+-			def: 'normal'
+-		}, {
+-			name: 'style',
+-			dt: E2.dt.TEXT,
+-			def: 'normal'
+ 		}, {
+ 			name: 'line spacing',
+ 			dt: E2.dt.FLOAT,
+@@ -65,12 +53,13 @@
+ 			return
+ 		}
+ 
++		if (!this.font) {
++			return
++		}
++
+ 		var parameters = {
+-			font: this.inputValues.font,
+ 			curveSegments: this.inputValues.segments,
+ 			size: this.inputValues.size,
+-			weight: this.inputValues.weight,
+-			style: this.inputValues.style
+ 		}
+ 
+ 		var lines = this.inputValues.text.split('\n')
+@@ -101,7 +90,7 @@
+ 				}
+ 			}
+ 
+-			var lineShapes = THREE.FontUtils.generateShapes(lines[i], parameters)
++			var lineShapes = this.font.generateShapes(lines[i], parameters.size, parameters.curveSegments)
+ 
+ 			if (this.geometry) {
+ 				var mtx = new THREE.Matrix4().makeTranslation(0, lineHeight, 0)
+@@ -118,4 +107,19 @@
+ 
+ 		this.dirty = false
+ 	}
++
++	ThreeTextGeometry.prototype.state_changed = function(ui) {
++		if (ui) {
++			return
++		}
++
++		var that = this
++
++		if (!this.font) {
++			var fontLoader = new THREE.FontLoader()
++			fontLoader.load(""/data/fonts/helvetiker_regular.typeface.js"", function(font) {
++				that.font = font
++			})
++		}
++	}
+ })()"
+vizorvr/patches,1559,9747083,browser/scripts/worldEditor/worldEditorOriginGrid.js,modified,29,18,47,"@@ -32,32 +32,43 @@ function WorldEditorOriginGrid() {
+ 	this.mesh = new EditorGridHelper(10, 1)
+ 	this.mesh.add(new EditorGridHelper(1, 0.1))
+ 
+-	var textShapes = THREE.FontUtils.generateShapes("""")
+-	var text1 = new THREE.ShapeGeometry(textShapes)
+-	this.textMesh1 = new THREE.Mesh(text1, new THREE.MeshBasicMaterial({color: this.mesh.color1, fog: false}))
+-	this.textMesh1.scale.set(0.001, 0.001, 0.001)
+-	this.textMesh1.position.set(1, 0, -1)
+-	this.textMesh1.quaternion.setFromEuler(new THREE.Euler(-3.14159/2,0,0))
+-	this.mesh.add(this.textMesh1)
+-
+-	var text2 = new THREE.ShapeGeometry(textShapes)
+-	this.textMesh2 = new THREE.Mesh(text2, new THREE.MeshBasicMaterial({color: this.mesh.color1, fog: false}))
+-	this.textMesh2.scale.set(0.002, 0.002, 0.002)
+-	this.textMesh2.position.set(10, 0, -10)
+-	this.textMesh2.quaternion.setFromEuler(new THREE.Euler(-3.14159/2,0,0))
+-	this.mesh.add(this.textMesh2)
++	var that = this
++
++	var fontLoader = new THREE.FontLoader()
++	fontLoader.load(""/data/fonts/helvetiker_regular.typeface.js"", function(font) {
++		that.font = font
++		
++		var textShapes = font.generateShapes("""")
++		var text1 = new THREE.ShapeGeometry(textShapes)
++		that.textMesh1 = new THREE.Mesh(text1, new THREE.MeshBasicMaterial({color: that.mesh.color1, fog: false}))
++		that.textMesh1.scale.set(0.001, 0.001, 0.001)
++		that.textMesh1.position.set(1, 0, -1)
++		that.textMesh1.quaternion.setFromEuler(new THREE.Euler(-3.14159/2,0,0))
++		that.mesh.add(this.textMesh1)
++
++		var text2 = new THREE.ShapeGeometry(textShapes)
++		that.textMesh2 = new THREE.Mesh(text2, new THREE.MeshBasicMaterial({color: that.mesh.color1, fog: false}))
++		that.textMesh2.scale.set(0.002, 0.002, 0.002)
++		that.textMesh2.position.set(10, 0, -10)
++		that.textMesh2.quaternion.setFromEuler(new THREE.Euler(-3.14159/2,0,0))
++		that.mesh.add(that.textMesh2)
++	})
+ 
+ 	this.gridScale = 0
+ 	this.scale(1)
+ }
+ 
+ WorldEditorOriginGrid.prototype.scale = function(s) {
+ 	if (s !== this.gridScale) {
+-		var textShapes = THREE.FontUtils.generateShapes(s.toString() + "" m"")
+-		this.textMesh1.geometry = new THREE.ShapeGeometry(textShapes)
++		if (this.textMesh1) {
++			var textShapes = this.font.generateShapes(s.toString() + "" m"")
++			this.textMesh1.geometry = new THREE.ShapeGeometry(textShapes)
++		}
+ 
+-		textShapes = THREE.FontUtils.generateShapes((s * 10).toString() + "" m"")
+-		this.textMesh2.geometry = new THREE.ShapeGeometry(textShapes)
++		if (this.textMesh2) {
++			textShapes = this.font.generateShapes((s * 10).toString() + "" m"")
++			this.textMesh2.geometry = new THREE.ShapeGeometry(textShapes)
++		}
+ 
+ 		this.gridScale = s
+ 		this.mesh.scale.set(s, s, s)"
+vizorvr/patches,1559,9747083,browser/scripts/worldEditor/worldEditorRadialHelper.js,modified,29,18,47,"@@ -56,36 +56,47 @@ function WorldEditorRadialHelper() {
+ 
+ 	var textRadius = [0.2, 0.4, 0.6, 0.8, 1, 2, 4, 6, 8, 10]
+ 
+-	var emptyTextShape = THREE.FontUtils.generateShapes("""")
++	var that = this
+ 
+-	var rotateNinetyDegrees = new THREE.Euler(-Math.PI / 2, 0, 0)
++	var fontLoader = new THREE.FontLoader()
++	fontLoader.load(""/data/fonts/helvetiker_regular.typeface.js"", function(font) {
++		that.font = font
++		var emptyTextShape = font.generateShapes("""")
+ 
+-	this.textMeshes = []
++		var rotateNinetyDegrees = new THREE.Euler(-Math.PI / 2, 0, 0)
+ 
+-	for (var i = 0; i < textRadius.length; ++i) {
+-		var textGeometry = new THREE.ShapeGeometry(emptyTextShape)
+-		var textMesh = new THREE.Mesh(textGeometry, new THREE.MeshBasicMaterial({color: this.mesh.color1, fog: false}))
++		that.textMeshes = []
+ 
+-		var scale = textRadius[i] < 1 ? 0.0001 : 0.001
++		for (var i = 0; i < textRadius.length; ++i) {
++			var textGeometry = new THREE.ShapeGeometry(emptyTextShape)
++			var textMesh = new THREE.Mesh(textGeometry, new THREE.MeshBasicMaterial({
++				color: that.mesh.color1,
++				fog: false
++			}))
+ 
+-		textMesh.scale.set(scale, scale, scale)
+-		textMesh.position.set(textRadius[i], 0, 0)
+-		textMesh.quaternion.setFromEuler(rotateNinetyDegrees)
+-		this.textMeshes.push({mesh: textMesh, radius: textRadius[i]})
+-		this.mesh.add(textMesh)
+-	}
++			var scale = textRadius[i] < 1 ? 0.0001 : 0.001
++
++			textMesh.scale.set(scale, scale, scale)
++			textMesh.position.set(textRadius[i], 0, 0)
++			textMesh.quaternion.setFromEuler(rotateNinetyDegrees)
++			that.textMeshes.push({mesh: textMesh, radius: textRadius[i]})
++			that.mesh.add(textMesh)
++		}
++	})
+ 
+ 	this.gridScale = 0
+ 	this.scale(1)
+ }
+ 
+ WorldEditorRadialHelper.prototype.scale = function(s) {
+ 	if (s !== this.gridScale) {
+-		for (var i = 0; i < this.textMeshes.length; ++i) {
+-			var rad = this.textMeshes[i].radius * s
+-			var str = rad < 1.0 ? (Math.round((rad * 100)) + "" cm"") : ((rad) + "" m"")
+-			var textShape = THREE.FontUtils.generateShapes(str)
+-			this.textMeshes[i].mesh.geometry = new THREE.ShapeGeometry(textShape)
++		if (this.textMeshes) {
++			for (var i = 0; i < this.textMeshes.length; ++i) {
++				var rad = this.textMeshes[i].radius * s
++				var str = rad < 1.0 ? (Math.round((rad * 100)) + "" cm"") : ((rad) + "" m"")
++				var textShape = this.font.generateShapes(str)
++				this.textMeshes[i].mesh.geometry = new THREE.ShapeGeometry(textShape)
++			}
+ 		}
+ 
+ 		this.gridScale = s"
+vizorvr/patches,1559,9747083,browser/test/integration/helpers.js,modified,7,0,7,"@@ -127,6 +127,13 @@ exports.reset = function() {
+ 		NO_DPDB_FETCH: true
+ 	}
+ 
++	global.XMLHttpRequest = function() {
++		this.overrideMimeType = function() {}
++		this.open = function() {}
++		this.addEventListener = function(name, callback) {}
++		this.send = function() {}
++	}
++
+ 	exports.runScript(browserPath+'dist/engine.js')
+ 	exports.mockE2Classes()
+ "
+vizorvr/patches,1559,9747083,browser/vendor/three/FontUtils.js,removed,0,276,276,"@@ -1,276 +0,0 @@
+-/**
+- * @author zz85 / http://www.lab4games.net/zz85/blog
+- * @author alteredq / http://alteredqualia.com/
+- *
+- * For Text operations in three.js (See TextGeometry)
+- *
+- * It uses techniques used in:
+- *
+- *	Triangulation ported from AS3
+- *		Simple Polygon Triangulation
+- *		http://actionsnippet.com/?p=1462
+- *
+- * 	A Method to triangulate shapes with holes
+- *		http://www.sakri.net/blog/2009/06/12/an-approach-to-triangulating-polygons-with-holes/
+- *
+- */
+-
+-THREE.FontUtils = {
+-
+-	faces: {},
+-
+-	// Just for now. face[weight][style]
+-
+-	face: 'helvetiker',
+-	weight: 'normal',
+-	style: 'normal',
+-	size: 150,
+-	divisions: 10,
+-
+-	getFace: function () {
+-
+-		try {
+-
+-			return this.faces[ this.face.toLowerCase() ][ this.weight ][ this.style ];
+-
+-		} catch ( e ) {
+-
+-			throw ""The font "" + this.face + "" with "" + this.weight + "" weight and "" + this.style + "" style is missing.""
+-
+-		}
+-
+-	},
+-
+-	loadFace: function ( data ) {
+-
+-		var family = data.familyName.toLowerCase();
+-
+-		var ThreeFont = this;
+-
+-		ThreeFont.faces[ family ] = ThreeFont.faces[ family ] || {};
+-
+-		ThreeFont.faces[ family ][ data.cssFontWeight ] = ThreeFont.faces[ family ][ data.cssFontWeight ] || {};
+-		ThreeFont.faces[ family ][ data.cssFontWeight ][ data.cssFontStyle ] = data;
+-
+-		ThreeFont.faces[ family ][ data.cssFontWeight ][ data.cssFontStyle ] = data;
+-
+-		return data;
+-
+-	},
+-
+-	drawText: function ( text ) {
+-
+-		// RenderText
+-
+-		var i,
+-			face = this.getFace(),
+-			scale = this.size / face.resolution,
+-			offset = 0,
+-			chars = String( text ).split( '' ),
+-			length = chars.length;
+-
+-		var fontPaths = [];
+-
+-		for ( i = 0; i < length; i ++ ) {
+-
+-			var path = new THREE.Path();
+-
+-			var ret = this.extractGlyphPoints( chars[ i ], face, scale, offset, path );
+-			offset += ret.offset;
+-
+-			fontPaths.push( ret.path );
+-
+-		}
+-
+-		// get the width
+-
+-		var width = offset / 2;
+-		//
+-		// for ( p = 0; p < allPts.length; p++ ) {
+-		//
+-		// 	allPts[ p ].x -= width;
+-		//
+-		// }
+-
+-		//var extract = this.extractPoints( allPts, characterPts );
+-		//extract.contour = allPts;
+-
+-		//extract.paths = fontPaths;
+-		//extract.offset = width;
+-
+-		return { paths: fontPaths, offset: width };
+-
+-	},
+-
+-
+-
+-
+-	extractGlyphPoints: function ( c, face, scale, offset, path ) {
+-
+-		var pts = [];
+-
+-		var b2 = THREE.ShapeUtils.b2;
+-		var b3 = THREE.ShapeUtils.b3;
+-
+-		var i, i2, divisions,
+-			outline, action, length,
+-			scaleX, scaleY,
+-			x, y, cpx, cpy, cpx0, cpy0, cpx1, cpy1, cpx2, cpy2,
+-			laste,
+-			glyph = face.glyphs[ c ] || face.glyphs[ '?' ];
+-
+-		if ( ! glyph ) return;
+-
+-		if ( glyph.o ) {
+-
+-			outline = glyph._cachedOutline || ( glyph._cachedOutline = glyph.o.split( ' ' ) );
+-			length = outline.length;
+-
+-			scaleX = scale;
+-			scaleY = scale;
+-
+-			for ( i = 0; i < length; ) {
+-
+-				action = outline[ i ++ ];
+-
+-				//console.log( action );
+-
+-				switch ( action ) {
+-
+-				case 'm':
+-
+-					// Move To
+-
+-					x = outline[ i ++ ] * scaleX + offset;
+-					y = outline[ i ++ ] * scaleY;
+-
+-					path.moveTo( x, y );
+-					break;
+-
+-				case 'l':
+-
+-					// Line To
+-
+-					x = outline[ i ++ ] * scaleX + offset;
+-					y = outline[ i ++ ] * scaleY;
+-					path.lineTo( x, y );
+-					break;
+-
+-				case 'q':
+-
+-					// QuadraticCurveTo
+-
+-					cpx  = outline[ i ++ ] * scaleX + offset;
+-					cpy  = outline[ i ++ ] * scaleY;
+-					cpx1 = outline[ i ++ ] * scaleX + offset;
+-					cpy1 = outline[ i ++ ] * scaleY;
+-
+-					path.quadraticCurveTo( cpx1, cpy1, cpx, cpy );
+-
+-					laste = pts[ pts.length - 1 ];
+-
+-					if ( laste ) {
+-
+-						cpx0 = laste.x;
+-						cpy0 = laste.y;
+-
+-						for ( i2 = 1, divisions = this.divisions; i2 <= divisions; i2 ++ ) {
+-
+-							var t = i2 / divisions;
+-							b2( t, cpx0, cpx1, cpx );
+-							b2( t, cpy0, cpy1, cpy );
+-
+-						}
+-
+-					}
+-
+-					break;
+-
+-				case 'b':
+-
+-					// Cubic Bezier Curve
+-
+-					cpx  = outline[ i ++ ] * scaleX + offset;
+-					cpy  = outline[ i ++ ] * scaleY;
+-					cpx1 = outline[ i ++ ] * scaleX + offset;
+-					cpy1 = outline[ i ++ ] * scaleY;
+-					cpx2 = outline[ i ++ ] * scaleX + offset;
+-					cpy2 = outline[ i ++ ] * scaleY;
+-
+-					path.bezierCurveTo( cpx1, cpy1, cpx2, cpy2, cpx, cpy );
+-
+-					laste = pts[ pts.length - 1 ];
+-
+-					if ( laste ) {
+-
+-						cpx0 = laste.x;
+-						cpy0 = laste.y;
+-
+-						for ( i2 = 1, divisions = this.divisions; i2 <= divisions; i2 ++ ) {
+-
+-							var t = i2 / divisions;
+-							b3( t, cpx0, cpx1, cpx2, cpx );
+-							b3( t, cpy0, cpy1, cpy2, cpy );
+-
+-						}
+-
+-					}
+-
+-					break;
+-
+-				}
+-
+-			}
+-
+-		}
+-
+-
+-
+-		return { offset: glyph.ha * scale, path: path };
+-
+-	}
+-
+-};
+-
+-
+-THREE.FontUtils.generateShapes = function ( text, parameters ) {
+-
+-	// Parameters
+-
+-	parameters = parameters || {};
+-
+-	var size = parameters.size !== undefined ? parameters.size : 100;
+-	var curveSegments = parameters.curveSegments !== undefined ? parameters.curveSegments : 4;
+-
+-	var font = parameters.font !== undefined ? parameters.font : 'helvetiker';
+-	var weight = parameters.weight !== undefined ? parameters.weight : 'normal';
+-	var style = parameters.style !== undefined ? parameters.style : 'normal';
+-
+-	THREE.FontUtils.size = size;
+-	THREE.FontUtils.divisions = curveSegments;
+-
+-	THREE.FontUtils.face = font;
+-	THREE.FontUtils.weight = weight;
+-	THREE.FontUtils.style = style;
+-
+-	// Get a Font data json object
+-
+-	var data = THREE.FontUtils.drawText( text );
+-
+-	var paths = data.paths;
+-	var shapes = [];
+-
+-	for ( var p = 0, pl = paths.length; p < pl; p ++ ) {
+-
+-		Array.prototype.push.apply( shapes, paths[ p ].toShapes() );
+-
+-	}
+-
+-	return shapes;
+-
+-};
+-
+-// To use the typeface.js face files, hook up the API
+-
+-THREE.typeface_js = { faces: THREE.FontUtils.faces, loadFace: THREE.FontUtils.loadFace };
+-if ( typeof self !== 'undefined' ) self._typeface_js = THREE.typeface_js;"
+vizorvr/patches,1559,9747083,gulpfile.js,modified,3,4,7,"@@ -70,10 +70,9 @@ var paths = {
+ 			'./browser/vendor/three/OrbitControls.js',
+ 			'./browser/vendor/three/SceneLoader.js',
+ 			'./browser/vendor/three/MorphAnimMesh.js',
+-			//'./browser/vendor/three/FontUtils.js',
+-			//'./browser/vendor/three/fonts/helvetiker_bold.typeface.js',
+-			//'./browser/vendor/three/fonts/helvetiker_regular.typeface.js',
+-
++			'./browser/vendor/three/Font.js',
++			'./browser/vendor/three/FontLoader.js',
++		
+ 			'./browser/vendor/spite/THREE.MeshLine.js',
+ 
+ 			'./browser/vendor/borismus/webvr-polyfill.js',"
+vizorvr/patches,1559,9747083,views/layouts/editor.handlebars,modified,2,3,5,"@@ -136,9 +136,8 @@
+     <script type=""text/javascript"" src=""/vendor/three/OrbitControls.js""></script>
+     <script type=""text/javascript"" src=""/vendor/three/EditorControls.js""></script>
+     <script type=""text/javascript"" src=""/vendor/three/TransformControls.js""></script>
+-    <script type=""text/javascript"" src=""/vendor/three/FontUtils.js""></script>
+-    <script type=""text/javascript"" src=""/vendor/three/fonts/helvetiker_bold.typeface.js""></script>
+-    <script type=""text/javascript"" src=""/vendor/three/fonts/helvetiker_regular.typeface.js""></script>
++    <script type=""text/javascript"" src=""/vendor/three/Font.js""></script>
++    <script type=""text/javascript"" src=""/vendor/three/FontLoader.js""></script>
+ 
+     <script type=""text/javascript"" src=""/vendor/spite/THREE.MeshLine.js""></script>
+ "

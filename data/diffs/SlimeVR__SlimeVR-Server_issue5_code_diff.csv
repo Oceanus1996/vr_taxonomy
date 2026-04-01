@@ -1,0 +1,173 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+SlimeVR/SlimeVR-Server,5,f169cfd,src/main/java/io/eiren/gui/ScalableFont.java,added,91,0,91,"@@ -0,0 +1,91 @@
++package io.eiren.gui;
++
++import java.awt.Font;
++import java.text.AttributedCharacterIterator.Attribute;
++import java.util.Map;
++
++public class ScalableFont extends Font {
++	
++	protected float scale = 1.0f;
++	
++	protected int initSize;
++	protected float initPointSize;
++	
++	public ScalableFont(Map<? extends Attribute, ?> attributes) {
++		super(attributes);
++		
++		this.initSize = this.size;
++		this.initPointSize = this.pointSize;
++	}
++	
++	public ScalableFont(Font font) {
++		super(font);
++		
++		if(font instanceof ScalableFont) {
++			ScalableFont sourceFont = (ScalableFont)font;
++			
++			this.initSize = sourceFont.getInitSize();
++			this.initPointSize = sourceFont.getInitSize2D();
++			
++			this.size = this.initSize;
++			this.pointSize = this.initPointSize;
++		} else {
++			this.initSize = this.size;
++			this.initPointSize = this.pointSize;
++		}
++	}
++	
++	public ScalableFont(Font font, float scale) {
++		super(font);
++		
++		if(font instanceof ScalableFont) {
++			ScalableFont sourceFont = (ScalableFont)font;
++			
++			this.initSize = sourceFont.getInitSize();
++			this.initPointSize = sourceFont.getInitSize2D();
++		} else {
++			this.initSize = this.size;
++			this.initPointSize = this.pointSize;
++		}
++		
++		setScale(scale);
++	}
++	
++	public ScalableFont(String name, int style, int size) {
++		super(name, style, size);
++		
++		this.initSize = this.size;
++		this.initPointSize = this.pointSize;
++	}
++	
++	public ScalableFont(String name, int style, int size, float scale) {
++		super(name, style, size);
++		
++		this.initSize = this.size;
++		this.initPointSize = this.pointSize;
++		
++		setScale(scale);
++	}
++	
++	public int getInitSize() {
++		return initSize;
++	}
++	
++	public float getInitSize2D() {
++		return initPointSize;
++	}
++	
++	public float getScale() {
++		return scale;
++	}
++	
++	private void setScale(float scale) {
++		this.scale = scale;
++		
++		float newPointSize = initPointSize * scale;
++		
++		this.size = (int)(newPointSize + 0.5);
++		this.pointSize = newPointSize;
++	}
++	
++}"
+SlimeVR/SlimeVR-Server,5,f169cfd,src/main/java/io/eiren/gui/VRServerGUI.java,modified,6,6,12,"@@ -26,6 +26,7 @@ public class VRServerGUI extends JFrame {
+ 	private EJBox pane;
+ 	
+ 	private float zoom = 1.5f;
++	private float initZoom = zoom;
+ 	
+ 	@AWTThread
+ 	public VRServerGUI(VRServer server) {
+@@ -35,6 +36,7 @@ public VRServerGUI(VRServer server) {
+ 		this.server = server;
+ 		
+ 		this.zoom = server.config.getFloat(""zoom"", zoom);
++		this.initZoom = zoom;
+ 		setDefaultFontSize(zoom);
+ 		// All components should be constructed to the current zoom level by default
+ 		
+@@ -97,11 +99,12 @@ public void mouseClicked(MouseEvent e) {
+ 				}});
+ 				add(Box.createHorizontalStrut(10));
+ 			}
+-			add(new JButton(""GUI Zoom"") {{
++			add(new JButton(""GUI Zoom ("" + zoom + "")"") {{
+ 				addMouseListener(new MouseInputAdapter() {
+ 					@Override
+ 					public void mouseClicked(MouseEvent e) {
+ 						guiZoom();
++						setText(""GUI Zoom ("" + zoom + "")"");
+ 					}
+ 				});
+ 			}});
+@@ -137,7 +140,6 @@ public void mouseClicked(MouseEvent e) {
+ 	
+ 	// For now only changes font size, but should change fixed components size in the future too
+ 	private void guiZoom() {
+-		float zoomUpdate = zoom;
+ 		if(zoom <= 1.0f) {
+ 			zoom = 1.5f;
+ 		} else if(zoom <= 1.5f) {
+@@ -149,17 +151,15 @@ private void guiZoom() {
+ 		} else {
+ 			zoom = 1.0f;
+ 		}
+-		zoomUpdate = zoom / zoomUpdate;
+-		processNewZoom(zoomUpdate, pane);
++		processNewZoom(zoom / initZoom, pane);
+ 		refresh();
+ 		server.config.setProperty(""zoom"", zoom);
+ 		server.saveConfig();
+ 	}
+ 	
+ 	private static void processNewZoom(float zoom, Component comp) {
+ 		if(comp.isFontSet()) {
+-			Font font = comp.getFont();
+-			Font newFont = font.deriveFont(font.getSize() * zoom);
++			Font newFont = new ScalableFont(comp.getFont(), zoom);
+ 			comp.setFont(newFont);
+ 		}
+ 		if(comp instanceof Container) {"
+SlimeVR/SlimeVR-Server,5,494d362,.gitattributes,removed,0,1,1,"@@ -1 +0,0 @@
+-* text eol=lf"
+SlimeVR/SlimeVR-Server,5,494d362,src-tauri/icons/icon.ico,modified,0,0,0,
+SlimeVR/SlimeVR-Server,5,494d362,src-tauri/src/main.rs,modified,6,2,8,"@@ -106,12 +106,16 @@ fn main() {
+                             CommandEvent::Stderr(s) => (""stderr"", s),
+                             CommandEvent::Stdout(s) => (""stdout"", s),
+                             CommandEvent::Error(s) => (""error"", s),
+-                            _ => continue,
++                            CommandEvent::Terminated(s) => (""terminated"", format!(""{s:?}"")),
++                            _ => (""other"", """".to_string()),
+                         };
+                         app_handle
+-                            .emit_all(""server-stdio"", emit_me)
++                            .emit_all(""server-status"", emit_me)
+                             .expect(""Failed to emit"");
+                     }
++                    app_handle
++                        .emit_all(""server-status"", (""other"", ""receiver cancelled""))
++                        .expect(""Failed to emit"");
+                 });
+             }
+             Ok(())"

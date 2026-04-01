@@ -1,0 +1,216 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vrm-c/UniVRM,1193,77162748c55898ffc386422f828fcc4a5cc08709,Assets/VRM10/Runtime/IO/Texture/Vrm10TextureDescriptorGenerator.cs,modified,16,2,18,"@@ -1,5 +1,6 @@
+ ﻿using System;
+ using System.Collections.Generic;
++using System.Linq;
+ using System.Threading.Tasks;
+ using UniGLTF;
+ using UnityEngine;
+@@ -68,6 +69,8 @@ public TextureDescriptorSet Get()
+             }
+         }
+ 
++        public const string THUMBNAIL_NAME = ""__VRM10_thumbnail__"";
++
+         /// <summary>
+         /// VRM-1 の thumbnail テクスチャー。gltf.textures ではなく gltf.images の参照であることに注意(sampler等の設定が無い)
+         /// </summary>
+@@ -81,14 +84,25 @@ public static bool TryGetMetaThumbnailTextureImportParam(GltfData data, UniGLTF.
+ 
+             var imageIndex = vrm.Meta.ThumbnailImage.Value;
+             var gltfImage = data.GLTF.images[imageIndex];
+-            var name = TextureImportName.GetUnityObjectName(TextureImportTypes.sRGB, gltfImage.name, gltfImage.uri);
++
++            // data.GLTF.textures は前処理によりユニーク性がある
++            // unique な名前を振り出す
++            var used = new HashSet<string>(data.GLTF.textures.Select(x => x.name));
++            var imageName = gltfImage.name;
++            if (string.IsNullOrEmpty(imageName))
++            {
++                imageName = THUMBNAIL_NAME;
++            }
++            var uniqueName = GlbLowLevelParser.FixNameUnique(used, imageName);
++
++            var objectName = TextureImportName.GetUnityObjectName(TextureImportTypes.sRGB, uniqueName, gltfImage.uri);
+ 
+             GetTextureBytesAsync getThumbnailImageBytesAsync = () =>
+             {
+                 var bytes = data.GLTF.GetImageBytes(data.Storage, imageIndex);
+                 return Task.FromResult(GltfTextureImporter.ToArray(bytes));
+             };
+-            var texDesc = new TextureDescriptor(name, gltfImage.GetExt(), gltfImage.uri, Vector2.zero, Vector2.one, default, TextureImportTypes.sRGB, default, default,
++            var texDesc = new TextureDescriptor(objectName, gltfImage.GetExt(), gltfImage.uri, Vector2.zero, Vector2.one, default, TextureImportTypes.sRGB, default, default,
+                getThumbnailImageBytesAsync, default, default,
+                default, default, default
+                );"
+vrm-c/UniVRM,1193,77162748c55898ffc386422f828fcc4a5cc08709,Assets/VRM10/Runtime/Migration/MigrationVrm.cs,modified,1,1,2,"@@ -38,7 +38,7 @@ public static byte[] Migrate(JsonNode json, ArraySegment<byte> bin)
+                 var vrm1 = new UniGLTF.Extensions.VRMC_vrm.VRMC_vrm();
+ 
+                 // meta (required)
+-                vrm1.Meta = MigrationVrmMeta.Migrate(vrm0[""meta""]);
++                vrm1.Meta = MigrationVrmMeta.Migrate(gltf, vrm0[""meta""]);
+                 // humanoid (required)
+                 vrm1.Humanoid = MigrationVrmHumanoid.Migrate(vrm0[""humanoid""]);
+ "
+vrm-c/UniVRM,1193,77162748c55898ffc386422f828fcc4a5cc08709,Assets/VRM10/Runtime/Migration/MigrationVrmMeta.cs,modified,16,2,18,"@@ -27,7 +27,7 @@ namespace UniVRM10
+     // },
+     public static class MigrationVrmMeta
+     {
+-        public static UniGLTF.Extensions.VRMC_vrm.Meta Migrate(JsonNode vrm0)
++        public static UniGLTF.Extensions.VRMC_vrm.Meta Migrate(UniGLTF.glTF gltf, JsonNode vrm0)
+         {
+             var meta = new UniGLTF.Extensions.VRMC_vrm.Meta
+             {
+@@ -54,7 +54,21 @@ public static UniGLTF.Extensions.VRMC_vrm.Meta Migrate(JsonNode vrm0)
+                     case ""author"": meta.Authors = new List<string>() { kv.Value.GetString() }; break;
+                     case ""contactInformation"": meta.ContactInformation = kv.Value.GetString(); break;
+                     case ""reference"": meta.References = new List<string>() { kv.Value.GetString() }; break;
+-                    case ""texture"": meta.ThumbnailImage = kv.Value.GetInt32(); break;
++                    case ""texture"":
++                        {
++                            // vrm0x use texture. vrm10 use image
++                            var textureIndex = kv.Value.GetInt32();
++                            if (textureIndex == -1)
++                            {
++                                meta.ThumbnailImage = -1;
++                            }
++                            else
++                            {
++                                var gltfTexture = gltf.textures[textureIndex];
++                                meta.ThumbnailImage = gltfTexture.source;
++                            }
++                            break;
++                        }
+ 
+                     case ""allowedUserName"":
+                         {"
+vrm-c/UniVRM,1193,77162748c55898ffc386422f828fcc4a5cc08709,Assets/VRM10/Tests/ExpressionTests.cs,modified,2,27,29,"@@ -1,4 +1,3 @@
+-using System.IO;
+ using System.Linq;
+ using NUnit.Framework;
+ using UnityEngine;
+@@ -7,34 +6,10 @@ namespace UniVRM10.Test
+ {
+     public class ExpressionTests
+     {
+-        static string AliciaPath
+-        {
+-            get
+-            {
+-                return Path.GetFullPath(Application.dataPath + ""/../Tests/Models/Alicia_vrm-0.51/AliciaSolid_vrm-0.51.vrm"")
+-                    .Replace(""\\"", ""/"");
+-            }
+-        }
+-
+-        static VRM10Controller Load()
+-        {
+-            Vrm10Data.TryParseOrMigrate(AliciaPath, true, out Vrm10Data vrm);
+-            using (var loader = new Vrm10Importer(vrm))
+-            {
+-                var task = loader.LoadAsync(new VRMShaders.ImmediateCaller());
+-                task.Wait();
+-
+-                var instance = task.Result;
+-
+-                return instance.GetComponent<VRM10Controller>();
+-            }
+-
+-        }
+-
+         [Test]
+         public void DuplicatedMaterialColorBindings()
+         {
+-            var controller = Load();
++            var controller = TestAsset.LoadAlicia();
+ 
+             var src = controller.Vrm.Expression.Aa.MaterialColorBindings.ToList();
+ 
+@@ -63,7 +38,7 @@ public void DuplicatedMaterialColorBindings()
+         [Test]
+         public void DuplicatedMaterialUVBindings()
+         {
+-            var controller = Load();
++            var controller = TestAsset.LoadAlicia();
+ 
+             var renderers = controller.GetComponentsInChildren<Renderer>();
+             var name = renderers[0].sharedMaterials[0].name;"
+vrm-c/UniVRM,1193,77162748c55898ffc386422f828fcc4a5cc08709,Assets/VRM10/Tests/LoadTests.cs,added,23,0,23,"@@ -0,0 +1,23 @@
++using NUnit.Framework;
++
++namespace UniVRM10.Test
++{
++    public class LoadTests
++    {
++        [Test]
++        public void EmptyThumbnailName()
++        {
++            Assert.True(Vrm10Data.TryParseOrMigrate(TestAsset.AliciaPath, true, out Vrm10Data vrm));
++
++            var index = vrm.VrmExtension.Meta.ThumbnailImage.Value;
++
++            // empty thumbnail name
++            vrm.Data.GLTF.images[index].name = null;
++
++            using (var loader = new Vrm10Importer(vrm))
++            {
++                loader.LoadAsync(new VRMShaders.ImmediateCaller()).Wait();
++            }
++        }
++    }
++}"
+vrm-c/UniVRM,1193,77162748c55898ffc386422f828fcc4a5cc08709,Assets/VRM10/Tests/LoadTests.cs.meta,added,11,0,11,"@@ -0,0 +1,11 @@
++fileFormatVersion: 2
++guid: c9a9a3ce2deae9c4791d816aa189df3d
++MonoImporter:
++  externalObjects: {}
++  serializedVersion: 2
++  defaultReferences: []
++  executionOrder: 0
++  icon: {instanceID: 0}
++  userData: 
++  assetBundleName: 
++  assetBundleVariant: "
+vrm-c/UniVRM,1193,77162748c55898ffc386422f828fcc4a5cc08709,Assets/VRM10/Tests/TestAsset.cs,added,31,0,31,"@@ -0,0 +1,31 @@
++using System.IO;
++using UnityEngine;
++
++namespace UniVRM10
++{
++    public static class TestAsset
++    {
++        public static string AliciaPath
++        {
++            get
++            {
++                return Path.GetFullPath(Application.dataPath + ""/../Tests/Models/Alicia_vrm-0.51/AliciaSolid_vrm-0.51.vrm"")
++                    .Replace(""\\"", ""/"");
++            }
++        }
++
++        public static VRM10Controller LoadAlicia()
++        {
++            Vrm10Data.TryParseOrMigrate(AliciaPath, true, out Vrm10Data vrm);
++            using (var loader = new Vrm10Importer(vrm))
++            {
++                var task = loader.LoadAsync(new VRMShaders.ImmediateCaller());
++                task.Wait();
++
++                var instance = task.Result;
++
++                return instance.GetComponent<VRM10Controller>();
++            }
++        }
++    }
++}"
+vrm-c/UniVRM,1193,77162748c55898ffc386422f828fcc4a5cc08709,Assets/VRM10/Tests/TestAsset.cs.meta,added,11,0,11,"@@ -0,0 +1,11 @@
++fileFormatVersion: 2
++guid: b18f57dcd7d3c19469aa4842b2ee6ae1
++MonoImporter:
++  externalObjects: {}
++  serializedVersion: 2
++  defaultReferences: []
++  executionOrder: 0
++  icon: {instanceID: 0}
++  userData: 
++  assetBundleName: 
++  assetBundleVariant: "

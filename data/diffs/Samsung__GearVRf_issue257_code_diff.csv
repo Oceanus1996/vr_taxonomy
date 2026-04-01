@@ -1,0 +1,267 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+Samsung/GearVRf,257,fbf174b4f8bc608841b6c58e9b322d215885ac50,GVRf/Framework/src/org/gearvrf/GVRContext.java,modified,14,14,28,"@@ -226,17 +226,17 @@ public GVRMesh loadMesh(GVRAndroidResource androidResource) {
+      */
+     public GVRMesh loadMesh(GVRAndroidResource androidResource,
+             EnumSet<GVRImportSettings> settings) {
+-        GVRMesh mesh = sMeshCache.get(androidResource);
++        GVRMesh mesh = meshCache.get(androidResource);
+         if (mesh == null) {
+             GVRAssimpImporter assimpImporter = GVRImporter
+                     .readFileFromResources(this, androidResource, settings);
+             mesh = assimpImporter.getMesh(0);
+-            sMeshCache.put(androidResource, mesh);
++            meshCache.put(androidResource, mesh);
+         }
+         return mesh;
+     }
+ 
+-    private final static ResourceCache<GVRMesh> sMeshCache = new ResourceCache<GVRMesh>();
++    private final ResourceCache<GVRMesh> meshCache = new ResourceCache<GVRMesh>();
+ 
+     /**
+      * Loads a mesh file, asynchronously, at a default priority.
+@@ -1115,7 +1115,7 @@ public GVRTexture loadTexture(GVRAndroidResource resource) {
+     public GVRTexture loadTexture(GVRAndroidResource resource,
+             GVRTextureParameters textureParameters) {
+ 
+-        GVRTexture texture = sTextureCache.get(resource);
++        GVRTexture texture = textureCache.get(resource);
+         if (texture == null) {
+             assertGLThread();
+ 
+@@ -1125,21 +1125,21 @@ public GVRTexture loadTexture(GVRAndroidResource resource,
+             texture = bitmap == null ? null : new GVRBitmapTexture(this,
+                     bitmap, textureParameters);
+             if (texture != null) {
+-                sTextureCache.put(resource, texture);
++                textureCache.put(resource, texture);
+             }
+         }
+         return texture;
+     }
+ 
+-    private final static ResourceCache<GVRTexture> sTextureCache = new ResourceCache<GVRTexture>();
++    private final ResourceCache<GVRTexture> textureCache = new ResourceCache<GVRTexture>();
+ 
+     /**
+      * Loads a cube map texture synchronously.
+      * 
+      * <p>
+      * Note that this method may take hundreds of milliseconds to return: unless
+      * the cube map is quite tiny, you probably don't want to call this directly
+-     * from your {@link GVRScript#onStep() onStep()} callback as that is called
++     * from your {@link GVRScript#onStep() onStsep()} callback as that is called
+      * once per frame, and a long call will cause you to miss frames.
+      * 
+      * @param resourceArray
+@@ -1383,7 +1383,7 @@ public void loadBitmapTexture(BitmapTextureCallback callback,
+     public void loadBitmapTexture(BitmapTextureCallback callback,
+             GVRAndroidResource resource, int priority)
+             throws IllegalArgumentException {
+-        GVRAsynchronousResourceLoader.loadBitmapTexture(this, sTextureCache,
++        GVRAsynchronousResourceLoader.loadBitmapTexture(this, textureCache,
+                 callback, resource, priority);
+     }
+ 
+@@ -1434,7 +1434,7 @@ public void loadBitmapTexture(BitmapTextureCallback callback,
+     public void loadCompressedTexture(CompressedTextureCallback callback,
+             GVRAndroidResource resource) {
+         GVRAsynchronousResourceLoader.loadCompressedTexture(this,
+-                sTextureCache, callback, resource);
++                textureCache, callback, resource);
+     }
+ 
+     /**
+@@ -1484,7 +1484,7 @@ public void loadCompressedTexture(CompressedTextureCallback callback,
+     public void loadCompressedTexture(CompressedTextureCallback callback,
+             GVRAndroidResource resource, int quality) {
+         GVRAsynchronousResourceLoader.loadCompressedTexture(this,
+-                sTextureCache, callback, resource, quality);
++                textureCache, callback, resource, quality);
+     }
+ 
+     /**
+@@ -1762,7 +1762,7 @@ public void loadTexture(TextureCallback callback,
+      */
+     public void loadTexture(TextureCallback callback,
+             GVRAndroidResource resource, int priority, int quality) {
+-        GVRAsynchronousResourceLoader.loadTexture(this, sTextureCache,
++        GVRAsynchronousResourceLoader.loadTexture(this, textureCache,
+                 callback, resource, priority, quality);
+     }
+ 
+@@ -1971,7 +1971,7 @@ public Future<GVRTexture> loadFutureTexture(GVRAndroidResource resource,
+     public Future<GVRTexture> loadFutureTexture(GVRAndroidResource resource,
+             int priority, int quality) {
+         return GVRAsynchronousResourceLoader.loadFutureTexture(this,
+-                sTextureCache, resource, priority, quality);
++                textureCache, resource, priority, quality);
+     }
+ 
+     /**
+@@ -2012,7 +2012,7 @@ public Future<GVRTexture> loadFutureTexture(GVRAndroidResource resource,
+     public Future<GVRTexture> loadFutureCubemapTexture(
+             GVRAndroidResource resource) {
+         return GVRAsynchronousResourceLoader.loadFutureCubemapTexture(this,
+-                sTextureCache, resource, DEFAULT_PRIORITY,
++                textureCache, resource, DEFAULT_PRIORITY,
+                 GVRCubemapTexture.faceIndexMap);
+     }
+ 
+@@ -2054,7 +2054,7 @@ public Future<GVRTexture> loadFutureCubemapTexture(
+     public Future<GVRTexture> loadFutureCompressedCubemapTexture(
+             GVRAndroidResource resource) {
+         return GVRAsynchronousResourceLoader.loadFutureCompressedCubemapTexture(this,
+-                sTextureCache, resource, DEFAULT_PRIORITY,
++                textureCache, resource, DEFAULT_PRIORITY,
+                 GVRCubemapTexture.faceIndexMap);
+     }
+ "
+Samsung/GearVRf,257,fbf174b4f8bc608841b6c58e9b322d215885ac50,GVRf/Sample/solar-system/src/org/gearvrf/solarsystem/SolarViewManager.java,modified,5,3,8,"@@ -160,9 +160,11 @@ public void onStep() {
+     }
+ 
+     void onTap() {
+-        // toggle whether stats are displayed.
+-        boolean statsEnabled = mMainScene.getStatsEnabled();
+-        mMainScene.setStatsEnabled(!statsEnabled);
++        if (null != mMainScene) {
++            // toggle whether stats are displayed.
++            boolean statsEnabled = mMainScene.getStatsEnabled();
++            mMainScene.setStatsEnabled(!statsEnabled);
++        }
+     }
+ 
+     private List<GVRAnimation> mAnimations = new ArrayList<GVRAnimation>();"
+Samsung/GearVRf,257,eede86725a7b48fbe8f481dc7195bbf5f414cf41,GVRf/Framework/src/org/gearvrf/GVRContext.java,modified,14,14,28,"@@ -226,17 +226,17 @@ public GVRMesh loadMesh(GVRAndroidResource androidResource) {
+      */
+     public GVRMesh loadMesh(GVRAndroidResource androidResource,
+             EnumSet<GVRImportSettings> settings) {
+-        GVRMesh mesh = sMeshCache.get(androidResource);
++        GVRMesh mesh = meshCache.get(androidResource);
+         if (mesh == null) {
+             GVRAssimpImporter assimpImporter = GVRImporter
+                     .readFileFromResources(this, androidResource, settings);
+             mesh = assimpImporter.getMesh(0);
+-            sMeshCache.put(androidResource, mesh);
++            meshCache.put(androidResource, mesh);
+         }
+         return mesh;
+     }
+ 
+-    private final static ResourceCache<GVRMesh> sMeshCache = new ResourceCache<GVRMesh>();
++    private final ResourceCache<GVRMesh> meshCache = new ResourceCache<GVRMesh>();
+ 
+     /**
+      * Loads a mesh file, asynchronously, at a default priority.
+@@ -1115,7 +1115,7 @@ public GVRTexture loadTexture(GVRAndroidResource resource) {
+     public GVRTexture loadTexture(GVRAndroidResource resource,
+             GVRTextureParameters textureParameters) {
+ 
+-        GVRTexture texture = sTextureCache.get(resource);
++        GVRTexture texture = textureCache.get(resource);
+         if (texture == null) {
+             assertGLThread();
+ 
+@@ -1125,21 +1125,21 @@ public GVRTexture loadTexture(GVRAndroidResource resource,
+             texture = bitmap == null ? null : new GVRBitmapTexture(this,
+                     bitmap, textureParameters);
+             if (texture != null) {
+-                sTextureCache.put(resource, texture);
++                textureCache.put(resource, texture);
+             }
+         }
+         return texture;
+     }
+ 
+-    private final static ResourceCache<GVRTexture> sTextureCache = new ResourceCache<GVRTexture>();
++    private final ResourceCache<GVRTexture> textureCache = new ResourceCache<GVRTexture>();
+ 
+     /**
+      * Loads a cube map texture synchronously.
+      * 
+      * <p>
+      * Note that this method may take hundreds of milliseconds to return: unless
+      * the cube map is quite tiny, you probably don't want to call this directly
+-     * from your {@link GVRScript#onStep() onStep()} callback as that is called
++     * from your {@link GVRScript#onStep() onStsep()} callback as that is called
+      * once per frame, and a long call will cause you to miss frames.
+      * 
+      * @param resourceArray
+@@ -1383,7 +1383,7 @@ public void loadBitmapTexture(BitmapTextureCallback callback,
+     public void loadBitmapTexture(BitmapTextureCallback callback,
+             GVRAndroidResource resource, int priority)
+             throws IllegalArgumentException {
+-        GVRAsynchronousResourceLoader.loadBitmapTexture(this, sTextureCache,
++        GVRAsynchronousResourceLoader.loadBitmapTexture(this, textureCache,
+                 callback, resource, priority);
+     }
+ 
+@@ -1434,7 +1434,7 @@ public void loadBitmapTexture(BitmapTextureCallback callback,
+     public void loadCompressedTexture(CompressedTextureCallback callback,
+             GVRAndroidResource resource) {
+         GVRAsynchronousResourceLoader.loadCompressedTexture(this,
+-                sTextureCache, callback, resource);
++                textureCache, callback, resource);
+     }
+ 
+     /**
+@@ -1484,7 +1484,7 @@ public void loadCompressedTexture(CompressedTextureCallback callback,
+     public void loadCompressedTexture(CompressedTextureCallback callback,
+             GVRAndroidResource resource, int quality) {
+         GVRAsynchronousResourceLoader.loadCompressedTexture(this,
+-                sTextureCache, callback, resource, quality);
++                textureCache, callback, resource, quality);
+     }
+ 
+     /**
+@@ -1762,7 +1762,7 @@ public void loadTexture(TextureCallback callback,
+      */
+     public void loadTexture(TextureCallback callback,
+             GVRAndroidResource resource, int priority, int quality) {
+-        GVRAsynchronousResourceLoader.loadTexture(this, sTextureCache,
++        GVRAsynchronousResourceLoader.loadTexture(this, textureCache,
+                 callback, resource, priority, quality);
+     }
+ 
+@@ -1971,7 +1971,7 @@ public Future<GVRTexture> loadFutureTexture(GVRAndroidResource resource,
+     public Future<GVRTexture> loadFutureTexture(GVRAndroidResource resource,
+             int priority, int quality) {
+         return GVRAsynchronousResourceLoader.loadFutureTexture(this,
+-                sTextureCache, resource, priority, quality);
++                textureCache, resource, priority, quality);
+     }
+ 
+     /**
+@@ -2012,7 +2012,7 @@ public Future<GVRTexture> loadFutureTexture(GVRAndroidResource resource,
+     public Future<GVRTexture> loadFutureCubemapTexture(
+             GVRAndroidResource resource) {
+         return GVRAsynchronousResourceLoader.loadFutureCubemapTexture(this,
+-                sTextureCache, resource, DEFAULT_PRIORITY,
++                textureCache, resource, DEFAULT_PRIORITY,
+                 GVRCubemapTexture.faceIndexMap);
+     }
+ 
+@@ -2054,7 +2054,7 @@ public Future<GVRTexture> loadFutureCubemapTexture(
+     public Future<GVRTexture> loadFutureCompressedCubemapTexture(
+             GVRAndroidResource resource) {
+         return GVRAsynchronousResourceLoader.loadFutureCompressedCubemapTexture(this,
+-                sTextureCache, resource, DEFAULT_PRIORITY,
++                textureCache, resource, DEFAULT_PRIORITY,
+                 GVRCubemapTexture.faceIndexMap);
+     }
+ "
+Samsung/GearVRf,257,eede86725a7b48fbe8f481dc7195bbf5f414cf41,GVRf/Sample/solar-system/src/org/gearvrf/solarsystem/SolarViewManager.java,modified,5,3,8,"@@ -160,9 +160,11 @@ public void onStep() {
+     }
+ 
+     void onTap() {
+-        // toggle whether stats are displayed.
+-        boolean statsEnabled = mMainScene.getStatsEnabled();
+-        mMainScene.setStatsEnabled(!statsEnabled);
++        if (null != mMainScene) {
++            // toggle whether stats are displayed.
++            boolean statsEnabled = mMainScene.getStatsEnabled();
++            mMainScene.setStatsEnabled(!statsEnabled);
++        }
+     }
+ 
+     private List<GVRAnimation> mAnimations = new ArrayList<GVRAnimation>();"

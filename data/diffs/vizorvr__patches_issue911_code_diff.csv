@@ -1,0 +1,241 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vizorvr/patches,911,551324b,browser/scripts/application.js,modified,1,0,1,"@@ -2116,6 +2116,7 @@ Application.prototype.setupChat = function() {
+ 
+ 	this.chatStore = new E2.ChatStore()
+ 	this.chat = new E2.Chat(E2.dom.chatTab)
++	this.chat.start()
+ }
+ 
+ /**"
+vizorvr/patches,911,551324b,browser/scripts/chat.js,modified,31,7,38,"@@ -86,18 +86,20 @@ ChatStore.prototype.isForMe = function(pl) {
+ function Chat($el, handlebars) {
+ 	this._hbs = handlebars || window.Handlebars
+ 	this.$container = $el;
+-	this.$messages = jQuery('.messages', this.$container)
+-	this.$input = jQuery('input', this.$container)
++	this.$messages = $('.messages', this.$container)
++	this.$input = $('input', this.$container)
+ 
+ 	E2.app.chatStore.on('added',
+ 		this._renderMessage.bind(this))
++}
++
++Chat.prototype = Object.create(EventEmitter.prototype)
+ 
++Chat.prototype.start = function() {
+ 	this.setupInput()
+ 	this.scrollDown()
+ }
+ 
+-Chat.prototype = Object.create(EventEmitter.prototype)
+-
+ Chat.prototype.setupInput = function() {
+ 	var $i = this.$input
+ 
+@@ -117,6 +119,28 @@ Chat.prototype.setupInput = function() {
+ 	})
+ }
+ 
++Chat.prototype._messageCleaner = function(message) {
++	return message
++		.split(' ')
++		.map(function(word) {
++			var oword = word
++
++			if (word.indexOf('vizor.io') === -1)
++				return word
++
++			word = word.replace(/^https?:\/\//, '')
++
++			var replaced = word.replace(
++				/(\S*)vizor\.io(\S*)/,
++				'<a target=""_blank"" '+
++					'href=""http://$1vizor.io$2"">'+
++						'$1vizor.io$2</a>')
++			console.log('word', oword, replaced)
++			return replaced
++		})
++		.join(' ')
++}
++
+ Chat.prototype._renderMessage = function(message) {
+ 	var $last = this.$messages.find('.message:last')
+ 	var wasScrolledDown = $last.length ? 
+@@ -130,9 +154,9 @@ Chat.prototype._renderMessage = function(message) {
+ 			E2.app.peopleStore.me.username
+ 		),
+ 		date: moment(message.date).formatTimeToday(),
+-		message: $('<span/>').text(message.message).html() // escape 
+-			.replace(/[htps:\/]?vizor\.io[\/]?(\S*)/,
+-				'<a target=""_blank"" href=""//vizor.io/$1"">vizor.io/$1</a>')
++		message: this._messageCleaner(
++			$('<span/>').text(message.message).html() // escape 
++		)
+ 	}
+ 
+ 	var html = messageTemplate(renderable)"
+vizorvr/patches,911,551324b,browser/test/unit/chat.js,modified,31,0,31,"@@ -2,6 +2,7 @@ var assert = require('assert')
+ global.Flux = require('../../vendor/flux')
+ global.EventEmitter = require('events').EventEmitter
+ 
++var Chat = require('../../scripts/chat').Chat
+ var ChatStore = require('../../scripts/chat').ChatStore
+ 
+ describe('Chat system', function() {
+@@ -36,6 +37,36 @@ describe('Chat system', function() {
+ 		cs = new ChatStore()
+ 	})
+ 
++	describe('Chat', function() {
++		var chat
++		global.E2 = {
++			app: {
++				chatStore: {
++					on: function() {}
++				}
++			}
++		}
++
++		beforeEach(function() {
++			chat = new Chat()
++		})
++
++		it('formats a vizor link correctly', function() {
++			var text = chat._messageCleaner('vizor.io/foo/bar')
++			assert.equal('<a target=""_blank"" href=""http://vizor.io/foo/bar"">vizor.io/foo/bar</a>', text)
++		})
++
++		it('formats a full vizor url correctly', function() {
++			var text = chat._messageCleaner('a b c http://vizor.io/foo/bar b')
++			assert.equal('a b c <a target=""_blank"" href=""http://vizor.io/foo/bar"">vizor.io/foo/bar</a> b', text)
++		})
++
++		it('formats a subdomain link correctly', function() {
++			var text = chat._messageCleaner('a fhoo.vizor.io/foo/bar baz')
++			assert.equal('a <a target=""_blank"" href=""http://fhoo.vizor.io/foo/bar"">fhoo.vizor.io/foo/bar</a> baz', text)
++		})
++	})
++
+ 	describe('ChatStore', function() {
+ 		it('emits join', function(done) {
+ 			cs.on('joined', done.bind({}, null))"
+vizorvr/patches,911,4340e4b,browser/scripts/application.js,modified,1,0,1,"@@ -2123,6 +2123,7 @@ Application.prototype.setupChat = function() {
+ 
+ 	this.chatStore = new E2.ChatStore()
+ 	this.chat = new E2.Chat(E2.dom.chatTab)
++	this.chat.start()
+ }
+ 
+ /**"
+vizorvr/patches,911,4340e4b,browser/scripts/chat.js,modified,31,7,38,"@@ -86,18 +86,20 @@ ChatStore.prototype.isForMe = function(pl) {
+ function Chat($el, handlebars) {
+ 	this._hbs = handlebars || window.Handlebars
+ 	this.$container = $el;
+-	this.$messages = jQuery('.messages', this.$container)
+-	this.$input = jQuery('input', this.$container)
++	this.$messages = $('.messages', this.$container)
++	this.$input = $('input', this.$container)
+ 
+ 	E2.app.chatStore.on('added',
+ 		this._renderMessage.bind(this))
++}
++
++Chat.prototype = Object.create(EventEmitter.prototype)
+ 
++Chat.prototype.start = function() {
+ 	this.setupInput()
+ 	this.scrollDown()
+ }
+ 
+-Chat.prototype = Object.create(EventEmitter.prototype)
+-
+ Chat.prototype.setupInput = function() {
+ 	var $i = this.$input
+ 
+@@ -117,6 +119,28 @@ Chat.prototype.setupInput = function() {
+ 	})
+ }
+ 
++Chat.prototype._messageCleaner = function(message) {
++	return message
++		.split(' ')
++		.map(function(word) {
++			var oword = word
++
++			if (word.indexOf('vizor.io') === -1)
++				return word
++
++			word = word.replace(/^https?:\/\//, '')
++
++			var replaced = word.replace(
++				/(\S*)vizor\.io(\S*)/,
++				'<a target=""_blank"" '+
++					'href=""http://$1vizor.io$2"">'+
++						'$1vizor.io$2</a>')
++
++			return replaced
++		})
++		.join(' ')
++}
++
+ Chat.prototype._renderMessage = function(message) {
+ 	var $last = this.$messages.find('.message:last')
+ 	var wasScrolledDown = $last.length ? 
+@@ -130,9 +154,9 @@ Chat.prototype._renderMessage = function(message) {
+ 			E2.app.peopleStore.me.username
+ 		),
+ 		date: moment(message.date).formatTimeToday(),
+-		message: $('<span/>').text(message.message).html() // escape 
+-			.replace(/[htps:\/]?vizor\.io[\/]?(\S*)/,
+-				'<a target=""_blank"" href=""//vizor.io/$1"">vizor.io/$1</a>')
++		message: this._messageCleaner(
++			$('<span/>').text(message.message).html() // escape 
++		)
+ 	}
+ 
+ 	var html = messageTemplate(renderable)"
+vizorvr/patches,911,4340e4b,browser/test/unit/chat.js,modified,31,0,31,"@@ -2,6 +2,7 @@ var assert = require('assert')
+ global.Flux = require('../../vendor/flux')
+ global.EventEmitter = require('events').EventEmitter
+ 
++var Chat = require('../../scripts/chat').Chat
+ var ChatStore = require('../../scripts/chat').ChatStore
+ 
+ describe('Chat system', function() {
+@@ -36,6 +37,36 @@ describe('Chat system', function() {
+ 		cs = new ChatStore()
+ 	})
+ 
++	describe('Chat', function() {
++		var chat
++		global.E2 = {
++			app: {
++				chatStore: {
++					on: function() {}
++				}
++			}
++		}
++
++		beforeEach(function() {
++			chat = new Chat()
++		})
++
++		it('formats a vizor link correctly', function() {
++			var text = chat._messageCleaner('vizor.io/foo/bar')
++			assert.equal('<a target=""_blank"" href=""http://vizor.io/foo/bar"">vizor.io/foo/bar</a>', text)
++		})
++
++		it('formats a full vizor url correctly', function() {
++			var text = chat._messageCleaner('a b c http://vizor.io/foo/bar b')
++			assert.equal('a b c <a target=""_blank"" href=""http://vizor.io/foo/bar"">vizor.io/foo/bar</a> b', text)
++		})
++
++		it('formats a subdomain link correctly', function() {
++			var text = chat._messageCleaner('a fhoo.vizor.io/foo/bar baz')
++			assert.equal('a <a target=""_blank"" href=""http://fhoo.vizor.io/foo/bar"">fhoo.vizor.io/foo/bar</a> baz', text)
++		})
++	})
++
+ 	describe('ChatStore', function() {
+ 		it('emits join', function(done) {
+ 			cs.on('joined', done.bind({}, null))"

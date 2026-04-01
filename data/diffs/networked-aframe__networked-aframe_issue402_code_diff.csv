@@ -1,0 +1,187 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+networked-aframe/networked-aframe,402,78b298c,examples/basic-multi-streams.html,modified,13,7,20,"@@ -57,7 +57,8 @@
+               width=""2""
+               height=""1""
+               position=""0 .7 -0.001""
+-              material=""side: back""
++              rotation=""0 -180 0""
++              material=""side: front""
+               networked-video-source=""streamName: screen""
+             ></a-plane>
+           </a-entity>
+@@ -128,18 +129,23 @@
+           } else {
+             navigator.mediaDevices.getDisplayMedia().then((stream) => {
+               NAF.connection.adapter.addLocalMediaStream(stream, 'screen');
++              stream.getVideoTracks().forEach((track) => {
++                track.addEventListener(
++                  'ended',
++                  () => {
++                    NAF.connection.adapter.removeLocalMediaStream('screen');
++                    screenEnabled = false;
++                    screenBtnEle.textContent = 'Share screen';
++                  },
++                  { once: true }
++                );
++              });
+               screenEnabled = true;
+               screenBtnEle.textContent = 'Stop Screen';
+             });
+           }
+         });
+       }
+     </script>
+-    <!--
+-      Known issues with this demo, some cases are not handled:
+-      - If participant A shares their screen, the partipant B sees the other participant's screen.
+-        When participant A stops their screen share, the other participant will see a frozen screen, the last image received.
+-      - If participant A starts screen share, stops, and restarts the screen share, the other participant won't see it.
+-    -->
+   </body>
+ </html>"
+networked-aframe/networked-aframe,402,78b298c,src/adapters/EasyRtcAdapter.js,modified,1,0,1,"@@ -271,6 +271,7 @@ class EasyRtcAdapter extends NoOpAdapter {
+       // Resolve the promise for the user's media stream by StreamName if it exists.
+       if (pendingMediaRequests && pendingMediaRequests[streamName]) {
+         pendingMediaRequests[streamName].resolve(stream);
++        delete pendingMediaRequests[streamName];
+       }
+     }
+   }"
+networked-aframe/networked-aframe,402,78b298c,src/components/networked-video-source.js,modified,15,1,16,"@@ -14,7 +14,11 @@ AFRAME.registerComponent('networked-video-source', {
+     this.stream = null;
+ 
+     this._setMediaStream = this._setMediaStream.bind(this);
++    this._waitForMediaStream = this._waitForMediaStream.bind(this);
++    this._waitForMediaStream();
++  },
+ 
++  _waitForMediaStream() {
+     NAF.utils.getNetworkedEntity(this.el).then((networkedEl) => {
+       const ownerId = networkedEl.components.networked.data.owner;
+ 
+@@ -34,7 +38,7 @@ AFRAME.registerComponent('networked-video-source', {
+       this.setupVideo();
+     }
+ 
+-    if (newStream != this.stream) {
++    if (newStream !== this.stream) {
+       if (this.stream) {
+         this._clearMediaStream();
+       }
+@@ -56,6 +60,13 @@ AFRAME.registerComponent('networked-video-source', {
+         const mesh = this.el.getObject3D('mesh');
+         mesh.material.map = this.videoTexture;
+         mesh.material.needsUpdate = true;
++
++        // Listen for the 'removetrack' event on the MediaStream
++        // that is emitted when the remote screen sharing stops.
++        newStream.addEventListener('removetrack', () => {
++          this._clearMediaStream();
++          this._waitForMediaStream();
++        });
+       }
+ 
+       this.stream = newStream;
+@@ -76,6 +87,9 @@ AFRAME.registerComponent('networked-video-source', {
+ 
+       this.videoTexture.dispose();
+       this.videoTexture = null;
++      const mesh = this.el.getObject3D('mesh');
++      mesh.material.map = null;
++      mesh.material.needsUpdate = true;
+     }
+   },
+ "
+networked-aframe/networked-aframe,402,9a1ac7f,examples/basic-multi-streams.html,modified,13,7,20,"@@ -57,7 +57,8 @@
+               width=""2""
+               height=""1""
+               position=""0 .7 -0.001""
+-              material=""side: back""
++              rotation=""0 -180 0""
++              material=""side: front""
+               networked-video-source=""streamName: screen""
+             ></a-plane>
+           </a-entity>
+@@ -128,18 +129,23 @@
+           } else {
+             navigator.mediaDevices.getDisplayMedia().then((stream) => {
+               NAF.connection.adapter.addLocalMediaStream(stream, 'screen');
++              stream.getVideoTracks().forEach((track) => {
++                track.addEventListener(
++                  'ended',
++                  () => {
++                    NAF.connection.adapter.removeLocalMediaStream('screen');
++                    screenEnabled = false;
++                    screenBtnEle.textContent = 'Share screen';
++                  },
++                  { once: true }
++                );
++              });
+               screenEnabled = true;
+               screenBtnEle.textContent = 'Stop Screen';
+             });
+           }
+         });
+       }
+     </script>
+-    <!--
+-      Known issues with this demo, some cases are not handled:
+-      - If participant A shares their screen, the partipant B sees the other participant's screen.
+-        When participant A stops their screen share, the other participant will see a frozen screen, the last image received.
+-      - If participant A starts screen share, stops, and restarts the screen share, the other participant won't see it.
+-    -->
+   </body>
+ </html>"
+networked-aframe/networked-aframe,402,9a1ac7f,src/adapters/EasyRtcAdapter.js,modified,1,0,1,"@@ -271,6 +271,7 @@ class EasyRtcAdapter extends NoOpAdapter {
+       // Resolve the promise for the user's media stream by StreamName if it exists.
+       if (pendingMediaRequests && pendingMediaRequests[streamName]) {
+         pendingMediaRequests[streamName].resolve(stream);
++        delete pendingMediaRequests[streamName];
+       }
+     }
+   }"
+networked-aframe/networked-aframe,402,9a1ac7f,src/components/networked-video-source.js,modified,15,1,16,"@@ -14,7 +14,11 @@ AFRAME.registerComponent('networked-video-source', {
+     this.stream = null;
+ 
+     this._setMediaStream = this._setMediaStream.bind(this);
++    this._waitForMediaStream = this._waitForMediaStream.bind(this);
++    this._waitForMediaStream();
++  },
+ 
++  _waitForMediaStream() {
+     NAF.utils.getNetworkedEntity(this.el).then((networkedEl) => {
+       const ownerId = networkedEl.components.networked.data.owner;
+ 
+@@ -34,7 +38,7 @@ AFRAME.registerComponent('networked-video-source', {
+       this.setupVideo();
+     }
+ 
+-    if (newStream != this.stream) {
++    if (newStream !== this.stream) {
+       if (this.stream) {
+         this._clearMediaStream();
+       }
+@@ -56,6 +60,13 @@ AFRAME.registerComponent('networked-video-source', {
+         const mesh = this.el.getObject3D('mesh');
+         mesh.material.map = this.videoTexture;
+         mesh.material.needsUpdate = true;
++
++        // Listen for the 'removetrack' event on the MediaStream
++        // that is emitted when the remote screen sharing stops.
++        newStream.addEventListener('removetrack', () => {
++          this._clearMediaStream();
++          this._waitForMediaStream();
++        });
+       }
+ 
+       this.stream = newStream;
+@@ -76,6 +87,9 @@ AFRAME.registerComponent('networked-video-source', {
+ 
+       this.videoTexture.dispose();
+       this.videoTexture = null;
++      const mesh = this.el.getObject3D('mesh');
++      mesh.material.map = null;
++      mesh.material.needsUpdate = true;
+     }
+   },
+ "

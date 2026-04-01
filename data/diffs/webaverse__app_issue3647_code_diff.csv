@@ -1,0 +1,106 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+webaverse/app,3647,ca4ce4389d6036df1f986a0c38e1eb64beba9081,avatar-screenshotter.js,modified,8,0,8,"@@ -85,6 +85,14 @@ export const screenshotPlayer = async ({
+     };
+   };
+   const _updateTarget = (timestamp, timeDiff) => {
++    let headHeight = player.avatar.avatarHighestPos - player.avatar.avatarNeckPosition.y;
++    const max = headHeight > player.avatar.shoulderWidth ? headHeight : player.avatar.shoulderWidth; // check whether head width is bigger than head height
++    let cameraZ = max / (2 * Math.atan((Math.PI * 50) / 360));
++    const offset = 1. + max * 0.3;
++    cameraZ *= offset; //multiply offset so that avatar does't fill the icon
++    cameraOffset.z = -cameraZ;
++    cameraOffset.y = headHeight * 0.3;
++
+     target.matrixWorld.copy(player.avatar.modelBones.Head.matrixWorld)
+       .decompose(target.position, target.quaternion, target.scale);
+     target.position.set(player.position.x, target.position.y, player.position.z);"
+webaverse/app,3647,ca4ce4389d6036df1f986a0c38e1eb64beba9081,avatars/avatars.js,modified,25,1,26,"@@ -65,7 +65,9 @@ const localVector2 = new THREE.Vector3();
+ const localVector3 = new THREE.Vector3();
+ // const localVector4 = new THREE.Vector3();
+ // const localVector5 = new THREE.Vector3();
+-// const localVector6 = new THREE.Vector3();     
++// const localVector6 = new THREE.Vector3(); 
++
++const localBBox = new THREE.Box3();
+ 
+ 
+ const localQuaternion = new THREE.Quaternion();
+@@ -639,6 +641,28 @@ class Avatar {
+       rightToe: _getOffset(modelBones.Right_toe),
+     });
+ 
++    
++    let avatarHighestPos = 0;
++    let tempMesh = null;
++    this.model.traverse(o => {
++      if (o.isMesh) {
++        if (!o.geometry.boundingBox) {
++          const position = o.geometry.attributes.position;
++          localBBox.setFromBufferAttribute( position );
++          avatarHighestPos = (localBBox.max.y > avatarHighestPos) ? localBBox.max.y : avatarHighestPos;
++        }
++        else {
++          avatarHighestPos = (o.geometry.boundingBox.max.y > avatarHighestPos) ? o.geometry.boundingBox.max.y : avatarHighestPos;
++        }
++        if (o.isSkinnedMesh) {
++          tempMesh = o;
++        }
++      }
++    });
++    avatarHighestPos += tempMesh.position.y;
++    this.avatarHighestPos = avatarHighestPos;
++    this.avatarNeckPosition = new THREE.Vector3().setFromMatrixPosition(modelBones.Head.savedMatrixWorld);
++
+     // height is defined as eyes to root
+     this.height = getHeight(object);
+     this.width = 0.36; // TODO : calculate this instead of hard coding it"
+webaverse/app,3647,ca4ce4389d6036df1f986a0c38e1eb64beba9081,diorama.js,modified,17,3,20,"@@ -20,6 +20,7 @@ import {playersManager} from './players-manager.js';
+ const localVector = new THREE.Vector3();
+ const localVector2 = new THREE.Vector3();
+ const localVector3 = new THREE.Vector3();
++const localVector4 = new THREE.Vector3();
+ const localVector2D = new THREE.Vector2();
+ // const localVector2D2 = new THREE.Vector2();
+ const localVector4D = new THREE.Vector4();
+@@ -482,7 +483,7 @@ const _makeOutlineRenderTarget = (w, h) => new THREE.WebGLRenderTarget(w, h, {
+ const createPlayerDiorama = ({
+   objects = [],
+   target = new THREE.Object3D(),
+-  cameraOffset = new THREE.Vector3(0.3, 0, -0.5),
++  cameraOffset = new THREE.Vector3(0.3, 0, 0),
+   clearColor = null,
+   clearAlpha = 1,
+   lights = true,
+@@ -681,10 +682,22 @@ const createPlayerDiorama = ({
+           target.matrixWorld.decompose(localVector, localQuaternion, localVector2);
+           const targetPosition = localVector;
+           const targetQuaternion = localQuaternion;
+-
++          let yOffset = 0;
++          let zOffset = 0;
++          if (target.avatar) {
++            const headPosition = localVector3.setFromMatrixPosition(target.avatar.modelBones.Head.matrixWorld);
++            yOffset = - (target.position.y - headPosition.y);
++            let headHeight = target.avatar.avatarHighestPos - target.avatar.avatarNeckPosition.y;
++            const max = headHeight > target.avatar.shoulderWidth ? headHeight : target.avatar.shoulderWidth; // check whether head width is bigger than head height
++            zOffset = max / (2 * Math.atan((Math.PI * 50) / 360));
++            const headRatio = headHeight / target.avatar.avatarHighestPos;
++            const offset = 1.5 - headRatio;
++            zOffset *= offset; //multiply offset so that avatar does't fill the icon
++            yOffset += headHeight * 0.3;
++          }
+           sideCamera.position.copy(targetPosition)
+             .add(
+-              localVector2.set(cameraOffset.x, 0, cameraOffset.z)
++              localVector2.set(cameraOffset.x, 0, cameraOffset.z - zOffset)
+                 .applyQuaternion(targetQuaternion)
+             );
+           sideCamera.quaternion.setFromRotationMatrix(
+@@ -698,6 +711,7 @@ const createPlayerDiorama = ({
+             localVector2.set(0, cameraOffset.y, 0)
+               .applyQuaternion(targetQuaternion)
+           );
++          sideCamera.position.y += yOffset;
+           sideCamera.updateMatrixWorld();
+         }
+ "

@@ -1,0 +1,146 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+ExtendRealityLtd/VRTK,864,1c51cec,Assets/VRTK/SDK/Simulator/SDK_InputSimulator.cs,modified,38,3,41,"@@ -2,6 +2,7 @@
+ namespace VRTK
+ {
+     using UnityEngine;
++    using System.Collections.Generic;
+ 
+     /// <summary>
+     /// The `VRSimulatorCameraRig` prefab is a mock Camera Rig set up that can be used to develop with VRTK without the need for VR Hardware.
+@@ -29,7 +30,7 @@ public class SDK_InputSimulator : MonoBehaviour
+         [Tooltip(""Adjust player rotation speed."")]
+         public float playerRotationMultiplier = 0.5f;
+ 
+-        [Header(""Key bindings"")]
++        [Header(""Operation Key Bindings"")]
+ 
+         [Tooltip(""Key used to switch between left and righ hand."")]
+         public KeyCode changeHands = KeyCode.Tab;
+@@ -40,6 +41,24 @@ public class SDK_InputSimulator : MonoBehaviour
+         [Tooltip(""Key used to switch between X/Y and X/Z axis."")]
+         public KeyCode changeAxis = KeyCode.LeftControl;
+ 
++        [Header(""Controller Key Bindings"")]
++        [Tooltip(""Key used to simulate trigger button."")]
++        public KeyCode triggerAlias = KeyCode.Mouse1;
++        [Tooltip(""Key used to simulate grip button."")]
++        public KeyCode gripAlias = KeyCode.Mouse0;
++        [Tooltip(""Key used to simulate touchpad button."")]
++        public KeyCode touchpadAlias = KeyCode.Q;
++        [Tooltip(""Key used to simulate button one."")]
++        public KeyCode buttonOneAlias = KeyCode.E;
++        [Tooltip(""Key used to simulate button two."")]
++        public KeyCode buttonTwoAlias = KeyCode.R;
++        [Tooltip(""Key used to simulate start menu button."")]
++        public KeyCode startMenuAlias = KeyCode.F;
++        [Tooltip(""Key used to switch between button touch and button press mode."")]
++        public KeyCode touchModifier = KeyCode.T;
++        [Tooltip(""Key used to switch between hair touch mode."")]
++        public KeyCode hairTouchModifier = KeyCode.H;
++
+         #endregion
+         #region Private fields
+ 
+@@ -89,6 +108,22 @@ private void Awake()
+             rightController.Selected = true;
+             leftController.Selected = false;
+             destroyed = false;
++
++#if VRTK_SDK_SIM
++            Dictionary<string, KeyCode> keyMappings = new Dictionary<string, KeyCode>()
++            {
++                {""Trigger"", triggerAlias },
++                {""Grip"", gripAlias },
++                {""TouchpadPress"", touchpadAlias },
++                {""ButtonOne"", buttonOneAlias },
++                {""ButtonTwo"", buttonTwoAlias },
++                {""StartMenu"", startMenuAlias },
++                {""TouchModifier"", touchModifier },
++                {""HairTouchModifier"", hairTouchModifier }
++            };
++            SDK_SimController controllerSDK = (SDK_SimController)VRTK_SDK_Bridge.GetControllerSDK();
++            controllerSDK.SetKeyMappings(keyMappings);
++#endif
+         }
+ 
+         private void OnDestroy()
+@@ -149,14 +184,14 @@ private void UpdateHands()
+                     Vector3 rot = Vector3.zero;
+                     rot.x += (mouseDiff * handRotationMultiplier).y;
+                     rot.y += (mouseDiff * handRotationMultiplier).x;
+-                    currentHand.transform.FindChild(""Hand"").Rotate(rot * Time.deltaTime);
++                    currentHand.transform.Rotate(rot * Time.deltaTime);
+                 }
+                 else
+                 {
+                     Vector3 rot = Vector3.zero;
+                     rot.z += (mouseDiff * handRotationMultiplier).x;
+                     rot.x += (mouseDiff * handRotationMultiplier).y;
+-                    currentHand.transform.FindChild(""Hand"").Rotate(rot * Time.deltaTime);
++                    currentHand.transform.Rotate(rot * Time.deltaTime);
+                 }
+             }
+             else //Position"
+ExtendRealityLtd/VRTK,864,1c51cec,Assets/VRTK/SDK/Simulator/SDK_SimController.cs,modified,5,0,5,"@@ -26,6 +26,11 @@ public class SDK_SimController : SDK_BaseController
+         protected const string RIGHT_HAND_CONTROLLER_NAME = ""RightHand"";
+         protected const string LEFT_HAND_CONTROLLER_NAME = ""LeftHand"";
+ 
++        public virtual void SetKeyMappings(Dictionary<string, KeyCode> givenKeyMappings)
++        {
++            keyMappings = givenKeyMappings;
++        }
++
+         /// <summary>
+         /// The ProcessUpdate method enables an SDK to run logic for every Unity Update
+         /// </summary>"
+ExtendRealityLtd/VRTK,864,1c51cec,Assets/VRTK/SDK/VRTK_SDK_Bridge.cs,modified,4,4,8,"@@ -427,7 +427,7 @@ public static void ForceInterleavedReprojectionOn(bool force)
+             GetSystemSDK().ForceInterleavedReprojectionOn(force);
+         }
+ 
+-        private static SDK_BaseSystem GetSystemSDK()
++        public static SDK_BaseSystem GetSystemSDK()
+         {
+             if (systemSDK == null)
+             {
+@@ -436,7 +436,7 @@ private static SDK_BaseSystem GetSystemSDK()
+             return systemSDK;
+         }
+ 
+-        private static SDK_BaseHeadset GetHeadsetSDK()
++        public static SDK_BaseHeadset GetHeadsetSDK()
+         {
+             if (headsetSDK == null)
+             {
+@@ -445,7 +445,7 @@ private static SDK_BaseHeadset GetHeadsetSDK()
+             return headsetSDK;
+         }
+ 
+-        private static SDK_BaseController GetControllerSDK()
++        public static SDK_BaseController GetControllerSDK()
+         {
+             if (controllerSDK == null)
+             {
+@@ -454,7 +454,7 @@ private static SDK_BaseController GetControllerSDK()
+             return controllerSDK;
+         }
+ 
+-        private static SDK_BaseBoundaries GetBoundariesSDK()
++        public static SDK_BaseBoundaries GetBoundariesSDK()
+         {
+             if (boundariesSDK == null)
+             {"
+ExtendRealityLtd/VRTK,864,1c51cec,DOCUMENTATION.md,modified,8,0,8,"@@ -59,6 +59,14 @@ Use the mouse and keyboard to move around both play area and hands and interacti
+  * **Hands On Off:** Key used to switch hands On/Off.
+  * **Rotation Position:** Key used to switch between positional and rotational movement.
+  * **Change Axis:** Key used to switch between X/Y and X/Z axis.
++ * **Trigger Alias:** Key used to simulate trigger button.
++ * **Grip Alias:** Key used to simulate grip button.
++ * **Touchpad Alias:** Key used to simulate touchpad button.
++ * **Button One Alias:** Key used to simulate button one.
++ * **Button Two Alias:** Key used to simulate button two.
++ * **Start Menu Alias:** Key used to simulate start menu button.
++ * **Touch Modifier:** Key used to switch between button touch and button press mode.
++ * **Hair Touch Modifier:** Key used to switch between hair touch mode.
+ 
+ ### Class Methods
+ "

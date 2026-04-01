@@ -1,0 +1,266 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+doodlum/skyrim-community-shaders,790,e6058397a524da4f6bf3e77dfe3a08c31c7f245f,features/Dynamic Cubemaps/Shaders/DynamicCubemaps/InferCubemapCS.hlsl,modified,2,2,4,"@@ -54,7 +54,7 @@ float3 GetSamplingVector(uint3 ThreadID, in RWTexture2DArray<float4> OutputTextu
+ 	float mipLevel = 0.0;
+ 
+ #if !defined(REFLECTIONS)
+-	float k = 1.5;
++	float k = 2;
+ 	float brightness = k;
+ #endif
+ 
+@@ -92,7 +92,7 @@ float3 GetSamplingVector(uint3 ThreadID, in RWTexture2DArray<float4> OutputTextu
+ #if defined(REFLECTIONS)
+ 	color.rgb = lerp(color.rgb, Color::GammaToLinear(ReflectionsTexture.SampleLevel(LinearSampler, uv, 0).rgb), saturate(mipLevel / 8.0));
+ #else
+-	color.rgb = lerp(color.rgb, color.rgb * Color::GammaToLinear(DefaultCubemap.SampleLevel(LinearSampler, uv, 0).x) * 2, saturate(mipLevel / 8.0));
++	color.rgb = lerp(color.rgb, color.rgb * DefaultCubemap.SampleLevel(LinearSampler, uv, 0), saturate(mipLevel / 8.0));
+ #endif
+ 
+ 	color.rgb = Color::LinearToGamma(color.rgb);"
+doodlum/skyrim-community-shaders,790,e6058397a524da4f6bf3e77dfe3a08c31c7f245f,features/Dynamic Cubemaps/Shaders/DynamicCubemaps/UpdateCubemapCS.hlsl,modified,4,0,4,"@@ -98,7 +98,11 @@ float smoothbumpstep(float edge0, float edge1, float x)
+ 		float depth = DepthTexture.SampleLevel(LinearSampler, uv, 0);
+ 		float linearDepth = SharedData::GetScreenDepth(depth);
+ 
++#if defined(REFLECTIONS)
+ 		if (linearDepth > 16.5) {  // Ignore objects which are too close
++#else
++		if (linearDepth > 16.5 && depth != 1.0) {  // Ignore objects which are too close or the sky
++#endif
+ 			half4 positionCS = half4(2 * half2(uv.x, -uv.y + 1) - 1, depth, 1);
+ 			positionCS = mul(CameraViewProjInverse[0], positionCS);
+ 			positionCS.xyz = positionCS.xyz / positionCS.w;"
+doodlum/skyrim-community-shaders,790,e6058397a524da4f6bf3e77dfe3a08c31c7f245f,features/Dynamic Cubemaps/Shaders/DynamicCubemaps/defaultcubemap.dds,modified,0,0,0,
+doodlum/skyrim-community-shaders,790,e6058397a524da4f6bf3e77dfe3a08c31c7f245f,package/Shaders/ISReflectionsRayTracing.hlsl,modified,1,4,5,"@@ -88,9 +88,6 @@ float4 GetReflectionColor(
+ 					binaryMinRaySample = binaryRaySample;
+ 			}
+ 
+-			// Cubemap skies blend better
+-			float skyFadeFactor = iterationDepth != 1.0;
+-
+ 			// Fade based on ray length
+ 			float ssrMarchingRadiusFadeFactor = 1.0 - saturate(length(binaryRaySample - projPosition) / rayLength);
+ 
+@@ -110,7 +107,7 @@ float4 GetReflectionColor(
+ 			// Fade out around screen edges
+ 			float2 centerDistanceFadeFactor = sqrt(saturate(1.0 - centerDistance));
+ 
+-			float fadeFactor = depthThicknessFactor * skyFadeFactor * sqrt(ssrMarchingRadiusFadeFactor) * min(centerDistanceFadeFactor.x, centerDistanceFadeFactor.y);
++			float fadeFactor = depthThicknessFactor * sqrt(ssrMarchingRadiusFadeFactor) * min(centerDistanceFadeFactor.x, centerDistanceFadeFactor.y);
+ 
+ 			if (fadeFactor > 0.0) {
+ 				float3 color = ColorTex.SampleLevel(ColorSampler, ConvertRaySample(binaryRaySample.xy, eyeIndex), 0);"
+doodlum/skyrim-community-shaders,790,e6058397a524da4f6bf3e77dfe3a08c31c7f245f,src/Deferred.cpp,modified,4,4,8,"@@ -92,7 +92,7 @@ void Deferred::SetupResources()
+ 		// Reflectance
+ 		SetupRenderTarget(REFLECTANCE, texDesc, srvDesc, rtvDesc, uavDesc, DXGI_FORMAT_R8G8B8A8_UNORM);
+ 		// Normal + Roughness
+-		SetupRenderTarget(NORMALROUGHNESS, texDesc, srvDesc, rtvDesc, uavDesc, DXGI_FORMAT_R8G8B8A8_UNORM);
++		SetupRenderTarget(NORMALROUGHNESS, texDesc, srvDesc, rtvDesc, uavDesc, DXGI_FORMAT_R10G10B10A2_UNORM);
+ 		// Masks
+ 		SetupRenderTarget(MASKS, texDesc, srvDesc, rtvDesc, uavDesc, DXGI_FORMAT_R8G8B8A8_UNORM);
+ 		// Additional Masks
+@@ -104,9 +104,9 @@ void Deferred::SetupResources()
+ 
+ 		D3D11_SAMPLER_DESC samplerDesc = {};
+ 		samplerDesc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+-		samplerDesc.AddressU = D3D11_TEXTURE_ADDRESS_CLAMP;
+-		samplerDesc.AddressV = D3D11_TEXTURE_ADDRESS_CLAMP;
+-		samplerDesc.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
++		samplerDesc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
++		samplerDesc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
++		samplerDesc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
+ 		samplerDesc.MaxAnisotropy = 1;
+ 		samplerDesc.MinLOD = 0;
+ 		samplerDesc.MaxLOD = D3D11_FLOAT32_MAX;"
+doodlum/skyrim-community-shaders,790,e6058397a524da4f6bf3e77dfe3a08c31c7f245f,src/Features/DynamicCubemaps.cpp,modified,50,12,62,"@@ -254,6 +254,15 @@ ID3D11ComputeShader* DynamicCubemaps::GetComputeShaderUpdate()
+ 	return updateCubemapCS;
+ }
+ 
++ID3D11ComputeShader* DynamicCubemaps::GetComputeShaderUpdateReflections()
++{
++	if (!updateCubemapReflectionsCS) {
++		logger::debug(""Compiling UpdateCubemapCS REFLECTIONS"");
++		updateCubemapReflectionsCS = static_cast<ID3D11ComputeShader*>(Util::CompileShader(L""Data\\Shaders\\DynamicCubemaps\\UpdateCubemapCS.hlsl"", { { ""REFLECTIONS"", """" } }, ""cs_5_0""));
++	}
++	return updateCubemapReflectionsCS;
++}
++
+ ID3D11ComputeShader* DynamicCubemaps::GetComputeShaderInferrence()
+ {
+ 	if (!inferCubemapCS) {
+@@ -281,7 +290,7 @@ ID3D11ComputeShader* DynamicCubemaps::GetComputeShaderSpecularIrradiance()
+ 	return specularIrradianceCS;
+ }
+ 
+-void DynamicCubemaps::UpdateCubemapCapture()
++void DynamicCubemaps::UpdateCubemapCapture(bool a_reflections)
+ {
+ 	auto renderer = RE::BSGraphics::Renderer::GetSingleton();
+ 
+@@ -293,7 +302,17 @@ void DynamicCubemaps::UpdateCubemapCapture()
+ 	ID3D11ShaderResourceView* srvs[2] = { depth.depthSRV, main.SRV };
+ 	context->CSSetShaderResources(0, 2, srvs);
+ 
+-	ID3D11UnorderedAccessView* uavs[3] = { envCaptureTexture->uav.get(), envCaptureRawTexture->uav.get(), envCapturePositionTexture->uav.get() };
++	ID3D11UnorderedAccessView* uavs[3];
++	if (a_reflections) {
++		uavs[0] = envCaptureReflectionsTexture->uav.get();
++		uavs[1] = envCaptureRawReflectionsTexture->uav.get();
++		uavs[2] = envCapturePositionReflectionsTexture->uav.get();
++	} else {
++		uavs[0] = envCaptureTexture->uav.get();
++		uavs[1] = envCaptureRawTexture->uav.get();
++		uavs[2] = envCapturePositionTexture->uav.get();
++	}
++
+ 	context->CSSetUnorderedAccessViews(0, 3, uavs, nullptr);
+ 
+ 	ID3D11Buffer* buffers[2];
+@@ -318,7 +337,8 @@ void DynamicCubemaps::UpdateCubemapCapture()
+ 
+ 	context->CSSetSamplers(0, 1, &computeSampler);
+ 
+-	context->CSSetShader(GetComputeShaderUpdate(), nullptr, 0);
++	context->CSSetShader(a_reflections ? GetComputeShaderUpdateReflections() : GetComputeShaderUpdate(), nullptr, 0);
++
+ 	context->Dispatch((uint32_t)std::ceil(envCaptureTexture->desc.Width / 8.0f), (uint32_t)std::ceil(envCaptureTexture->desc.Height / 8.0f), 6);
+ 
+ 	uavs[0] = nullptr;
+@@ -350,11 +370,11 @@ void DynamicCubemaps::Inferrence(bool a_reflections)
+ 
+ 	context->CSSetUnorderedAccessViews(0, 1, &uav, nullptr);
+ 
+-	context->GenerateMips(envCaptureTexture->srv.get());
++	context->GenerateMips((a_reflections ? envCaptureReflectionsTexture : envCaptureTexture)->srv.get());
+ 
+ 	auto& cubemap = renderer->GetRendererData().cubemapRenderTargets[RE::RENDER_TARGETS_CUBEMAP::kREFLECTIONS];
+ 
+-	ID3D11ShaderResourceView* srvs[3] = { envCaptureTexture->srv.get(), cubemap.SRV, defaultCubemap };
++	ID3D11ShaderResourceView* srvs[3] = { (a_reflections ? envCaptureReflectionsTexture : envCaptureTexture)->srv.get(), cubemap.SRV, defaultCubemap };
+ 	context->CSSetShaderResources(0, 3, srvs);
+ 
+ 	context->CSSetSamplers(0, 1, &computeSampler);
+@@ -402,7 +422,7 @@ void DynamicCubemaps::Irradiance(bool a_reflections)
+ 
+ 		float const delta_roughness = 1.0f / std::max(float(MIPLEVELS - 1), 1.0f);
+ 
+-		std::uint32_t size = std::max(envTexture->desc.Width, envTexture->desc.Height);
++		std::uint32_t size = std::max(envTexture->desc.Width, envTexture->desc.Height) / 2;
+ 
+ 		for (std::uint32_t level = 1; level < MIPLEVELS; level++, size /= 2) {
+ 			const UINT numGroups = (UINT)std::max(1u, size / 8);
+@@ -442,19 +462,29 @@ void DynamicCubemaps::UpdateCubemap()
+ 	}
+ 
+ 	switch (nextTask) {
++	case NextTask::kCapture:
++		UpdateCubemapCapture(false);
++		nextTask = NextTask::kInferrence;
++		break;
++
+ 	case NextTask::kInferrence:
+ 		nextTask = NextTask::kIrradiance;
+ 		Inferrence(false);
+ 		break;
+ 
+ 	case NextTask::kIrradiance:
+ 		if (activeReflections)
+-			nextTask = NextTask::kInferrence2;
++			nextTask = NextTask::kCapture2;
+ 		else
+ 			nextTask = NextTask::kCapture;
+ 		Irradiance(false);
+ 		break;
+ 
++	case NextTask::kCapture2:
++		UpdateCubemapCapture(true);
++		nextTask = NextTask::kInferrence2;
++		break;
++
+ 	case NextTask::kInferrence2:
+ 		Inferrence(true);
+ 		nextTask = NextTask::kIrradiance2;
+@@ -464,11 +494,6 @@ void DynamicCubemaps::UpdateCubemap()
+ 		nextTask = NextTask::kCapture;
+ 		Irradiance(true);
+ 		break;
+-
+-	case NextTask::kCapture:
+-		UpdateCubemapCapture();
+-		nextTask = NextTask::kInferrence;
+-		break;
+ 	}
+ }
+ 
+@@ -483,6 +508,7 @@ void DynamicCubemaps::PostDeferred()
+ void DynamicCubemaps::SetupResources()
+ {
+ 	GetComputeShaderUpdate();
++	GetComputeShaderUpdateReflections();
+ 	GetComputeShaderInferrence();
+ 	GetComputeShaderInferrenceReflections();
+ 	GetComputeShaderSpecularIrradiance();
+@@ -538,6 +564,18 @@ void DynamicCubemaps::SetupResources()
+ 		envCapturePositionTexture->CreateSRV(srvDesc);
+ 		envCapturePositionTexture->CreateUAV(uavDesc);
+ 
++		envCaptureReflectionsTexture = new Texture2D(texDesc);
++		envCaptureReflectionsTexture->CreateSRV(srvDesc);
++		envCaptureReflectionsTexture->CreateUAV(uavDesc);
++
++		envCaptureRawReflectionsTexture = new Texture2D(texDesc);
++		envCaptureRawReflectionsTexture->CreateSRV(srvDesc);
++		envCaptureRawReflectionsTexture->CreateUAV(uavDesc);
++
++		envCapturePositionReflectionsTexture = new Texture2D(texDesc);
++		envCapturePositionReflectionsTexture->CreateSRV(srvDesc);
++		envCapturePositionReflectionsTexture->CreateUAV(uavDesc);
++
+ 		texDesc.Format = DXGI_FORMAT_R11G11B10_FLOAT;
+ 		srvDesc.Format = texDesc.Format;
+ 		uavDesc.Format = texDesc.Format;"
+doodlum/skyrim-community-shaders,790,e6058397a524da4f6bf3e77dfe3a08c31c7f245f,src/Features/DynamicCubemaps.h,modified,11,2,13,"@@ -48,6 +48,8 @@ struct DynamicCubemaps : Feature
+ 	};
+ 
+ 	ID3D11ComputeShader* updateCubemapCS = nullptr;
++	ID3D11ComputeShader* updateCubemapReflectionsCS = nullptr;
++
+ 	ConstantBuffer* updateCubemapCB = nullptr;
+ 
+ 	ID3D11ComputeShader* inferCubemapCS = nullptr;
+@@ -56,6 +58,11 @@ struct DynamicCubemaps : Feature
+ 	Texture2D* envCaptureTexture = nullptr;
+ 	Texture2D* envCaptureRawTexture = nullptr;
+ 	Texture2D* envCapturePositionTexture = nullptr;
++
++	Texture2D* envCaptureReflectionsTexture = nullptr;
++	Texture2D* envCaptureRawReflectionsTexture = nullptr;
++	Texture2D* envCapturePositionReflectionsTexture = nullptr;
++
+ 	Texture2D* envInferredTexture = nullptr;
+ 
+ 	ID3D11ShaderResourceView* defaultCubemap = nullptr;
+@@ -68,8 +75,9 @@ struct DynamicCubemaps : Feature
+ 	{
+ 		kCapture,
+ 		kInferrence,
+-		kInferrence2,
+ 		kIrradiance,
++		kCapture2,
++		kInferrence2,
+ 		kIrradiance2
+ 	};
+ 
+@@ -131,11 +139,12 @@ struct DynamicCubemaps : Feature
+ 
+ 	virtual void ClearShaderCache() override;
+ 	ID3D11ComputeShader* GetComputeShaderUpdate();
++	ID3D11ComputeShader* GetComputeShaderUpdateReflections();
+ 	ID3D11ComputeShader* GetComputeShaderInferrence();
+ 	ID3D11ComputeShader* GetComputeShaderInferrenceReflections();
+ 	ID3D11ComputeShader* GetComputeShaderSpecularIrradiance();
+ 
+-	void UpdateCubemapCapture();
++	void UpdateCubemapCapture(bool a_reflections);
+ 
+ 	void Inferrence(bool a_reflections);
+ "

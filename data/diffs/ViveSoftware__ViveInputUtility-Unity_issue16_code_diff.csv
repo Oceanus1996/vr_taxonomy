@@ -1,0 +1,1789 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+ViveSoftware/ViveInputUtility-Unity,16,261dfba,Assets/HTC.UnityPlugin/Pointer3D/Pointer3DInputModule.cs,modified,6,9,15,"@@ -223,15 +223,12 @@ protected void CleanUpRaycaster(Pointer3DRaycaster raycaster)
+             if (raycaster == null) { return; }
+ 
+             var hoverEventData = raycaster.HoverEventData;
+-            if (hoverEventData == null || raycaster.ButtonEventDataList.Count == 0) { return; }
+-
+-            hoverEventData.Reset();
+ 
+             // buttons event
+             for (int i = 0, imax = raycaster.ButtonEventDataList.Count; i < imax; ++i)
+             {
+                 var buttonEventData = raycaster.ButtonEventDataList[i];
+-                if (buttonEventData == null || buttonEventData == hoverEventData) { continue; }
++                if (buttonEventData == null) { continue; }
+ 
+                 buttonEventData.Reset();
+ 
+@@ -243,9 +240,9 @@ protected void CleanUpRaycaster(Pointer3DRaycaster raycaster)
+ 
+                 if (buttonEventData.pointerEnter != null)
+                 {
+-                    if (i == 0)
++                    if (buttonEventData == hoverEventData)
+                     {
+-                        // perform exit event for hover event data
++                        // perform exit event only for hover event data
+                         HandlePointerExitAndEnter(buttonEventData, null);
+                     }
+                     else
+@@ -286,9 +283,6 @@ protected virtual void ProcessRaycast()
+                 var raycaster = processingRaycasters[i];
+                 if (raycaster == null) { continue; }
+ 
+-                var hoverEventData = raycaster.HoverEventData;
+-                if (hoverEventData == null || raycaster.ButtonEventDataList.Count == 0) { continue; }
+-
+                 raycaster.Raycast();
+                 var result = raycaster.FirstRaycastResult();
+ 
+@@ -297,6 +291,9 @@ protected virtual void ProcessRaycast()
+                 var raycasterPos = raycaster.transform.position;
+                 var raycasterRot = raycaster.transform.rotation;
+ 
++                var hoverEventData = raycaster.HoverEventData;
++                if (hoverEventData == null) { continue; }
++
+                 // gen shared data and put in hover event
+                 hoverEventData.Reset();
+                 hoverEventData.delta = Vector2.zero;"
+ViveSoftware/ViveInputUtility-Unity,16,d7c3642,Assets/HTC.UnityPlugin/Pointer3D/Pointer3DEventData.cs,modified,1,0,1,"@@ -66,6 +66,7 @@ public class Pointer3DEventData : PointerEventData
+ 
+         public float pressDistance;
+         public GameObject pressEnter;
++        public bool pressPrecessed;
+ 
+         public Pointer3DEventData(Pointer3DRaycaster ownerRaycaster, EventSystem eventSystem) : base(eventSystem)
+         {"
+ViveSoftware/ViveInputUtility-Unity,16,d7c3642,Assets/HTC.UnityPlugin/Pointer3D/Pointer3DInputModule.cs,modified,15,17,32,"@@ -223,29 +223,26 @@ protected void CleanUpRaycaster(Pointer3DRaycaster raycaster)
+             if (raycaster == null) { return; }
+ 
+             var hoverEventData = raycaster.HoverEventData;
+-            if (hoverEventData == null || raycaster.ButtonEventDataList.Count == 0) { return; }
+-
+-            hoverEventData.Reset();
+ 
+             // buttons event
+             for (int i = 0, imax = raycaster.ButtonEventDataList.Count; i < imax; ++i)
+             {
+                 var buttonEventData = raycaster.ButtonEventDataList[i];
+-                if (buttonEventData == null || buttonEventData == hoverEventData) { continue; }
++                if (buttonEventData == null) { continue; }
+ 
+                 buttonEventData.Reset();
+ 
+-                if (buttonEventData.eligibleForClick)
++                if (buttonEventData.pressPrecessed)
+                 {
+                     ProcessPressUp(buttonEventData);
+                     HandlePressExitAndEnter(buttonEventData, null);
+                 }
+ 
+                 if (buttonEventData.pointerEnter != null)
+                 {
+-                    if (i == 0)
++                    if (buttonEventData == hoverEventData)
+                     {
+-                        // perform exit event for hover event data
++                        // perform exit event only for hover event data
+                         HandlePointerExitAndEnter(buttonEventData, null);
+                     }
+                     else
+@@ -286,9 +283,6 @@ protected virtual void ProcessRaycast()
+                 var raycaster = processingRaycasters[i];
+                 if (raycaster == null) { continue; }
+ 
+-                var hoverEventData = raycaster.HoverEventData;
+-                if(hoverEventData == null || raycaster.ButtonEventDataList.Count == 0) { continue; }
+-
+                 raycaster.Raycast();
+                 var result = raycaster.FirstRaycastResult();
+ 
+@@ -297,6 +291,9 @@ protected virtual void ProcessRaycast()
+                 var raycasterPos = raycaster.transform.position;
+                 var raycasterRot = raycaster.transform.rotation;
+ 
++                var hoverEventData = raycaster.HoverEventData;
++                if (hoverEventData == null) { continue; }
++
+                 // gen shared data and put in hover event
+                 hoverEventData.Reset();
+                 hoverEventData.delta = Vector2.zero;
+@@ -384,17 +381,16 @@ protected virtual void ProcessMove(PointerEventData eventData)
+ 
+         protected virtual void ProcessPress(Pointer3DEventData eventData)
+         {
+-            if (eventData.GetPressDown())
+-            {
+-                ProcessPressDown(eventData);
+-            }
+-
+             if (eventData.GetPress())
+             {
++                if (!eventData.pressPrecessed)
++                {
++                    ProcessPressDown(eventData);
++                }
++
+                 HandlePressExitAndEnter(eventData, eventData.pointerCurrentRaycast.gameObject);
+             }
+-
+-            if (eventData.GetPressUp())
++            else if (eventData.pressPrecessed)
+             {
+                 ProcessPressUp(eventData);
+                 HandlePressExitAndEnter(eventData, null);
+@@ -405,6 +401,7 @@ protected void ProcessPressDown(Pointer3DEventData eventData)
+         {
+             var currentOverGo = eventData.pointerCurrentRaycast.gameObject;
+ 
++            eventData.pressPrecessed = true;
+             eventData.eligibleForClick = true;
+             eventData.delta = Vector2.zero;
+             eventData.dragging = false;
+@@ -481,6 +478,7 @@ protected void ProcessPressUp(Pointer3DEventData eventData)
+                 ExecuteEvents.ExecuteHierarchy(currentOverGo, eventData, ExecuteEvents.dropHandler);
+             }
+ 
++            eventData.pressPrecessed = false;
+             eventData.eligibleForClick = false;
+             eventData.pointerPress = null;
+             eventData.rawPointerPress = null;"
+ViveSoftware/ViveInputUtility-Unity,16,d7c3642,Assets/HTC.UnityPlugin/PoseTracker/Base/BasePoseModifier.cs,modified,6,1,7,"@@ -1,5 +1,7 @@
+ ﻿//========= Copyright 2016-2017, HTC Corporation. All rights reserved. ===========
+ 
++using HTC.UnityPlugin.Utility;
++using System;
+ using UnityEngine;
+ 
+ namespace HTC.UnityPlugin.PoseTracker
+@@ -49,6 +51,9 @@ protected virtual void OnDestroy()
+             baseTracker.RemoveModifier(this);
+         }
+ 
+-        public abstract void ModifyPose(ref Pose pose, Transform origin);
++        [Obsolete]
++        public virtual void ModifyPose(ref Pose pose, Transform origin) { }
++
++        public virtual void ModifyPose(ref RigidPose pose, Transform origin) { }
+     }
+ }
+\ No newline at end of file"
+ViveSoftware/ViveInputUtility-Unity,16,d7c3642,Assets/HTC.UnityPlugin/PoseTracker/Base/BasePoseTracker.cs,modified,17,2,19,"@@ -1,6 +1,7 @@
+ ﻿//========= Copyright 2016-2017, HTC Corporation. All rights reserved. ===========
+ 
+ using HTC.UnityPlugin.Utility;
++using System;
+ using UnityEngine;
+ 
+ namespace HTC.UnityPlugin.PoseTracker
+@@ -38,14 +39,28 @@ public bool RemoveModifier(IPoseModifier obj)
+             return modifierSet == null ? false : modifierSet.Remove(obj);
+         }
+ 
++        [Obsolete]
+         protected void TrackPose(Pose pose, Transform origin = null)
+         {
+-            pose = pose * new Pose(posOffset, Quaternion.Euler(rotOffset));
++            TrackPose((RigidPose)pose, origin);
++        }
++
++        protected void TrackPose(RigidPose pose, Transform origin = null)
++        {
++            pose = pose * new RigidPose(posOffset, Quaternion.Euler(rotOffset));
+             ModifyPose(ref pose, origin);
+-            Pose.SetPose(transform, pose, origin);
++            RigidPose.SetPose(transform, pose, origin);
+         }
+ 
++        [Obsolete]
+         protected void ModifyPose(ref Pose pose, Transform origin)
++        {
++            var rigidPose = (RigidPose)pose;
++            ModifyPose(ref rigidPose, origin);
++            pose = rigidPose;
++        }
++
++        protected void ModifyPose(ref RigidPose pose, Transform origin)
+         {
+             if (modifierSet == null) { return; }
+ "
+ViveSoftware/ViveInputUtility-Unity,16,d7c3642,Assets/HTC.UnityPlugin/PoseTracker/Base/IPoseModifier.cs,modified,4,0,4,"@@ -1,5 +1,7 @@
+ ﻿//========= Copyright 2016-2017, HTC Corporation. All rights reserved. ===========
+ 
++using HTC.UnityPlugin.Utility;
++using System;
+ using UnityEngine;
+ 
+ namespace HTC.UnityPlugin.PoseTracker
+@@ -8,6 +10,8 @@ public interface IPoseModifier
+     {
+         bool enabled { get; }
+         int priority { get; set; }
++        [Obsolete]
+         void ModifyPose(ref Pose pose, Transform origin);
++        void ModifyPose(ref RigidPose pose, Transform origin);
+     }
+ }
+\ No newline at end of file"
+ViveSoftware/ViveInputUtility-Unity,16,d7c3642,Assets/HTC.UnityPlugin/PoseTracker/Pose.cs,modified,12,0,12,"@@ -1,5 +1,6 @@
+ ﻿//========= Copyright 2016-2017, HTC Corporation. All rights reserved. ===========
+ 
++using HTC.UnityPlugin.Utility;
+ using System;
+ using UnityEngine;
+ 
+@@ -8,6 +9,7 @@ namespace HTC.UnityPlugin.PoseTracker
+     /// <summary>
+     /// Describe a pose by position and rotation
+     /// </summary>
++    [Obsolete(""Use HTC.UnityPlugin.Utility.RigidPose instead"")]
+     [Serializable]
+     public struct Pose
+     {
+@@ -192,6 +194,16 @@ public static Pose FromToPose(Pose from, Pose to)
+             return new Pose(invRot * (to.pos - from.pos), invRot * to.rot);
+         }
+ 
++        public static implicit operator RigidPose(Pose v)
++        {
++            return new RigidPose(v.pos, v.rot);
++        }
++
++        public static implicit operator Pose(RigidPose v)
++        {
++            return new Pose(v.pos, v.rot);
++        }
++
+         public override string ToString()
+         {
+             return ""p"" + pos.ToString() + ""r"" + rot.ToString();"
+ViveSoftware/ViveInputUtility-Unity,16,d7c3642,Assets/HTC.UnityPlugin/PoseTracker/PoseModifiers/PoseEaser.cs,modified,4,3,7,"@@ -1,5 +1,6 @@
+ ﻿//========= Copyright 2016-2017, HTC Corporation. All rights reserved. ===========
+ 
++using HTC.UnityPlugin.Utility;
+ using UnityEngine;
+ 
+ namespace HTC.UnityPlugin.PoseTracker
+@@ -18,7 +19,7 @@ public class PoseEaser : BasePoseModifier
+         public float duration = 0.15f;
+ 
+         private bool firstPose = true;
+-        private Pose prevPose;
++        private RigidPose prevPose;
+ 
+         public bool easePositionX = true;
+         public bool easePositionY = true;
+@@ -34,7 +35,7 @@ protected override void OnEnable()
+             ResetFirstPose();
+         }
+ 
+-        public override void ModifyPose(ref Pose pose, Transform origin)
++        public override void ModifyPose(ref RigidPose pose, Transform origin)
+         {
+             if (firstPose)
+             {
+@@ -45,7 +46,7 @@ public override void ModifyPose(ref Pose pose, Transform origin)
+                 var deltaTime = Time.unscaledDeltaTime;
+                 if (deltaTime < duration)
+                 {
+-                    var easedPose = Pose.Lerp(prevPose, pose, curve.Evaluate(deltaTime / duration));
++                    var easedPose = RigidPose.Lerp(prevPose, pose, curve.Evaluate(deltaTime / duration));
+ 
+                     if (!easePositionX || !easePositionY || !easePositionZ)
+                     {"
+ViveSoftware/ViveInputUtility-Unity,16,d7c3642,Assets/HTC.UnityPlugin/PoseTracker/PoseModifiers/PoseFreezer.cs,modified,2,1,3,"@@ -1,5 +1,6 @@
+ ﻿//========= Copyright 2016-2017, HTC Corporation. All rights reserved. ===========
+ 
++using HTC.UnityPlugin.Utility;
+ using UnityEngine;
+ 
+ namespace HTC.UnityPlugin.PoseTracker
+@@ -15,7 +16,7 @@ public class PoseFreezer : BasePoseModifier
+         public bool freezeRotationY = false;
+         public bool freezeRotationZ = true;
+ 
+-        public override void ModifyPose(ref Pose pose, Transform origin)
++        public override void ModifyPose(ref RigidPose pose, Transform origin)
+         {
+             Vector3 freezePos;
+             Vector3 freezeEuler;"
+ViveSoftware/ViveInputUtility-Unity,16,d7c3642,Assets/HTC.UnityPlugin/PoseTracker/PoseModifiers/PoseStablizer.cs,modified,3,2,5,"@@ -1,5 +1,6 @@
+ ﻿//========= Copyright 2016-2017, HTC Corporation. All rights reserved. ===========
+ 
++using HTC.UnityPlugin.Utility;
+ using UnityEngine;
+ 
+ namespace HTC.UnityPlugin.PoseTracker
+@@ -11,15 +12,15 @@ public class PoseStablizer : BasePoseModifier
+         public float rotationThreshold = 0.5f; // degree
+ 
+         private bool firstPose = true;
+-        private Pose prevPose;
++        private RigidPose prevPose;
+ 
+         protected override void OnEnable()
+         {
+             base.OnEnable();
+             ResetFirstPose();
+         }
+ 
+-        public override void ModifyPose(ref Pose pose, Transform origin)
++        public override void ModifyPose(ref RigidPose pose, Transform origin)
+         {
+             if (firstPose)
+             {"
+ViveSoftware/ViveInputUtility-Unity,16,d7c3642,Assets/HTC.UnityPlugin/PoseTracker/PoseTracker.cs,modified,2,1,3,"@@ -1,5 +1,6 @@
+ ﻿//========= Copyright 2016-2017, HTC Corporation. All rights reserved. ===========
+ 
++using HTC.UnityPlugin.Utility;
+ using UnityEngine;
+ 
+ namespace HTC.UnityPlugin.PoseTracker
+@@ -11,7 +12,7 @@ public class PoseTracker : BasePoseTracker
+ 
+         protected virtual void LateUpdate()
+         {
+-            TrackPose(new Pose(target, true), target.parent);
++            TrackPose(new RigidPose(target, true), target.parent);
+         }
+     }
+ }
+\ No newline at end of file"
+ViveSoftware/ViveInputUtility-Unity,16,d7c3642,Assets/HTC.UnityPlugin/Utility/RigidPose.cs,added,221,0,221,"@@ -0,0 +1,221 @@
++﻿//========= Copyright 2016-2017, HTC Corporation. All rights reserved. ===========
++
++using System;
++using UnityEngine;
++
++namespace HTC.UnityPlugin.Utility
++{
++    [Serializable]
++    public struct RigidPose
++    {
++        public Vector3 pos;
++        public Quaternion rot;
++
++        public static RigidPose identity
++        {
++            get { return new RigidPose(Vector3.zero, Quaternion.identity); }
++        }
++
++        public RigidPose(Vector3 pos, Quaternion rot)
++        {
++            this.pos = pos;
++            this.rot = rot;
++        }
++
++        public RigidPose(Transform t, bool useLocal = false)
++        {
++            if (t == null)
++            {
++                pos = Vector3.zero;
++                rot = Quaternion.identity;
++            }
++            else if (!useLocal)
++            {
++                pos = t.position;
++                rot = t.rotation;
++            }
++            else
++            {
++                pos = t.localPosition;
++                rot = t.localRotation;
++            }
++        }
++
++        public Vector3 forward { get { return rot * Vector3.forward; } }
++
++        public Vector3 right { get { return rot * Vector3.right; } }
++
++        public Vector3 up { get { return rot * Vector3.up; } }
++
++
++        public override bool Equals(object o)
++        {
++            if (o is RigidPose)
++            {
++                var t = (RigidPose)o;
++                return pos == t.pos && rot == t.rot;
++            }
++            return false;
++        }
++
++        public override int GetHashCode()
++        {
++            return pos.GetHashCode() ^ rot.GetHashCode();
++        }
++
++        public static bool operator ==(RigidPose a, RigidPose b)
++        {
++            return
++                a.pos.x == b.pos.x &&
++                a.pos.y == b.pos.y &&
++                a.pos.z == b.pos.z &&
++                a.rot.x == b.rot.x &&
++                a.rot.y == b.rot.y &&
++                a.rot.z == b.rot.z &&
++                a.rot.w == b.rot.w;
++        }
++
++        public static bool operator !=(RigidPose a, RigidPose b)
++        {
++            return !(a == b);
++        }
++
++        public static RigidPose operator *(RigidPose a, RigidPose b)
++        {
++            return new RigidPose
++            {
++                rot = a.rot * b.rot,
++                pos = a.pos + a.rot * b.pos
++            };
++        }
++
++        public void Multiply(RigidPose a, RigidPose b)
++        {
++            rot = a.rot * b.rot;
++            pos = a.pos + a.rot * b.pos;
++        }
++
++        public void Inverse()
++        {
++            rot = Quaternion.Inverse(rot);
++            pos = -(rot * pos);
++        }
++
++        public RigidPose GetInverse()
++        {
++            var t = new RigidPose(pos, rot);
++            t.Inverse();
++            return t;
++        }
++
++        public Vector3 InverseTransformPoint(Vector3 point)
++        {
++            return Quaternion.Inverse(rot) * (point - pos);
++        }
++
++        public Vector3 TransformPoint(Vector3 point)
++        {
++            return pos + (rot * point);
++        }
++
++        public static RigidPose Lerp(RigidPose a, RigidPose b, float t)
++        {
++            return new RigidPose(Vector3.Lerp(a.pos, b.pos, t), Quaternion.Slerp(a.rot, b.rot, t));
++        }
++
++        public void Lerp(RigidPose to, float t)
++        {
++            pos = Vector3.Lerp(pos, to.pos, t);
++            rot = Quaternion.Slerp(rot, to.rot, t);
++        }
++
++        public static RigidPose LerpUnclamped(RigidPose a, RigidPose b, float t)
++        {
++            return new RigidPose(Vector3.LerpUnclamped(a.pos, b.pos, t), Quaternion.SlerpUnclamped(a.rot, b.rot, t));
++        }
++
++        public void LerpUnclamped(RigidPose to, float t)
++        {
++            pos = Vector3.LerpUnclamped(pos, to.pos, t);
++            rot = Quaternion.SlerpUnclamped(rot, to.rot, t);
++        }
++
++        public static void SetPose(Transform target, RigidPose pose, Transform origin = null)
++        {
++            if (origin != null && origin != target.parent)
++            {
++                pose = new RigidPose(origin) * pose;
++                pose.pos.Scale(origin.localScale);
++                target.position = pose.pos;
++                target.rotation = pose.rot;
++            }
++            else
++            {
++                target.localPosition = pose.pos;
++                target.localRotation = pose.rot;
++            }
++        }
++
++        // proper following duration is larger then 0.02 second, depends on the update rate
++        public static void SetRigidbodyVelocity(Rigidbody rigidbody, Vector3 from, Vector3 to, float duration)
++        {
++            var diffPos = to - from;
++            if (Mathf.Approximately(diffPos.sqrMagnitude, 0f))
++            {
++                rigidbody.velocity = Vector3.zero;
++            }
++            else
++            {
++                rigidbody.velocity = diffPos / duration;
++            }
++        }
++
++        // proper folloing duration is larger then 0.02 second, depends on the update rate
++        public static void SetRigidbodyAngularVelocity(Rigidbody rigidbody, Quaternion from, Quaternion to, float duration, bool overrideMaxAngularVelocity = true)
++        {
++            float angle;
++            Vector3 axis;
++            (to * Quaternion.Inverse(from)).ToAngleAxis(out angle, out axis);
++            while (angle > 180f) { angle -= 360f; }
++
++            if (Mathf.Approximately(angle, 0f) || float.IsNaN(axis.x) || float.IsNaN(axis.y) || float.IsNaN(axis.z))
++            {
++                rigidbody.angularVelocity = Vector3.zero;
++            }
++            else
++            {
++                angle *= Mathf.Deg2Rad / duration; // convert to radius speed
++                if (overrideMaxAngularVelocity && rigidbody.maxAngularVelocity < angle) { rigidbody.maxAngularVelocity = angle; }
++                rigidbody.angularVelocity = axis * angle;
++            }
++        }
++
++        public static RigidPose FromToPose(RigidPose from, RigidPose to)
++        {
++            var invRot = Quaternion.Inverse(from.rot);
++            return new RigidPose(invRot * (to.pos - from.pos), invRot * to.rot);
++        }
++
++#if  UNITY_2017_2_OR_NEWER
++        public static implicit operator RigidPose(Pose v)
++        {
++            return new RigidPose(v.position, v.rotation);
++        }
++
++        public static implicit operator Pose(RigidPose v)
++        {
++            return new Pose(v.pos, v.rot);
++        }
++#endif
++
++        public override string ToString()
++        {
++            return ""{p"" + pos.ToString() + "",r"" + rot.ToString() + ""}"";
++        }
++
++        public string ToString(string format)
++        {
++            return ""{p"" + pos.ToString(format) + "",r"" + rot.ToString(format) + ""}"";
++        }
++    }
++}
+\ No newline at end of file"
+ViveSoftware/ViveInputUtility-Unity,16,d7c3642,Assets/HTC.UnityPlugin/Utility/RigidPose.cs.meta,added,13,0,13,"@@ -0,0 +1,13 @@
++fileFormatVersion: 2
++guid: 0ea9671aeed60374b9eea8907b94584d
++timeCreated: 1511161401
++licenseType: Free
++MonoImporter:
++  externalObjects: {}
++  serializedVersion: 2
++  defaultReferences: []
++  executionOrder: 0
++  icon: {instanceID: 0}
++  userData: 
++  assetBundleName: 
++  assetBundleVariant: "
+ViveSoftware/ViveInputUtility-Unity,16,d7c3642,Assets/HTC.UnityPlugin/VRModule/Modules/OculusVRModule.cs,modified,9,8,17,"@@ -1,12 +1,13 @@
+ ﻿//========= Copyright 2016-2017, HTC Corporation. All rights reserved. ===========
+ 
+ #if VIU_OCULUSVR
+-using HTC.UnityPlugin.PoseTracker;
+ using UnityEngine;
++using HTC.UnityPlugin.Utility;
+ #if UNITY_2017_2_OR_NEWER
+ using UnityEngine.XR;
+ #else
+-using UnityEngine.VR;
++using XRDevice = UnityEngine.VR.VRDevice;
++using XRSettings = UnityEngine.VR.VRSettings;
+ #endif
+ #endif
+ 
+@@ -54,7 +55,7 @@ static OculusVRModule()
+             s_node2class[(int)OVRPlugin.Node.TrackerThree] = VRModuleDeviceClass.TrackingReference;
+         }
+ 
+-        public override bool ShouldActiveModule() { return VRSettings.enabled && VRSettings.loadedDeviceName == ""Oculus""; }
++        public override bool ShouldActiveModule() { return XRSettings.enabled && XRSettings.loadedDeviceName == ""Oculus""; }
+ 
+         public override void OnActivated()
+         {
+@@ -86,8 +87,8 @@ public override void Update()
+             if (VRModule.lockPhysicsUpdateRateToRenderFrequency && Time.timeScale > 0.0f)
+             {
+                 // FIXME: VRDevice.refreshRate returns zero in Unity 5.6.0 or older version
+-#if UNITY_5_6_1 || UNITY_2017 || UNITY_2017_1_OR_NEWER
+-                Time.fixedDeltaTime = 1f / VRDevice.refreshRate;
++#if !UNITY_5_6_0 && UNITY_5_6_OR_NEWER
++                Time.fixedDeltaTime = 1f / XRDevice.refreshRate;
+ #else
+                 Time.fixedDeltaTime = 1f / 90f;
+ #endif
+@@ -104,10 +105,10 @@ public override uint GetRightControllerDeviceIndex()
+             return s_node2index[(int)OVRPlugin.Node.HandRight];
+         }
+ 
+-        private static Pose ToPose(OVRPlugin.Posef value)
++        private static RigidPose ToPose(OVRPlugin.Posef value)
+         {
+             var ovrPose = value.ToOVRPose();
+-            return new Pose(ovrPose.position, ovrPose.orientation);
++            return new RigidPose(ovrPose.position, ovrPose.orientation);
+         }
+ 
+         public override void UpdateDeviceState(IVRModuleDeviceState[] prevState, IVRModuleDeviceStateRW[] currState)
+@@ -137,7 +138,7 @@ public override void UpdateDeviceState(IVRModuleDeviceState[] prevState, IVRModu
+                     currState[i].velocity = OVRPlugin.GetNodeVelocity(node, OVRPlugin.Step.Render).FromFlippedZVector3f();
+                     currState[i].angularVelocity = OVRPlugin.GetNodeAngularVelocity(node, OVRPlugin.Step.Render).FromFlippedZVector3f();
+ 
+-                    currState[i].isPoseValid = currState[i].pose != Pose.identity;
++                    currState[i].isPoseValid = currState[i].pose != RigidPose.identity;
+ 
+                     // update device input
+                     switch (currState[i].deviceModel)"
+ViveSoftware/ViveInputUtility-Unity,16,d7c3642,Assets/HTC.UnityPlugin/VRModule/Modules/SteamVRModule.cs,modified,13,7,20,"@@ -1,10 +1,15 @@
+ ﻿//========= Copyright 2016-2017, HTC Corporation. All rights reserved. ===========
+ 
+ #if VIU_STEAMVR
++using HTC.UnityPlugin.Utility;
+ using System.Text;
+ using UnityEngine;
+ using Valve.VR;
+-using Pose = HTC.UnityPlugin.PoseTracker.Pose;
++#if UNITY_2017_2_OR_NEWER
++using UnityEngine.XR;
++#elif UNITY_5_4_OR_NEWER
++using XRSettings = UnityEngine.VR.VRSettings;
++#endif
+ #endif
+ 
+ namespace HTC.UnityPlugin.VRModuleManagement
+@@ -24,10 +29,8 @@ public sealed class SteamVRModule : VRModule.ModuleBase
+ 
+         public override bool ShouldActiveModule()
+         {
+-#if UNITY_2017_2_OR_NEWER
+-            return UnityEngine.XR.XRSettings.enabled && UnityEngine.XR.XRSettings.loadedDeviceName == ""OpenVR"";
+-#elif UNITY_5_4_OR_NEWER
+-            return UnityEngine.VR.VRSettings.enabled && UnityEngine.VR.VRSettings.loadedDeviceName == ""OpenVR"";
++#if UNITY_5_4_OR_NEWER
++            return XRSettings.enabled && XRSettings.loadedDeviceName == ""OpenVR"";
+ #else
+             return SteamVR.enabled;
+ #endif
+@@ -83,7 +86,10 @@ public override void UpdateTrackingSpaceType()
+ 
+         public override void Update()
+         {
+-            SteamVR_Render.instance.lockPhysicsUpdateRateToRenderFrequency = VRModule.lockPhysicsUpdateRateToRenderFrequency;
++            if (SteamVR.active)
++            {
++                SteamVR_Render.instance.lockPhysicsUpdateRateToRenderFrequency = VRModule.lockPhysicsUpdateRateToRenderFrequency;
++            }
+         }
+ 
+         public override bool HasInputFocus()
+@@ -168,7 +174,7 @@ public override void UpdateDeviceState(IVRModuleDeviceState[] prevState, IVRModu
+                     // update poses
+                     if (prevState[i].isPoseValid && !currState[i].isPoseValid)
+                     {
+-                        currState[i].pose = Pose.identity;
++                        currState[i].pose = RigidPose.identity;
+                     }
+                     else if (currState[i].isPoseValid)
+                     {"
+ViveSoftware/ViveInputUtility-Unity,16,d7c3642,Assets/HTC.UnityPlugin/VRModule/Modules/UnityEngineVRModule_5_5.cs,modified,5,5,10,"@@ -1,7 +1,7 @@
+ ﻿//========= Copyright 2016-2017, HTC Corporation. All rights reserved. ===========
+ 
+ #if UNITY_5_5_OR_NEWER && !UNITY_2017_1_OR_NEWER
+-using HTC.UnityPlugin.PoseTracker;
++using HTC.UnityPlugin.Utility;
+ using System.Text.RegularExpressions;
+ using UnityEngine;
+ using UnityEngine.VR;
+@@ -26,9 +26,9 @@ public sealed partial class UnityEngineVRModule : VRModule.ModuleBase
+         private int m_leftJoystickNameIndex = -1;
+         private int m_rightJoystickNameIndex = -1;
+ 
++#if UNITY_5_6_OR_NEWER
+         private TrackingSpaceType m_prevTrackingSpace;
+ 
+-#if UNITY_5_6_OR_NEWER
+         public override void OnActivated()
+         {
+             m_prevTrackingSpace = VRDevice.GetTrackingSpaceType();
+@@ -94,7 +94,7 @@ public override void UpdateDeviceState(IVRModuleDeviceState[] prevState, IVRModu
+ 
+                 headCurrState.position = InputTracking.GetLocalPosition(VRNode.Head);
+                 headCurrState.rotation = InputTracking.GetLocalRotation(VRNode.Head);
+-                headCurrState.isPoseValid = headCurrState.pose != Pose.identity && headCurrState.pose != headPrevState.pose;
++                headCurrState.isPoseValid = headCurrState.pose != RigidPose.identity && headCurrState.pose != headPrevState.pose;
+             }
+             else
+             {
+@@ -110,7 +110,7 @@ public override void UpdateDeviceState(IVRModuleDeviceState[] prevState, IVRModu
+ 
+             rightCurrState.position = InputTracking.GetLocalPosition(VRNode.RightHand);
+             rightCurrState.rotation = InputTracking.GetLocalRotation(VRNode.RightHand);
+-            rightCurrState.isPoseValid = rightCurrState.pose != Pose.identity && rightCurrState.pose != rightPrevState.pose;
++            rightCurrState.isPoseValid = rightCurrState.pose != RigidPose.identity && rightCurrState.pose != rightPrevState.pose;
+ 
+             // right connected state
+             if (rightCurrState.isPoseValid)
+@@ -214,7 +214,7 @@ public override void UpdateDeviceState(IVRModuleDeviceState[] prevState, IVRModu
+ 
+             leftCurrState.position = InputTracking.GetLocalPosition(VRNode.LeftHand);
+             leftCurrState.rotation = InputTracking.GetLocalRotation(VRNode.LeftHand);
+-            leftCurrState.isPoseValid = leftCurrState.pose != Pose.identity && leftCurrState.pose != leftPrevState.pose;
++            leftCurrState.isPoseValid = leftCurrState.pose != RigidPose.identity && leftCurrState.pose != leftPrevState.pose;
+             // left connected state
+             if (leftCurrState.isPoseValid)
+             {"
+ViveSoftware/ViveInputUtility-Unity,16,d7c3642,Assets/HTC.UnityPlugin/VRModule/VRModule.cs,modified,0,3,3,"@@ -1,9 +1,6 @@
+ ﻿//========= Copyright 2016-2017, HTC Corporation. All rights reserved. ===========
+ 
+-using HTC.UnityPlugin.PoseTracker;
+ using HTC.UnityPlugin.Utility;
+-using System.Collections.Generic;
+-using UnityEngine;
+ 
+ namespace HTC.UnityPlugin.VRModuleManagement
+ {"
+ViveSoftware/ViveInputUtility-Unity,16,d7c3642,Assets/HTC.UnityPlugin/VRModule/VRModuleBase.cs,modified,0,1,1,"@@ -2,7 +2,6 @@
+ 
+ using HTC.UnityPlugin.Utility;
+ using System.Text.RegularExpressions;
+-using UnityEngine;
+ 
+ namespace HTC.UnityPlugin.VRModuleManagement
+ {"
+ViveSoftware/ViveInputUtility-Unity,16,d7c3642,Assets/HTC.UnityPlugin/VRModule/VRModuleDeviceState.cs,modified,20,17,37,"@@ -3,7 +3,6 @@
+ using HTC.UnityPlugin.Utility;
+ using System;
+ using UnityEngine;
+-using Pose = HTC.UnityPlugin.PoseTracker.Pose;
+ 
+ namespace HTC.UnityPlugin.VRModuleManagement
+ {
+@@ -97,7 +96,7 @@ public interface IVRModuleDeviceStateRW
+         Vector3 angularVelocity { get; set; }
+         Vector3 position { get; set; }
+         Quaternion rotation { get; set; }
+-        Pose pose { get; set; }
++        RigidPose pose { get; set; }
+ 
+         ulong buttonPressed { get; set; }
+         ulong buttonTouched { get; set; }
+@@ -131,7 +130,7 @@ public interface IVRModuleDeviceState
+         Vector3 angularVelocity { get; }
+         Vector3 position { get; }
+         Quaternion rotation { get; }
+-        Pose pose { get; }
++        RigidPose pose { get; }
+ 
+         ulong buttonPressed { get; }
+         ulong buttonTouched { get; }
+@@ -193,7 +192,7 @@ private class DeviceState : IVRModuleDeviceState, IVRModuleDeviceStateRW
+             public Vector3 angularVelocity { get { return m_angularVelocity; } set { m_angularVelocity = value; } }
+             public Vector3 position { get { return m_position; } set { m_position = value; } }
+             public Quaternion rotation { get { return m_rotation; } set { m_rotation = value; } }
+-            public Pose pose { get { return new Pose(m_position, m_rotation); } set { m_position = value.pos; m_rotation = value.rot; } }
++            public RigidPose pose { get { return new RigidPose(m_position, m_rotation); } set { m_position = value.pos; m_rotation = value.rot; } }
+ 
+             // device input state
+             [SerializeField]
+@@ -224,18 +223,21 @@ public DeviceState(uint deviceIndex)
+ 
+             public void CopyFrom(DeviceState state)
+             {
+-                deviceClass = state.deviceClass;
+-                serialNumber = state.serialNumber;
+-                modelNumber = state.modelNumber;
+-                renderModelName = state.renderModelName;
+-                isConnected = state.isConnected;
+-                isPoseValid = state.isPoseValid;
+-                isOutOfRange = state.isOutOfRange;
+-                isCalibrating = state.isCalibrating;
+-                isUninitialized = state.isUninitialized;
+-                velocity = state.velocity;
+-                angularVelocity = state.angularVelocity;
+-                pose = state.pose;
++                m_serialNumber = state.m_serialNumber;
++                m_modelNumber = state.m_modelNumber;
++                m_renderModelName = state.m_renderModelName;
++                m_deviceClass = state.m_deviceClass;
++                m_deviceModel = state.m_deviceModel;
++
++                m_isPoseValid = state.m_isPoseValid;
++                m_isConnected = state.m_isConnected;
++                m_isOutOfRange = state.m_isOutOfRange;
++                m_isCalibrating = state.m_isCalibrating;
++                m_isUninitialized = state.m_isUninitialized;
++                m_velocity = state.m_velocity;
++                m_angularVelocity = state.m_angularVelocity;
++                m_position = state.m_position;
++                m_rotation = state.m_rotation;
+ 
+                 m_buttonPressed = state.m_buttonPressed;
+                 m_buttonTouched = state.m_buttonTouched;
+@@ -255,7 +257,8 @@ public void Reset()
+                 isUninitialized = false;
+                 velocity = Vector3.zero;
+                 angularVelocity = Vector3.zero;
+-                pose = Pose.identity;
++                m_position = Vector3.zero;
++                m_rotation = Quaternion.identity;
+ 
+                 m_buttonPressed = 0ul;
+                 m_buttonTouched = 0ul;"
+ViveSoftware/ViveInputUtility-Unity,16,d7c3642,Assets/HTC.UnityPlugin/ViveInputUtility/Examples/3.3DDrag/Scripts/Draggable.cs,modified,16,17,33,"@@ -3,7 +3,6 @@
+ using UnityEngine;
+ using UnityEngine.Events;
+ using UnityEngine.EventSystems;
+-using Pose = HTC.UnityPlugin.PoseTracker.Pose;
+ 
+ // demonstrate of dragging things useing built in EventSystem handlers
+ public class Draggable : MonoBehaviour
+@@ -19,7 +18,7 @@ public class UnityEventDraggable : UnityEvent<Draggable> { }
+     public const float DEFAULT_FOLLOWING_DURATION = 0.04f;
+     public const float MAX_FOLLOWING_DURATION = 0.5f;
+ 
+-    private OrderedIndexedTable<PointerEventData, Pose> eventList = new OrderedIndexedTable<PointerEventData, Pose>();
++    private OrderedIndexedTable<PointerEventData, RigidPose> eventList = new OrderedIndexedTable<PointerEventData, RigidPose>();
+ 
+     public float initGrabDistance = 0.5f;
+     [Range(MIN_FOLLOWING_DURATION, MAX_FOLLOWING_DURATION)]
+@@ -31,7 +30,7 @@ public class UnityEventDraggable : UnityEvent<Draggable> { }
+     public UnityEventDraggable beforeRelease = new UnityEventDraggable();
+     public UnityEventDraggable onDrop = new UnityEventDraggable(); // change rigidbody drop velocity here
+ 
+-    private Pose m_prevPose = Pose.identity; // last frame world pose
++    private RigidPose m_prevPose = RigidPose.identity; // last frame world pose
+ 
+     public bool isDragged { get { return eventList.Count > 0; } }
+ 
+@@ -42,11 +41,11 @@ public class UnityEventDraggable : UnityEvent<Draggable> { }
+ 
+     private bool moveByVelocity { get { return !unblockableGrab && rigid != null && !rigid.isKinematic; } }
+ 
+-    private Pose GetEventPose(PointerEventData eventData)
++    private RigidPose GetEventPose(PointerEventData eventData)
+     {
+         var cam = eventData.pointerPressRaycast.module.eventCamera;
+         var ray = cam.ScreenPointToRay(eventData.position);
+-        return new Pose(ray.origin, Quaternion.LookRotation(ray.direction, cam.transform.up));
++        return new RigidPose(ray.origin, Quaternion.LookRotation(ray.direction, cam.transform.up));
+     }
+ 
+     protected virtual void Awake()
+@@ -74,25 +73,25 @@ public virtual void OnInitializePotentialDrag(PointerEventData eventData)
+     public virtual void OnBeginDrag(PointerEventData eventData)
+     {
+         var casterPose = GetEventPose(eventData);
+-        var offsetPose = new Pose();
++        var offsetPose = new RigidPose();
+         switch (eventData.button)
+         {
+             case PointerEventData.InputButton.Middle:
+             case PointerEventData.InputButton.Right:
+                 {
+                     var hitResult = eventData.pointerPressRaycast;
+-                    var hitPose = new Pose(hitResult.worldPosition, casterPose.rot);
++                    var hitPose = new RigidPose(hitResult.worldPosition, casterPose.rot);
+ 
+-                    var caster2hit = new Pose(Vector3.forward * Mathf.Min(hitResult.distance, initGrabDistance), Quaternion.identity);
+-                    var hit2center = Pose.FromToPose(hitPose, new Pose(transform));
++                    var caster2hit = new RigidPose(Vector3.forward * Mathf.Min(hitResult.distance, initGrabDistance), Quaternion.identity);
++                    var hit2center = RigidPose.FromToPose(hitPose, new RigidPose(transform));
+ 
+                     offsetPose = caster2hit * hit2center;
+                     break;
+                 }
+             case PointerEventData.InputButton.Left:
+             default:
+                 {
+-                    offsetPose = Pose.FromToPose(casterPose, new Pose(transform));
++                    offsetPose = RigidPose.FromToPose(casterPose, new RigidPose(transform));
+                     break;
+                 }
+         }
+@@ -121,8 +120,8 @@ protected virtual void FixedUpdate()
+             var offsetPose = eventList.GetLastValue();
+ 
+             var targetPose = casterPose * offsetPose;
+-            Pose.SetRigidbodyVelocity(rigid, rigid.position, targetPose.pos, followingDuration);
+-            Pose.SetRigidbodyAngularVelocity(rigid, rigid.rotation, targetPose.rot, followingDuration, overrideMaxAngularVelocity);
++            RigidPose.SetRigidbodyVelocity(rigid, rigid.position, targetPose.pos, followingDuration);
++            RigidPose.SetRigidbodyAngularVelocity(rigid, rigid.rotation, targetPose.rot, followingDuration, overrideMaxAngularVelocity);
+         }
+     }
+ 
+@@ -136,7 +135,7 @@ public virtual void OnDrag(PointerEventData eventData)
+             var casterPose = GetEventPose(eventData);
+             var offsetPose = eventList.GetLastValue();
+ 
+-            m_prevPose = new Pose(transform);
++            m_prevPose = new RigidPose(transform);
+ 
+             if (rigid != null)
+             {
+@@ -175,12 +174,12 @@ public virtual void OnEndDrag(PointerEventData eventData)
+ 
+     private void DoDrop()
+     {
+-        if (!moveByVelocity && rigid != null && !rigid.isKinematic && m_prevPose != Pose.identity)
++        if (!moveByVelocity && rigid != null && !rigid.isKinematic && m_prevPose != RigidPose.identity)
+         {
+-            Pose.SetRigidbodyVelocity(rigid, m_prevPose.pos, transform.position, Time.deltaTime);
+-            Pose.SetRigidbodyAngularVelocity(rigid, m_prevPose.rot, transform.rotation, Time.deltaTime, overrideMaxAngularVelocity);
++            RigidPose.SetRigidbodyVelocity(rigid, m_prevPose.pos, transform.position, Time.deltaTime);
++            RigidPose.SetRigidbodyAngularVelocity(rigid, m_prevPose.rot, transform.rotation, Time.deltaTime, overrideMaxAngularVelocity);
+ 
+-            m_prevPose = Pose.identity;
++            m_prevPose = RigidPose.identity;
+         }
+ 
+         if (onDrop != null)"
+ViveSoftware/ViveInputUtility-Unity,16,d7c3642,Assets/HTC.UnityPlugin/ViveInputUtility/Examples/3.3DDrag/Scripts/PlayGroundManager.cs,modified,5,13,18,"@@ -1,19 +1,11 @@
+-﻿using System.Collections.Generic;
++﻿using HTC.UnityPlugin.Utility;
++using System.Collections.Generic;
+ using UnityEngine;
+-using Pose = PlayGroundManager.Pose;
+ 
+ public class PlayGroundManager : MonoBehaviour
+ {
+-    public struct Pose
+-    {
+-        public Vector3 pos;
+-        public Quaternion rot;
+-
+-        public Pose(Transform t) { pos = t.position; rot = t.rotation; }
+-    }
+-
+     private static List<Draggable> draggablesCache = new List<Draggable>();
+-    private Dictionary<int, Pose> poseTable = new Dictionary<int, Pose>();
++    private Dictionary<int, RigidPose> poseTable = new Dictionary<int, RigidPose>();
+ 
+     private void Awake()
+     {
+@@ -22,7 +14,7 @@ private void Awake()
+         for (int i = 0, imax = draggablesCache.Count; i < imax; ++i)
+         {
+             var dt = draggablesCache[i].transform;
+-            poseTable[dt.GetInstanceID()] = new Pose(dt);
++            poseTable[dt.GetInstanceID()] = new RigidPose(dt);
+         }
+         draggablesCache.Clear();
+     }
+@@ -34,7 +26,7 @@ public void ResetPositions()
+         for (int i = 0, imax = draggablesCache.Count; i < imax; ++i)
+         {
+             var dt = draggablesCache[i].transform;
+-            Pose pose;
++            RigidPose pose;
+             if (poseTable.TryGetValue(dt.GetInstanceID(), out pose))
+             {
+                 dt.position = pose.pos;"
+ViveSoftware/ViveInputUtility-Unity,16,d7c3642,Assets/HTC.UnityPlugin/ViveInputUtility/Examples/5.ColliderEvent/Scripts/ResetButton.cs,modified,3,4,7,"@@ -2,7 +2,6 @@
+ using HTC.UnityPlugin.Utility;
+ using System.Collections.Generic;
+ using UnityEngine;
+-using Pose = HTC.UnityPlugin.PoseTracker.Pose;
+ 
+ public class ResetButton : MonoBehaviour
+     , IColliderEventPressUpHandler
+@@ -16,7 +15,7 @@ public class ResetButton : MonoBehaviour
+     [SerializeField]
+     private ColliderButtonEventData.InputButton m_activeButton = ColliderButtonEventData.InputButton.Trigger;
+ 
+-    private Pose[] resetPoses;
++    private RigidPose[] resetPoses;
+ 
+     private Vector3 buttonOriginPosition;
+ 
+@@ -41,10 +40,10 @@ public ColliderButtonEventData.InputButton activeButton
+ 
+     private void Start()
+     {
+-        resetPoses = new Pose[effectTargets.Length];
++        resetPoses = new RigidPose[effectTargets.Length];
+         for (int i = 0; i < effectTargets.Length; ++i)
+         {
+-            resetPoses[i] = new Pose(effectTargets[i]);
++            resetPoses[i] = new RigidPose(effectTargets[i]);
+         }
+ 
+         buttonOriginPosition = buttonObject.position;"
+ViveSoftware/ViveInputUtility-Unity,16,d7c3642,Assets/HTC.UnityPlugin/ViveInputUtility/Scripts/Editor/VIUVersionCheck.cs,modified,32,12,44,"@@ -34,7 +34,7 @@ private class PropSetting<T> : IPropSetting
+             private const string fmtTitle = ""{0} (current = {1})"";
+             private const string fmtRecommendBtn = ""Use recommended ({0})"";
+             private const string fmtRecommendBtnWithPosefix = ""Use recommended ({0}) - {1}"";
+-            
++
+             private string m_settingTitle;
+             private string m_settingTrimedTitle;
+             private string ignoreKey { get { return editorPrefsPrefix + m_settingTrimedTitle; } }
+@@ -144,7 +144,11 @@ public void DeleteIgnore()
+             toolTip = BIND_UI_SWITCH_TOOLTIP + "" You can change this option later in Edit -> Preferences... -> VIU Settings."",
+             currentValueFunc = () => toggleBindUISwithState,
+             setValueFunc = (v) => toggleBindUISwithState = v,
++#if VIU_STEAMVR
+             recommendedValue = true,
++#else
++            recommendedValue = false,
++#endif
+             },
+ 
+             new PropSetting<bool>()
+@@ -154,7 +158,11 @@ public void DeleteIgnore()
+             toolTip = EX_CAM_UI_SWITCH_TOOLTIP + "" You can change this option later in Edit -> Preferences... -> VIU Settings."",
+             currentValueFunc = () => toggleExCamSwithState,
+             setValueFunc = (v) => toggleExCamSwithState = v,
++#if VIU_STEAMVR
+             recommendedValue = true,
++#else
++            recommendedValue = false,
++#endif
+             },
+ 
+ #if !VIU_STEAMVR
+@@ -268,30 +276,24 @@ public void DeleteIgnore()
+             },
+ #endif
+ 
+-#if UNITY_5_3 && UNITY_STANDALONE
++#if UNITY_STANDALONE && (VIU_OCULUS || UNITY_5_5_OR_NEWER)
+             new PropSetting<bool>()
+             {
+             settingTitle = ""Virtual Reality Support"",
+             currentValueFunc = () => PlayerSettings.virtualRealitySupported,
+             setValueFunc = (v) => PlayerSettings.virtualRealitySupported = v,
+-#if VIU_STEAMVR
+-            recommendedValue = false,
+-#else
+             recommendedValue = true,
+-#endif
+             },
+-#endif // UNITY_5_3 && UNITY_STANDALONE
++#endif
+ 
+-#endif // VIU_STEAMVR
++#endif // !VIU_STEAMVR
+         };
+ 
+         private Texture2D viuLogo;
+ 
+         static VIUVersionCheck()
+         {
+             EditorApplication.update += CheckVersionAndSettings;
+-            s_waitingForCompile = false;
+-            EditorApplication.RepaintProjectWindow();
+         }
+ 
+         // check vive input utility version on github
+@@ -302,6 +304,16 @@ private static void CheckVersionAndSettings()
+                 editorPrefsPrefix = ""ViveInputUtility."" + PlayerSettings.productGUID + ""."";
+                 nextVersionCheckTimeKey = editorPrefsPrefix + ""LastVersionCheckTime"";
+                 fmtIgnoreUpdateKey = editorPrefsPrefix + ""DoNotShowUpdate.v{0}"";
++
++                // Force refresh preference window so it won't stuck in ""re-compinling"" state
++                if (GUIUtility.hotControl == 0)
++                {
++                    var prefWindow = GetWindow<EditorWindow>(""Unity Preferences"", false);
++                    if (prefWindow != null && prefWindow.titleContent.text == ""Unity Preferences"")
++                    {
++                        prefWindow.Repaint();
++                    }
++                }
+             }
+ 
+             // fetch new version info from github release site
+@@ -369,7 +381,7 @@ private static void CheckVersionAndSettings()
+                 window.minSize = new Vector2(240f, 550f);
+ 
+                 var rect = window.position;
+-                window.position = new Rect(Mathf.Max(rect.x, 50f), Mathf.Max(rect.y, 50f), rect.width, 150f + ((showNewVersion && recommendCount > 0) ? 700f : 400f));
++                window.position = new Rect(Mathf.Max(rect.x, 50f), Mathf.Max(rect.y, 50f), rect.width, 200f + (showNewVersion ? 700f : 400f));
+             }
+ 
+             EditorApplication.update -= CheckVersionAndSettings;
+@@ -677,7 +689,15 @@ public static void OnVIUPreferenceGUI()
+             }
+             else
+             {
+-                GUILayout.Button(""Re-compiling..."");
++                GUILayout.FlexibleSpace();
++                GUILayout.BeginHorizontal();
++                {
++                    GUILayout.FlexibleSpace();
++                    GUILayout.Label(""Re-compiling..."");
++                    GUILayout.FlexibleSpace();
++                }
++                GUILayout.EndHorizontal();
++                GUILayout.FlexibleSpace();
+             }
+         }
+     }"
+ViveSoftware/ViveInputUtility-Unity,16,d7c3642,Assets/HTC.UnityPlugin/ViveInputUtility/Scripts/Misc/BasicGrabbable.cs,modified,12,13,25,"@@ -5,7 +5,6 @@
+ using System;
+ using UnityEngine;
+ using UnityEngine.Events;
+-using Pose = HTC.UnityPlugin.PoseTracker.Pose;
+ 
+ public class BasicGrabbable : MonoBehaviour
+     , IColliderEventDragStartHandler
+@@ -20,7 +19,7 @@ public class UnityEventGrabbable : UnityEvent<BasicGrabbable> { }
+     public const float DEFAULT_FOLLOWING_DURATION = 0.04f;
+     public const float MAX_FOLLOWING_DURATION = 0.5f;
+ 
+-    private OrderedIndexedTable<ColliderButtonEventData, Pose> eventList = new OrderedIndexedTable<ColliderButtonEventData, Pose>();
++    private OrderedIndexedTable<ColliderButtonEventData, RigidPose> eventList = new OrderedIndexedTable<ColliderButtonEventData, RigidPose>();
+ 
+     public bool alignPosition;
+     public bool alignRotation;
+@@ -38,7 +37,7 @@ public class UnityEventGrabbable : UnityEvent<BasicGrabbable> { }
+     public UnityEventGrabbable beforeRelease = new UnityEventGrabbable();
+     public UnityEventGrabbable onDrop = new UnityEventGrabbable(); // change rigidbody drop velocity here
+ 
+-    private Pose m_prevPose = Pose.identity; // last frame world pose
++    private RigidPose m_prevPose = RigidPose.identity; // last frame world pose
+ 
+     public ColliderButtonEventData.InputButton grabButton
+     {
+@@ -66,10 +65,10 @@ public ColliderButtonEventData.InputButton grabButton
+ 
+     private bool moveByVelocity { get { return !unblockableGrab && rigid != null && !rigid.isKinematic; } }
+ 
+-    private Pose GetEventPose(ColliderButtonEventData eventData)
++    private RigidPose GetEventPose(ColliderButtonEventData eventData)
+     {
+         var grabberTransform = eventData.eventCaster.transform;
+-        return new Pose(grabberTransform);
++        return new RigidPose(grabberTransform);
+     }
+ #if UNITY_EDITOR
+     protected virtual void OnValidate()
+@@ -105,7 +104,7 @@ public virtual void OnColliderEventDragStart(ColliderButtonEventData eventData)
+         if (eventData.button != m_grabButton) { return; }
+ 
+         var casterPose = GetEventPose(eventData);
+-        var offsetPose = Pose.FromToPose(casterPose, new Pose(transform));
++        var offsetPose = RigidPose.FromToPose(casterPose, new RigidPose(transform));
+ 
+         if (alignPosition) { offsetPose.pos = Vector3.zero; }
+         if (alignRotation) { offsetPose.rot = Quaternion.identity; }
+@@ -137,8 +136,8 @@ public virtual void OnColliderEventDragFixedUpdate(ColliderButtonEventData event
+             if (alignRotation) { offsetPose.rot = Quaternion.Euler(alignRotationOffset); }
+ 
+             var targetPose = casterPose * offsetPose;
+-            Pose.SetRigidbodyVelocity(rigid, rigid.position, targetPose.pos, followingDuration);
+-            Pose.SetRigidbodyAngularVelocity(rigid, rigid.rotation, targetPose.rot, followingDuration, overrideMaxAngularVelocity);
++            RigidPose.SetRigidbodyVelocity(rigid, rigid.position, targetPose.pos, followingDuration);
++            RigidPose.SetRigidbodyAngularVelocity(rigid, rigid.rotation, targetPose.rot, followingDuration, overrideMaxAngularVelocity);
+         }
+     }
+ 
+@@ -155,7 +154,7 @@ public virtual void OnColliderEventDragUpdate(ColliderButtonEventData eventData)
+             if (alignPosition) { offsetPose.pos = alignPositionOffset; }
+             if (alignRotation) { offsetPose.rot = Quaternion.Euler(alignRotationOffset); }
+ 
+-            m_prevPose = new Pose(transform);
++            m_prevPose = new RigidPose(transform);
+ 
+             if (rigid != null)
+             {
+@@ -195,12 +194,12 @@ public virtual void OnColliderEventDragEnd(ColliderButtonEventData eventData)
+ 
+     private void DoDrop()
+     {
+-        if (!moveByVelocity && rigid != null && !rigid.isKinematic && m_prevPose != Pose.identity)
++        if (!moveByVelocity && rigid != null && !rigid.isKinematic && m_prevPose != RigidPose.identity)
+         {
+-            Pose.SetRigidbodyVelocity(rigid, m_prevPose.pos, transform.position, Time.deltaTime);
+-            Pose.SetRigidbodyAngularVelocity(rigid, m_prevPose.rot, transform.rotation, Time.deltaTime, overrideMaxAngularVelocity);
++            RigidPose.SetRigidbodyVelocity(rigid, m_prevPose.pos, transform.position, Time.deltaTime);
++            RigidPose.SetRigidbodyAngularVelocity(rigid, m_prevPose.rot, transform.rotation, Time.deltaTime, overrideMaxAngularVelocity);
+ 
+-            m_prevPose = Pose.identity;
++            m_prevPose = RigidPose.identity;
+         }
+ 
+         if (onDrop != null)"
+ViveSoftware/ViveInputUtility-Unity,16,d7c3642,Assets/HTC.UnityPlugin/ViveInputUtility/Scripts/Misc/ExCamConfigInterface/ExCamConfigInterfacePanelController.cs,modified,2,4,6,"@@ -1,12 +1,10 @@
+ ﻿//========= Copyright 2016-2017, HTC Corporation. All rights reserved. ===========
+ 
+ using HTC.UnityPlugin.Utility;
+-using HTC.UnityPlugin.VRModuleManagement;
+ using System.IO;
+ using UnityEngine;
+ using UnityEngine.EventSystems;
+ using UnityEngine.UI;
+-using Pose = HTC.UnityPlugin.PoseTracker.Pose;
+ 
+ namespace HTC.UnityPlugin.Vive.ExCamConfigInterface
+ {
+@@ -544,11 +542,11 @@ private void UpdateRecenterButtonVisible()
+                 var origin = ExternalCameraHook.Instance.origin;
+                 if (origin == null)
+                 {
+-                    needRecenter = new Pose(ExternalCameraHook.Instance.transform, false) != Pose.identity;
++                    needRecenter = new RigidPose(ExternalCameraHook.Instance.transform, false) != RigidPose.identity;
+                 }
+                 else
+                 {
+-                    needRecenter = new Pose(ExternalCameraHook.Instance.transform, false) != new Pose(origin, false);
++                    needRecenter = new RigidPose(ExternalCameraHook.Instance.transform, false) != new RigidPose(origin, false);
+                 }
+ 
+                 m_recenterButton.gameObject.SetActive(needRecenter);"
+ViveSoftware/ViveInputUtility-Unity,16,d7c3642,Assets/HTC.UnityPlugin/ViveInputUtility/Scripts/Misc/ExternalCameraHook.cs,modified,63,63,126,"@@ -5,7 +5,6 @@
+ using HTC.UnityPlugin.VRModuleManagement;
+ using System.IO;
+ using UnityEngine;
+-using Pose = HTC.UnityPlugin.PoseTracker.Pose;
+ 
+ // This script creates and handles SteamVR_ExternalCamera using viveRole property
+ [DisallowMultipleComponent]
+@@ -30,6 +29,25 @@ public class ExternalCameraHook : SingletonBehaviour<ExternalCameraHook>, INewPo
+ 
+     public bool isTrackingDevice { get { return isActiveAndEnabled && VRModule.IsValidDeviceIndex(m_viveRole.GetDeviceIndex()); } }
+ 
++    public string configPath
++    {
++        get
++        {
++            return m_configPath;
++        }
++        set
++        {
++            m_configPath = value;
++#if VIU_STEAMVR
++            if (m_externalCamera != null && File.Exists(m_configPath))
++            {
++                m_externalCamera.configPath = m_configPath;
++                m_externalCamera.ReadConfig();
++            }
++#endif
++        }
++    }
++
+     public bool quadViewEnabled
+     {
+         get { return m_quadViewSwitch; }
+@@ -99,81 +117,56 @@ private void OnValidate()
+ #endif
+ 
+ #if VIU_STEAMVR
+-    private static bool s_isAutoLoaded;
+-
+     private SteamVR_ExternalCamera m_externalCamera;
+-    private Pose m_staticExCamPose = Pose.identity;
++    private RigidPose m_staticExCamPose = RigidPose.identity;
+ 
+-    public string configPath
++    public SteamVR_ExternalCamera externalCamera { get { return m_externalCamera; } }
++
++    [RuntimeInitializeOnLoadMethod]
++    private static void OnLoad()
+     {
+-        get
++        if (VRModule.Active && VRModule.activeModule != VRModuleActiveEnum.Uninitialized)
+         {
+-            return m_configPath;
++            AutoLoadConfig(VRModule.activeModule);
+         }
+-        set
++        else
+         {
+-            m_configPath = value;
+-            if (m_externalCamera != null && File.Exists(m_configPath))
+-            {
+-                m_externalCamera.configPath = m_configPath;
+-                m_externalCamera.ReadConfig();
+-            }
++            VRModule.onActiveModuleChanged += AutoLoadConfig;
+         }
+     }
+ 
+-    public SteamVR_ExternalCamera externalCamera { get { return m_externalCamera; } }
+-
+-    [RuntimeInitializeOnLoadMethod]
+-    private static void AutoLoadConfig()
++    private static void AutoLoadConfig(VRModuleActiveEnum activatedModule)
+     {
+-        if (s_isAutoLoaded) { return; }
+-        s_isAutoLoaded = true;
++        VRModule.onActiveModuleChanged -= AutoLoadConfig;
+ 
+-        var configPath = AUTO_LOAD_CONFIG_PATH;
++        if (activatedModule != VRModuleActiveEnum.SteamVR) { return; }
+ 
+-        if (Active)
++        if (!Active && !string.IsNullOrEmpty(AUTO_LOAD_CONFIG_PATH) && File.Exists(AUTO_LOAD_CONFIG_PATH))
+         {
+-            configPath = Instance.m_configPath;
++            Initialize();
+         }
+ 
+-        if (!string.IsNullOrEmpty(configPath) && File.Exists(configPath))
++        if (Active)
+         {
+-            SteamVR_Render.instance.externalCameraConfigPath = string.Empty;
+-
+-            var oldExternalCam = SteamVR_Render.instance.externalCamera;
+-            if (oldExternalCam != null)
+-            {
+-                if (oldExternalCam.transform.parent != null && oldExternalCam.transform.parent.GetComponent<SteamVR_ControllerManager>() != null)
+-                {
+-                    Destroy(oldExternalCam.transform.parent.gameObject);
+-                    SteamVR_Render.instance.externalCamera = null;
+-                }
+-            }
+-
+-            Initialize();
++            Instance.UpdateActivity();
+         }
+     }
+ 
+-    protected override void OnSingletonBehaviourInitialized()
++    private static bool m_defaultExCamResolved;
++    private static void ResolveDefaultExCam()
+     {
+-        if (Instance.m_origin == null)
++        if (m_defaultExCamResolved || !SteamVR.active) { return; }
++        m_defaultExCamResolved = true;
++
++        SteamVR_Render.instance.externalCameraConfigPath = string.Empty;
++
++        var oldExternalCam = SteamVR_Render.instance.externalCamera;
++        if (oldExternalCam != null)
+         {
+-            // try find vr camera
+-            if (SteamVR_Render.Top() != null)
++            if (oldExternalCam.transform.parent != null && oldExternalCam.transform.parent.GetComponent<SteamVR_ControllerManager>() != null)
+             {
+-                Instance.m_origin = SteamVR_Render.Top().transform.parent;
+-            }
+-            else
+-            {
+-                foreach (var cam in Camera.allCameras)
+-                {
+-                    if (!cam.enabled) { continue; }
+-#if UNITY_5_4_OR_NEWER
+-                    // try find vr camera eye
+-                    if (cam.stereoTargetEye != StereoTargetEyeMask.Both) { continue; }
+-#endif
+-                    Instance.m_origin = cam.transform.parent;
+-                }
++                Destroy(oldExternalCam.transform.parent.gameObject);
++                SteamVR_Render.instance.externalCamera = null;
+             }
+         }
+     }
+@@ -183,8 +176,6 @@ private void OnEnable()
+         if (IsInstance)
+         {
+             m_viveRole.onDeviceIndexChanged += OnDeviceIndexChanged;
+-            VivePose.AddNewPosesListener(this);
+-
+             OnDeviceIndexChanged(m_viveRole.GetDeviceIndex());
+         }
+     }
+@@ -194,9 +185,7 @@ private void OnDisable()
+         if (IsInstance)
+         {
+             m_viveRole.onDeviceIndexChanged -= OnDeviceIndexChanged;
+-            VivePose.RemoveNewPosesListener(this);
+-
+-            UpdateActivity();
++            OnDeviceIndexChanged(VRModule.INVALID_DEVICE_INDEX);
+         }
+     }
+ 
+@@ -213,7 +202,7 @@ public virtual void OnNewPoses()
+ 
+         if (isQuadViewActive)
+         {
+-            Pose.SetPose(transform, m_staticExCamPose, m_origin);
++            RigidPose.SetPose(transform, m_staticExCamPose, m_origin);
+         }
+     }
+ 
+@@ -256,6 +245,10 @@ private void OnDeviceIndexChanged(uint deviceIndex)
+ 
+     private void UpdateActivity()
+     {
++        if (!IsInstance) { return; }
++
++        ResolveDefaultExCam();
++
+         if (!isActiveAndEnabled)
+         {
+             InternalSetQuadViewActive(false);
+@@ -298,6 +291,15 @@ private void InternalSetQuadViewActive(bool value)
+         if (m_externalCamera != null)
+         {
+             m_externalCamera.gameObject.SetActive(value);
++
++            if (value)
++            {
++                VivePose.AddNewPosesListener(this);
++            }
++            else
++            {
++                VivePose.RemoveNewPosesListener(this);
++            }
+         }
+     }
+ 
+@@ -324,12 +326,10 @@ private void InternalSetConfigInterfaceActive(bool value)
+ 
+     public void Recenter()
+     {
+-        m_staticExCamPose = Pose.identity;
++        m_staticExCamPose = RigidPose.identity;
+     }
+ 
+ #else
+-    public string configPath { get { return m_configPath; } set { m_configPath = value; } }
+-
+     protected virtual void Start()
+     {
+         Debug.LogWarning(""SteamVR plugin not found! install it to enable ExternalCamera!"");"
+ViveSoftware/ViveInputUtility-Unity,16,d7c3642,Assets/HTC.UnityPlugin/ViveInputUtility/Scripts/Misc/StickyGrabbable.cs,modified,12,13,25,"@@ -5,7 +5,6 @@
+ using System;
+ using UnityEngine;
+ using UnityEngine.Events;
+-using Pose = HTC.UnityPlugin.PoseTracker.Pose;
+ 
+ public class StickyGrabbable : MonoBehaviour, IColliderEventPressDownHandler
+ {
+@@ -16,7 +15,7 @@ public class UnityEventGrabbable : UnityEvent<StickyGrabbable> { }
+     public const float DEFAULT_FOLLOWING_DURATION = 0.04f;
+     public const float MAX_FOLLOWING_DURATION = 0.5f;
+ 
+-    private OrderedIndexedTable<ColliderButtonEventData, Pose> eventList = new OrderedIndexedTable<ColliderButtonEventData, Pose>();
++    private OrderedIndexedTable<ColliderButtonEventData, RigidPose> eventList = new OrderedIndexedTable<ColliderButtonEventData, RigidPose>();
+     private ColliderButtonEventData m_bannedEventData;
+ 
+     public bool alignPosition;
+@@ -39,7 +38,7 @@ public class UnityEventGrabbable : UnityEvent<StickyGrabbable> { }
+     public UnityEventGrabbable beforeRelease = new UnityEventGrabbable();
+     public UnityEventGrabbable onDrop = new UnityEventGrabbable(); // change rigidbody drop velocity here
+ 
+-    private Pose m_prevPose = Pose.identity; // last frame world pose
++    private RigidPose m_prevPose = RigidPose.identity; // last frame world pose
+ 
+     public ColliderButtonEventData.InputButton grabButton { get { return m_grabButton; } set { m_grabButton = value; } }
+ 
+@@ -52,10 +51,10 @@ public class UnityEventGrabbable : UnityEvent<StickyGrabbable> { }
+ 
+     private bool moveByVelocity { get { return !unblockableGrab && rigid != null && !rigid.isKinematic; } }
+ 
+-    private Pose GetEventPose(ColliderButtonEventData eventData)
++    private RigidPose GetEventPose(ColliderButtonEventData eventData)
+     {
+         var grabberTransform = eventData.eventCaster.transform;
+-        return new Pose(grabberTransform);
++        return new RigidPose(grabberTransform);
+     }
+ 
+     protected virtual void Awake()
+@@ -73,7 +72,7 @@ public virtual void OnColliderEventPressDown(ColliderButtonEventData eventData)
+         if (eventData.button != m_grabButton || eventList.ContainsKey(eventData) || eventData == m_bannedEventData) { return; }
+ 
+         var casterPose = GetEventPose(eventData);
+-        var offsetPose = Pose.FromToPose(casterPose, new Pose(transform));
++        var offsetPose = RigidPose.FromToPose(casterPose, new RigidPose(transform));
+ 
+         if (alignPosition) { offsetPose.pos = Vector3.zero; }
+         if (alignRotation) { offsetPose.rot = Quaternion.identity; }
+@@ -103,8 +102,8 @@ protected virtual void FixedUpdate()
+             if (alignRotation) { offsetPose.rot = Quaternion.Euler(alignRotationOffset); }
+ 
+             var targetPose = casterPose * offsetPose;
+-            Pose.SetRigidbodyVelocity(rigid, rigid.position, targetPose.pos, followingDuration);
+-            Pose.SetRigidbodyAngularVelocity(rigid, rigid.rotation, targetPose.rot, followingDuration, overrideMaxAngularVelocity);
++            RigidPose.SetRigidbodyVelocity(rigid, rigid.position, targetPose.pos, followingDuration);
++            RigidPose.SetRigidbodyAngularVelocity(rigid, rigid.rotation, targetPose.rot, followingDuration, overrideMaxAngularVelocity);
+         }
+     }
+ 
+@@ -119,7 +118,7 @@ protected virtual void Update()
+             if (alignPosition) { offsetPose.pos = alignPositionOffset; }
+             if (alignRotation) { offsetPose.rot = Quaternion.Euler(alignRotationOffset); }
+ 
+-            m_prevPose = new Pose(transform);
++            m_prevPose = new RigidPose(transform);
+ 
+             if (rigid != null)
+             {
+@@ -181,12 +180,12 @@ public void Release()
+ 
+     private void DoDrop()
+     {
+-        if (!moveByVelocity && rigid != null && !rigid.isKinematic && m_prevPose != Pose.identity)
++        if (!moveByVelocity && rigid != null && !rigid.isKinematic && m_prevPose != RigidPose.identity)
+         {
+-            Pose.SetRigidbodyVelocity(rigid, m_prevPose.pos, transform.position, Time.deltaTime);
+-            Pose.SetRigidbodyAngularVelocity(rigid, m_prevPose.rot, transform.rotation, Time.deltaTime, overrideMaxAngularVelocity);
++            RigidPose.SetRigidbodyVelocity(rigid, m_prevPose.pos, transform.position, Time.deltaTime);
++            RigidPose.SetRigidbodyAngularVelocity(rigid, m_prevPose.rot, transform.rotation, Time.deltaTime, overrideMaxAngularVelocity);
+ 
+-            m_prevPose = Pose.identity;
++            m_prevPose = RigidPose.identity;
+         }
+ 
+         if (onDrop != null)"
+ViveSoftware/ViveInputUtility-Unity,16,d7c3642,Assets/HTC.UnityPlugin/ViveInputUtility/Scripts/VIUVersion.cs,modified,1,1,2,"@@ -6,6 +6,6 @@ namespace HTC.UnityPlugin.Vive
+ {
+     public static class VIUVersion
+     {
+-        public static readonly Version current = new Version(""1.7.2"");
++        public static readonly Version current = new Version(""1.7.3"");
+     }
+ }
+\ No newline at end of file"
+ViveSoftware/ViveInputUtility-Unity,16,d7c3642,Assets/HTC.UnityPlugin/ViveInputUtility/Scripts/VivePose/VivePoseGet.cs,modified,9,10,19,"@@ -4,7 +4,6 @@
+ using HTC.UnityPlugin.VRModuleManagement;
+ using System;
+ using UnityEngine;
+-using Pose = HTC.UnityPlugin.PoseTracker.Pose;
+ 
+ namespace HTC.UnityPlugin.Vive
+ {
+@@ -82,15 +81,15 @@ public static bool HasTracking(DeviceRole role)
+         /// <summary>
+         /// Returns tracking pose of the device identified by role
+         /// </summary>
+-        public static Pose GetPose(HandRole role, Transform origin = null)
++        public static RigidPose GetPose(HandRole role, Transform origin = null)
+         {
+             return GetPose(ViveRole.GetDeviceIndexEx(role), origin);
+         }
+ 
+         /// <summary>
+         /// Returns tracking pose of the device identified by role
+         /// </summary>
+-        public static Pose GetPose(DeviceRole role, Transform origin = null)
++        public static RigidPose GetPose(DeviceRole role, Transform origin = null)
+         {
+             return GetPose(ViveRole.GetDeviceIndexEx(role), origin);
+         }
+@@ -146,7 +145,7 @@ public static bool HasTracking(ViveRoleProperty role)
+         /// <summary>
+         /// Returns tracking pose of the device identified by role
+         /// </summary>
+-        public static Pose GetPose(ViveRoleProperty role, Transform origin = null)
++        public static RigidPose GetPose(ViveRoleProperty role, Transform origin = null)
+         {
+             return GetPose(role.GetDeviceIndex(), origin);
+         }
+@@ -273,7 +272,7 @@ public static Vector3 GetAngularVelocityEx<TRole>(TRole role, Transform origin =
+         /// TRole can be DeviceRole, TrackerRole or any other enum type that have ViveRoleEnumAttribute.
+         /// Use ViveRole.ValidateViveRoleEnum() to validate role type
+         /// </param>
+-        public static Pose GetPoseEx<TRole>(TRole role, Transform origin = null)
++        public static RigidPose GetPoseEx<TRole>(TRole role, Transform origin = null)
+         {
+             return GetPose(ViveRole.GetDeviceIndexEx(role), origin);
+         }
+@@ -369,7 +368,7 @@ public static Vector3 GetAngularVelocityEx(Type roleType, int roleValue, Transfo
+         /// Can be DeviceRole, TrackerRole or any other enum type that have ViveRoleEnumAttribute.
+         /// Use ViveRole.ValidateViveRoleEnum() to validate role type
+         /// </param>
+-        public static Pose GetPoseEx(Type roleType, int roleValue, Transform origin = null)
++        public static RigidPose GetPoseEx(Type roleType, int roleValue, Transform origin = null)
+         {
+             return GetPose(ViveRole.GetDeviceIndexEx(roleType, roleValue), origin);
+         }
+@@ -446,8 +445,8 @@ public static Vector3 GetAngularVelocity(uint deviceIndex, Transform origin = nu
+                 return origin.TransformVector(VRModule.GetCurrentDeviceState(deviceIndex).angularVelocity);
+             }
+         }
+-
+-        public static Pose GetPose(uint deviceIndex, Transform origin = null)
++        
++        public static RigidPose GetPose(uint deviceIndex, Transform origin = null)
+         {
+             var devicePose = VRModule.GetCurrentDeviceState(deviceIndex).pose;
+ 
+@@ -457,15 +456,15 @@ public static Pose GetPose(uint deviceIndex, Transform origin = null)
+             }
+             else
+             {
+-                var rawPose = new Pose(origin) * devicePose;
++                var rawPose = new RigidPose(origin) * devicePose;
+                 rawPose.pos.Scale(origin.localScale);
+                 return rawPose;
+             }
+         }
+ 
+         public static void SetPose(Transform target, uint deviceIndex, Transform origin = null)
+         {
+-            Pose.SetPose(target, GetPose(deviceIndex), origin);
++            RigidPose.SetPose(target, GetPose(deviceIndex), origin);
+         }
+         #endregion base
+     }"
+ViveSoftware/ViveInputUtility-Unity,16,d7c3642,Assets/HTC.UnityPlugin/ViveInputUtility/Scripts/VivePose/ViveRigidPoseTracker.cs,modified,6,6,12,"@@ -1,7 +1,7 @@
+ ﻿//========= Copyright 2016-2017, HTC Corporation. All rights reserved. ===========
+ 
+ using UnityEngine;
+-using Pose = HTC.UnityPlugin.PoseTracker.Pose;
++using HTC.UnityPlugin.Utility;
+ 
+ namespace HTC.UnityPlugin.Vive
+ {
+@@ -14,7 +14,7 @@ public class ViveRigidPoseTracker : VivePoseTracker
+         public const float MAX_FOLLOWING_DURATION = 0.5f;
+ 
+         private Rigidbody rigid;
+-        private Pose targetPose;
++        private RigidPose targetPose;
+         private bool m_snap;
+ 
+         [SerializeField]
+@@ -41,8 +41,8 @@ protected virtual void FixedUpdate()
+         {
+             if (isPoseValid)
+             {
+-                Pose.SetRigidbodyVelocity(rigid, rigid.position, targetPose.pos, followingDuration);
+-                Pose.SetRigidbodyAngularVelocity(rigid, rigid.rotation, targetPose.rot, followingDuration);
++                RigidPose.SetRigidbodyVelocity(rigid, rigid.position, targetPose.pos, followingDuration);
++                RigidPose.SetRigidbodyAngularVelocity(rigid, rigid.rotation, targetPose.rot, followingDuration);
+             }
+             else
+             {
+@@ -62,14 +62,14 @@ public override void OnNewPoses()
+             var deviceIndex = viveRole.GetDeviceIndex();
+ 
+             // set targetPose to device pose
+-            targetPose = VivePose.GetPose(deviceIndex) * new Pose(posOffset, Quaternion.Euler(rotOffset));
++            targetPose = VivePose.GetPose(deviceIndex) * new RigidPose(posOffset, Quaternion.Euler(rotOffset));
+             ModifyPose(ref targetPose, origin);
+ 
+             // transform to world space
+             var o = origin != null ? origin : transform.parent;
+             if (o != null)
+             {
+-                targetPose = new Pose(o) * targetPose;
++                targetPose = new RigidPose(o) * targetPose;
+                 targetPose.pos.Scale(o.localScale);
+             }
+ "
+ViveSoftware/ViveInputUtility-Unity,16,d7c3642,Assets/HTC.UnityPlugin/ViveInputUtility/Scripts/ViveRole/Editor/ViveRolePropertyDrawer.cs,modified,2,1,3,"@@ -2,7 +2,6 @@
+ 
+ using HTC.UnityPlugin.Utility;
+ using System;
+-using System.Linq;
+ using System.Reflection;
+ using System.Text.RegularExpressions;
+ using UnityEditor;
+@@ -165,6 +164,8 @@ public override void OnGUI(Rect position, SerializedProperty property, GUIConten
+ 
+                     target.SetValueDirty();
+                 }
++
++                EditorApplication.delayCall += target.Update;
+             }
+ 
+             property.serializedObject.ApplyModifiedProperties(); // will call ViveRoleProperty.OnAfterDeserialize here"
+ViveSoftware/ViveInputUtility-Unity,16,d7c3642,Assets/HTC.UnityPlugin/ViveInputUtility/Scripts/ViveRole/RoleMaps/HandRole.cs,modified,8,2,10,"@@ -1,10 +1,10 @@
+ ﻿//========= Copyright 2016-2017, HTC Corporation. All rights reserved. ===========
+ 
++using HTC.UnityPlugin.Utility;
+ using HTC.UnityPlugin.VRModuleManagement;
+ using System;
+ using System.Collections.Generic;
+ using UnityEngine;
+-using Pose = HTC.UnityPlugin.PoseTracker.Pose;
+ 
+ namespace HTC.UnityPlugin.Vive
+ {
+@@ -252,7 +252,7 @@ private void MappingOtherControllers()
+         }
+ 
+         private static readonly float[] s_deviceDirPoint = new float[VRModule.MAX_DEVICE_COUNT];
+-        public static void SortDeviceIndicesByDirection(List<uint> deviceList, Pose sortingReference)
++        public static void SortDeviceIndicesByDirection(List<uint> deviceList, RigidPose sortingReference)
+         {
+             if (deviceList == null || deviceList.Count == 0) { return; }
+ 
+@@ -276,6 +276,12 @@ public static void SortDeviceIndicesByDirection(List<uint> deviceList, Pose sort
+             deviceList.Sort(CompareDirection);
+         }
+ 
++        [Obsolete]
++        public static void SortDeviceIndicesByDirection(List<uint> deviceList, PoseTracker.Pose sortingReference)
++        {
++            SortDeviceIndicesByDirection(deviceList, sortingReference);
++        }
++
+         private static int CompareDirection(uint d1, uint d2)
+         {
+             var d1Point = s_deviceDirPoint[d1];"
+ViveSoftware/ViveInputUtility-Unity,16,d7c3642,Assets/HTC.UnityPlugin/ViveInputUtility/Scripts/ViveRole/ViveRole.cs,modified,14,0,14,"@@ -25,6 +25,20 @@ public static partial class ViveRole
+         private static bool s_initialized = false;
+ 
+         [RuntimeInitializeOnLoadMethod]
++        private static void OnLoad()
++        {
++            if (VRModule.Active && VRModule.activeModule != VRModuleActiveEnum.Uninitialized)
++            {
++                Initialize();
++            }
++            else
++            {
++                VRModule.onActiveModuleChanged += OnModuleActive;
++            }
++        }
++
++        private static void OnModuleActive(VRModuleActiveEnum activatedModule) { Initialize(); }
++        
+         public static void Initialize()
+         {
+             if (s_initialized || !Application.isPlaying) { return; }"
+ViveSoftware/ViveInputUtility-Unity,16,d7c3642,Assets/HTC.UnityPlugin/ViveInputUtility/Scripts/ViveRole/ViveRoleProperty.cs,modified,2,7,9,"@@ -4,15 +4,14 @@
+ using HTC.UnityPlugin.VRModuleManagement;
+ using System;
+ using UnityEngine;
+-using UnityEngine.Events;
+ 
+ namespace HTC.UnityPlugin.Vive
+ {
+     // ViveRoleProperty is a serializable class that preserve vive role using 2 strings.
+     // There also has a property drawer so you can use it as a serialized field in your MonoBevaviour.
+     // Note that when deserializing, result of type and value is based on the valid role info stored in ViveRoleEnum class
+     [Serializable]
+-    public class ViveRoleProperty : ISerializationCallbackReceiver
++    public class ViveRoleProperty
+     {
+         public delegate void RoleChangedListener();
+         public delegate void DeviceIndexChangedListener(uint deviceIndex);
+@@ -156,10 +155,6 @@ public static ViveRoleProperty New(string typeFullName, string valueName)
+ 
+         public void SetValueDirty() { m_isValueDirty = true; }
+ 
+-        public void OnBeforeSerialize() { }
+-
+-        public void OnAfterDeserialize() { Update(); }
+-
+         private void OnMappingChanged(ViveRole.IMap map, ViveRole.MappingChangedEventArg args)
+         {
+             if (args.roleValue == m_roleValue)
+@@ -169,7 +164,7 @@ private void OnMappingChanged(ViveRole.IMap map, ViveRole.MappingChangedEventArg
+         }
+ 
+         // update type and value changes
+-        private void Update()
++        public void Update()
+         {
+             if (m_lockUpdate && (m_isTypeDirty || m_isValueDirty)) { throw new Exception(""Can't change value during onChange event callback""); }
+ "

@@ -1,0 +1,195 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+ashqal/MD360Player4Android,23,59ed580a58074a6aa579e2801d44ab19ac4296fd,.travis.yml,modified,4,4,8,"@@ -2,12 +2,12 @@ language: android
+ dist: trusty
+ sudo: required
+ jdk:
+-  - oraclejdk8
++  - oraclejdk11
+ android:
+   components:
+     - tools
+-    - build-tools-27.0.3
+-    - android-28
++    - build-tools-31.0.3
++    - android-31
+ before_script:
+   - curl https://kaltura.github.io/fe-tools/android/license.sh | sh
+ script:
+@@ -19,6 +19,6 @@ notifications:
+     recipients:
+       - noam.tamim@kaltura.com
+       - gilad.nadav@kaltura.com
+-      - Anton.Afanasiev@kaltura.com
++      - gourav.saxena@kaltura.com
+     on_success: always
+     on_failure: always"
+ashqal/MD360Player4Android,23,59ed580a58074a6aa579e2801d44ab19ac4296fd,app/build.gradle,modified,2,2,4,"@@ -1,11 +1,11 @@
+ apply plugin: 'com.android.application'
+ 
+ android {
+-    compileSdkVersion 28
++    compileSdkVersion 31
+     defaultConfig {
+         applicationId ""com.asha.md360player4android""
+         minSdkVersion 16
+-        targetSdkVersion 28
++        targetSdkVersion 30
+         versionCode 1
+         versionName ""1.0""
+     }"
+ashqal/MD360Player4Android,23,59ed580a58074a6aa579e2801d44ab19ac4296fd,build.gradle,modified,2,3,5,"@@ -3,11 +3,10 @@
+ buildscript {
+     repositories {
+         google()
+-        jcenter()
+         mavenCentral()
+     }
+     dependencies {
+-        classpath 'com.android.tools.build:gradle:3.1.4'
++        classpath 'com.android.tools.build:gradle:7.0.3'
+         // NOTE: Do not place your application dependencies here; they belong
+         // in the individual module build.gradle files
+     }
+@@ -16,7 +15,7 @@ buildscript {
+ allprojects {
+     repositories {
+         google()
+-        jcenter()
++        mavenCentral()
+         maven { url ""https://jitpack.io"" }
+     }
+ }"
+ashqal/MD360Player4Android,23,59ed580a58074a6aa579e2801d44ab19ac4296fd,gradle/wrapper/gradle-wrapper.properties,modified,1,1,2,"@@ -3,4 +3,4 @@ distributionBase=GRADLE_USER_HOME
+ distributionPath=wrapper/dists
+ zipStoreBase=GRADLE_USER_HOME
+ zipStorePath=wrapper/dists
+-distributionUrl=https\://services.gradle.org/distributions/gradle-4.4-all.zip
++distributionUrl=https\://services.gradle.org/distributions/gradle-7.0.2-all.zip"
+ashqal/MD360Player4Android,23,59ed580a58074a6aa579e2801d44ab19ac4296fd,vrlib/build.gradle,modified,1,1,2,"@@ -2,7 +2,7 @@ apply plugin: 'com.android.library'
+ apply from: 'version.gradle'
+ 
+ android {
+-    compileSdkVersion 30
++    compileSdkVersion 31
+     compileOptions {
+         sourceCompatibility JavaVersion.VERSION_1_8
+         targetCompatibility JavaVersion.VERSION_1_8"
+ashqal/MD360Player4Android,23,59ed580a58074a6aa579e2801d44ab19ac4296fd,vrlib/gradle-mvn-push.gradle,modified,48,40,88,"@@ -1,4 +1,4 @@
+-apply plugin: 'maven'
++apply plugin: 'maven-publish'
+ apply plugin: 'signing'
+ 
+ def isReleaseBuild() {
+@@ -24,49 +24,51 @@ def getRepositoryPassword() {
+ }
+ 
+ afterEvaluate { project ->
+-    uploadArchives {
+-        repositories {
+-            mavenDeployer {
+-                beforeDeployment { MavenDeployment deployment -> signing.signPom(deployment) }
++    publishing {
++        publications {
++            mavenJava(MavenPublication) {
+ 
+-                pom.groupId = GROUP
+-                pom.artifactId = POM_ARTIFACT_ID
+-                VERSION_NAME = libVersion
+-                pom.version = VERSION_NAME
+-
+-                repository(url: getReleaseRepositoryUrl()) {
+-                    authentication(userName: getRepositoryUsername(), password: getRepositoryPassword())
+-                }
+-                snapshotRepository(url: getSnapshotRepositoryUrl()) {
+-                    authentication(userName: getRepositoryUsername(), password: getRepositoryPassword())
+-                }
++                groupId = GROUP
++                artifactId = POM_ARTIFACT_ID
+ 
+-                pom.project {
+-                    name POM_NAME
+-                    packaging POM_PACKAGING
+-                    description POM_DESCRIPTION
+-                    url POM_URL
+-
+-                    scm {
+-                        url POM_SCM_URL
+-                        connection POM_SCM_CONNECTION
+-                        developerConnection POM_SCM_DEV_CONNECTION
++                VERSION_NAME = libVersion
++                version = VERSION_NAME
++
++                repositories {
++                    maven {
++                        def releasesRepoUrl = getReleaseRepositoryUrl()
++                        def snapshotsRepoUrl = getSnapshotRepositoryUrl()
++                        url = version.endsWith('SNAPSHOT') ? snapshotsRepoUrl : releasesRepoUrl
++                        credentials {
++                            username getRepositoryUsername()
++                            password getRepositoryPassword()
++                        }
+                     }
++                }
++                pom {
++                    name = POM_NAME
++                    packaging = POM_PACKAGING
++                    description = POM_DESCRIPTION
++                    url = POM_URL
+ 
+                     licenses {
+                         license {
+-                            name POM_LICENCE_NAME
+-                            url POM_LICENCE_URL
+-                            distribution POM_LICENCE_DIST
++                            name = POM_LICENCE_NAME
++                            url = POM_LICENCE_URL
++                            distribution = POM_LICENCE_DIST
+                         }
+                     }
+-
+                     developers {
+                         developer {
+-                            id POM_DEVELOPER_ID
+-                            name POM_DEVELOPER_NAME
++                            id = POM_DEVELOPER_ID
++                            name = POM_DEVELOPER_NAME
+                         }
+                     }
++                    scm {
++                        url = POM_SCM_URL
++                        connection = POM_SCM_CONNECTION
++                        developerConnection = POM_SCM_DEV_CONNECTION
++                    }
+                 }
+             }
+         }
+@@ -81,15 +83,21 @@ afterEvaluate { project ->
+         sign configurations.archives
+     }
+ 
+-//    task androidJavadocs(type: Javadoc) {
+-//        source = android.sourceSets.main.java.srcDirs
+-//        classpath += project.files(android.getBootClasspath().join(File.pathSeparator))
+-//    }
++    task androidJavadocs(type: Javadoc) {
++        source = android.sourceSets.main.java.srcDirs
++        classpath += project.files(android.getBootClasspath().join(File.pathSeparator))
++    }
++
++    afterEvaluate {
++        androidJavadocs.classpath += files(android.libraryVariants.collect { variant ->
++            variant.javaCompileProvider.get().classpath.files
++        })
++    }
+ 
+-//    task androidJavadocsJar(type: Jar, dependsOn: androidJavadocs) {
+-//        classifier = 'javadoc'
+-//        from androidJavadocs.destinationDir
+-//    }
++    task androidJavadocsJar(type: Jar, dependsOn: androidJavadocs) {
++        classifier = 'javadoc'
++        from androidJavadocs.destinationDir
++    }
+ 
+     task androidSourcesJar(type: Jar) {
+         classifier = 'sources'"

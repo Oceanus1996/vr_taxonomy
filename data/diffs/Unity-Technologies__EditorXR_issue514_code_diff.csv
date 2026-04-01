@@ -1,0 +1,39 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+Unity-Technologies/EditorXR,514,123a60558621315e8934b5d434fae563c3297908,Scripts/Helpers/EditorWindowCapture.cs,modified,5,5,10,"@@ -28,6 +28,7 @@ sealed class EditorWindowCapture : MonoBehaviour
+         EditorWindow m_Window;
+         Object m_GuiView;
+         MethodInfo m_GrabPixels;
++        Rect m_ScaledRect;
+ 
+         /// <summary>
+         /// RenderTexture that represents the captured Editor Window
+@@ -80,6 +81,9 @@ void Start()
+ 
+                 m_GrabPixels = guiViewType.GetMethod(""GrabPixels"", BindingFlags.Instance | BindingFlags.NonPublic);
+ 
++                // Convert to GUI Rect (handles high-DPI screens)
++                m_ScaledRect = EditorGUIUtility.PointsToPixels(m_Position);
++
+                 capture = true;
+             }
+             else
+@@ -98,10 +102,7 @@ void Update()
+         {
+             if (m_Window && capture)
+             {
+-                var rect = m_Position;
+-
+-                // Convert to GUI Rect (handles high-DPI screens)
+-                rect = EditorGUIUtility.PointsToPixels(rect);
++                var rect = m_ScaledRect;
+ 
+                 // GrabPixels is relative to the GUIView and not the desktop, so we don't care about the offset
+                 rect.x = 0f;
+@@ -121,7 +122,6 @@ void Update()
+                     texture.wrapMode = TextureWrapMode.Repeat;
+                 }
+ 
+-
+                 k_GrabPixelsArgs[0] = texture;
+                 k_GrabPixelsArgs[1] = rect;
+                 m_GrabPixels.Invoke(m_GuiView, k_GrabPixelsArgs);"

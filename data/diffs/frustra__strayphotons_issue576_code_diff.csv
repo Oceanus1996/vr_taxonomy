@@ -1,0 +1,199 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+frustra/strayphotons,576,68a943bf041beabf0f68067831c475393e3fc833,src/graphics/graphics/gui/GuiContext.cc,modified,1,1,2,"@@ -72,7 +72,7 @@ namespace sp {
+         if (it != components.end()) components.erase(it);
+     }
+ 
+-    std::weak_ptr<ecs::GuiRenderable> CreateGuiWindow(const ecs::Gui &gui, const ecs::Scripts *scripts) {
++    GuiContext::Ref CreateGuiWindow(const ecs::Gui &gui, const ecs::Scripts *scripts) {
+         if (gui.windowName == ""lobby"") {
+             static const auto lobby = make_shared<LobbyGui>(gui.windowName);
+             return lobby;"
+frustra/strayphotons,576,68a943bf041beabf0f68067831c475393e3fc833,src/graphics/graphics/gui/GuiContext.hh,modified,1,1,2,"@@ -56,7 +56,7 @@ namespace sp {
+         std::string name;
+     };
+ 
+-    std::weak_ptr<ecs::GuiRenderable> CreateGuiWindow(const ecs::Gui &gui, const ecs::Scripts *scripts);
++    GuiContext::Ref CreateGuiWindow(const ecs::Gui &gui, const ecs::Scripts *scripts);
+ 
+     std::span<GuiFontDef> GetGuiFontList();
+ } // namespace sp"
+frustra/strayphotons,576,68a943bf041beabf0f68067831c475393e3fc833,src/graphics/graphics/gui/OverlayGuiManager.cc,modified,7,5,12,"@@ -61,11 +61,13 @@ namespace sp {
+ 
+             if (renderable.PreDefine(ent)) {
+                 ImVec2 windowSize(renderable.preferredSize.x, renderable.preferredSize.y);
+-                windowSize.x = std::min(windowSize.x, std::min(viewportSize.x, imguiViewport->WorkSize.x * 0.4f));
+-                windowSize.y = std::min(windowSize.y, std::min(viewportSize.y, imguiViewport->WorkSize.y * 0.4f));
+-                if (windowSize.x <= 0) windowSize.x = viewportSize.x;
+-                if (windowSize.y <= 0) windowSize.y = viewportSize.y;
+-                ImGui::SetNextWindowSize(windowSize);
++                if (renderable.anchor != ecs::GuiLayoutAnchor::Floating) {
++                    windowSize.x = std::min(windowSize.x, std::min(viewportSize.x, imguiViewport->WorkSize.x * 0.4f));
++                    windowSize.y = std::min(windowSize.y, std::min(viewportSize.y, imguiViewport->WorkSize.y * 0.4f));
++                    if (windowSize.x <= 0) windowSize.x = viewportSize.x;
++                    if (windowSize.y <= 0) windowSize.y = viewportSize.y;
++                    ImGui::SetNextWindowSize(windowSize);
++                }
+ 
+                 switch (renderable.anchor) {
+                 case ecs::GuiLayoutAnchor::Fullscreen:"
+frustra/strayphotons,576,68a943bf041beabf0f68067831c475393e3fc833,src/graphics/graphics/vulkan/core/DeviceContext.cc,modified,4,1,5,"@@ -626,7 +626,10 @@ namespace sp::vulkan {
+ 
+     void DeviceContext::SetOverlayGui(OverlayGuiManager *overlayGui) {
+         auto *perfTimer = GetPerfTimer();
+-        if (perfTimer) overlayGui->Attach(make_shared<vulkan::ProfilerGui>(*perfTimer));
++        if (perfTimer) {
++            if (!profilerGui) profilerGui = make_shared<ProfilerGui>(*perfTimer);
++            overlayGui->Attach(profilerGui);
++        }
+ 
+         if (vkRenderer) vkRenderer->SetOverlayGui(overlayGui);
+     }"
+frustra/strayphotons,576,68a943bf041beabf0f68067831c475393e3fc833,src/graphics/graphics/vulkan/core/DeviceContext.hh,modified,5,2,7,"@@ -20,6 +20,7 @@
+ 
+ #include <atomic>
+ #include <future>
++#include <memory>
+ #include <robin_hood.h>
+ #include <variant>
+ 
+@@ -44,9 +45,10 @@ namespace sp::vulkan {
+     class PerfTimer;
+     class Pipeline;
+     class PipelineManager;
+-    struct PipelineCompileInput;
+-    class Shader;
++    class ProfilerGui;
+     class Renderer;
++    class Shader;
++    struct PipelineCompileInput;
+ 
+     namespace render_graph {
+         class Resources;
+@@ -272,6 +274,7 @@ namespace sp::vulkan {
+         DeferredFunc surfaceDestroy;
+ 
+         unique_ptr<PerfTimer> perfTimer;
++        shared_ptr<ProfilerGui> profilerGui;
+ 
+ #ifdef TRACY_ENABLE_GRAPHICS
+         struct {"
+frustra/strayphotons,576,68a943bf041beabf0f68067831c475393e3fc833,src/graphics/graphics/vulkan/gui/ProfilerGui.hh,modified,38,33,71,"@@ -25,7 +25,7 @@ namespace sp::vulkan {
+         ProfilerGui(PerfTimer &timer)
+             : ecs::GuiRenderable(""profiler"",
+                   ecs::GuiLayoutAnchor::Floating,
+-                  {400, -1},
++                  {-1, -1},
+                   ImGuiWindowFlags_AlwaysAutoResize),
+               timer(timer), msWindowSize(1000) {}
+         virtual ~ProfilerGui() {}
+@@ -37,7 +37,11 @@ namespace sp::vulkan {
+ 
+         bool PreDefine(ecs::Entity ent) override {
+             if (timer.lastCompleteFrame.empty()) return false;
+-            if (!CVarProfileRender.Get()) return false;
++            if (!CVarProfileRender.Get()) {
++                // Auto-resize on first frame shown
++                windowFlags |= ImGuiWindowFlags_AlwaysAutoResize;
++                return false;
++            }
+             ZoneScoped;
+ 
+             CollectSample();
+@@ -47,58 +51,57 @@ namespace sp::vulkan {
+         void DefineContents(ecs::Entity ent) override {
+             ZoneScoped;
+ 
++            ImGui::PushStyleColor(ImGuiCol_TableHeaderBg, ImGui::GetStyleColorVec4(ImGuiCol_ChildBg));
+             if (ImGui::BeginTable(""ResultTable"", 7)) {
++                ImGui::TableSetupColumn(""Time per frame (ms)"");
++                ImGui::TableSetupColumn(""CPU avg"", ImGuiTableColumnFlags_WidthFixed);
++                ImGui::TableSetupColumn(""CPU p95"", ImGuiTableColumnFlags_WidthFixed);
++                ImGui::TableSetupColumn(""CPU max"", ImGuiTableColumnFlags_WidthFixed);
++                ImGui::TableSetupColumn(""GPU avg"", ImGuiTableColumnFlags_WidthFixed);
++                ImGui::TableSetupColumn(""GPU p95"", ImGuiTableColumnFlags_WidthFixed);
++                ImGui::TableSetupColumn(""GPU max"", ImGuiTableColumnFlags_WidthFixed);
++
+                 ImGui::TableNextRow();
+                 ImGui::TableNextColumn();
+-                ImGui::TextUnformatted(""Time per frame (ms)"");
+-                ImGui::TableNextColumn();
+-                ImGui::TextUnformatted(""     "");
+-                ImGui::TableNextColumn();
+-                ImGui::TextUnformatted(""CPU  "");
+-                ImGui::TableNextColumn();
+-                ImGui::TextUnformatted(""       "");
+-                ImGui::TableNextColumn();
+-                ImGui::TextUnformatted(""     "");
+-                ImGui::TableNextColumn();
+-                ImGui::TextUnformatted(""GPU  "");
+-                ImGui::TableNextColumn();
+-                ImGui::TextUnformatted(""     "");
+-                ImGui::TableNextRow();
+-                ImGui::TableNextColumn();
+-                ImGui::SetNextItemWidth(85);
+-
++                ImGui::TableHeader(""Time per frame (ms)"");
+                 ImGui::Text(""%d ms window%s"",
+                     msWindowSize,
+                     SpacePadding(msWindowSize < 1000    ? 2
+                                  : msWindowSize < 10000 ? 1
+                                                         : 0));
+                 ImGui::SameLine();
+                 if (ImGui::SmallButton(""-"")) {
+-                    if (msWindowSize <= 1000)
+-                        msWindowSize -= 100;
+-                    else
++                    if (msWindowSize <= 1000) {
++                        if (msWindowSize > 100) msWindowSize -= 100;
++                    } else {
+                         msWindowSize -= 1000;
++                    }
+                 }
+                 ImGui::SameLine(0, ImGui::GetStyle().ItemInnerSpacing.x);
+                 if (ImGui::SmallButton(""+"")) {
+-                    if (msWindowSize < 1000)
++                    if (msWindowSize < 1000) {
+                         msWindowSize += 100;
+-                    else
++                    } else {
+                         msWindowSize += 1000;
++                    }
+                 }
+-
+-                for (int i = 0; i < 2; i++) {
+-                    ImGui::TableNextColumn();
+-                    ImGui::TextUnformatted(""avg"");
+-                    ImGui::TableNextColumn();
+-                    ImGui::TextUnformatted(""p95"");
+-                    ImGui::TableNextColumn();
+-                    ImGui::TextUnformatted(""max"");
+-                }
++                ImGui::TableNextColumn();
++                ImGui::TableHeader(""CPU  \navg##CPUavg"");
++                ImGui::TableNextColumn();
++                ImGui::TableHeader(""     \np95##CPUp95"");
++                ImGui::TableNextColumn();
++                ImGui::TableHeader(""     \nmax##CPUmax"");
++                ImGui::TableNextColumn();
++                ImGui::TableHeader(""GPU  \navg##GPUavg"");
++                ImGui::TableNextColumn();
++                ImGui::TableHeader(""     \np95##GPUp95"");
++                ImGui::TableNextColumn();
++                ImGui::TableHeader(""     \nmax##GPUmax"");
+ 
+                 AddResults();
+                 ImGui::EndTable();
+             }
++            ImGui::PopStyleColor();
+ 
+             ImGui::SetNextItemWidth(-1);
+             ImGui::PlotHistogram(""##histogram"",
+@@ -124,6 +127,8 @@ namespace sp::vulkan {
+             }
+             ImGui::SameLine();
+             if (histogramLocked && ImGui::Button(""Unlock histogram"")) histogramLocked = false;
++
++            windowFlags &= ~ImGuiWindowFlags_AlwaysAutoResize;
+         }
+ 
+     private:"

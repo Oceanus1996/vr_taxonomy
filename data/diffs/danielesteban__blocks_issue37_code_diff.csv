@@ -1,0 +1,77 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+danielesteban/blocks,37,e34e5a2,client/renderables/menu/options.js,modified,11,6,17,"@@ -7,16 +7,21 @@ const Options = ({
+   height,
+ }) => {
+   const state = { blockType: 0x01 };
+-  const setBlock = (type) => {
++  const setBlockType = (type) => {
+     const [block, glass, light] = buttons; // eslint-disable-line no-use-before-define
+     delete block.background;
+     delete glass.background;
+     delete light.background;
+     const options = { 0x01: block, 0x02: glass, 0x03: light };
+-    options[type].background = '#393';
++    if (options[type]) {
++      options[type].background = '#393';
++    }
+     state.blockType = type;
+-    menu.setPage(pages.options);
++    if (menu.page.id === pages.options) {
++      menu.setPage(pages.options);
++    }
+   };
++  state.setBlockType = setBlockType;
+   const setLocomotion = (type) => {
+     const [
+       /* block */,
+@@ -43,23 +48,23 @@ const Options = ({
+       y: height * 0.0625,
+       width: width * 0.25,
+       height: height * 0.1875,
+-      onPointer: () => setBlock(0x01),
++      onPointer: () => setBlockType(0x01),
+     },
+     {
+       label: 'Glass',
+       x: width * 0.375,
+       y: height * 0.0625,
+       width: width * 0.25,
+       height: height * 0.1875,
+-      onPointer: () => setBlock(0x02),
++      onPointer: () => setBlockType(0x02),
+     },
+     {
+       label: 'Light',
+       x: width * 0.6875,
+       y: height * 0.0625,
+       width: width * 0.25,
+       height: height * 0.1875,
+-      onPointer: () => setBlock(0x03),
++      onPointer: () => setBlockType(0x03),
+     },
+     {
+       background: 'transparent',"
+danielesteban/blocks,37,e34e5a2,client/scenes/world.js,modified,2,0,2,"@@ -164,6 +164,8 @@ class World extends Scene {
+           } else {
+             point.fromBufferAttribute(hit.object.geometry.getAttribute('color'), face.a);
+             color = { r: point.x, g: point.y, b: point.z };
++            point.fromBufferAttribute(hit.object.geometry.getAttribute('uv'), face.a);
++            menu.options.setBlockType(Math.floor((point.x + 1) / 2));
+           }
+           menu.picker.setColor(color);
+           return;"
+danielesteban/blocks,37,e34e5a2,server/world.js,modified,2,6,8,"@@ -164,12 +164,8 @@ class World extends Room {
+           || y >= Chunk.maxHeight
+           || color < 0
+           || color > 16777215
+-          || (
+-            type !== Chunk.types.air
+-            && type !== Chunk.types.dirt
+-            && type !== Chunk.types.glass
+-            && type !== Chunk.types.light
+-          )
++          || Object.values(Chunk.types).indexOf(type) === -1
++          || type === Chunk.types.sapling
+         ) {
+           return;
+         }"

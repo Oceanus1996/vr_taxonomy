@@ -1,0 +1,424 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+webaverse/app,1600,80be5a20d1887cd6a62ec61cb6cc0a3834f2ef23,avatars/avatars.js,modified,42,1,43,"@@ -48,7 +48,9 @@ const defaultSitAnimation = 'chair';
+ const defaultUseAnimation = 'combo';
+ const defaultDanceAnimation = 'dansu';
+ const defaultThrowAnimation = 'throw';
+-const defaultCrouchAnimation = 'crouch';
++// const defaultCrouchAnimation = 'crouch';
++const defaultActivateAnimation = 'activate';
++const defaultNarutoRunAnimation = 'narutoRun';
+ const useAnimationRate = 750;
+ const crouchMaxTime = 200;
+ 
+@@ -135,6 +137,8 @@ let sitAnimations;
+ let danceAnimations;
+ let throwAnimations;
+ let crouchAnimations;
++let activateAnimations;
++let narutoRunAnimations;
+ const loadPromise = (async () => {
+   const res = await fetch('../animations/animations.cbor');
+   const arrayBuffer = await res.arrayBuffer();
+@@ -242,6 +246,8 @@ const loadPromise = (async () => {
+     animation.isLeft = /left/i.test(animation.name);
+     animation.isRight = /right/i.test(animation.name);
+     animation.isRunning = /fast run|running|left strafe(?: reverse)?\.|right strafe(?: reverse)?\./i.test(animation.name);
++    animation.isActivate = /object/i.test(animation.name);
++    animation.isNarutoRun = /naruto run/i.test(animation.name);
+     animation.isReverse = /reverse/i.test(animation.name);
+     animation.interpolants = {};
+     animation.tracks.forEach(track => {
+@@ -282,6 +288,23 @@ const loadPromise = (async () => {
+   crouchAnimations = {
+     crouch: animations.find(a => a.isCrouch),
+   };
++  activateAnimations = {
++    activate: animations.find(a => a.isActivate),
++  };
++  narutoRunAnimations = {
++    narutoRun: animations.find(a => a.isNarutoRun),
++  };
++  {
++    const down10QuaternionArray = new THREE.Quaternion()
++      .setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI*0.1)
++      .toArray();
++    [
++      'mixamorigSpine1.quaternion',
++      'mixamorigSpine2.quaternion',
++    ].forEach(k => {
++      narutoRunAnimations.narutoRun.interpolants[k].evaluate = t => down10QuaternionArray;
++    });
++  }
+ 
+   /* // bake animations
+   (async () => {
+@@ -1395,6 +1418,8 @@ class Avatar {
+     this.useAnimation = null;
+     this.sitState = false;
+     this.sitAnimation = null;
++    this.activateState = false;
++    this.activateTime = 0;
+     this.danceState = false;
+     this.danceTime = 0;
+     this.danceAnimation = null;
+@@ -1405,6 +1430,8 @@ class Avatar {
+     this.sitTarget = new THREE.Object3D();
+     this.fakeSpeechValue = 0;
+     this.fakeSpeechSmoothed = 0;
++    this.narutoRunState = false;
++    this.narutoRunTime = 0;
+ 	}
+   static bindAvatar(object) {
+     const model = object.scene;
+@@ -2034,6 +2061,20 @@ class Avatar {
+             const src2 = sitAnimation.interpolants[k];
+             const v2 = src2.evaluate(1);
+ 
++            dst.fromArray(v2);
++          } else if (this.activateState) {
++            const activateAnimation = activateAnimations[defaultActivateAnimation];
++            const src2 = activateAnimation.interpolants[k];
++            const t2 = Math.pow(this.activateTime/1000*activateAnimation.duration/2, 0.5);
++            const v2 = src2.evaluate(t2);
++
++            dst.fromArray(v2);
++          } else if (this.narutoRunState && !this.crouchState) {
++            const narutoRunAnimation = narutoRunAnimations[defaultNarutoRunAnimation];
++            const src2 = narutoRunAnimation.interpolants[k];
++            const t2 = (this.narutoRunTime * 4) % narutoRunAnimation.duration;
++            const v2 = src2.evaluate(t2);
++
+             dst.fromArray(v2);
+           } else if (this.danceState) {
+             const danceAnimation = danceAnimations[this.danceAnimation || defaultDanceAnimation];"
+webaverse/app,1600,80be5a20d1887cd6a62ec61cb6cc0a3834f2ef23,game.js,modified,1,9,10,"@@ -968,7 +968,6 @@ const _updateWeapons = (timestamp) => {
+     // moveMesh.visible = false;
+ 
+     const localPlayer = useLocalPlayer();
+-    const oldGrabUseTarget = grabUseMesh.visible ? grabUseMesh.target : null;
+     const _isWear = o => localPlayer.wears.some(wear => wear.instanceId === o.instanceId);
+ 
+     grabUseMesh.visible = false;
+@@ -1027,7 +1026,7 @@ const _updateWeapons = (timestamp) => {
+     }
+     if (!grabUseMesh.visible && !weaponsManager.editMode) {
+       localVector.copy(localPlayer.position)
+-        .add(localVector2.set(0, 0, -0.3).applyQuaternion(localPlayer.quaternion));
++        .add(localVector2.set(0, physicsManager.getAvatarHeight() * (1-physicsManager.getAvatarCrouchFactor()) * 0.5, -0.3).applyQuaternion(localPlayer.quaternion));
+         
+       const radius = 1;
+       const halfHeight = 0.1;
+@@ -1042,13 +1041,6 @@ const _updateWeapons = (timestamp) => {
+           
+           grabUseMesh.visible = true;
+           grabUseMesh.target = object;
+-          if (object !== oldGrabUseTarget) {
+-            const localPlayer = useLocalPlayer();
+-            let activateActionIndex = localPlayer.actions.findIndex(action => action.type === 'activate');
+-            if (activateActionIndex !== -1) {
+-              localPlayer.actions.splice(activateActionIndex, 1);
+-            }
+-          }
+           grabUseMesh.setComponent('value', weaponsManager.getActivateFactor(now));
+         }
+       }"
+webaverse/app,1600,80be5a20d1887cd6a62ec61cb6cc0a3834f2ef23,io-manager.js,modified,28,2,30,"@@ -30,6 +30,7 @@ const localEuler = new THREE.Euler();
+ const localMatrix2 = new THREE.Matrix4();
+ const localMatrix3 = new THREE.Matrix4();
+ const localRaycaster = new THREE.Raycaster();
++const zeroVector = new THREE.Vector3();
+ 
+ const ioManager = new EventTarget();
+ 
+@@ -55,9 +56,12 @@ ioManager.keys = {
+   forward: false,
+   backward: false,
+   shift: false,
++  doubleShift: false,
+   space: false,
+   ctrl: false,
+ };
++let lastShiftDownTime = 0;
++ioManager.getLastShiftDownTime = () => lastShiftDownTime;
+ const resetKeys = () => {
+   for (const k in ioManager.keys) {
+     ioManager.keys[k] = false;
+@@ -94,6 +98,7 @@ const _updateVertical = direction => {
+   }
+ };
+ 
++const lastNonzeroDirectionVector = new THREE.Vector3(0, 0, -1);
+ const _updateIo = timeDiff => {
+   const renderer = getRenderer();
+   const xrCamera = renderer.xr.getSession() ? renderer.xr.getCamera(camera) : camera;
+@@ -193,6 +198,13 @@ const _updateIo = timeDiff => {
+   } else /* if (controlsManager.isPossessed()) */ {
+     const direction = localVector.set(0, 0, 0);
+     _updateHorizontal(direction);
++    if (direction.equals(zeroVector)) {
++      if (ioManager.keys.doubleShift) {
++        direction.copy(lastNonzeroDirectionVector);
++      }
++    } else {
++      lastNonzeroDirectionVector.copy(direction);
++    }
+     
+     const isFlying = game.isFlying();
+     if (isFlying) {
+@@ -211,7 +223,10 @@ const _updateIo = timeDiff => {
+       ioManager.lastCtrlKey = ioManager.keys.ctrl;
+     }
+     if (localVector.length() > 0) {
+-      const sprintMultiplier = (ioManager.keys.shift && !game.isCrouched()) ? 3 : 1;
++      const sprintMultiplier = (ioManager.keys.shift && !game.isCrouched()) ?
++        (ioManager.keys.doubleShift ? 20 : 3)
++      :
++        1;
+       const speed = game.getSpeed() * sprintMultiplier;
+       localVector.normalize().multiplyScalar(speed * timeDiff);
+ 
+@@ -448,6 +463,14 @@ ioManager.keydown = e => {
+     }
+     case 16: { // shift
+       ioManager.keys.shift = true;
++      
++      const now = Date.now();
++      const timeDiff = now - lastShiftDownTime;
++      if (timeDiff < 200) {
++        ioManager.keys.doubleShift = true;
++        game.menuUnaim();
++      }
++      lastShiftDownTime = now;
+       break;
+     }
+     case 32: { // space
+@@ -573,6 +596,7 @@ ioManager.keyup = e => {
+     }
+     case 16: { // shift
+       ioManager.keys.shift = false;
++      ioManager.keys.doubleShift = false;
+       break;
+     }
+     case 46: { // delete
+@@ -728,7 +752,9 @@ ioManager.mousedown = e => {
+       game.menuMouseDown();
+     }
+     if ((changedButtons & 2) && (e.buttons & 2)) { // right
+-      game.menuAim();
++      if (!ioManager.keys.doubleShift) {
++        game.menuAim();
++      }
+     }
+   } else {
+     if ((changedButtons & 1) && (e.buttons & 1)) { // left"
+webaverse/app,1600,80be5a20d1887cd6a62ec61cb6cc0a3834f2ef23,physics-manager.js,modified,42,28,70,"@@ -15,7 +15,7 @@ import metaversefileApi from './metaversefile-api.js';
+ import {getNextPhysicsId, convertMeshToPhysicsMesh} from './util.js';
+ import {world} from './world.js';
+ 
+-const leftQuaternion = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, -1), new THREE.Vector3(-1, 0, 0));
++// const leftQuaternion = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, -1), new THREE.Vector3(-1, 0, 0));
+ 
+ const localVector = new THREE.Vector3();
+ const localVector2 = new THREE.Vector3();
+@@ -28,6 +28,7 @@ const localMatrix = new THREE.Matrix4();
+ const localObject = new THREE.Object3D();
+ 
+ const zeroVector = new THREE.Vector3(0, 0, 0);
++const upVector = new THREE.Vector3(0, 1, 0);
+ 
+ const physicsManager = new EventTarget();
+ 
+@@ -449,40 +450,32 @@ const _getAvatarWorldObject = o => {
+ };
+ physicsManager.getAvatarWorldObject = _getAvatarWorldObject;
+ 
++const getAvatarHeight = () => rigManager.localRig ? rigManager.localRig.height : 0;
++physicsManager.getAvatarHeight = getAvatarHeight;
++
+ const crouchMaxTime = 200;
++const activateMaxTime = 1000;
+ const getAvatarCrouchFactor = () => {
+   const localPlayer = metaversefileApi.useLocalPlayer();
+   const crouchAction = localPlayer.actions.find(action => action.type === 'crouch');
+   if (crouchAction) {
+-    return Math.min(Math.max(crouchAction.time, 0), crouchMaxTime) / crouchMaxTime;
++    return 1 - 0.4 * Math.min(Math.max(crouchAction.time, 0), crouchMaxTime) / crouchMaxTime;
+   } else {
+-    return 1;
+-  }
+-};
+-const getAvatarHeight = () => {
+-  if (rigManager.localRig) {
+-    const f = getAvatarCrouchFactor();
+-    let startValue, endValue;
+-    const localPlayer = metaversefileApi.useLocalPlayer();
+-    const isCrouched = localPlayer.actions.some(action => action.type === 'crouch');
+-    if (isCrouched) {
+-      startValue = rigManager.localRig.height;
+-      endValue = rigManager.localRig.height * 0.6;
++    const activateAction = localPlayer.actions.find(action => action.type === 'activate');
++    if (activateAction) {
++      return 1 - 0.8 * Math.pow(Math.min(Math.max(activateAction.time*2, 0), activateMaxTime) / activateMaxTime, 1);
+     } else {
+-      startValue = rigManager.localRig.height * 0.6;
+-      endValue = rigManager.localRig.height;
++      return 1;
+     }
+-    return startValue*(1-f) + endValue*f;
+-  } else {
+-    return 0;
+   }
+ };
+-physicsManager.getAvatarHeight = getAvatarHeight;
++physicsManager.getAvatarCrouchFactor = getAvatarCrouchFactor;
+ 
+ const _getAvatarCapsule = v => {
+-  v.set(0, -getAvatarHeight() * 0.5, 0); // XXX use the proper crouch height
+-  v.radius = 0.3;
+-  v.halfHeight = Math.max(rigManager.localRig ? (rigManager.localRig.height/2 - v.radius) : 0, 0);
++  const avatarHeight = getAvatarHeight();
++  v.set(0, -avatarHeight * 0.5, 0); // XXX use the proper crouch height
++  v.radius = 0.3/1.6 * avatarHeight;
++  v.halfHeight = Math.max(avatarHeight * 0.5 - v.radius, 0);
+   return v;
+ };
+ physicsManager.getAvatarCapsule = _getAvatarCapsule;
+@@ -540,8 +533,23 @@ const _applyAvatarPhysics = (camera, avatarOffset, cameraBasedOffset, velocityAv
+         }
+       } */
+       const collision = _collideCapsule(localVector, localQuaternion2.set(0, 0, 0, 1));
+-      if (velocityAvatarDirection && physicsManager.velocity.lengthSq() > 0) {
+-        localQuaternion.setFromUnitVectors(localVector4.set(0, 0, -1), localVector5.set(physicsManager.velocity.x, 0, physicsManager.velocity.z).normalize());
++      
++      // avatar facing direction
++      if (velocityAvatarDirection) {
++        const horizontalVelocity = localVector5.set(physicsManager.velocity.x, 0, physicsManager.velocity.z);
++        if (horizontalVelocity.lengthSq() > 0.001) {
++          localQuaternion.setFromRotationMatrix(
++            localMatrix.lookAt(
++              zeroVector,
++              horizontalVelocity,
++              upVector
++            )
++          );
++        } else {
++          // if (rigManager.localRigMatrixEnabled) {
++          rigManager.localRigMatrix.decompose(localVector4, localQuaternion, localVector5);
++          // }
++        }
+       }
+ 
+       const jumpActionIndex = localPlayer.actions.findIndex(action => action.type === 'jump');
+@@ -563,9 +571,12 @@ const _applyAvatarPhysics = (camera, avatarOffset, cameraBasedOffset, velocityAv
+         }
+       };
+       if (collision) {
+-        localVector4.fromArray(collision.direction);
+-        camera.position.add(localVector4);
++        localVector4
++          .fromArray(collision.direction)
++          .add(localVector5.set(0, -getAvatarHeight() * (1-getAvatarCrouchFactor()) * 0.5, 0));
++        camera.position.add(localVector4)
+         localVector.add(localVector4);
++        
+         if (collision.grounded) {
+           physicsManager.velocity.y = 0;
+           _ensureNoJumpAction();
+@@ -609,7 +620,10 @@ const _applyAvatarPhysics = (camera, avatarOffset, cameraBasedOffset, velocityAv
+       
+       const offset = physicsManager.getAvatarCameraOffset();
+       camera.position.copy(localVector)
+-        .sub(localVector3.copy(offset).applyQuaternion(camera.quaternion));
++        .sub(
++          localVector3.copy(offset)
++            .applyQuaternion(camera.quaternion)
++        );
+     }
+     localMatrix.compose(localVector, localQuaternion, localVector2);
+ "
+webaverse/app,1600,80be5a20d1887cd6a62ec61cb6cc0a3834f2ef23,rig.js,modified,29,19,48,"@@ -14,6 +14,7 @@ import {getRenderer, scene, dolly} from './renderer.js';
+ import Avatar from './avatars/avatars.js';
+ // import {RigAux} from './rig-aux.js';
+ import {chatManager} from './chat-manager.js';
++import ioManager from './io-manager.js';
+ import metaversefile from 'metaversefile';
+ 
+ const localVector = new THREE.Vector3();
+@@ -571,8 +572,21 @@ class RigManager {
+       const jumpTime = jumpAction? jumpAction.time : -1;
+       const flyAction = localPlayer.actions.find(action => action.type === 'fly');
+       const flyTime = flyAction ? flyAction.time : -1;
++      const activateAction = localPlayer.actions.find(action => action.type === 'activate');
++      const activateTime = activateAction ? activateAction.time : -1;
+       const useAction = localPlayer.actions.find(action => action.type === 'use');
+       const useTime = useAction ? useAction.time : -1;
++      const narutoRunState = ioManager.keys.doubleShift;
++      const narutoRunTime = narutoRunState ? ((Date.now() - ioManager.getLastShiftDownTime())/1000) : 0;
++      const sitAction = localPlayer.actions.find(action => action.type === 'sit');
++      const sitAnimation = sitAction ? sitAction.animation : '';
++      const danceAction = localPlayer.actions.find(action => action.type === 'dansu');
++      const danceTime = danceAction ? danceAction.time : -1;
++      const danceAnimation = danceAction ? danceAction.animation : '';
++      const throwAction = localPlayer.actions.find(action => action.type === 'throw');
++      const throwTime = throwAction ? throwAction.time : -1;
++      const crouchAction = localPlayer.actions.find(action => action.type === 'crouch');
++      const crouchTime = crouchAction ? crouchAction.time : 1000;
+       
+       for (let i = 0; i < 2; i++) {
+         this.localRig.setHandEnabled(i, !!session /* || (useTime === -1 && !!appManager.equippedObjects[i])*/);
+@@ -585,7 +599,11 @@ class RigManager {
+       this.localRig.jumpTime = jumpTime;
+       this.localRig.flyState = !!flyAction;
+       this.localRig.flyTime = flyTime;
++      this.localRig.activateState = !!activateAction && !crouchAction;
++      this.localRig.activateTime = activateTime;
+       this.localRig.useTime = useTime;
++      this.localRig.narutoRunState = narutoRunState;
++      this.localRig.narutoRunTime = narutoRunTime;
+       const useAnimation = (useAction?.animation) || '';
+       this.localRig.useAnimation = useAnimation;
+       {
+@@ -631,6 +649,17 @@ class RigManager {
+         this.localRig.fakeSpeechValue = localPlayerFakeSpeech ? 1 : 0;
+       }
+ 
++      rigManager.localRig.sitState = !!sitAction;
++      rigManager.localRig.sitAnimation = sitAnimation;
++      rigManager.localRig.danceState = !!danceAction;
++      rigManager.localRig.danceTime = danceTime;
++      rigManager.localRig.danceAnimation = danceAnimation;
++      rigManager.localRig.throwState = !!throwAction;
++      rigManager.localRig.throwTime = throwTime;
++      rigManager.localRig.crouchState = !!crouchAction;
++      rigManager.localRig.crouchTime = crouchTime;
++      // physicsManager.setSitState(sitState);
++
+       this.localRig.update(now, timeDiff);
+       // this.localRig.aux.update(now, timeDiff);
+ 
+@@ -659,25 +688,6 @@ class RigManager {
+         sitAnimation = null;
+         physicsManager.setDamping();
+       } */
+-      const sitAction = localPlayer.actions.find(action => action.type === 'sit');
+-      const sitAnimation = sitAction ? sitAction.animation : '';
+-      const danceAction = localPlayer.actions.find(action => action.type === 'dansu');
+-      const danceTime = danceAction ? danceAction.time : -1;
+-      const danceAnimation = danceAction ? danceAction.animation : '';
+-      const throwAction = localPlayer.actions.find(action => action.type === 'throw');
+-      const throwTime = throwAction ? throwAction.time : -1;
+-      const crouchAction = localPlayer.actions.find(action => action.type === 'crouch');
+-      const crouchTime = crouchAction ? crouchAction.time : 1000;
+-      rigManager.localRig.sitState = !!sitAction;
+-      rigManager.localRig.sitAnimation = sitAnimation;
+-      rigManager.localRig.danceState = !!danceAction;
+-      rigManager.localRig.danceTime = danceTime;
+-      rigManager.localRig.danceAnimation = danceAnimation;
+-      rigManager.localRig.throwState = !!throwAction;
+-      rigManager.localRig.throwTime = throwTime;
+-      rigManager.localRig.crouchState = !!crouchAction;
+-      rigManager.localRig.crouchTime = crouchTime;
+-      // physicsManager.setSitState(sitState);
+ 
+       this.peerRigs.forEach(rig => {
+         rig.update(now, timeDiff);"

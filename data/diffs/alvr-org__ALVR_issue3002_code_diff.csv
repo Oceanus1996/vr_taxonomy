@@ -1,0 +1,531 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+alvr-org/ALVR,3002,a6af8c2d3aa41776da1d28067d113204420d1f37,alvr/dashboard/src/dashboard/components/about.rs,modified,2,2,4,"@@ -1,6 +1,6 @@
+ use alvr_common::ALVR_VERSION;
+ use alvr_gui_common::theme;
+-use eframe::egui::{self, Frame, RichText, ScrollArea, Ui};
++use eframe::egui::{Frame, RichText, ScrollArea, Ui};
+ 
+ pub fn about_tab_ui(ui: &mut Ui) {
+     ui.label(RichText::new(format!(""ALVR streamer v{}"", *ALVR_VERSION)).size(30.0));
+@@ -19,7 +19,7 @@ pub fn about_tab_ui(ui: &mut Ui) {
+     ui.label(""License:"");
+     Frame::group(ui.style())
+         .fill(theme::DARKER_BG)
+-        .inner_margin(egui::vec2(15.0, 12.0))
++        .inner_margin(theme::FRAME_PADDING)
+         .show(ui, |ui| {
+             ScrollArea::new([false, true])
+                 .id_salt(""license_scroll"")"
+alvr-org/ALVR,3002,a6af8c2d3aa41776da1d28067d113204420d1f37,alvr/dashboard/src/dashboard/components/devices.rs,modified,63,52,115,"@@ -58,16 +58,17 @@ impl DevicesTab {
+ 
+         if !connected_to_server {
+             Frame::group(ui.style())
++                .inner_margin(theme::FRAME_PADDING)
+                 .fill(log_colors::WARNING_LIGHT)
+                 .show(ui, |ui| {
+                     Grid::new(0).num_columns(2).show(ui, |ui| {
+                         ui.horizontal(|ui| {
+-                            ui.add_space(10.0);
++                            ui.add_space(theme::FRAME_TEXT_SPACING);
+                             ui.heading(
+-                                RichText::new(format!(
+-                                    ""ALVR requires running SteamVR! {}"",
+-                                    ""Devices will not be discovered or connected""
+-                                ))
++                                RichText::new(
++                                    ""ALVR requires running SteamVR! \
++                                    Devices will not be discovered or connected."",
++                                )
+                                 .color(Color32::BLACK)
+                                 .size(16.0),
+                             );
+@@ -96,15 +97,15 @@ impl DevicesTab {
+                 requests.push(request);
+             }
+ 
+-            ui.add_space(10.0);
++            ui.add_space(theme::FRAME_PADDING);
+ 
+             if let Some(clients) = &self.new_devices
+                 && let Some(request) = new_clients_section(ui, clients)
+             {
+                 requests.push(request);
+             }
+ 
+-            ui.add_space(10.0);
++            ui.add_space(theme::FRAME_PADDING);
+ 
+             if let Some(clients) = &mut self.trusted_devices
+                 && let Some(request) = trusted_clients_section(
+@@ -194,52 +195,61 @@ fn wired_client_section(
+ 
+     Frame::group(ui.style())
+         .fill(theme::SECTION_BG)
+-        .inner_margin(egui::vec2(15.0, 12.0))
++        .inner_margin(egui::vec2(
++            theme::FRAME_PADDING + theme::FRAME_TEXT_SPACING,
++            theme::FRAME_PADDING,
++        ))
+         .show(ui, |ui| {
+-            Grid::new(""wired-client"")
+-                .num_columns(2)
+-                .spacing(egui::vec2(8.0, 8.0))
+-                .show(ui, |ui| {
+-                    ui.heading(""Wired Connection"");
+-                    ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+-                        let mut wired = maybe_client.is_some();
+-                        if alvr_gui_common::switch(ui, &mut wired).changed() {
+-                            if wired {
+-                                request = Some(ServerRequest::UpdateClientList {
+-                                    hostname: WIRED_CLIENT_HOSTNAME.to_owned(),
+-                                    action: ClientConnectionsAction::AddIfMissing {
+-                                        trusted: true,
+-                                        manual_ips: Vec::new(),
+-                                    },
+-                                });
+-                            } else {
+-                                request = Some(ServerRequest::UpdateClientList {
+-                                    hostname: WIRED_CLIENT_HOSTNAME.to_owned(),
+-                                    action: ClientConnectionsAction::RemoveEntry,
+-                                });
+-                            }
+-                        }
+-                    });
+-                    ui.end_row();
+-
+-                    if let Some(progress) = adb_download_progress.filter(|p| *p < 1.0) {
+-                        ui.horizontal(|ui| {
+-                            ui.label(""ADB download progress"");
+-                        });
+-                        ui.horizontal(|ui| {
+-                            ui.add(ProgressBar::new(progress).animate(true).show_percentage());
+-                        });
+-                        ui.end_row();
+-                    } else if let Some((_, data)) = maybe_client {
+-                        ui.horizontal(|ui| {
+-                            ui.label(&data.display_name);
+-                        });
++            ui.horizontal(|ui| {
++                Grid::new(""wired-client"")
++                    .num_columns(2)
++                    .spacing(egui::vec2(8.0, 8.0))
++                    .show(ui, |ui| {
++                        ui.heading(""Wired Connection"");
+                         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+-                            connection_label(ui, &data.connection_state);
++                            let mut wired = maybe_client.is_some();
++
++                            if alvr_gui_common::switch(ui, &mut wired).changed() {
++                                if wired {
++                                    request = Some(ServerRequest::UpdateClientList {
++                                        hostname: WIRED_CLIENT_HOSTNAME.to_owned(),
++                                        action: ClientConnectionsAction::AddIfMissing {
++                                            trusted: true,
++                                            manual_ips: Vec::new(),
++                                        },
++                                    });
++                                } else {
++                                    request = Some(ServerRequest::UpdateClientList {
++                                        hostname: WIRED_CLIENT_HOSTNAME.to_owned(),
++                                        action: ClientConnectionsAction::RemoveEntry,
++                                    });
++                                }
++                            }
++                            ui.horizontal(|ui| {
++                                ui.add_space(theme::FRAME_TEXT_SPACING);
++                            });
+                         });
+                         ui.end_row();
+-                    }
+-                });
++
++                        if let Some(progress) = adb_download_progress.filter(|p| *p < 1.0) {
++                            ui.horizontal(|ui| {
++                                ui.label(""ADB download progress"");
++                            });
++                            ui.horizontal(|ui| {
++                                ui.add(ProgressBar::new(progress).animate(true).show_percentage());
++                            });
++                            ui.end_row();
++                        } else if let Some((_, data)) = maybe_client {
++                            ui.horizontal(|ui| {
++                                ui.label(&data.display_name);
++                            });
++                            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
++                                connection_label(ui, &data.connection_state);
++                            });
++                            ui.end_row();
++                        }
++                    });
++            });
+         });
+ 
+     request
+@@ -252,12 +262,12 @@ fn new_clients_section(
+     let mut request = None;
+ 
+     Frame::group(ui.style())
++        .inner_margin(theme::FRAME_PADDING)
+         .fill(theme::SECTION_BG)
+         .show(ui, |ui| {
+             ui.vertical_centered_justified(|ui| {
+-                ui.add_space(5.0);
+                 ui.horizontal(|ui| {
+-                    ui.add_space(10.0);
++                    ui.add_space(theme::FRAME_TEXT_SPACING);
+                     ui.heading(""New Wireless Devices"");
+ 
+                     // Extend to the right
+@@ -307,10 +317,11 @@ fn trusted_clients_section(
+ 
+     Frame::group(ui.style())
+         .fill(theme::SECTION_BG)
++        .inner_margin(theme::FRAME_PADDING)
+         .show(ui, |ui| {
+             Grid::new(0).num_columns(2).show(ui, |ui| {
+                 ui.horizontal(|ui| {
+-                    ui.add_space(10.0);
++                    ui.add_space(theme::FRAME_TEXT_SPACING);
+                     ui.heading(""Trusted Wireless Devices"");
+                 });
+ "
+alvr-org/ALVR,3002,a6af8c2d3aa41776da1d28067d113204420d1f37,alvr/dashboard/src/dashboard/components/installation.rs,modified,1,1,2,"@@ -64,9 +64,9 @@ impl InstallationTab {
+ 
+             Frame::group(ui.style())
+                 .fill(theme::SECTION_BG)
++                .inner_margin(theme::FRAME_PADDING)
+                 .show(ui, |ui| {
+                     ui.vertical_centered(|ui| {
+-                        ui.add_space(5.0);
+                         ui.label(RichText::new(""Registered drivers"").size(18.0));
+                     });
+ "
+alvr-org/ALVR,3002,a6af8c2d3aa41776da1d28067d113204420d1f37,alvr/dashboard/src/dashboard/components/settings.rs,modified,2,2,4,"@@ -5,7 +5,7 @@ use super::{
+ use crate::dashboard::ServerRequest;
+ use alvr_gui_common::{DisplayString, theme};
+ use alvr_session::{SessionSettings, Settings};
+-use eframe::egui::{self, Align, Frame, Grid, Layout, RichText, ScrollArea, Ui};
++use eframe::egui::{Align, Frame, Grid, Layout, RichText, ScrollArea, Ui};
+ #[cfg(target_arch = ""wasm32"")]
+ use instant::Instant;
+ use serde_json as json;
+@@ -125,7 +125,7 @@ impl SettingsTab {
+         ui.with_layout(Layout::left_to_right(Align::Min), |ui| {
+             Frame::group(ui.style())
+                 .fill(theme::DARKER_BG)
+-                .inner_margin(egui::vec2(15.0, 12.0))
++                .inner_margin(theme::FRAME_PADDING)
+                 .show(ui, |ui| {
+                     ui.horizontal_wrapped(|ui| {
+                         ui.selectable_value("
+alvr-org/ALVR,3002,a6af8c2d3aa41776da1d28067d113204420d1f37,alvr/dashboard/src/dashboard/components/settings_controls/notice.rs,modified,2,1,3,"@@ -1,4 +1,4 @@
+-use alvr_gui_common::theme::log_colors;
++use alvr_gui_common::theme::{self, log_colors};
+ use eframe::{
+     egui::{Frame, Label, RichText, Ui},
+     epaint::Color32,
+@@ -7,6 +7,7 @@ use eframe::{
+ pub fn notice(ui: &mut Ui, text: &str) {
+     Frame::group(ui.style())
+         .fill(log_colors::WARNING_LIGHT)
++        .corner_radius(theme::CORNER_RADIUS)
+         .show(ui, |ui| {
+             ui.add(Label::new(RichText::new(text).size(11.0).color(Color32::BLACK)).wrap());
+         });"
+alvr-org/ALVR,3002,a6af8c2d3aa41776da1d28067d113204420d1f37,alvr/dashboard/src/dashboard/components/settings_controls/number.rs,modified,26,11,37,"@@ -1,5 +1,6 @@
+ use super::{NestingInfo, reset};
+ use crate::dashboard::components::f64_eq;
++use alvr_gui_common::theme::SCROLLBAR_DOT_DIAMETER;
+ use alvr_packets::PathValuePair;
+ use alvr_session::settings_schema::{NumberType, NumericGuiType};
+ use eframe::{
+@@ -84,36 +85,50 @@ impl Control {
+                     step,
+                     logarithmic,
+                 } => {
+-                    let mut slider =
+-                        Slider::new(editing_value_mut, range.clone()).logarithmic(*logarithmic);
+-
++                    let mut slider = Slider::new(editing_value_mut, range.clone())
++                        .logarithmic(*logarithmic)
++                        .show_value(false);
+                     if let Some(step) = step {
+                         slider = slider.step_by(*step);
+                     }
+                     if !matches!(self.ty, NumberType::Float) {
+                         slider = slider.integer();
+                     }
++                    let slider_response = {
++                        ui.style_mut().spacing.interact_size.y = SCROLLBAR_DOT_DIAMETER;
++                        ui.add(slider)
++                    };
++
++                    let mut drag_value = DragValue::new(editing_value_mut);
++                    // Note: the following ifs cannot be merged with the ones above to avoid double
++                    // mutable borrow of editing_value_mut.
++                    if let Some(step) = step {
++                        drag_value = drag_value.speed(*step);
++                    }
++                    if !matches!(self.ty, NumberType::Float) {
++                        drag_value = drag_value.fixed_decimals(0);
++                    }
+                     if let Some(suffix) = &self.suffix {
+-                        slider = slider.suffix(suffix);
++                        drag_value = drag_value.suffix(suffix);
+                     }
++                    let textbox_response = ui.add(drag_value);
+ 
+-                    // todo: investigate why the slider does not get centered vertically
+-                    ui.with_layout(Layout::left_to_right(Align::Center), |ui| ui.add(slider))
+-                        .inner
++                    slider_response.union(textbox_response)
+                 }
+                 NumericGuiType::TextBox => {
+-                    let mut textbox = DragValue::new(editing_value_mut);
++                    let mut drag_value = DragValue::new(editing_value_mut);
+ 
+                     if !matches!(self.ty, NumberType::Float) {
+-                        textbox = textbox.fixed_decimals(0);
++                        drag_value = drag_value.fixed_decimals(0);
+                     }
+                     if let Some(suffix) = &self.suffix {
+-                        textbox = textbox.suffix(suffix);
++                        drag_value = drag_value.suffix(suffix);
+                     }
+ 
+-                    ui.add(textbox)
++                    ui.add(drag_value)
+                 }
+             };
++
+             if response.drag_started() || response.gained_focus() {
+                 self.editing_value_f64 = Some(session_value)
+             } else if response.drag_stopped() || response.lost_focus() {"
+alvr-org/ALVR,3002,a6af8c2d3aa41776da1d28067d113204420d1f37,alvr/dashboard/src/dashboard/components/settings_controls/presets/builtin_schema.rs,modified,5,5,10,"@@ -31,7 +31,7 @@ fn bool_modifier(target_path: &str, value: bool) -> PresetModifier {
+ 
+ pub fn resolution_schema() -> PresetSchemaNode {
+     PresetSchemaNode::HigherOrderChoice(HigherOrderChoiceSchema {
+-        name: ""resolution"".into(),
++        name: ""Resolution"".into(),
+         strings: [(
+             ""help"".into(),
+             ""Choosing too high resolution (commonly 'High (width: 5184)') may result in high latency or black screen."".into(),
+@@ -88,7 +88,7 @@ pub fn resolution_schema() -> PresetSchemaNode {
+ 
+ pub fn framerate_schema() -> PresetSchemaNode {
+     PresetSchemaNode::HigherOrderChoice(HigherOrderChoiceSchema {
+-        name: ""preferred_framerate"".into(),
++        name: ""Preferred framerate"".into(),
+         strings: HashMap::new(),
+         flags: [""steamvr-restart"".into()].into_iter().collect(),
+         options: [60, 72, 80, 90, 120]
+@@ -111,7 +111,7 @@ pub fn framerate_schema() -> PresetSchemaNode {
+ 
+ pub fn codec_preset_schema() -> PresetSchemaNode {
+     PresetSchemaNode::HigherOrderChoice(HigherOrderChoiceSchema {
+-        name: ""codec_preset"".into(),
++        name: ""Codec preset"".into(),
+         strings: [(
+             ""help"".into(),
+             ""AV1 encoding is only supported on RDNA3, Ada Lovelace, Intel ARC or newer GPUs (AMD RX 7xxx+ , NVIDIA RTX 40xx+, Intel ARC)
+@@ -141,7 +141,7 @@ and on headsets that have XR2 Gen 2 onboard (Quest 3, Pico 4 Ultra)""
+ 
+ pub fn encoder_preset_schema() -> PresetSchemaNode {
+     PresetSchemaNode::HigherOrderChoice(HigherOrderChoiceSchema {
+-        name: ""encoder_preset"".into(),
++        name: ""Encoder preset"".into(),
+         strings: [(
+             ""help"".into(),
+             ""Selecting a quality too high may result in stuttering or still image!"".into(),
+@@ -180,7 +180,7 @@ pub fn encoder_preset_schema() -> PresetSchemaNode {
+ pub fn foveation_preset_schema() -> PresetSchemaNode {
+     const PREFIX: &str = ""session_settings.video.foveated_encoding"";
+     PresetSchemaNode::HigherOrderChoice(HigherOrderChoiceSchema {
+-        name: ""foveation_preset"".into(),
++        name: ""Foveation preset"".into(),
+         strings: [(
+             ""help"".into(),
+             ""Foveation affects pixelation on the edges of \"
+alvr-org/ALVR,3002,a6af8c2d3aa41776da1d28067d113204420d1f37,alvr/dashboard/src/dashboard/components/settings_controls/presets/higher_order_choice.rs,modified,6,4,10,"@@ -7,6 +7,7 @@ use settings_schema::{SchemaEntry, SchemaNode};
+ use std::collections::{HashMap, HashSet};
+ 
+ pub struct Control {
++    name: String,
+     modifiers: HashMap<String, Vec<PathValuePair>>,
+     control: SettingControl,
+     preset_json: json::Value,
+@@ -35,11 +36,11 @@ impl Control {
+             .collect();
+ 
+         let mut strings = schema.strings;
+-        strings.insert(""display_name"".into(), schema.name);
++        strings.insert(""display_name"".into(), schema.name.clone());
+ 
+         let control_schema = SchemaNode::Section {
+             entries: vec![SchemaEntry {
+-                name: """".into(),
++                name: schema.name.clone(),
+                 strings,
+                 flags: schema.flags,
+                 content: SchemaNode::Choice {
+@@ -76,9 +77,10 @@ impl Control {
+             control_schema,
+         );
+ 
+-        let preset_json = json::json!({ """": { ""variant"": """" } });
++        let preset_json = json::json!({ {&schema.name}: { ""variant"": """" } });
+ 
+         Self {
++            name: schema.name,
+             modifiers,
+             control,
+             preset_json,
+@@ -124,7 +126,7 @@ impl Control {
+         }
+ 
+         // Note: if no modifier matched, the control will unselect all options
+-        self.preset_json[""""][""variant""] = json::Value::String(selected_option);
++        self.preset_json[&self.name][""variant""] = json::Value::String(selected_option);
+     }
+ 
+     pub fn ui(&mut self, ui: &mut Ui) -> Vec<PathValuePair> {"
+alvr-org/ALVR,3002,a6af8c2d3aa41776da1d28067d113204420d1f37,alvr/dashboard/src/dashboard/components/settings_controls/reset.rs,modified,7,3,10,"@@ -1,14 +1,18 @@
+ use eframe::{
+-    egui::{Button, Layout, Response, Ui},
++    egui::{self, Button, Layout, Response, Ui},
+     emath::Align,
+ };
+ 
+ pub fn reset_button(ui: &mut Ui, enabled: bool, default_str: &str) -> Response {
+     ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+         ui.add_space(5.0);
+ 
+-        ui.add_enabled(enabled, Button::new(""⟲""))
+-            .on_hover_text(format!(""Reset to {default_str}""))
++        let height = ui.spacing().interact_size.y;
++        ui.add_enabled(
++            enabled,
++            Button::new(""⟲"").min_size(egui::vec2(height, height)),
++        )
++        .on_hover_text(format!(""Reset to {default_str}""))
+     })
+     .inner
+ }"
+alvr-org/ALVR,3002,a6af8c2d3aa41776da1d28067d113204420d1f37,alvr/gui_common/src/basic_components/switch.rs,modified,2,1,3,"@@ -1,7 +1,8 @@
++use crate::theme;
+ use egui::{self, Response, Sense, StrokeKind, Ui, WidgetInfo, WidgetType};
+ 
+ pub fn switch(ui: &mut Ui, on: &mut bool) -> Response {
+-    let desired_size = ui.spacing().interact_size.y * egui::vec2(2.0, 1.0);
++    let desired_size = theme::SWITCH_DOT_DIAMETER * egui::vec2(2.0, 1.0);
+     let (rect, mut response) = ui.allocate_exact_size(desired_size, Sense::click());
+     if response.clicked() {
+         *on = !*on;"
+alvr-org/ALVR,3002,a6af8c2d3aa41776da1d28067d113204420d1f37,alvr/gui_common/src/theme.rs,modified,15,3,18,"@@ -7,6 +7,11 @@ pub const SECTION_BG: Color32 = Color32::from_rgb(36, 36, 36);
+ pub const DARKER_BG: Color32 = Color32::from_rgb(26, 26, 26);
+ pub const SEPARATOR_BG: Color32 = Color32::from_rgb(69, 69, 69);
+ pub const FG: Color32 = Color32::from_rgb(250, 250, 250);
++pub const SCROLLBAR_DOT_DIAMETER: f32 = 20.0;
++pub const SWITCH_DOT_DIAMETER: f32 = SCROLLBAR_DOT_DIAMETER;
++pub const FRAME_PADDING: f32 = 10.0;
++pub const CORNER_RADIUS: u8 = 10;
++pub const FRAME_TEXT_SPACING: f32 = 5.0;
+ 
+ pub const OK_GREEN: Color32 = Color32::GREEN;
+ pub const KO_RED: Color32 = Color32::RED;
+@@ -50,16 +55,21 @@ pub fn set_theme(ctx: &Context) {
+ 
+     let mut style = (*ctx.style()).clone();
+     style.spacing.slider_width = 200_f32; // slider width can only be set globally
++    style.spacing.interact_size.x = 35.0;
++    style.spacing.interact_size.y = 35.0;
++
+     style.spacing.item_spacing = egui::vec2(15.0, 15.0);
+     style.spacing.button_padding = egui::vec2(10.0, 10.0);
++    style.spacing.window_margin = egui::Margin::from(FRAME_PADDING);
++
+     style.text_styles.get_mut(&TextStyle::Body).unwrap().size = 14.0;
+     style.interaction.tooltip_delay = 0.0;
+ 
+     ctx.set_style(style);
+ 
+     let mut visuals = Visuals::dark();
+ 
+-    let corner_radius = CornerRadius::same(10);
++    let corner_radius = CornerRadius::same(CORNER_RADIUS);
+ 
+     visuals.widgets.active.bg_fill = ACCENT;
+     visuals.widgets.active.fg_stroke = Stroke::new(1.0, FG);
+@@ -76,11 +86,13 @@ pub fn set_theme(ctx: &Context) {
+     visuals.selection.bg_fill = ACCENT;
+     visuals.selection.stroke = Stroke::new(1.0, FG);
+ 
+-    visuals.widgets.noninteractive.bg_fill = BG;
+     visuals.faint_bg_color = DARKER_BG;
++
++    visuals.widgets.noninteractive.bg_fill = BG;
+     visuals.widgets.noninteractive.fg_stroke = Stroke::new(1.0, FG);
+     visuals.widgets.noninteractive.bg_stroke = Stroke::new(0.5, SEPARATOR_BG);
+-    visuals.widgets.noninteractive.corner_radius = corner_radius;
++    visuals.widgets.noninteractive.corner_radius =
++        CornerRadius::same(CORNER_RADIUS + FRAME_PADDING as u8); // Frame corner radius
+ 
+     ctx.set_visuals(visuals);
+ }"
+alvr-org/ALVR,3002,a6af8c2d3aa41776da1d28067d113204420d1f37,alvr/session/src/settings.rs,modified,8,0,8,"@@ -766,6 +766,7 @@ If you want to reduce the amount of pixelation on the edges, increase the center
+     #[schema(flag = ""steamvr-restart"")]
+     pub adapter_index: u32,
+ 
++    #[schema(strings(display_name = ""Client-side foveation""))]
+     pub clientside_foveation: Switch<ClientsideFoveationConfig>,
+ 
+     #[schema(strings(
+@@ -1131,6 +1132,7 @@ pub struct HapticsConfig {
+ pub struct HandSkeletonConfig {
+     #[schema(flag = ""steamvr-restart"")]
+     #[schema(strings(
++        display_name = ""SteamVR input 2.0"",
+         help = r""Enabling this will use separate tracker objects with the full skeletal tracking level when hand tracking is detected. This is required for VRChat hand tracking.""
+     ))]
+     pub steamvr_input_2_0: bool,
+@@ -1177,6 +1179,7 @@ Currently this cannot be reliably estimated automatically. The correct value sho
+     pub emulation_mode: ControllersEmulationMode,
+ 
+     #[schema(flag = ""steamvr-restart"")]
++    #[schema(strings(display_name = ""Extra OpenVR properties""))]
+     pub extra_openvr_props: Vec<OpenvrProperty>,
+ 
+     #[schema(flag = ""real-time"")]
+@@ -1272,6 +1275,7 @@ Tilted: the world gets tilted when long pressing the oculus button. This is usef
+     pub emulation_mode: HeadsetEmulationMode,
+ 
+     #[schema(flag = ""steamvr-restart"")]
++    #[schema(strings(display_name = ""Extra OpenVR properties""))]
+     pub extra_openvr_props: Vec<OpenvrProperty>,
+ 
+     #[schema(flag = ""steamvr-restart"")]
+@@ -1386,6 +1390,7 @@ TCP: Slower than UDP, but more stable. Pick this if you experience video or audi
+     pub enable_on_disconnect_script: bool,
+ 
+     #[schema(strings(
++        display_name = ""Allow untrusted HTTP"",
+         help = ""Allow cross-origin browser requests to control ALVR settings remotely.""
+     ))]
+     pub allow_untrusted_http: bool,
+@@ -1400,6 +1405,8 @@ TCP: Slower than UDP, but more stable. Pick this if you experience video or audi
+ 
+     pub stream_port: u16,
+     pub web_server_port: u16,
++
++    #[schema(strings(display_name = ""Local OSC port""))]
+     pub osc_local_port: u16,
+ 
+     #[schema(strings(display_name = ""Streamer send buffer size""))]
+@@ -1428,6 +1435,7 @@ This could happen on TCP. A IDR frame is requested in this case.""#
+     #[schema(gui(slider(min = 5, max = 1000, step = 5)), suffix = ""ms"")]
+     pub minimum_idr_interval_ms: u64,
+ 
++    #[schema(strings(display_name = ""DSCP (packet prio hints)""))]
+     pub dscp: Option<DscpTos>,
+ }
+ "

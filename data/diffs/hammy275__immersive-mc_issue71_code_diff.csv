@@ -1,0 +1,202 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+hammy275/immersive-mc,71,122dc50fb5454cae6f07d0a3b5fcdd61803fc54f,src/main/java/net/blf02/immersivemc/client/ClientUtil.java,modified,23,0,23,"@@ -1,6 +1,11 @@
+ package net.blf02.immersivemc.client;
+ 
++import net.blf02.immersivemc.common.vr.VRPlugin;
++import net.blf02.immersivemc.common.vr.VRPluginVerify;
+ import net.minecraft.client.Minecraft;
++import net.minecraft.entity.player.PlayerEntity;
++import net.minecraft.util.Tuple;
++import net.minecraft.util.math.vector.Vector3d;
+ import net.minecraftforge.api.distmarker.Dist;
+ import net.minecraftforge.api.distmarker.OnlyIn;
+ 
+@@ -9,6 +14,24 @@ public class ClientUtil {
+     @OnlyIn(Dist.CLIENT)
+     public static int immersiveLeftClickCooldown = 0;
+ 
++    @OnlyIn(Dist.CLIENT)
++    public static Tuple<Vector3d, Vector3d> getStartAndEndOfLookTrace(PlayerEntity player) {
++        double dist = Minecraft.getInstance().gameMode.getPickRange();
++        Vector3d start;
++        Vector3d end;
++        if (VRPluginVerify.clientInVR) {
++            start = VRPlugin.API.getVRPlayer(player).getController0().position();
++            Vector3d viewVec = VRPlugin.API.getVRPlayer(player).getController0().getLookAngle();
++            end = start.add(viewVec.x * dist, viewVec.y * dist, viewVec.z * dist);
++        } else {
++            start = player.getEyePosition(1);
++            Vector3d viewVec = player.getViewVector(1);
++            end = player.getEyePosition(1).add(viewVec.x * dist, viewVec.y * dist,
++                    viewVec.z * dist);
++        }
++        return new Tuple<>(start, end);
++    }
++
+     @OnlyIn(Dist.CLIENT)
+     public static void setRightClickCooldown(int amount) {
+         Minecraft.getInstance().rightClickDelay = amount;"
+hammy275/immersive-mc,71,122dc50fb5454cae6f07d0a3b5fcdd61803fc54f,src/main/java/net/blf02/immersivemc/client/immersive/AbstractImmersive.java,modified,7,3,10,"@@ -91,6 +91,10 @@ public void handleTriggerHitboxRightClick(InfoTriggerHitboxes info, PlayerEntity
+ 
+     public void onRemove(I info) {}
+ 
++    protected boolean slotHelpBoxIsGreen(I info, int slotNum) {
++        return info.slotHovered == slotNum;
++    }
++
+     public void tick(I info, boolean isInVR) {
+         if (enabledInConfig()) {
+             if (!info.initCompleted) {
+@@ -146,7 +150,7 @@ public void doRender(I info, MatrixStack stack, boolean isInVR) {
+                             AxisAlignedBB itemBox = info.getInputSlots()[i];
+                             AxisAlignedBB toShow = itemBox
+                                     .move(0, itemBox.getYsize() / 2, 0);
+-                            renderItemGuide(stack, toShow, 0.2f);
++                            renderItemGuide(stack, toShow, 0.2f, slotHelpBoxIsGreen(info, i));
+                         }
+                     }
+                 }
+@@ -260,7 +264,7 @@ public void renderItem(ItemStack item, MatrixStack stack, Vector3d pos, float si
+         renderHitbox(stack, hitbox, pos);
+     }
+ 
+-    protected void renderItemGuide(MatrixStack stack, AxisAlignedBB hitbox, float alpha) {
++    protected void renderItemGuide(MatrixStack stack, AxisAlignedBB hitbox, float alpha, boolean isGreen) {
+         if (hitbox != null) {
+             ActiveRenderInfo renderInfo = Minecraft.getInstance().gameRenderer.getMainCamera();
+             Vector3d pos = hitbox.getCenter();
+@@ -270,7 +274,7 @@ protected void renderItemGuide(MatrixStack stack, AxisAlignedBB hitbox, float al
+                     -renderInfo.getPosition().z + pos.z);
+             IRenderTypeBuffer.Impl buffer = Minecraft.getInstance().renderBuffers().bufferSource();
+             cubeModel.render(stack, buffer.getBuffer(RenderType.entityTranslucent(Cube1x1.textureLocation)),
+-                    0, 1, 1, alpha, (float) (hitbox.getSize() / 2f));
++                    0, 1, isGreen ? 0 : 1, alpha, (float) (hitbox.getSize() / 2f));
+             stack.popPose();
+         }
+     }"
+hammy275/immersive-mc,71,122dc50fb5454cae6f07d0a3b5fcdd61803fc54f,src/main/java/net/blf02/immersivemc/client/immersive/AbstractTileEntityImmersive.java,modified,2,1,3,"@@ -32,7 +32,8 @@ public AbstractTileEntityImmersive(int maxImmersives) {
+     @Override
+     protected boolean slotShouldRenderHelpHitbox(I info, int slotNum) {
+         if (info.getTileEntity() instanceof IInventory) {
+-            return info.items[slotNum] == null || info.items[slotNum].isEmpty();
++            return (info.items[slotNum] == null || info.items[slotNum].isEmpty())
++                    && info.getInputSlots()[slotNum] != null; // So far, only the chest can have a null input slot
+         } else {
+             // Should be implemented on sub-class
+             throw new IllegalArgumentException(""Can't check input slot has item for non-IInventory's!"");"
+hammy275/immersive-mc,71,122dc50fb5454cae6f07d0a3b5fcdd61803fc54f,src/main/java/net/blf02/immersivemc/client/immersive/ImmersiveChest.java,modified,1,1,2,"@@ -9,9 +9,9 @@
+ import net.blf02.immersivemc.common.network.packet.ChestOpenPacket;
+ import net.blf02.immersivemc.common.network.packet.FetchInventoryPacket;
+ import net.blf02.immersivemc.common.network.packet.SwapPacket;
+-import net.blf02.immersivemc.common.vr.util.Util;
+ import net.blf02.immersivemc.common.vr.VRPlugin;
+ import net.blf02.immersivemc.common.vr.VRPluginVerify;
++import net.blf02.immersivemc.common.vr.util.Util;
+ import net.minecraft.block.AbstractChestBlock;
+ import net.minecraft.block.Block;
+ import net.minecraft.block.EnderChestBlock;"
+hammy275/immersive-mc,71,122dc50fb5454cae6f07d0a3b5fcdd61803fc54f,src/main/java/net/blf02/immersivemc/client/immersive/info/AbstractImmersiveInfo.java,modified,10,0,10,"@@ -11,6 +11,16 @@ public abstract class AbstractImmersiveInfo {
+     public int ticksActive = 0;
+     public boolean initCompleted = false;
+     protected AxisAlignedBB[] inputHitboxes = null;
++    /*
++    This variable is used in ONLY two spots:
++        - By BackpackInfo to determine which hitbox is hovered over for trigger presses*
++        - By desktop users to determine which hitbox is moused over
++    Don't re-use this variable for other purposes unless you factor in the above! Mainly how that in VR,
++    this variable will ONLY be updated for BackpackInfo instances.
++
++    * - This was done because backpacks were implemented before the InfoTriggerHitboxes system.
++     */
++    public int slotHovered = -1;
+ 
+     public AbstractImmersiveInfo(int ticksToExist) {
+         this.ticksLeft = ticksToExist;"
+hammy275/immersive-mc,71,122dc50fb5454cae6f07d0a3b5fcdd61803fc54f,src/main/java/net/blf02/immersivemc/client/immersive/info/BackpackInfo.java,modified,0,1,1,"@@ -28,7 +28,6 @@ public class BackpackInfo extends AbstractImmersiveInfo {
+     public Vector3d backVec = Vector3d.ZERO;
+     public Vector3f rgb = new Vector3f(0, 0, 0);
+     public int topRow = 0;
+-    public int slotHovered = -1;
+     public ItemStack[] craftingInput = new ItemStack[]{ItemStack.EMPTY, ItemStack.EMPTY, ItemStack.EMPTY, ItemStack.EMPTY};
+     public ItemStack craftingOutput = ItemStack.EMPTY;
+ "
+hammy275/immersive-mc,71,122dc50fb5454cae6f07d0a3b5fcdd61803fc54f,src/main/java/net/blf02/immersivemc/client/immersive/info/ChestInfo.java,modified,1,9,10,"@@ -42,15 +42,7 @@ public int getRowNum() {
+     @Override
+     public void setInputSlots() {
+         if (this.isOpen) {
+-            int size = other == null ? 9 : 18;
+-            AxisAlignedBB[] inputs = new AxisAlignedBB[size];
+-            int i = 0;
+-            for (AxisAlignedBB aabb : hitboxes) {
+-                if (aabb != null) {
+-                    inputs[i++] = aabb;
+-                }
+-            }
+-            this.inputHitboxes = inputs;
++            this.inputHitboxes = this.hitboxes;
+         } else {
+             this.inputHitboxes = new AxisAlignedBB[0];
+         }"
+hammy275/immersive-mc,71,122dc50fb5454cae6f07d0a3b5fcdd61803fc54f,src/main/java/net/blf02/immersivemc/client/subscribe/ClientLogicSubscriber.java,modified,12,17,29,"@@ -11,27 +11,16 @@
+ import net.blf02.immersivemc.client.tracker.ClientTrackerInit;
+ import net.blf02.immersivemc.common.config.ActiveConfig;
+ import net.blf02.immersivemc.common.tracker.AbstractTracker;
+-import net.blf02.immersivemc.common.vr.util.Util;
+ import net.blf02.immersivemc.common.vr.VRPlugin;
+ import net.blf02.immersivemc.common.vr.VRPluginVerify;
++import net.blf02.immersivemc.common.vr.util.Util;
+ import net.blf02.vrapi.api.data.IVRData;
+-import net.minecraft.block.AbstractChestBlock;
+-import net.minecraft.block.AnvilBlock;
+-import net.minecraft.block.BlockState;
+-import net.minecraft.block.Blocks;
+-import net.minecraft.block.EnchantingTableBlock;
+-import net.minecraft.block.EnderChestBlock;
+-import net.minecraft.block.RepeaterBlock;
+-import net.minecraft.block.SmithingTableBlock;
++import net.minecraft.block.*;
+ import net.minecraft.client.Minecraft;
+ import net.minecraft.entity.player.PlayerEntity;
+-import net.minecraft.tileentity.AbstractFurnaceTileEntity;
+-import net.minecraft.tileentity.BrewingStandTileEntity;
+-import net.minecraft.tileentity.ChestTileEntity;
+-import net.minecraft.tileentity.EnderChestTileEntity;
+-import net.minecraft.tileentity.JukeboxTileEntity;
+-import net.minecraft.tileentity.TileEntity;
++import net.minecraft.tileentity.*;
+ import net.minecraft.util.Hand;
++import net.minecraft.util.Tuple;
+ import net.minecraft.util.math.BlockPos;
+ import net.minecraft.util.math.BlockRayTraceResult;
+ import net.minecraft.util.math.RayTraceResult;
+@@ -83,7 +72,7 @@ public void onPlayerTick(TickEvent.PlayerTickEvent event) {
+             tracker.doTick(event.player);
+         }
+         for (AbstractImmersive<? extends AbstractImmersiveInfo> singleton : Immersives.IMMERSIVES) {
+-            tickInfos(singleton);
++            tickInfos(singleton, event.player);
+         }
+         if (Minecraft.getInstance().gameMode == null || Minecraft.getInstance().level == null) return;
+ 
+@@ -164,7 +153,7 @@ public void onDisconnect(ClientPlayerNetworkEvent.LoggedOutEvent event) {
+ 
+     }
+ 
+-    protected <I extends AbstractImmersiveInfo> void tickInfos(AbstractImmersive<I> singleton) {
++    protected <I extends AbstractImmersiveInfo> void tickInfos(AbstractImmersive<I> singleton, PlayerEntity player) {
+         if (singleton.getTrackedObjects().size() == 0) {
+             singleton.noInfosTick(); // Run onNoInfos() function if we don't have any infos right now
+         } else {
+@@ -178,6 +167,12 @@ protected <I extends AbstractImmersiveInfo> void tickInfos(AbstractImmersive<I>
+ 
+             for (I info : infos) {
+                 singleton.tick(info, VRPluginVerify.clientInVR);
++                if (info.hasHitboxes()) {
++                    Tuple<Vector3d, Vector3d> startAndEnd = ClientUtil.getStartAndEndOfLookTrace(player);
++                    Optional<Integer> closest = Util.rayTraceClosest(startAndEnd.getA(), startAndEnd.getB(),
++                            info.getAllHitboxes());
++                    info.slotHovered = closest.orElse(-1);
++                }
+                 if (info.getTicksLeft() <= 0) {
+                     toRemove.add(info);
+                 }"

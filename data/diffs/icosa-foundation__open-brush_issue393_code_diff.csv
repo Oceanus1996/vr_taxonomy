@@ -1,0 +1,88 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+icosa-foundation/open-brush,393,d3d2b4a,Assets/Prefabs/Panels/AdvancedToolsPanel.prefab,modified,1,1,2,"@@ -730,7 +730,7 @@ MonoBehaviour:
+   m_InitialSpawnRotEulers: {x: 37.18, y: 63.12, z: 0}
+   m_WandAttachAngle: 240
+   m_WandAttachYOffset: 1.2
+-  m_WandAttachHalfHeight: 0.8
++  m_WandAttachHalfHeight: 1.2
+   m_BeginFixed: 1
+   m_CanBeFixedToWand: 1
+   m_CanBeDetachedFromWand: 1"
+icosa-foundation/open-brush,393,d3d2b4a,Assets/Prefabs/Panels/AdvancedToolsPanel_Mobile.prefab,modified,1,1,2,"@@ -764,7 +764,7 @@ MonoBehaviour:
+   m_InitialSpawnRotEulers: {x: 37.18, y: 63.12, z: 0}
+   m_WandAttachAngle: 240
+   m_WandAttachYOffset: 1.2
+-  m_WandAttachHalfHeight: 0.8
++  m_WandAttachHalfHeight: 1.2
+   m_BeginFixed: 1
+   m_CanBeFixedToWand: 1
+   m_CanBeDetachedFromWand: 1"
+icosa-foundation/open-brush,393,d3d2b4a,Assets/Scripts/Input/UnityXRControllerInfo.cs,modified,24,14,38,"@@ -115,6 +115,16 @@ public override Vector2 GetThumbStickValue()
+             return FindAction(""PadAxis"").ReadValue<Vector2>();
+         }
+ 
++        public override void Update()
++        {
++            base.Update();
++
++            if (!FindAction(""PadTouch"").inProgress)
++            {
++                padAxisPrevious = Vector2.zero;
++            }
++        }
++
+         public override Vector2 GetPadValueDelta()
+         {
+             var action = FindAction(""ThumbAxis"");
+@@ -127,26 +137,26 @@ public override Vector2 GetPadValueDelta()
+             else
+             {
+                 action = FindAction(""PadAxis"");
+-                if (!action.inProgress)
++                if (FindAction(""PadTouch"").IsPressed())
+                 {
+-                    padAxisPrevious = Vector2.zero;
+-                    return padAxisPrevious;
+-                }
++                    Vector2 range = App.VrSdk.VrControls.TouchpadActivationRange;
++                    Vector2 padAxisCurrent = action.ReadValue<Vector2>();
+ 
+-                Vector2 range = App.VrSdk.VrControls.TouchpadActivationRange;
+-                Vector2 padAxisCurrent = action.ReadValue<Vector2>();
++                    if (padAxisPrevious == Vector2.zero)
++                    {
++                        padAxisPrevious = padAxisCurrent;
++                    }
+ 
+-                if (padAxisPrevious == Vector2.zero)
+-                {
++                    var delta = padAxisCurrent - padAxisPrevious;
+                     padAxisPrevious = padAxisCurrent;
+-                }
+ 
+-                var delta = padAxisCurrent - padAxisPrevious;
+-                padAxisPrevious = padAxisCurrent;
++                    delta.x = Mathf.Clamp(delta.x, range.x, range.y);
++                    delta.y = Mathf.Clamp(delta.y, range.x, range.y);
++                    return delta * kInputScrollScalar;
++                }
+ 
+-                delta.x = Mathf.Clamp(delta.x, range.x, range.y);
+-                delta.y = Mathf.Clamp(delta.y, range.x, range.y);
+-                return delta * kInputScrollScalar;
++                //padAxisPrevious = Vector2.zero;
++                return Vector2.zero;
+             }
+         }
+ "
+icosa-foundation/open-brush,393,d3d2b4a,Assets/Scripts/SketchControlsScript.cs,modified,3,1,4,"@@ -1261,7 +1261,9 @@ void UpdateBaseInput()
+                 && !InputManager.m_Instance.GetCommand(InputManager.SketchCommands.Activate)
+                 && m_GrabBrush.grabbingWorld == false
+                 && m_CurrentGazeObject == -1 // free up swipe for use by gaze object
+-                && (m_ControlsType != ControlsType.SixDofControllers || InputManager.Brush.IsTrackedObjectValid);
++                && (m_ControlsType != ControlsType.SixDofControllers || InputManager.Brush.IsTrackedObjectValid)
++                // TODO:Mike - very hacky
++                && SketchSurfacePanel.m_Instance.ActiveTool.m_Type != BaseTool.ToolType.MultiCamTool;
+ 
+             if (m_EatToolScaleInput)
+             {"

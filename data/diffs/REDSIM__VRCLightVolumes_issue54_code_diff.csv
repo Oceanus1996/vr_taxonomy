@@ -1,0 +1,47 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+REDSIM/VRCLightVolumes,54,89b20775f0e6d8659a67a815e65c1d7f4a158461,Packages/red.sim.lightvolumes/Scripts/Editor/PointLightVolumeEditor.cs,modified,1,1,2,"@@ -21,7 +21,7 @@ public override void OnInspectorGUI() {
+             List<string> hiddenFields = new List<string> { ""m_Script"", ""CustomID"", ""PointLightVolumeInstance"", ""LightVolumeSetup"" };
+ 
+             // Only show shadow radius if user requested baked shadows. Also area lights don't have shadow radius - it's implicit. 
+-            if (!PointLightVolume.BakedShadows || PointLightVolume.Type == PointLightVolume.LightType.AreaLight || PointLightVolume.Shape != PointLightVolume.LightShape.LUT) {
++            if (!PointLightVolume.BakedShadows || PointLightVolume.Type == PointLightVolume.LightType.AreaLight) {
+                 hiddenFields.Add(""BakedShadowRadius"");
+             }
+             "
+REDSIM/VRCLightVolumes,54,89b20775f0e6d8659a67a815e65c1d7f4a158461,Packages/red.sim.lightvolumes/Scripts/LightVolumeOcclusionBaker.cs,modified,1,6,7,"@@ -289,11 +289,6 @@ public static void ComputeLightProperties(
+                     shadowLightArea[lightIdx] = new Vector2(width, height);
+                 } else if (light.Shape != PointLightVolume.LightShape.LUT || light.FalloffLUT == null) {
+                     lightInfluenceRadius = ComputePointLightSquaredBoundingSphere(light.Color, light.Intensity, light.LightSourceSize, lightBrightnessCutoff);
+-                    if (light.Type == PointLightVolume.LightType.SpotLight) {
+-                        lightRadius = light.LightSourceSize * Mathf.Clamp01(1 - Mathf.Cos(light.Angle * Mathf.Deg2Rad * 0.5f));
+-                    } else {
+-                        lightRadius = light.LightSourceSize;
+-                    }
+                 }
+                 shadowLightInfluenceRadii[lightIdx] = lightInfluenceRadius;
+                 shadowLightRadii[lightIdx] = Mathf.Max(voxelRadius, lightRadius);
+@@ -391,7 +386,7 @@ private static Color[] BlurOcclusionData(Vector3Int volumeResolution, Color[] oc
+                     for (int voxelX = 0; voxelX < volumeResolution.x; voxelX++) {
+                         int centerIdx = voxelX + voxelY * volumeResolution.x + voxelZ * volumeResolution.x * volumeResolution.y;
+ 
+-                        Color sum = Color.black;
++                        Color sum = Color.clear;
+                         float weightSum = 0.0f;
+                         for (int dz = -1; dz <= 1; dz++)
+                             for (int dy = -1; dy <= 1; dy++)"
+REDSIM/VRCLightVolumes,54,89b20775f0e6d8659a67a815e65c1d7f4a158461,Packages/red.sim.lightvolumes/Scripts/LightVolumeSetup.cs,modified,2,0,2,"@@ -296,6 +296,7 @@ private void OnBakeryFinishedRender(object sender, EventArgs e) {
+             for (int i = 0; i < volumes.Length; i++) {
+                 if (volumes[i].Bake && volumes[i].LightVolumeInstance != null) {
+                     volumes[i].RecalculateProbesPositions();
++                    volumes[i].BakeOcclusionTexture();
+ 
+                     volumes[i].LightVolumeInstance.InvBakedRotation = Quaternion.Inverse(volumes[i].GetRotation());
+                     if (IsBakeryMode && volumes[i].BakeryVolume != null) {
+@@ -322,6 +323,7 @@ private void OnUnityBakingStarted() {
+                 if (volumes[i].Bake) {
+                     Debug.Log($""[LightVolumeSetup] Adding additional probes to bake with Light Volume \""{volumes[i].gameObject.name}\"" using Unity Lightmapper. Group {i}"");
+                     volumes[i].SetAdditionalProbes(i);
++                    volumes[i].BakeOcclusionTexture();
+                 }
+             }
+         }"

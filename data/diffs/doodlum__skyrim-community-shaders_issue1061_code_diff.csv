@@ -1,0 +1,73 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+doodlum/skyrim-community-shaders,1061,c188df38a9ff0ac03344e827182ce1840b0256ca,src/EngineFix.cpp,modified,7,1,8,"@@ -1,8 +1,14 @@
+ ﻿#include ""EngineFix.h""
+ 
++#include ""EngineFixes/ShadowmapCascadeCullingFix.h""
++
+ const std::vector<EngineFix*>& EngineFix::GetOnPostPostLoadFixesList()
+ {
+-	static std::vector<EngineFix*> fixes = {};
++	static ShadowmapCascadeCullingFix shadowmapCascadeCullingFix;
++
++	static std::vector<EngineFix*> fixes = {
++		&shadowmapCascadeCullingFix
++	};
+ 
+ 	return fixes;
+ }"
+doodlum/skyrim-community-shaders,1061,c188df38a9ff0ac03344e827182ce1840b0256ca,src/EngineFixes/ShadowmapCascadeCullingFix.cpp,added,29,0,29,"@@ -0,0 +1,29 @@
++﻿#include ""ShadowmapCascadeCullingFix.h""
++
++void ShadowmapCascadeCullingFix::Install()
++{
++	gfSplitOverlap = reinterpret_cast<float*>(REL::RelocationID(513805, 391863).address());
++
++	stl::write_thunk_call<BSShadowDirectionalLight_SetFrameCamera_BuildCascadeCameraCullingPlanes>(REL::RelocationID(101499, 108496).address() + REL::Relocate(0x1B12, 0x1C02, 0x1C82));
++}
++
++void ShadowmapCascadeCullingFix::BSShadowDirectionalLight_SetFrameCamera_BuildCascadeCameraCullingPlanes::thunk(RE::BSShadowDirectionalLight* dirLight, RE::NiFrustumPlanes& outPlanes, FrustumSplit& frustumSplit, uint32_t splitCornerIndices[8], uint32_t numSplitCornerIndices, RE::NiPoint3& lightDir, RE::NiPoint3& cameraPos, uint32_t cornerOffsetIndex)
++{
++	func(dirLight, outPlanes, frustumSplit, splitCornerIndices, numSplitCornerIndices, lightDir, cameraPos, cornerOffsetIndex);
++
++	// This fix pulls the far face corners back towards the near face corners by double fSplitOverlap to provide an effective overlap of 1 * fSplitOverlap in each direction.
++	// This corrects the vanilla behaviour which sets nearFace = farFace for the next cascade camera, where nearFace already includes +fSplitOverlap
++	// which incorrectly pushes out the culling for the next cascade camera causing shadow gaps even at the default fSplitOverlap of 100.
++	// This newly calculated farFace is not immediately used but will be copied into the nearFace for the next cascade camera and provide effective overlap.
++
++	const float splitOverlap = *gfSplitOverlap * 2.0f;
++
++	for (uint32_t i = 0; i < 4; ++i) {
++		auto& nearCorner = frustumSplit.nearFace[i];
++		auto& farCorner = frustumSplit.farFace[i];
++		auto dir = farCorner - nearCorner;
++		dir.Unitize();
++
++		farCorner -= dir * splitOverlap;
++	}
++}
+\ No newline at end of file"
+doodlum/skyrim-community-shaders,1061,c188df38a9ff0ac03344e827182ce1840b0256ca,src/EngineFixes/ShadowmapCascadeCullingFix.h,added,23,0,23,"@@ -0,0 +1,23 @@
++﻿#pragma once
++
++struct ShadowmapCascadeCullingFix : EngineFix
++{
++	std::string GetName() override { return ""Shadowmap Cascade Culling Fix""; }
++
++	void Install() override;
++
++private:
++	inline static float* gfSplitOverlap = nullptr;
++
++	struct BSShadowDirectionalLight_SetFrameCamera_BuildCascadeCameraCullingPlanes
++	{
++		struct FrustumSplit
++		{
++			RE::NiPoint3 nearFace[4];
++			RE::NiPoint3 farFace[4];
++		};
++
++		static void thunk(RE::BSShadowDirectionalLight* dirLight, RE::NiFrustumPlanes& outPlanes, FrustumSplit& frustumSplit, uint32_t splitCornerIndices[8], uint32_t numSplitCornerIndices, RE::NiPoint3& lightDir, RE::NiPoint3& cameraPos, uint32_t cornerOffsetIndex);
++		static inline REL::Relocation<decltype(thunk)> func;
++	};
++};
+\ No newline at end of file"

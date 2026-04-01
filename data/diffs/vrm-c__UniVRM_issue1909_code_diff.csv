@@ -1,0 +1,500 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vrm-c/UniVRM,1909,4d30cc5e7b10411dd391386b405a514101496235,Assets/UniGLTF/Runtime/Extensions/ColorConversionExtensions.cs,modified,5,0,5,"@@ -40,6 +40,11 @@ public static Color ToColor3(this float[] src, ColorSpace srcColorSpace, ColorSp
+             return new Color(src[0], src[1], src[2], 1f).ConvertColorSpace(srcColorSpace, dstColorSpace);
+         }
+ 
++        public static Color ToColor3(this Vector3 src, ColorSpace srcColorSpace, ColorSpace dstColorSpace)
++        {
++            return new Color(src.x, src.y, src.z).ConvertColorSpace(srcColorSpace, dstColorSpace);
++        }
++
+         private static Color ConvertColorSpace(this Color srcColor, ColorSpace srcColorSpace, ColorSpace dstColorSpace)
+         {
+             // Need pattern matching :("
+vrm-c/UniVRM,1909,4d30cc5e7b10411dd391386b405a514101496235,Assets/UniGLTF/Runtime/UniGLTF/IO/MaterialIO/BuiltInRP/Export/Materials/BuiltInStandardMaterialExporter.cs,modified,7,5,12,"@@ -183,13 +183,15 @@ private static void ExportEmission(Material src, ITextureExporter textureExporte
+             if (src.HasProperty(""_EmissionColor""))
+             {
+                 var color = src.GetColor(""_EmissionColor"");
+-                if (color.maxColorComponent > 1)
++                // NOTE: Built-in RP Standard shader's emission color is in gamma color space.
++                var linearFactor = color.ToFloat3(ColorSpace.sRGB, ColorSpace.Linear);
++                var maxComponent = linearFactor.Max();
++                if (maxComponent > 1)
+                 {
+-                    var maxColorComponent = color.maxColorComponent;
+-                    color /= maxColorComponent;
+-                    UniGLTF.glTF_KHR_materials_emissive_strength.Serialize(ref dst.extensions, maxColorComponent);
++                    linearFactor = linearFactor.Select(x => x / maxComponent).ToArray();
++                    UniGLTF.glTF_KHR_materials_emissive_strength.Serialize(ref dst.extensions, maxComponent);
+                 }
+-                dst.emissiveFactor = color.ToFloat3(ColorSpace.Linear, ColorSpace.Linear);
++                dst.emissiveFactor = linearFactor;
+             }
+ 
+             if (src.HasProperty(EmissionTexturePropertyName))"
+vrm-c/UniVRM,1909,4d30cc5e7b10411dd391386b405a514101496235,Assets/UniGLTF/Runtime/UniGLTF/IO/MaterialIO/BuiltInRP/Import/Materials/GltfPbrMaterialImporter.cs,modified,19,7,26,"@@ -143,19 +143,31 @@ public static bool TryCreateParam(GltfData data, int i, out MaterialDescriptor m
+ 
+                 if (src.emissiveFactor != null && src.emissiveFactor.Length == 3)
+                 {
+-                    var emissiveFactor = src.emissiveFactor.ToColor3(ColorSpace.Linear, ColorSpace.Linear);
+-                    if (UniGLTF.glTF_KHR_materials_emissive_strength.TryGet(src.extensions, out UniGLTF.glTF_KHR_materials_emissive_strength emissiveStrength))
++                    // NOTE: glTF 仕様違反だが emissiveFactor に 1.0 より大きな値が入っていた場合もそのまま受け入れる.
++                    var emissiveFactor = new Vector3(src.emissiveFactor[0], src.emissiveFactor[1], src.emissiveFactor[2]);
++                    if (glTF_KHR_materials_emissive_strength.TryGet(src.extensions, out var emissiveStrength))
+                     {
+                         emissiveFactor *= emissiveStrength.emissiveStrength;
+                     }
+-                    else if (UniGLTF.Extensions.VRMC_materials_hdr_emissiveMultiplier.GltfDeserializer.TryGet(src.extensions,
+-                        out UniGLTF.Extensions.VRMC_materials_hdr_emissiveMultiplier.
+-                            VRMC_materials_hdr_emissiveMultiplier ex))
++                    else if (Extensions.VRMC_materials_hdr_emissiveMultiplier.GltfDeserializer.TryGet(src.extensions, out var ex))
+                     {
+-                        emissiveFactor *= ex.EmissiveMultiplier.Value;
++                        if (ex.EmissiveMultiplier != null)
++                        {
++                            emissiveFactor *= ex.EmissiveMultiplier.Value;
++                        }
++                    }
++
++                    if (data.MigrationFlags.IsEmissiveFactorGamma)
++                    {
++                        // NOTE: Do nothing.
++                        colors.Add(""_EmissionColor"", emissiveFactor.ToColor3(ColorSpace.sRGB, ColorSpace.sRGB));
++                    }
++                    else
++                    {
++                        // NOTE: Built-in RP Standard shader's emission color is in gamma color space.
++                        colors.Add(""_EmissionColor"", emissiveFactor.ToColor3(ColorSpace.Linear, ColorSpace.sRGB));
+                     }
+ 
+-                    colors.Add(""_EmissionColor"", emissiveFactor);
+                 }
+ 
+                 if (src.emissiveTexture != null && src.emissiveTexture.index != -1)"
+vrm-c/UniVRM,1909,4d30cc5e7b10411dd391386b405a514101496235,Assets/UniGLTF/Runtime/UniGLTF/IO/MigrationFlags.cs,modified,5,0,5,"@@ -6,5 +6,10 @@ public sealed class MigrationFlags
+         /// Before UniGLTF v0.69, roughness value in the texture was invalid squared value.
+         /// </summary>
+         public bool IsRoughnessTextureValueSquared { get; set; } = false;
++
++        /// <summary>
++        /// Before UniGLTF v0.107.0, Built-in RP Standard shader's emission color is exported in gamma color space.
++        /// </summary>
++        public bool IsEmissiveFactorGamma { get; set; } = false;
+     }
+ }
+\ No newline at end of file"
+vrm-c/UniVRM,1909,4d30cc5e7b10411dd391386b405a514101496235,Assets/UniGLTF/Tests/UniGLTF/MaterialTests.cs,modified,4,2,6,"@@ -1,4 +1,5 @@
+-﻿using NUnit.Framework;
++﻿using System;
++using NUnit.Framework;
+ using UnityEngine;
+ using UniJSON;
+ using System.Linq;
+@@ -261,7 +262,8 @@ public void MaterialExportTest()
+             var textureExporter = new TextureExporter(new EditorTextureSerializer());
+             var gltfMaterial = materialExporter.ExportMaterial(material, textureExporter, new GltfExportSettings());
+ 
+-            Assert.AreEqual(gltfMaterial.emissiveFactor, new float[] { 0, 0.5f, 1 });
++            var maxComponent = Mathf.GammaToLinearSpace(2f);
++            Assert.That(gltfMaterial.emissiveFactor, Is.EqualTo(new float[] { 0f, 1f / maxComponent, 1f }).Within(0.5f / 255f));
+         }
+     }
+ }"
+vrm-c/UniVRM,1909,4d30cc5e7b10411dd391386b405a514101496235,Assets/VRM/Runtime/Format/VRMVersionPartial.cs,modified,6,1,7,"@@ -40,6 +40,11 @@ public static bool IsNewer(string newer, string older)
+                 return false;
+             }
+ 
++            return IsNewer(newerVersion, olderVersion);
++        }
++
++        public static bool IsNewer(Version newerVersion, Version olderVersion)
++        {
+             if (newerVersion.Major > olderVersion.Major)
+             {
+                 return true;
+@@ -55,7 +60,7 @@ public static bool IsNewer(string newer, string older)
+                 return true;
+             }
+ 
+-            if (String.Compare(newerVersion.Pre, olderVersion.Pre) > 0)
++            if (string.CompareOrdinal(newerVersion.Pre, olderVersion.Pre) > 0)
+             {
+                 return true;
+             }"
+vrm-c/UniVRM,1909,4d30cc5e7b10411dd391386b405a514101496235,Assets/VRM/Runtime/IO/VRMData.cs,modified,28,0,28,"@@ -16,6 +16,34 @@ public VRMData(GltfData data)
+                 throw new NotVrm0Exception();
+             }
+             VrmExtension = vrm;
++
++            UpdateMigrationFlags(Data.MigrationFlags, VrmExtension.exporterVersion);
++        }
++
++        private static void UpdateMigrationFlags(MigrationFlags migrationFlags, string exportedVrmVersionString)
++        {
++            if (!VRMVersion.ParseVersion(exportedVrmVersionString, out var exportedVrmVersion)) return;
++
++            migrationFlags.IsRoughnessTextureValueSquared = VRMVersion.IsNewer(
++                new VRMVersion.Version
++                {
++                    Major = 0,
++                    Minor = 69,
++                    Patch = 0,
++                    Pre = """",
++                },
++                exportedVrmVersion
++            );
++            migrationFlags.IsEmissiveFactorGamma = VRMVersion.IsNewer(
++                new VRMVersion.Version
++                {
++                    Major = 0,
++                    Minor = 107,
++                    Patch = 0,
++                    Pre = """",
++                },
++                exportedVrmVersion
++            );
+         }
+     }
+ }"
+vrm-c/UniVRM,1909,4d30cc5e7b10411dd391386b405a514101496235,Assets/VRM10/Runtime/Migration/Materials/MigrationPbrMaterial.cs,added,100,0,100,"@@ -0,0 +1,100 @@
++﻿using System;
++using System.Linq;
++using UniGLTF;
++using UniJSON;
++using UnityEngine;
++using ColorSpace = VRMShaders.ColorSpace;
++
++namespace UniVRM10
++{
++    internal static class MigrationPbrMaterial
++    {
++        private const string UsingGltfMaterialKeywordInVrmExtension = ""VRM_USE_GLTFSHADER"";
++        private const string ExporterVersionKey = ""exporterVersion"";
++
++        /// <summary>
++        /// vanilla の gltf material を対象とする.
++        /// KHR_materials_unlit 拡張や VRM.materialProperties で MToon を対象とするマテリアルは処理してはいけない。
++        /// </summary>
++        public static void Migrate(glTF gltf, JsonNode vrm0XExtension)
++        {
++            var needMigrationRoughnessTextureValueSquared = false;
++            var needMigrationEmissiveFactorGamma = false;
++            if (vrm0XExtension.TryGet(ExporterVersionKey, out var vrm0XVersionStringNode))
++            {
++                var vrm0XVersionString = vrm0XVersionStringNode.GetString();
++                if (Vrm0XVersion.ParseVersion(vrm0XVersionString, out var vrm0XVersion))
++                {
++                    needMigrationRoughnessTextureValueSquared = Vrm0XVersion.IsNewer(
++                        new Vrm0XVersion.Version
++                        {
++                            Major = 0,
++                            Minor = 69,
++                            Patch = 0,
++                            Pre = """",
++                        },
++                        vrm0XVersion
++                    );
++                    needMigrationEmissiveFactorGamma = Vrm0XVersion.IsNewer(
++                        new Vrm0XVersion.Version
++                        {
++                            Major = 0,
++                            Minor = 107,
++                            Patch = 0,
++                            Pre = """",
++                        },
++                        vrm0XVersion
++                    );
++                }
++            }
++            for (var idx = 0; idx < gltf.materials.Count; ++idx)
++            {
++                MigrateMaterial(gltf, vrm0XExtension, idx, needMigrationRoughnessTextureValueSquared, needMigrationEmissiveFactorGamma);
++            }
++        }
++
++        private static void MigrateMaterial(glTF gltf, JsonNode vrm0XExtension, int idx, bool needMigrationRoughnessTextureValueSquared, bool needMigrationEmissiveFactorGamma)
++        {
++            var src = gltf.materials[idx];
++            var vrm0XMaterial = vrm0XExtension[""materialProperties""][idx];
++
++            // NOTE: ignore MToon
++            if (MigrationMaterialUtil.GetShaderName(vrm0XMaterial) != UsingGltfMaterialKeywordInVrmExtension) return;
++            // NOTE: ignore Unlit
++            if (glTF_KHR_materials_unlit.IsEnable(src)) return;
++
++            if (needMigrationRoughnessTextureValueSquared)
++            {
++                // NOTE: 非常に実装がめんどくさい、かつ刺さるシチュエーションがかなり少ないので放置.
++            }
++
++            if (needMigrationEmissiveFactorGamma && src.emissiveFactor != null && src.emissiveFactor.Length == 3)
++            {
++                var emissiveFactor = new Color(src.emissiveFactor[0], src.emissiveFactor[1], src.emissiveFactor[2]);
++                if (UniGLTF.glTF_KHR_materials_emissive_strength.TryGet(src.extensions, out var emissiveStrength))
++                {
++                    emissiveFactor *= emissiveStrength.emissiveStrength;
++                }
++                else if (UniGLTF.Extensions.VRMC_materials_hdr_emissiveMultiplier.GltfDeserializer.TryGet(src.extensions, out var ex))
++                {
++                    if (ex.EmissiveMultiplier != null)
++                    {
++                        emissiveFactor *= ex.EmissiveMultiplier.Value;
++                    }
++                }
++                // NOTE: 新しい emissive_strength 拡張を書き込むため、拡張をまっさらにする
++                var extensionsExport = new glTFExtensionExport();
++                src.extensions = extensionsExport;
++
++                var linearEmissiveFactor = emissiveFactor.linear;
++                if (linearEmissiveFactor.maxColorComponent > 1)
++                {
++                    var maxColorComponent = linearEmissiveFactor.maxColorComponent;
++                    linearEmissiveFactor /= maxColorComponent;
++                    UniGLTF.glTF_KHR_materials_emissive_strength.Serialize(ref src.extensions, maxColorComponent);
++                }
++                src.emissiveFactor = linearEmissiveFactor.ToFloat3(ColorSpace.Linear, ColorSpace.Linear);
++            }
++        }
++    }
++}
+\ No newline at end of file"
+vrm-c/UniVRM,1909,4d30cc5e7b10411dd391386b405a514101496235,Assets/VRM10/Runtime/Migration/Materials/MigrationPbrMaterial.cs.meta,added,3,0,3,"@@ -0,0 +1,3 @@
++﻿fileFormatVersion: 2
++guid: ec22998490984df4a7f04d03174fc3e0
++timeCreated: 1667803769
+\ No newline at end of file"
+vrm-c/UniVRM,1909,4d30cc5e7b10411dd391386b405a514101496235,Assets/VRM10/Runtime/Migration/MigrationMaterials.cs,modified,18,14,32,"@@ -20,23 +20,27 @@ public static void Migrate(glTF gltf, JsonNode vrm0)
+             var needsDisablingVertexColor = false;
+             var vrm0XMaterialList = vrm0[MaterialPropertiesKey].ArrayItems().ToArray();
+ 
+-            // 1. VRM 拡張のうち、古い Unlit 情報からの取得を試みる.
+-            if (MigrationLegacyUnlitMaterial.Migrate(gltf, vrm0XMaterialList))
++            try
+             {
+-                // NOTE: 古い Unlit である場合、頂点カラー情報を破棄する.
+-                needsDisablingVertexColor = true;
+-            }
++                // 1. VRM 拡張がついていない PBR Material のマイグレーション.
++                MigrationPbrMaterial.Migrate(gltf, vrm0);
+ 
+-            // 2. VRM 拡張のうち、UnlitTransparentZWrite 情報からの取得を試みる.
+-            if (MigrationUnlitTransparentZWriteMaterial.Migrate(gltf, vrm0XMaterialList))
+-            {
+-                // NOTE: 古い Unlit である場合、頂点カラー情報を破棄する.
+-                needsDisablingVertexColor = true;
+-            }
++                // 2. VRM 拡張のうち、古い Unlit 情報からの取得を試みる.
++                if (MigrationLegacyUnlitMaterial.Migrate(gltf, vrm0XMaterialList))
++                {
++                    // NOTE: 古い Unlit である場合、頂点カラー情報を破棄する.
++                    needsDisablingVertexColor = true;
++                }
+ 
+-            try
+-            {
+-                // 3. VRM 拡張のうち、MToon 情報からの取得を試みる.
++                // 3. VRM 拡張のうち、UnlitTransparentZWrite 情報からの取得を試みる.
++                if (MigrationUnlitTransparentZWriteMaterial.Migrate(gltf, vrm0XMaterialList))
++                {
++                    // NOTE: 古い Unlit である場合、頂点カラー情報を破棄する.
++                    needsDisablingVertexColor = true;
++                }
++
++                // 4. VRM 拡張のうち、MToon 情報からの取得を試みる.
++                // NOTE: MToon だった場合、内部で material.extensions を破棄してしまう.
+                 MigrationMToonMaterial.Migrate(gltf, vrm0);
+             }
+             catch (Exception ex)"
+vrm-c/UniVRM,1909,4d30cc5e7b10411dd391386b405a514101496235,Assets/VRM10/Runtime/Migration/Vrm0XVersion.cs,added,87,0,87,"@@ -0,0 +1,87 @@
++﻿using System;
++using System.Text.RegularExpressions;
++
++namespace UniVRM10
++{
++    internal static class Vrm0XVersion
++    {
++        public static bool IsNewer(string newer, string older)
++        {
++            Version newerVersion;
++            if (!ParseVersion(newer, out newerVersion))
++            {
++                return false;
++            }
++
++            Version olderVersion;
++            if (!ParseVersion(older, out olderVersion))
++            {
++                return false;
++            }
++
++            return IsNewer(newerVersion, olderVersion);
++        }
++
++        public static bool IsNewer(Version newerVersion, Version olderVersion)
++        {
++            if (newerVersion.Major > olderVersion.Major)
++            {
++                return true;
++            }
++
++            if (newerVersion.Minor > olderVersion.Minor)
++            {
++                return true;
++            }
++
++            if (newerVersion.Patch > olderVersion.Patch)
++            {
++                return true;
++            }
++
++            if (string.CompareOrdinal(newerVersion.Pre, olderVersion.Pre) > 0)
++            {
++                return true;
++            }
++
++            return false;
++        }
++
++        private static readonly Regex VersionSpec =
++            new Regex(@""(?<major>\d+)\.(?<minor>\d+)(\.(?<patch>\d+))?(-(?<pre>[0-9A-Za-z-]+))?"");
++
++        public static bool ParseVersion(string version, out Version v)
++        {
++            var match = VersionSpec.Match(version);
++            if (!match.Success)
++            {
++                v = new Version();
++                return false;
++            }
++
++            v = new Version();
++            try
++            {
++                v.Major = int.Parse(match.Groups[""major""].Value);
++                v.Minor = int.Parse(match.Groups[""minor""].Value);
++                v.Patch = match.Groups[""patch""].Success ? int.Parse(match.Groups[""patch""].Value) : 0;
++                v.Pre = match.Groups[""pre""].Success ? match.Groups[""pre""].Value : """";
++
++                return true;
++            }
++            catch (Exception)
++            {
++                return false;
++            }
++        }
++
++        public struct Version
++        {
++            public int Major;
++            public int Minor;
++            public int Patch;
++            public string Pre;
++        }
++
++    }
++}
+\ No newline at end of file"
+vrm-c/UniVRM,1909,4d30cc5e7b10411dd391386b405a514101496235,Assets/VRM10/Runtime/Migration/Vrm0XVersion.cs.meta,added,3,0,3,"@@ -0,0 +1,3 @@
++﻿fileFormatVersion: 2
++guid: 69916d48e7b54a8ea6aae72ab2efc817
++timeCreated: 1667805384
+\ No newline at end of file"
+vrm-c/UniVRM,1909,4d30cc5e7b10411dd391386b405a514101496235,Assets/VRM10/Tests/MigrationTests.cs,modified,84,0,84,"@@ -6,6 +6,7 @@
+ using UniGLTF;
+ using System.Runtime.InteropServices;
+ using System.Collections.Generic;
++using VRMShaders;
+ 
+ namespace UniVRM10
+ {
+@@ -323,5 +324,88 @@ public void GltfValidator()
+                 }
+             }
+         }
++
++        [Test]
++        public void MigrateMaterials()
++        {
++            // NOTE: Standard Shader の emission の値がそのまま gamma value として emissiveFactor に出力されていた v0.106.0 のファイル
++            var model106 = File.ReadAllBytes(Path.Combine(Application.dataPath, ""../Tests/Models/Materials/EmissionMigration_v0.106.0.vrm""));
++            // NOTE: Standard Shader の emission の値が linear value に変換されて emissiveFactor に出力される v0.107.0 のファイル
++            var model107 = File.ReadAllBytes(Path.Combine(Application.dataPath, ""../Tests/Models/Materials/EmissionMigration_v0.107.0.vrm""));
++
++            var materialCount = 6;
++
++            var correctMaterialNames = new string[]
++            {
++                ""Unlit_SRGB_0.5"",
++                ""Standard_Emission_0.5"",
++                ""Standard_Emission_2.0"",
++                ""Unlit_Linear_0.5"",
++                ""MToon_Emission_0.5"",
++                ""MToon_Emission_2.0"",
++            };
++            var correctShaderNames = new string[]
++            {
++                ""UniGLTF/UniUnlit"",
++                ""Standard"",
++                ""Standard"",
++                ""UniGLTF/UniUnlit"",
++                ""VRM10/MToon10"",
++                ""VRM10/MToon10"",
++            };
++            var colorName = ""_Color"";
++            var correctColors = new Color[]
++            {
++                new Color(0.5f, 0.5f, 0.5f, 1),
++                new Color(0f, 0f, 0f, 1),
++                new Color(0f, 0f, 0f, 1),
++                new Color(Mathf.LinearToGammaSpace(0.5f), Mathf.LinearToGammaSpace(0.5f), Mathf.LinearToGammaSpace(0.5f), 1),
++                new Color(0f, 0f, 0f, 1),
++                new Color(0f, 0f, 0f, 1),
++            };
++            var emissionName = ""_EmissionColor"";
++            var correctEmissions = new Color?[]
++            {
++                null,
++                new Color(0.5f, 0.5f, 0.5f, 1),
++                new Color(2.0f, 2.0f, 2.0f, 1),
++                null,
++                new Color(0.5f, 0.5f, 0.5f, 1),
++                new Color(2.0f, 2.0f, 2.0f, 1),
++            };
++
++            var instance106 = Vrm10.LoadBytesAsync(model106, awaitCaller: new ImmediateCaller()).Result;
++            var materials106 = instance106.GetComponent<RuntimeGltfInstance>().Materials;
++            Assert.AreEqual(materialCount, materials106.Count);
++            for (var idx = 0; idx < materialCount; ++idx)
++            {
++                var material = materials106[idx];
++                Assert.AreEqual(correctMaterialNames[idx], material.name);
++                Assert.AreEqual(correctShaderNames[idx], material.shader.name);
++                AssertAreApproximatelyEqualColor(correctColors[idx], material.GetColor(colorName));
++                if (correctEmissions[idx].HasValue) AssertAreApproximatelyEqualColor(correctEmissions[idx].Value, material.GetColor(emissionName));
++            }
++
++            var instance107 = Vrm10.LoadBytesAsync(model107, awaitCaller: new ImmediateCaller()).Result;
++            var materials107 = instance107.GetComponent<RuntimeGltfInstance>().Materials;
++            Assert.AreEqual(materialCount, materials107.Count);
++            for (var idx = 0; idx < materialCount; ++idx)
++            {
++                var material = materials107[idx];
++                Assert.AreEqual(correctMaterialNames[idx], material.name);
++                Assert.AreEqual(correctShaderNames[idx], material.shader.name);
++                AssertAreApproximatelyEqualColor(correctColors[idx], material.GetColor(colorName));
++                if (correctEmissions[idx].HasValue) AssertAreApproximatelyEqualColor(correctEmissions[idx].Value, material.GetColor(emissionName));
++            }
++        }
++
++        private void AssertAreApproximatelyEqualColor(Color expected, Color actual)
++        {
++            const float colorEpsilon = 0.5f / 255f;
++
++            Assert.That(actual.r, Is.EqualTo(expected.r).Within(colorEpsilon));
++            Assert.That(actual.g, Is.EqualTo(expected.g).Within(colorEpsilon));
++            Assert.That(actual.b, Is.EqualTo(expected.b).Within(colorEpsilon));
++        }
+     }
+ }"
+vrm-c/UniVRM,1909,4d30cc5e7b10411dd391386b405a514101496235,Tests/Models/Materials/EmissionMigration_v0.106.0.vrm,added,0,0,0,
+vrm-c/UniVRM,1909,4d30cc5e7b10411dd391386b405a514101496235,Tests/Models/Materials/EmissionMigration_v0.107.0.vrm,added,0,0,0,

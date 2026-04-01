@@ -1,0 +1,366 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+webaverse/app,2416,c8c64c79328f5bb988295d64e5457e586138d9e3,src/components/general/settings/TabAudio.jsx,modified,97,12,109,"@@ -2,26 +2,35 @@
+ import React, { useEffect, useState } from 'react';
+ import classNames from 'classnames';
+ 
++import { defaultVoicePack } from '../../../../constants.js';
++import game from '../../../../game';
+ import { Slider } from './slider';
+ 
+ import styles from './settings.module.css';
+ 
+ //
+ 
+ const DefaultSettings = {
+-    general:      100,
+-    music:        100,
+-    voice:        100,
+-    effects:      100
++    general:        100,
++    music:          100,
++    voice:          100,
++    effects:        100,
++    voicePack:      defaultVoicePack.name
+ };
+ 
+ export const TabAudio = ({ active }) => {
+ 
++    const [ appyingChanges, setAppyingChanges ] = useState( false );
++    const [ changesNotSaved, setChangesNotSaved ] = useState( false );
+     const [ settingsLoaded, setSettingsLoaded ] = useState( null );
++
++    const [ voicePacks, setVoicePacks ] = useState([]);
++
+     const [ generalVolume, setGeneralVolume ] = useState( null );
+     const [ musicVolume, setMusicVolume ] = useState( null );
+     const [ voiceVolume, setVoiceVolume ] = useState( null );
+     const [ effectsVolume, setEffectsVolume ] = useState( null );
++    const [ voicePack, setVoicePack ] = useState( '' );
+ 
+     //
+ 
+@@ -31,10 +40,10 @@ export const TabAudio = ({ active }) => {
+             general:        generalVolume,
+             music:          musicVolume,
+             voice:          voiceVolume,
+-            effects:        effectsVolume
++            effects:        effectsVolume,
++            voicePack:      voicePack
+         };
+ 
+-        applySettings();
+         localStorage.setItem( 'AudioSettings', JSON.stringify( settings ) );
+ 
+     };
+@@ -60,29 +69,90 @@ export const TabAudio = ({ active }) => {
+         setMusicVolume( settings.music ?? DefaultSettings.music );
+         setVoiceVolume( settings.voice ?? DefaultSettings.voice );
+         setEffectsVolume( settings.effects ?? DefaultSettings.effects );
++        setVoicePack( settings.voicePack ?? DefaultSettings.voicePack );
+ 
+-        applySettings();
+         setSettingsLoaded( true );
+ 
+     };
+ 
+     function applySettings () {
+ 
+-        // todo
++        // set voice pack
++
++        const vp = voicePacks[ voicePacks.map( ( vp ) => { return vp.name; } ).indexOf( voicePack ).toString() ];
++
++        if ( typeof vp.drive_id === 'string' ) {
++
++            game.setVoice( vp.drive_id );
++
++        } else if ( typeof vp.audioUrl === 'string' || typeof vp.indexUrl === 'string' ) {
++
++            (async () => {
++
++                await game.loadVoicePack({
++                    audioUrl: vp.audioUrl,
++                    indexUrl: vp.indexUrl
++                });
++
++            })().catch( ( err ) => {
++
++                console.warn( err );
++
++            });
++
++        } else {
++
++            console.warn( 'no such voice pack', voicePack );
++
++        }
++
++        //
++
++        saveSettings();
++        setChangesNotSaved( false );
++        setTimeout( () => { setAppyingChanges( false ) }, 1000 );
++
++    };
++
++    async function loadVoicePack () {
++
++        const res = await fetch( `https://raw.githubusercontent.com/webaverse/tiktalknet/main/model_lists/all_models.json` );
++        const voicePacks = await res.json();
++        setVoicePacks( [ defaultVoicePack ].concat( voicePacks ) );
++
++    };
++
++    function handleApplySettingsBtnClick () {
++
++        setAppyingChanges( true );
++        setTimeout( applySettings, 100 );
+ 
+     };
+ 
+     //
+ 
+     useEffect( () => {
+ 
+-        if ( ! settingsLoaded ) return;
+-        saveSettings();
++        if ( generalVolume && musicVolume && voiceVolume && effectsVolume && voicePack ) {
+ 
+-    }, [ settingsLoaded, generalVolume, musicVolume, voiceVolume, effectsVolume ] );
++            if ( settingsLoaded ) {
+ 
+-    useEffect( () => {
++                setChangesNotSaved( true );
+ 
++            } else {
++
++                setSettingsLoaded( true );
++                applySettings();
++
++            }
++
++        }
++
++    }, [ generalVolume, musicVolume, voiceVolume, effectsVolume, voicePack ] );
++
++    useEffect( async () => {
++
++        await loadVoicePack();
+         loadSettings();
+ 
+     }, [] );
+@@ -111,6 +181,21 @@ export const TabAudio = ({ active }) => {
+                 <Slider className={ styles.slider } value={ effectsVolume } setValue={ setEffectsVolume } />
+                 <div className={ styles.clearfix } />
+             </div>
++            <div className={ styles.row } >
++                <div className={ styles.paramName }>Voice pack</div>
++                <select className={ styles.select } value={ voicePack } onChange={ e => { setVoicePack( e.target.value ); } } >
++                    {
++                        voicePacks.map( ( voicePack, i ) => {
++                            return (
++                                <option value={ voicePack.name } key={ i }>{ voicePack.name }</option>
++                            );
++                        })
++                    }
++                </select>
++            </div>
++            <div className={ classNames( styles.applyBtn, changesNotSaved ? styles.active : null ) } onClick={ handleApplySettingsBtnClick } >
++                { appyingChanges ? 'APPLYING' : 'APPLY' }
++            </div>
+         </div>
+     );
+ "
+webaverse/app,2416,c8c64c79328f5bb988295d64e5457e586138d9e3,src/components/general/settings/TabControls.jsx,modified,35,7,42,"@@ -23,7 +23,10 @@ const DefaultSettings = {
+ 
+ export const TabControls = ({ active }) => {
+ 
++    const [ appyingChanges, setAppyingChanges ] = useState( false );
++    const [ changesNotSaved, setChangesNotSaved ] = useState( false );
+     const [ settingsLoaded, setSettingsLoaded ] = useState( false );
++
+     const [ moveForward, setMoveForward ] = useState( null );
+     const [ moveLeft, setMoveLeft ] = useState( null );
+     const [ moveRight, setMoveRight ] = useState( null );
+@@ -52,7 +55,6 @@ export const TabControls = ({ active }) => {
+             inventory
+         };
+ 
+-        applySettings();
+         localStorage.setItem( 'ControlsSettings', JSON.stringify( settings ) );
+ 
+     };
+@@ -85,25 +87,47 @@ export const TabControls = ({ active }) => {
+         setChat( settings.chat ?? DefaultSettings.chat );
+         setInventory( settings.inventory ?? DefaultSettings.inventory );
+ 
+-        applySettings();
+-        setSettingsLoaded( true );
+-
+     };
+ 
+     function applySettings () {
+ 
+         // todo
+ 
++        //
++
++        saveSettings();
++        setChangesNotSaved( false );
++        setTimeout( () => { setAppyingChanges( false ) }, 1000 );
++
++    };
++
++    function handleApplySettingsBtnClick () {
++
++        setAppyingChanges( true );
++        setTimeout( applySettings, 100 );
++
+     };
+ 
+     //
+ 
+     useEffect( () => {
+ 
+-        if ( ! settingsLoaded ) return;
+-        saveSettings();
++        if ( moveForward && moveLeft && moveRight && moveBack && jump && run && narutoRun && action && chat && inventory ) {
+ 
+-    }, [ settingsLoaded, moveForward, moveLeft, moveRight, moveBack, jump, run, narutoRun, action, chat, inventory ] );
++            if ( settingsLoaded ) {
++
++                setChangesNotSaved( true );
++
++            } else {
++
++                setSettingsLoaded( true );
++                applySettings();
++
++            }
++
++        }
++
++    }, [ moveForward, moveLeft, moveRight, moveBack, jump, run, narutoRun, action, chat, inventory ] );
+ 
+     useEffect( () => {
+ 
+@@ -165,6 +189,10 @@ export const TabControls = ({ active }) => {
+                 <KeyInput className={ styles.keyInput } value={ inventory } setValue={ setInventory } />
+                 <div className={ styles.clearfix } />
+             </div>
++
++            <div className={ classNames( styles.applyBtn, changesNotSaved ? styles.active : null ) } onClick={ handleApplySettingsBtnClick } >
++                { appyingChanges ? 'APPLYING' : 'APPLY' }
++            </div>
+         </div>
+     );
+ "
+webaverse/app,2416,c8c64c79328f5bb988295d64e5457e586138d9e3,src/components/general/settings/TabGraphics.jsx,modified,10,13,23,"@@ -131,16 +131,13 @@ export const TabGraphics = ({ active }) => {
+ 
+         saveSettings();
+         setChangesNotSaved( false );
+-
+         setTimeout( () => { setAppyingChanges( false ) }, 1000 );
+ 
+     };
+ 
+-    function handleApplySettingsBtnClick ( event ) {
++    function handleApplySettingsBtnClick () {
+ 
+-        event.stopPropagation();
+         setAppyingChanges( true );
+-
+         setTimeout( applySettings, 100 );
+ 
+     };
+@@ -179,7 +176,7 @@ export const TabGraphics = ({ active }) => {
+             <div className={ styles.blockTitle }>Display</div>
+             <div className={ styles.row }>
+                 <div className={ styles.paramName }>Resolution</div>
+-                <Switch className={ styles.switch } value={ resolution } setValue={ setResolution } values={ [ 'HIGH', 'MEDIUM', 'LOW' ] } />
++                <Switch className={ styles.switch } value={ resolution } setValue={ setResolution } values={ [ 'LOW', 'MEDIUM', 'HIGH' ] } />
+                 <div className={ styles.clearfix } />
+             </div>
+             <div className={ styles.row }>
+@@ -189,12 +186,12 @@ export const TabGraphics = ({ active }) => {
+             </div>
+             <div className={ styles.row }>
+                 <div className={ styles.paramName }>View range</div>
+-                <Switch className={ styles.switch } value={ viewRange } setValue={ setViewRange } values={ [ 'HIGH', 'MEDIUM', 'LOW' ] } />
++                <Switch className={ styles.switch } value={ viewRange } setValue={ setViewRange } values={ [ 'LOW', 'MEDIUM', 'HIGH' ] } />
+                 <div className={ styles.clearfix } />
+             </div>
+             <div className={ styles.row }>
+                 <div className={ styles.paramName }>Shadows quality</div>
+-                <Switch className={ styles.switch } value={ shadowQuality } setValue={ setShadowQuality } values={ [ 'HIGH', 'MEDIUM', 'LOW', 'OFF' ] } />
++                <Switch className={ styles.switch } value={ shadowQuality } setValue={ setShadowQuality } values={ [ 'OFF', 'LOW', 'MEDIUM', 'HIGH' ] } />
+                 <div className={ styles.clearfix } />
+             </div>
+             <div className={ styles.row }>
+@@ -203,22 +200,22 @@ export const TabGraphics = ({ active }) => {
+             </div>
+             <div className={ styles.row }>
+                 <div className={ styles.paramName }>Enabled</div>
+-                <Switch className={ styles.switch } value={ postprocessing } setValue={ setPostprocessing } values={ [ 'ON', 'OFF' ] } />
++                <Switch className={ styles.switch } value={ postprocessing } setValue={ setPostprocessing } values={ [ 'OFF', 'ON' ] } />
+                 <div className={ styles.clearfix } />
+             </div>
+             <div className={ styles.row }>
+                 <div className={ styles.paramName }>Depth of field</div>
+-                <Switch className={ styles.switch } value={ depthOfField } setValue={ setDepthOfField } values={ [ 'ON', 'OFF' ] } />
++                <Switch className={ styles.switch } value={ depthOfField } setValue={ setDepthOfField } values={ [ 'OFF', 'ON' ] } />
+                 <div className={ styles.clearfix } />
+             </div>
+             <div className={ styles.row }>
+                 <div className={ styles.paramName }>HDR</div>
+-                <Switch className={ styles.switch } value={ hdr } setValue={ setHdr } values={ [ 'ON', 'OFF' ] } />
++                <Switch className={ styles.switch } value={ hdr } setValue={ setHdr } values={ [ 'OFF', 'ON' ] } />
+                 <div className={ styles.clearfix } />
+             </div>
+             <div className={ styles.row }>
+                 <div className={ styles.paramName }>Bloom</div>
+-                <Switch className={ styles.switch } value={ bloom } setValue={ setBloom } values={ [ 'ON', 'OFF' ] } />
++                <Switch className={ styles.switch } value={ bloom } setValue={ setBloom } values={ [ 'OFF', 'ON' ] } />
+                 <div className={ styles.clearfix } />
+             </div>
+             <div className={ styles.row }>
+@@ -227,12 +224,12 @@ export const TabGraphics = ({ active }) => {
+             </div>
+             <div className={ styles.row }>
+                 <div className={ styles.paramName }>Character details</div>
+-                <Switch className={ styles.switch } value={ characterDetails } setValue={ setCharacterDetails } values={ [ 'ULTRA', 'HIGH', 'MEDIUM', 'LOW' ] } />
++                <Switch className={ styles.switch } value={ characterDetails } setValue={ setCharacterDetails } values={ [ 'LOW', 'MEDIUM', 'HIGH', 'ULTRA' ] } />
+                 <div className={ styles.clearfix } />
+             </div>
+             <div className={ styles.row }>
+                 <div className={ styles.paramName }>Hair physics</div>
+-                <Switch className={ styles.switch } value={ hairPhysics } setValue={ setHairPhysics } values={ [ 'ON', 'OFF' ] } />
++                <Switch className={ styles.switch } value={ hairPhysics } setValue={ setHairPhysics } values={ [ 'OFF', 'ON' ] } />
+                 <div className={ styles.clearfix } />
+             </div>
+ "
+webaverse/app,2416,c8c64c79328f5bb988295d64e5457e586138d9e3,src/components/general/settings/key-input/KeyInput.jsx,modified,0,2,2,"@@ -16,8 +16,6 @@ export const KeyInput = ({ value, setValue, className }) => {
+         let value = '';
+         let index = 0;
+ 
+-        console.log( keysList );
+-
+         keysList.forEach( ( key, keyIndex ) => {
+ 
+             let keyName = '';"
+webaverse/app,2416,c8c64c79328f5bb988295d64e5457e586138d9e3,src/components/general/settings/settings.module.css,modified,12,0,12,"@@ -187,3 +187,15 @@
+ .applyBtn.active {
+     opacity: 0.7;
+ }
++
++/*  */
++
++.select {
++    margin-left: 20px;
++    width: 41%;
++    line-height: 35px;
++    height: 35px;
++    text-align: center;
++    font-weight: bold;
++    background-color: #aaa;
++}"

@@ -1,0 +1,87 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch,gpt_bug_detection,gpt_bug_detection_with_report
+vizorvr/patches,1648,9d21c0d,browser/plugins/three_webgl_texture_renderer.plugin.js,modified,13,6,19,"@@ -85,10 +85,7 @@
+ 	}
+ 
+ 	ThreeWebGLTextureRendererPlugin.prototype.update_state = function() {
+-		// have to reset as the main renderer will override these
+-
+-		var oldPixelRatio = this.renderer.getPixelRatio()
+-		this.renderer.setPixelRatio(1)
++		var renderBufferSize = this.renderer.getSize()
+ 
+ 		if (this.texture_dirty) {
+ 			this.create_texture()
+@@ -98,7 +95,16 @@
+ 
+ 		this.renderer.setRenderTarget(this.texture)
+ 
+-		if (!this.scene || !this.perspectiveCamera) {
++		// We have to reset pixel ratio and viewport size 
++		// as the main renderer will override these
++		// We can leave viewport size as the full canvas size 
++		// as the main renderer will set this again
++		var oldPixelRatio = this.renderer.getPixelRatio()
++		this.renderer.setPixelRatio(1)
++
++		this.renderer.setViewport(0, 0, renderBufferSize.width, renderBufferSize.height)
++
++     	if (!this.scene || !this.perspectiveCamera) {
+ 			this.renderer.clear()
+ 			this.renderer.setPixelRatio(oldPixelRatio)
+ 
+@@ -108,10 +114,11 @@
+ 		// Render the scene through the manager.
+ 		this.renderer.render(this.scene, this.perspectiveCamera, this.texture)
+ 
++		this.renderer.setPixelRatio(oldPixelRatio)
++
+ 		// set render target to null as otherwise the next renderer will splat over
+ 		// the render target we just rendered
+ 		this.renderer.setRenderTarget(null)
+-		this.renderer.setPixelRatio(oldPixelRatio)
+ 	}
+ 
+ 	ThreeWebGLTextureRendererPlugin.prototype.state_changed = function(ui) {","{""has_bug"": true, ""bugs"": [{""line_start"": 103, ""line_end"": 103, ""description"": ""Setting pixel ratio to 1 without considering the original pixel ratio can cause rendering issues, especially in VR, leading to incorrect viewport sizes."", ""buggy_code"": ""this.renderer.setPixelRatio(1)""}, {""line_start"": 105, ""line_end"": 105, ""description"": ""The viewport size is set to the render buffer size, which may not account for the actual dimensions needed for VR rendering, potentially causing the player to appear incorrectly sized."", ""buggy_code"": ""this.renderer.setViewport(0, 0, renderBufferSize.width, renderBufferSize.height)""}, {""line_start"": 107, ""line_end"": 111, ""description"": ""The check for scene and perspectiveCamera being null or undefined does not handle the case where they are not properly initialized, which could lead to rendering issues."", ""buggy_code"": ""if (!this.scene || !this.perspectiveCamera) {""}]}","{""has_bug"": true, ""bugs"": [{""line_start"": 103, ""line_end"": 103, ""description"": ""Setting the pixel ratio to 1 without restoring it correctly can lead to incorrect rendering sizes, causing the viewport to shrink incrementally on each frame."", ""buggy_code"": ""this.renderer.setPixelRatio(1)""}], ""relevance"": ""The bug report indicates that the viewport size is getting smaller on every frame due to the pixel ratio being set incorrectly. The identified line sets the pixel ratio to 1, which could be causing the rendering issues described.""}"
+vizorvr/patches,1648,da9c275,browser/plugins/three_webgl_texture_renderer.plugin.js,modified,13,6,19,"@@ -85,10 +85,7 @@
+ 	}
+ 
+ 	ThreeWebGLTextureRendererPlugin.prototype.update_state = function() {
+-		// have to reset as the main renderer will override these
+-
+-		var oldPixelRatio = this.renderer.getPixelRatio()
+-		this.renderer.setPixelRatio(1)
++		var renderBufferSize = this.renderer.getSize()
+ 
+ 		if (this.texture_dirty) {
+ 			this.create_texture()
+@@ -98,7 +95,16 @@
+ 
+ 		this.renderer.setRenderTarget(this.texture)
+ 
+-		if (!this.scene || !this.perspectiveCamera) {
++		// We have to reset pixel ratio and viewport size 
++		// as the main renderer will override these
++		// We can leave viewport size as the full canvas size 
++		// as the main renderer will set this again
++		var oldPixelRatio = this.renderer.getPixelRatio()
++		this.renderer.setPixelRatio(1)
++
++		this.renderer.setViewport(0, 0, renderBufferSize.width, renderBufferSize.height)
++
++     	if (!this.scene || !this.perspectiveCamera) {
+ 			this.renderer.clear()
+ 			this.renderer.setPixelRatio(oldPixelRatio)
+ 
+@@ -108,10 +114,11 @@
+ 		// Render the scene through the manager.
+ 		this.renderer.render(this.scene, this.perspectiveCamera, this.texture)
+ 
++		this.renderer.setPixelRatio(oldPixelRatio)
++
+ 		// set render target to null as otherwise the next renderer will splat over
+ 		// the render target we just rendered
+ 		this.renderer.setRenderTarget(null)
+-		this.renderer.setPixelRatio(oldPixelRatio)
+ 	}
+ 
+ 	ThreeWebGLTextureRendererPlugin.prototype.state_changed = function(ui) {","{""has_bug"": true, ""bugs"": [{""line_start"": 103, ""line_end"": 103, ""description"": ""Setting pixel ratio to 1 without considering the original pixel ratio may cause rendering issues, especially in VR, leading to incorrect viewport sizes."", ""buggy_code"": ""this.renderer.setPixelRatio(1)""}, {""line_start"": 105, ""line_end"": 105, ""description"": ""Setting the viewport size to the render buffer size without checking if the dimensions are valid may lead to rendering issues, especially if the dimensions are zero or negative."", ""buggy_code"": ""this.renderer.setViewport(0, 0, renderBufferSize.width, renderBufferSize.height)""}, {""line_start"": 107, ""line_end"": 111, ""description"": ""The check for scene and perspectiveCamera being null or undefined should also handle cases where they are not properly initialized, which could lead to rendering black frames."", ""buggy_code"": ""if (!this.scene || !this.perspectiveCamera)""}]}","{""has_bug"": true, ""bugs"": [{""line_start"": 103, ""line_end"": 103, ""description"": ""Setting the pixel ratio to 1 without restoring it correctly can cause the viewport size to be incorrectly calculated, leading to the player appearing to resize to 0."", ""buggy_code"": ""this.renderer.setPixelRatio(1)""}], ""relevance"": ""The bug report indicates that the viewport size is getting smaller on every frame due to incorrect handling of the pixel ratio. The line setting the pixel ratio to 1 directly affects the rendering size, which aligns with the reported issue.""}"

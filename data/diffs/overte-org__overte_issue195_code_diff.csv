@@ -1,0 +1,338 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+overte-org/overte,195,06c23b3,scripts/system/notifications/img/delete.svg,added,38,0,38,"@@ -0,0 +1,38 @@
++<?xml version=""1.0"" encoding=""UTF-8"" standalone=""no""?>
++<svg
++   height=""36""
++   viewBox=""0 -960 640 720""
++   width=""32""
++   fill=""#ea3323""
++   version=""1.1""
++   id=""svg1""
++   sodipodi:docname=""delete.svg""
++   inkscape:version=""1.4.2 (ebf0e940d0, 2025-05-08)""
++   xmlns:inkscape=""http://www.inkscape.org/namespaces/inkscape""
++   xmlns:sodipodi=""http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd""
++   xmlns=""http://www.w3.org/2000/svg""
++   xmlns:svg=""http://www.w3.org/2000/svg"">
++  <defs
++     id=""defs1"" />
++  <sodipodi:namedview
++     id=""namedview1""
++     pagecolor=""#ffffff""
++     bordercolor=""#000000""
++     borderopacity=""0.25""
++     inkscape:showpageshadow=""2""
++     inkscape:pageopacity=""0.0""
++     inkscape:pagecheckerboard=""0""
++     inkscape:deskcolor=""#d1d1d1""
++     inkscape:zoom=""25.1875""
++     inkscape:cx=""15.980149""
++     inkscape:cy=""18.004963""
++     inkscape:window-width=""2560""
++     inkscape:window-height=""1412""
++     inkscape:window-x=""0""
++     inkscape:window-y=""0""
++     inkscape:window-maximized=""1""
++     inkscape:current-layer=""svg1"" />
++  <path
++     d=""m 201,-419 119,-121 120,121 47,-48 -119,-121 119,-121 -47,-48 -120,121 -119,-121 -48,48 120,121 -120,121 z m -100,179 q -24,0 -42,-18 -18,-18 -18,-42 V -870 H 0 v -60 h 188 v -30 h 264 v 30 h 188 v 60 h -41 v 570 q 0,24 -18,42 -18,18 -42,18 z M 539,-870 H 101 v 570 h 438 z m -438,0 v 570 z""
++     id=""path1"" />
++</svg>"
+overte-org/overte,195,06c23b3,scripts/system/notifications/lib/window.js,modified,1,1,2,"@@ -19,7 +19,7 @@ const windowFunc = {
+ 		notification.system(`Error adding connection`, `${error}`);
+ 	},
+ 	announcement: (message, details) => {
+-		notification.system(message, details, `system`);
++		notification.system(message, details);
+ 	},
+ 	notifyEditError: (message) => {
+ 		// Seems to only be for edit.js. Deprecate but allow use."
+overte-org/overte,195,06c23b3,scripts/system/notifications/notifications.js,modified,2,3,5,"@@ -49,7 +49,7 @@ let app = {
+ 	}
+ }
+ 
+-io.getNotifications();
++// io.getNotifications();
+ changeOverlayBasedOnViewMode();
+ 
+ function changeOverlayBasedOnViewMode() {
+@@ -71,7 +71,7 @@ function changeOverlayBasedOnViewMode() {
+ const notification = {
+ 	system: (message = ""No title"", details = """", sound = false) => {
+ 		// Save the notification
+-		io.saveNotification({ message, details, type: `system`, id: Uuid.generate(), timestamp: Date.now() });
++		// io.saveNotification({ message, details, type: `system`, id: Uuid.generate(), timestamp: Date.now() });
+ 
+ 		// Tell QML to render the announcement
+ 		sendMessageToQML({ type: ""addSystemNotification"", message, details });
+@@ -116,7 +116,6 @@ function update() {
+ }
+ 
+ function sendMessageToQML(message) {
+-	util.debugLog(`Sending message to qml: ${JSON.stringify(message)}`);
+ 	if (app._ui.overlay) app._ui.overlay.sendToQml(message);
+ 	if (app._ui.overlayVR) Entities.emitScriptEvent(app._ui.overlayVR, message);
+ }"
+overte-org/overte,195,06c23b3,scripts/system/notifications/qml/NotificationsDesktop.qml,modified,74,61,135,"@@ -34,7 +34,7 @@ Item {
+         Rectangle {
+             width: 300;
+             height: 330;
+-            color: Qt.rgba(0,0,0,0.8);
++            color: Qt.rgba(0,0,0,0.95);
+             radius: 5;
+             visible: announcementHistoryVisible;
+ 
+@@ -44,48 +44,77 @@ Item {
+                 spacing: 2;
+ 
+                 Item {
+-                    height: 30;
++                    height: 35;
+                     width: parent.width;
+ 
+-                    Row {
++                    RowLayout {
+                         width: parent.width;
+                         height: parent.height;
+ 
+-                        Switch { 
++                        Row {
+                             height: 20;
+-                            id: doNotDisturbSwitch;
+-
+-                            indicator: Rectangle {
+-                                implicitWidth: 48;
+-                                implicitHeight: 20;
+-                                x: doNotDisturbSwitch.leftPadding;
+-                                y: parent.height / 2 - height / 2 + 5;
+-                                radius: 13;
+-                                color: doNotDisturbSwitch.checked ? ""#17a81a"" : ""#ffffff"";
+-                                border.color: doNotDisturbSwitch.checked ? ""#17a81a"" : ""#cccccc"";
+-
+-                                Rectangle {
+-                                    x: doNotDisturbSwitch.checked ? parent.width - width : 0;
+-                                    width: 20;
+-                                    height: 20;
++
++                            Switch { 
++                                height: 20;
++                                id: doNotDisturbSwitch;
++
++                                indicator: Rectangle {
++                                    implicitWidth: 48;
++                                    implicitHeight: 20;
++                                    x: doNotDisturbSwitch.leftPadding;
++                                    y: parent.height / 2 - height / 2 + 5;
+                                     radius: 13;
+-                                    color: doNotDisturbSwitch.down ? ""#cccccc"" : ""#ffffff"";
+-                                    border.color: doNotDisturbSwitch.checked ? (doNotDisturbSwitch.down ? ""#17a81a"" : ""#21be2b"") : ""#999999"";
++                                    color: doNotDisturbSwitch.checked ? ""#17a81a"" : ""#ffffff"";
++                                    border.color: doNotDisturbSwitch.checked ? ""#17a81a"" : ""#cccccc"";
++
++                                    Rectangle {
++                                        x: doNotDisturbSwitch.checked ? parent.width - width : 0;
++                                        width: 20;
++                                        height: 20;
++                                        radius: 13;
++                                        color: doNotDisturbSwitch.down ? ""#cccccc"" : ""#ffffff"";
++                                        border.color: doNotDisturbSwitch.checked ? (doNotDisturbSwitch.down ? ""#17a81a"" : ""#21be2b"") : ""#999999"";
++                                    }
++                                }
++
++                                onClicked: {
++                                    doNotDisturb = checked;
++                                    toScript({type: ""doNotDisturbState"", state: doNotDisturb});
+                                 }
+                             }
+ 
+-                            onClicked: {
+-                                doNotDisturb = checked;
+-                                toScript({type: ""doNotDisturbState"", state: doNotDisturb});
++                            Text {
++                                color: ""White"";
++                                font.pixelSize: 18;
++                                text: ""Do not disturb"";
++                                font.weight: Font.Medium;
++                                anchors.verticalCenter: parent.verticalCenter;
+                             }
+                         }
+ 
+-                        Text {
+-                            color: ""White"";
+-                            font.pixelSize: 18;
+-                            width: 10;
+-                            text: ""Do not disturb"";
+-                            font.weight: Font.Medium;
++                        Row {
++                            Layout.fillHeight: true;
++                            width: 20;
++
++                            Image {
++                                source: ""../img/delete.svg"";
++                                height: 20;
++                                width: 20;
++                                sourceSize.width: 128;
++                                sourceSize.height: 128;
++                                fillMode: Image.PreserveAspectFit;
++                                anchors.centerIn: parent;
++
++                                MouseArea {
++                                    anchors.fill: parent;
++                                    hoverEnabled: true;
++                                    propagateComposedEvents: true;	
++
++                                    onClicked: {
++                                        notifications.clear();
++                                    }
++                                }
++                            }
+                         }
+                     }
+ 
+@@ -113,8 +142,7 @@ Item {
+                             delegate: Rectangle {
+                                 width: parent && parent.width || 0;
+                                 height: 50;
+-                                color: Qt.rgba(0,0,0,0.8);
+-                                opacity: 0.9;
++                                color: Qt.rgba(0,0,0,0.95);
+                                 radius: 5;
+ 
+                                 RowLayout {
+@@ -149,13 +177,11 @@ Item {
+                                     }
+ 
+                                     onEntered: {
+-                                        parent.color = Qt.rgba(0,0,0,0.9);
+-                                        parent.opacity = 1;
++                                        parent.color = Qt.rgba(0,0,0,1);
+                                     }
+ 
+                                     onExited: {
+-                                        parent.color = Qt.rgba(0,0,0,0.8);
+-                                        parent.opacity = 0.9;
++                                        parent.color = Qt.rgba(0,0,0,0.95);
+                                     }
+                                 }
+ 
+@@ -195,8 +221,7 @@ Item {
+         Rectangle {
+             width: 300;
+             height: 50;
+-            color: Qt.rgba(0,0,0,0.8);
+-            opacity: 0.9;
++            color: Qt.rgba(0,0,0,0.95);
+             radius: 5;
+             visible: !announcementHistoryVisible && previewNotificationActive;
+ 
+@@ -233,13 +258,11 @@ Item {
+                 }
+ 
+                 onEntered: {
+-                    parent.color = Qt.rgba(0,0,0,0.9);
+-                    parent.opacity = 1;
++                    parent.color = Qt.rgba(0,0,0,1);
+                 }
+ 
+                 onExited: {
+-                    parent.color = Qt.rgba(0,0,0,0.8);
+-                    parent.opacity = 0.9;
++                    parent.color = Qt.rgba(0,0,0,0.95);
+                 }
+             }
+ 
+@@ -269,13 +292,13 @@ Item {
+         Rectangle {
+             width: 300;
+             height: children[0].height + 10;
+-            color: Qt.rgba(0,0,0,0.9);
++            color: Qt.rgba(0,0,0,0.95);
+             visible: notificationDetailsActive;
+             radius: 5;
+ 
+             ColumnLayout {
+-                width: parent.width - 10;
+-                height: children[0].contentHeight + children[1].height + 10;
++                width: parent.width - 15;
++                height: notificationDetailsDetails.text == """" ? children[0].contentHeight + 10 : children[0].contentHeight + children[1].height + 10;
+                 anchors.centerIn: parent;
+                 spacing: 5;
+                 
+@@ -296,6 +319,7 @@ Item {
+                     x: 5;
+                     radius: 5;
+                     height: children[0].contentHeight;
++                    visible: children[0].text != """";
+ 
+                     Text {
+                         id: notificationDetailsDetails;
+@@ -309,7 +333,6 @@ Item {
+                 }
+             }
+ 
+-
+             MouseArea {
+                 anchors.fill: parent;
+ 
+@@ -322,7 +345,7 @@ Item {
+ 
+         // Bell Icon and container
+         Rectangle {
+-            color: Qt.rgba(0,0,0,0.8);
++            color: Qt.rgba(0,0,0,0.95);
+             width: 40;
+             height: 40;
+             radius: 5;
+@@ -335,15 +358,8 @@ Item {
+                 sourceSize.height: 128;
+                 fillMode: Image.PreserveAspectFit;
+                 anchors.centerIn: parent;
+-                opacity: 0.9;
+                 id: notificationIcon;
+ 
+-                Behavior on opacity {
+-                    NumberAnimation {
+-                        duration: 100;
+-                        easing.type: Easing.InOutCubic;
+-                    }
+-                }
+                 SequentialAnimation {
+                     id: shakeAnimation
+                     NumberAnimation { target: notificationIcon; property: ""rotation""; to: 20; duration: 200}
+@@ -364,13 +380,11 @@ Item {
+                 }
+ 
+                 onEntered: {
+-                    parent.color = Qt.rgba(0,0,0,0.95);
+-                    parent.children[0].opacity = 1;
++                    parent.color = Qt.rgba(0,0,0,1);
+                 }
+ 
+                 onExited: {
+-                    parent.color = Qt.rgba(0,0,0,0.8);
+-                    parent.children[0].opacity = 0.9;
++                    parent.color = Qt.rgba(0,0,0,0.95);
+                 }
+             }
+ 
+@@ -428,10 +442,10 @@ Item {
+             }
+ 
+             // Visual effects.
+-            shakeAnimation.start();
++            // shakeAnimation.start();
+             if (announcementHistoryVisible === false) {
+                 hasUnread = true;
+-                shakeAnimationTimer.running = true;
++                // shakeAnimationTimer.running = true;
+             }
+         }
+ 	}
+@@ -447,7 +461,6 @@ Item {
+ 
+     // Messages from script
+     function fromScript(message) {
+-		print(JSON.stringify(message));
+         switch (message.type){
+             case ""addSystemNotification"":
+ 				addSystemNotification(message.message, message.details);"

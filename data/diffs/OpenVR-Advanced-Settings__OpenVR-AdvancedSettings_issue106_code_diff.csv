@@ -1,0 +1,39 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,106,db863dbec27eab86ff739d15608f315d55481ec4,src/overlaycontroller.cpp,modified,5,1,6,"@@ -537,7 +537,8 @@ void OverlayController::processRoomBindings()
+ void OverlayController::processPushToTalkBindings()
+ {
+     const auto pushToTalkCannotChange = !m_audioTabController.pttChangeValid();
+-    if ( pushToTalkCannotChange )
++    const auto pushToTalkEnabled = m_audioTabController.pttEnabled();
++    if ( pushToTalkCannotChange || !pushToTalkEnabled )
+     {
+         return;
+     }
+@@ -698,6 +699,9 @@ void OverlayController::mainEventLoop()
+             vr::VRSystem()->AcknowledgeQuit_Exiting(); // Let us buy some
+                                                        // time just in case
+             m_moveCenterTabController.reset();
++            // Un-mute mic before Exiting VR, as it is set at system level Not
++            // Vr level.
++            m_audioTabController.setMicMuted( false, false );
+             m_chaperoneTabController.shutdown();
+             Shutdown();
+             QApplication::exit();"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,106,db863dbec27eab86ff739d15608f315d55481ec4,src/res/qml/RootPage.qml,modified,1,1,2,"@@ -359,7 +359,7 @@ MyStackViewPage {
+                            id: summaryPttToggle
+                            text: ""Push-to-Talk""
+                            onClicked: {
+-                               AudioTabController.pttEnabled = checked
++                                AudioTabController.setPttEnabled(checked, true)
+                            }
+                        }
+                    }"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,106,db863dbec27eab86ff739d15608f315d55481ec4,src/res/qml/audio_page/push_to_talk/PttButtons.qml,modified,1,1,2,"@@ -11,7 +11,7 @@ ColumnLayout {
+             Layout.fillWidth: true
+             text: ""Push-to-Talk:""
+             onClicked: {
+-                AudioTabController.pttEnabled = checked
++                AudioTabController.setPttEnabled(checked, true)
+             }
+         }
+         MyToggleButton {"

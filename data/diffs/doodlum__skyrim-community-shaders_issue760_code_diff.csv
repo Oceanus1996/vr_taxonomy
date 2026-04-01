@@ -1,0 +1,297 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+doodlum/skyrim-community-shaders,760,1e77bc1a415e0ace61f2feeaa84781998213aebd,package/Shaders/Common/Permutation.hlsli,modified,1,0,1,"@@ -56,6 +56,7 @@ namespace ExtraFlags
+ 	static const uint InWorld = (1 << 0);
+ 	static const uint IsBeastRace = (1 << 1);
+ 	static const uint EffectShadows = (1 << 2);
++	static const uint IsDecal = (1 << 3);
+ }
+ 
+ cbuffer PerShader : register(b4)"
+doodlum/skyrim-community-shaders,760,1e77bc1a415e0ace61f2feeaa84781998213aebd,package/Shaders/Effect.hlsl,modified,4,3,7,"@@ -760,9 +760,10 @@ PS_OUTPUT main(PS_INPUT input)
+ 	psout.MotionVectors = float4(screenMotionVector, 0.0, psout.Diffuse.w);
+ #		endif
+ 
+-	psout.Specular = float4(0.0.xxx, psout.Diffuse.w);
+-	psout.Albedo = float4(baseColor.xyz * psout.Diffuse.w, psout.Diffuse.w);
+-	psout.Reflectance = float4(0.0.xxx, psout.Diffuse.w);
++	psout.Specular = float4(0.0.xxx, finalColor.w);
++	psout.Albedo = float4(0.0.xxx, finalColor.w);
++	psout.Reflectance = float4(0.0.xxx, finalColor.w);
++	psout.Masks = float4(0.0.xxx, finalColor.w);
+ 
+ #	elif defined(MOTIONVECTORS_NORMALS)
+ 	float2 screenMotionVector = MotionBlur::GetSSMotionVector(input.WorldPosition, input.PreviousWorldPosition, eyeIndex);"
+doodlum/skyrim-community-shaders,760,1e77bc1a415e0ace61f2feeaa84781998213aebd,package/Shaders/Lighting.hlsl,modified,12,7,19,"@@ -980,10 +980,8 @@ float GetSnowParameterY(float texProjTmp, float alpha)
+ #		include ""TerrainBlending/TerrainBlending.hlsli""
+ #	endif
+ 
+-#	if defined(SSS)
+-#		if defined(SKIN)
+-#			undef SOFT_LIGHTING
+-#		endif
++#	if defined(SSS) && defined(SKIN) && defined(DEFERRED)
++#		undef SOFT_LIGHTING
+ #	endif
+ 
+ #	if defined(TERRAIN_SHADOWS)
+@@ -1914,11 +1912,18 @@ PS_OUTPUT main(PS_INPUT input, bool frontFace
+ #	endif
+ 
+ 	if (extraDirShadows) {
+-#	if defined(DEFERRED) && defined(SCREEN_SPACE_SHADOWS)
++#	if defined(SCREEN_SPACE_SHADOWS)
++#		if defined(DEFERRED)
++		bool useScreenSpaceShadows = true;
++#		else
++		bool useScreenSpaceShadows = ExtraShaderDescriptor & ExtraFlags::IsDecal;
++#		endif
++
+ #		if defined(SOFT_LIGHTING) || defined(BACK_LIGHTING) || defined(RIM_LIGHTING)
+-		if (dirLightAngle > 0.0)
++		useScreenSpaceShadows = useScreenSpaceShadows && (dirLightAngle > 0.0);
+ #		endif
+-		{
++
++		if (useScreenSpaceShadows) {
+ 			dirDetailShadow = ScreenSpaceShadows::GetScreenSpaceShadow(input.Position.xyz, screenUV, screenNoise, viewPosition, eyeIndex);
+ #		if defined(TREE_ANIM)
+ 			PerGeometry sD = SharedPerShadow[0];"
+doodlum/skyrim-community-shaders,760,1e77bc1a415e0ace61f2feeaa84781998213aebd,src/Deferred.cpp,modified,55,46,101,"@@ -25,19 +25,6 @@ struct BlendStates
+ 		static auto blendStates = reinterpret_cast<BlendStates*>(REL::RelocationID(524749, 411364).address());
+ 		return blendStates;
+ 	}
+-
+-	static std::array<ID3D11BlendState**, 6> GetBlendStates()
+-	{
+-		auto blendStates = GetSingleton();
+-		return {
+-			&blendStates->a[0][0][1][0],
+-			&blendStates->a[0][0][10][0],
+-			&blendStates->a[1][0][1][0],
+-			&blendStates->a[1][0][11][0],
+-			&blendStates->a[2][0][1][0],
+-			&blendStates->a[3][0][11][0]
+-		};
+-	}
+ };
+ 
+ void SetupRenderTarget(RE::RENDER_TARGET target, D3D11_TEXTURE2D_DESC texDesc, D3D11_SHADER_RESOURCE_VIEW_DESC srvDesc, D3D11_RENDER_TARGET_VIEW_DESC rtvDesc, D3D11_UNORDERED_ACCESS_VIEW_DESC uavDesc, DXGI_FORMAT format)
+@@ -262,24 +249,6 @@ void Deferred::StartDeferred()
+ 
+ 	State::GetSingleton()->UpdateSharedData();
+ 
+-	static std::once_flag setup;
+-	std::call_once(setup, [&]() {
+-		auto& device = State::GetSingleton()->device;
+-
+-		auto blendStates = BlendStates::GetBlendStates();
+-
+-		for (int i = 0; i < blendStates.size(); ++i) {
+-			forwardBlendStates[i] = *blendStates[i];
+-
+-			D3D11_BLEND_DESC blendDesc;
+-			forwardBlendStates[i]->GetDesc(&blendDesc);
+-
+-			blendDesc.IndependentBlendEnable = false;
+-
+-			DX::ThrowIfFailed(device->CreateBlendState(&blendDesc, &deferredBlendStates[i]));
+-		}
+-	});
+-
+ 	auto shadowState = RE::BSGraphics::RendererShadowState::GetSingleton();
+ 	GET_INSTANCE_MEMBER(renderTargets, shadowState)
+ 	GET_INSTANCE_MEMBER(setRenderTargetMode, shadowState)
+@@ -331,6 +300,8 @@ void Deferred::StartDeferred()
+ 	}
+ 
+ 	PrepassPasses();
++
++	OverrideBlendStates();
+ }
+ 
+ void Deferred::DeferredPasses()
+@@ -513,31 +484,62 @@ void Deferred::EndDeferred()
+ 	stateUpdateFlags.set(RE::BSGraphics::ShaderFlags::DIRTY_RENDERTARGET);  // Run OMSetRenderTargets again
+ 
+ 	deferredPass = false;
++
++	ResetBlendStates();
+ }
+ 
+ void Deferred::OverrideBlendStates()
+ {
+-	auto blendStates = BlendStates::GetBlendStates();
++	auto blendStates = BlendStates::GetSingleton();
+ 
+ 	static std::once_flag setup;
+ 	std::call_once(setup, [&]() {
+ 		auto& device = State::GetSingleton()->device;
+ 
+-		for (int i = 0; i < blendStates.size(); ++i) {
+-			forwardBlendStates[i] = *blendStates[i];
+-
+-			D3D11_BLEND_DESC blendDesc;
+-			forwardBlendStates[i]->GetDesc(&blendDesc);
+-
+-			blendDesc.IndependentBlendEnable = false;
+-
+-			DX::ThrowIfFailed(device->CreateBlendState(&blendDesc, &deferredBlendStates[i]));
++		for (int a = 0; a < 7; a++) {
++			for (int b = 0; b < 2; b++) {
++				for (int c = 0; c < 13; c++) {
++					for (int d = 0; d < 2; d++) {
++						forwardBlendStates[a][b][c][d] = blendStates->a[a][b][c][d];
++
++						if (auto blendState = forwardBlendStates[a][b][c][d]) {
++							D3D11_BLEND_DESC blendDesc;
++							forwardBlendStates[a][b][c][d]->GetDesc(&blendDesc);
++
++							blendDesc.IndependentBlendEnable = true;
++
++							// Start at 1 to ignore Diffuse
++							for (int i = 0; i < 8; i++) {
++								blendDesc.RenderTarget[i].BlendEnable = blendDesc.RenderTarget[0].BlendEnable;
++								blendDesc.RenderTarget[i].SrcBlend = D3D11_BLEND_SRC_ALPHA;
++								blendDesc.RenderTarget[i].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
++								blendDesc.RenderTarget[i].BlendOp = D3D11_BLEND_OP_ADD;
++								blendDesc.RenderTarget[i].SrcBlendAlpha = D3D11_BLEND_SRC_ALPHA;
++								blendDesc.RenderTarget[i].DestBlendAlpha = D3D11_BLEND_INV_SRC_ALPHA;
++								blendDesc.RenderTarget[i].BlendOpAlpha = D3D11_BLEND_OP_ADD;
++								blendDesc.RenderTarget[i].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
++							}
++
++							DX::ThrowIfFailed(device->CreateBlendState(&blendDesc, &deferredBlendStates[a][b][c][d]));
++						} else {
++							deferredBlendStates[a][b][c][d] = nullptr;
++						}
++					}
++				}
++			}
+ 		}
+ 	});
+ 
+ 	// Set modified blend states
+-	for (int i = 0; i < blendStates.size(); ++i)
+-		*blendStates[i] = deferredBlendStates[i];
++	for (int a = 0; a < 7; a++) {
++		for (int b = 0; b < 2; b++) {
++			for (int c = 0; c < 13; c++) {
++				for (int d = 0; d < 2; d++) {
++					blendStates->a[a][b][c][d] = deferredBlendStates[a][b][c][d];
++				}
++			}
++		}
++	}
+ 
+ 	auto shadowState = RE::BSGraphics::RendererShadowState::GetSingleton();
+ 	GET_INSTANCE_MEMBER(stateUpdateFlags, shadowState)
+@@ -547,11 +549,18 @@ void Deferred::OverrideBlendStates()
+ 
+ void Deferred::ResetBlendStates()
+ {
+-	auto blendStates = BlendStates::GetBlendStates();
++	auto blendStates = BlendStates::GetSingleton();
+ 
+ 	// Restore modified blend states
+-	for (int i = 0; i < blendStates.size(); ++i)
+-		*blendStates[i] = forwardBlendStates[i];
++	for (int a = 0; a < 7; a++) {
++		for (int b = 0; b < 2; b++) {
++			for (int c = 0; c < 13; c++) {
++				for (int d = 0; d < 2; d++) {
++					blendStates->a[a][b][c][d] = forwardBlendStates[a][b][c][d];
++				}
++			}
++		}
++	}
+ 
+ 	auto shadowState = RE::BSGraphics::RendererShadowState::GetSingleton();
+ 	GET_INSTANCE_MEMBER(stateUpdateFlags, shadowState)"
+doodlum/skyrim-community-shaders,760,1e77bc1a415e0ace61f2feeaa84781998213aebd,src/Deferred.h,modified,10,21,31,"@@ -37,8 +37,9 @@ class Deferred
+ 
+ 	ID3D11ComputeShader* GetComputeMainCompositeInterior();
+ 
+-	ID3D11BlendState* deferredBlendStates[7];
+-	ID3D11BlendState* forwardBlendStates[7];
++	ID3D11BlendState* deferredBlendStates[7][2][13][2];
++	ID3D11BlendState* forwardBlendStates[7][2][13][2];
++
+ 	RE::RENDER_TARGET forwardRenderTargets[4];
+ 
+ 	ID3D11ComputeShader* ambientCompositeCS = nullptr;
+@@ -48,6 +49,7 @@ class Deferred
+ 	ID3D11ComputeShader* mainCompositeInteriorCS = nullptr;
+ 
+ 	bool inWorld = false;
++	bool inDecals = false;
+ 	bool deferredPass = false;
+ 
+ 	Texture2D* prevDiffuseAmbientTexture = nullptr;
+@@ -94,33 +96,22 @@ class Deferred
+ 			static void thunk(RE::BSBatchRenderer* This, uint32_t StartRange, uint32_t EndRanges, uint32_t RenderFlags, int GeometryGroup)
+ 			{
+ 				// Here is where the first opaque objects start rendering
+-				GetSingleton()->OverrideBlendStates();
+ 				GetSingleton()->StartDeferred();
+ 				func(This, StartRange, EndRanges, RenderFlags, GeometryGroup);  // RenderBatches
+ 			}
+ 			static inline REL::Relocation<decltype(thunk)> func;
+ 		};
+ 
+-		struct Main_RenderWorld_End
++		struct Main_RenderWorld_Decals
+ 		{
+ 			static void thunk(RE::BSShaderAccumulator* This, uint32_t RenderFlags)
+ 			{
+-				func(This, RenderFlags);
+-				// After this point, water starts rendering
+-				GetSingleton()->ResetBlendStates();
+ 				GetSingleton()->EndDeferred();
+-			}
+-			static inline REL::Relocation<decltype(thunk)> func;
+-		};
+-
+-		struct Main_RenderWorld_End_Decals
+-		{
+-			static void thunk(RE::BSShaderAccumulator* This, uint32_t RenderFlags)
+-			{
+-				GetSingleton()->ResetBlendStates();
+-				GetSingleton()->EndDeferred();
+-				// After this point, decals start rendering
++				// After this point, blended decals start rendering
++				GetSingleton()->inDecals = true;
+ 				func(This, RenderFlags);
++				GetSingleton()->inDecals = false;
++				// After this point, water starts rendering
+ 			}
+ 			static inline REL::Relocation<decltype(thunk)> func;
+ 		};
+@@ -129,9 +120,7 @@ class Deferred
+ 		{
+ 			stl::write_thunk_call<Main_RenderWorld>(REL::RelocationID(35560, 36559).address() + REL::Relocate(0x831, 0x841, 0x791));
+ 			stl::write_thunk_call<Main_RenderWorld_Start>(REL::RelocationID(99938, 106583).address() + REL::Relocate(0x8E, 0x84));
+-			stl::write_thunk_call<Main_RenderWorld_End>(REL::RelocationID(99938, 106583).address() + REL::Relocate(0x319, 0x308, 0x321));
+-			//stl::write_thunk_call<Main_RenderWorld_End>(REL::RelocationID(99938, 106583).address() + REL::Relocate(0x2F2, 0x2E1, 0x321));
+-
++			stl::write_thunk_call<Main_RenderWorld_Decals>(REL::RelocationID(99938, 106583).address() + REL::Relocate(0x319, 0x308, 0x321));
+ 			logger::info(""[Deferred] Installed hooks"");
+ 		}
+ 	};"
+doodlum/skyrim-community-shaders,760,1e77bc1a415e0ace61f2feeaa84781998213aebd,src/State.cpp,modified,3,0,3,"@@ -40,6 +40,9 @@ void State::Draw()
+ 			}
+ 		}
+ 
++		if (Deferred::GetSingleton()->inDecals)
++			currentExtraDescriptor |= (uint32_t)ExtraShaderDescriptors::IsDecal;
++
+ 		if (forceUpdatePermutationBuffer || currentPixelDescriptor != lastPixelDescriptor || currentExtraDescriptor != lastExtraDescriptor) {
+ 			PermutationCB data{};
+ 			data.VertexShaderDescriptor = currentVertexDescriptor;"
+doodlum/skyrim-community-shaders,760,1e77bc1a415e0ace61f2feeaa84781998213aebd,src/State.h,modified,1,0,1,"@@ -121,6 +121,7 @@ class State
+ 		InWorld = 1 << 0,
+ 		IsBeastRace = 1 << 1,
+ 		EffectShadows = 1 << 2,
++		IsDecal = 1 << 3
+ 	};
+ 
+ 	void UpdateSharedData();"

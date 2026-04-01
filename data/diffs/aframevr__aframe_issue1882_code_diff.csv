@@ -1,0 +1,224 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe,1882,37c33d2cc88de369feff7027f3d1e24b305ef496,src/components/cursor.js,modified,5,5,10,"@@ -133,7 +133,7 @@ module.exports.Component = registerComponent('cursor', {
+     // Ignore the cursor.
+     if (cursorEl === intersectedEl) { return; }
+ 
+-    // ignore if the event didn't occur on the current intersection
++    // Ignore if the event didn't occur on the current intersection.
+     if (intersectedEl !== this.intersectedEl) { return; }
+ 
+     this.clearCurrentIntersection(intersectedEl);
+@@ -160,11 +160,11 @@ module.exports.Component = registerComponent('cursor', {
+    * Helper to emit on both the cursor and the intersected entity (if exists).
+    */
+   twoWayEmit: function (evtName) {
++    var el = this.el;
+     var intersectedEl = this.intersectedEl;
+-    var cursorEvtDetail = { intersectedEl: this.intersectedEl, intersection: this.intersection };
+-    var intersectedElEvtDetail = { cursorEl: this.el, intersection: this.intersection };
+-    this.el.emit(evtName, cursorEvtDetail);
++    var intersection = this.intersection;
++    el.emit(evtName, {intersectedEl: intersectedEl, intersection: intersection});
+     if (!intersectedEl) { return; }
+-    intersectedEl.emit(evtName, intersectedElEvtDetail);
++    intersectedEl.emit(evtName, {cursorEl: el, intersection: intersection});
+   }
+ });"
+aframevr/aframe,1882,e4900e16ea9228af39d2a4fef6798393e79bd82a,examples/test/cursor/index.html,modified,70,7,77,"@@ -26,24 +26,37 @@
+ 
+       <a-entity position=""0 .6 4"">
+         <a-camera>
+-          <a-entity cursor
++          <a-entity raycaster=""far: 30; objects: .intersectable""
++                    cursor
+                     geometry=""primitive: ring; radiusOuter: 0.015;
+                               radiusInner: 0.01; segmentsTheta: 32""
+                     material=""color: #283644; shader: flat""
+-                    raycaster=""far: 30""
+                     position=""0 0 -0.75""></a-entity>
+         </a-camera>
+       </a-entity>
+ 
+       <a-entity position=""-3.5 1 0"">
+-        <a-entity mixin=""red cube"">
++        <a-entity mixin=""red cube""
++                  class=""intersectable"">
+           <a-animation begin=""click"" attribute=""position"" from=""0 0 0""
+                        to=""0 0 -10"" dur=""2000"" fill=""both""></a-animation>
+         </a-entity>
+       </a-entity>
+ 
+-      <a-entity position=""-1 1 0"">
+-        <a-entity mixin=""green cube""
++      <a-entity position=""0 1 1"">
++        <a-entity id=""invisibleCube""
++                  mixin=""cube""
++                  material=""color: grey; opacity: 0.3; transparent: true""
++                  scale=""1 1 0.1"">
++          <a-animation begin=""click"" attribute=""rotation"" to=""0 360 0""
++                       easing=""linear"" dur=""2000"" fill=""backwards""></a-animation>
++        </a-entity>
++      </a-entity>
++
++      <a-entity position=""0 1 0"">
++        <a-entity id=""foregroundCube""
++                  class=""intersectable""
++                  mixin=""green cube""
+                   sound__1=""on: click; src: #blip1;""
+                   sound__2=""on: mouseenter; src: #blip2;"">
+           <a-animation begin=""click"" attribute=""rotation"" to=""0 360 0""
+@@ -60,15 +73,25 @@
+         </a-entity>
+       </a-entity>
+ 
++      <a-entity position=""0 1 -3"">
++        <a-entity id=""backgroundCube""
++                  class=""intersectable""
++                  mixin=""green cube"">
++          <a-animation begin=""click"" attribute=""rotation"" to=""0 360 0""
++                       easing=""linear"" dur=""2000"" fill=""backwards""></a-animation>
++        </a-entity>
++      </a-entity>
++
+       <a-entity position=""3.5 1 0"" rotation=""0 45 0"">
+-        <a-entity mixin=""blue cube"">
++        <a-entity mixin=""blue cube""
++                  class=""intersectable"">
+           <a-animation begin=""click"" fill=""forwards"" repeat=""1""
+                        direction=""alternate"" attribute=""position"" from=""0 0 0""
+                        to=""15 0 0"" dur=""2000""></a-animation>
+         </a-entity>
+       </a-entity>
+ 
+-      <a-entity mixin=""yellow cube"" position=""0 3 0"" class=""clickable""
++      <a-entity mixin=""yellow cube"" position=""0 3 -3"" class=""intersectable clickable""
+                 rotation=""0 45 0"" scale="".5 .5 .5""></a-entity>
+     </a-scene>
+ 
+@@ -98,6 +121,46 @@
+             window.top.postMessage({type: 'navigate', data: {url: href}}, '*');
+           })
+         }
++
++        // testing mouseenter and mouseleave
++        var foregroundCube = document.querySelector('#foregroundCube');
++        foregroundCube.addEventListener('mouseenter', function (evt) {
++          foregroundCube.setAttribute('mixin','cube cube-hovered')
++        })
++        foregroundCube.addEventListener('mouseleave', function (evt) {
++          foregroundCube.setAttribute('mixin','green cube')
++        })
++        foregroundCube.addEventListener('mousedown', function (evt) {
++          foregroundCube.setAttribute('mixin','cube cube-selected')
++        })
++        foregroundCube.addEventListener('mouseup', function (evt) {
++          foregroundCube.setAttribute('mixin','cube cube-hovered')
++        })
++        foregroundCube.addEventListener('click', function (evt) {
++          var scene = document.querySelector('a-scene');
++          var clickRing = document.createElement('a-entity');
++          clickRing.id = 'clickRing-'+new Date().getTime();
++          clickRing.setAttribute('material','color: magenta; transparent: true; opacity: 0.6');
++          clickRing.setAttribute('geometry','primitive: ring; radius-inner: 0.5; radius-outer: 0.6');
++          clickRing.setAttribute('position',evt.detail.intersection.point);
++          var opacityAnimation = document.createElement('a-animation');
++          opacityAnimation.setAttribute('attribute','material.opacity');
++          opacityAnimation.setAttribute('to',0);
++          opacityAnimation.setAttribute('duration','250');
++          opacityAnimation.setAttribute('easing','ease-out-quad');
++          var scaleAnimation = document.createElement('a-animation');
++          scaleAnimation.setAttribute('attribute','scale');
++          scaleAnimation.setAttribute('to','3 3 3');
++          scaleAnimation.setAttribute('duration','250');
++          scaleAnimation.setAttribute('easing','ease-out-quad');
++          var onAnimationEnd = function () {
++            scene.removeChild(document.querySelector('#'+clickRing.id))
++          }
++          scaleAnimation.addEventListener('animationend', onAnimationEnd.bind(this))
++          clickRing.appendChild(opacityAnimation);
++          clickRing.appendChild(scaleAnimation);
++          scene.appendChild(clickRing);
++        })
+       })();
+     </script>
+   </body>"
+aframevr/aframe,1882,e4900e16ea9228af39d2a4fef6798393e79bd82a,src/components/cursor.js,modified,27,17,44,"@@ -73,7 +73,7 @@ module.exports.Component = registerComponent('cursor', {
+    * - Currently-intersected entity is the same as the one when mousedown was triggered,
+    *   in case user mousedowned one entity, dragged to another, and mouseupped.
+    */
+-  onMouseUp: function () {
++  onMouseUp: function (evt) {
+     this.twoWayEmit(EVENTS.MOUSEUP);
+     if (this.data.fuse || !this.intersectedEl ||
+         this.mouseDownEl !== this.intersectedEl) { return; }
+@@ -87,17 +87,25 @@ module.exports.Component = registerComponent('cursor', {
+     var self = this;
+     var cursorEl = this.el;
+     var data = this.data;
++    var index;
++    var intersectedEl;
++    var intersection;
+ 
+-    // Select closest object, other than the cursor.
+-    var index = evt.detail.els[0] === cursorEl ? 1 : 0;
+-    var intersection = evt.detail.intersections[index];
+-    var intersectedEl = evt.detail.els[index];
++    // Select closest object, excluding the cursor.
++    index = evt.detail.els[0] === cursorEl ? 1 : 0;
++    intersection = evt.detail.intersections[index];
++    intersectedEl = evt.detail.els[index];
+ 
+     // If cursor is the only intersected object, ignore the event.
+     if (!intersectedEl) { return; }
+ 
+-    // Set intersected entity if not already intersecting.
++    // Already intersecting this entity.
+     if (this.intersectedEl === intersectedEl) { return; }
++
++    // Unset current intersection.
++    if (this.intersectedEl) { this.leaveCurrentIntersection(); }
++
++    // Set new intersection.
+     this.intersection = intersection;
+     this.intersectedEl = intersectedEl;
+ 
+@@ -125,11 +133,17 @@ module.exports.Component = registerComponent('cursor', {
+     // Ignore the cursor.
+     if (cursorEl === intersectedEl) { return; }
+ 
+-    // Not intersecting.
+-    if (!intersectedEl || !this.intersectedEl) { return; }
++    // ignore if the event didn't occur on the current intersection
++    if (intersectedEl !== this.intersectedEl) { return; }
++
++    this.clearCurrentIntersection(intersectedEl);
++  },
++
++  clearCurrentIntersection: function () {
++    var cursorEl = this.el;
+ 
+     // No longer hovering (or fusing).
+-    intersectedEl.removeState(STATES.HOVERED);
++    this.intersectedEl.removeState(STATES.HOVERED);
+     cursorEl.removeState(STATES.HOVERING);
+     cursorEl.removeState(STATES.FUSING);
+     this.twoWayEmit(EVENTS.MOUSELEAVE);
+@@ -147,14 +161,10 @@ module.exports.Component = registerComponent('cursor', {
+    */
+   twoWayEmit: function (evtName) {
+     var intersectedEl = this.intersectedEl;
+-    this.el.emit(evtName, {
+-      intersection: this.intersection,
+-      intersectedEl: this.intersectedEl
+-    });
++    var cursorEvtDetail = { intersectedEl: this.intersectedEl, intersection: this.intersection };
++    var intersectedElEvtDetail = { cursorEl: this.el, intersection: this.intersection };
++    this.el.emit(evtName, cursorEvtDetail);
+     if (!intersectedEl) { return; }
+-    intersectedEl.emit(evtName, {
+-      intersection: this.intersection,
+-      cursorEl: this.el
+-    });
++    intersectedEl.emit(evtName, intersectedElEvtDetail);
+   }
+ });"

@@ -1,0 +1,1300 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+secondlife/viewer,1847,cfc1d42,indra/newview/app_settings/shaders/class1/deferred/pbralphaV.glsl,modified,4,3,7,"@@ -69,7 +69,7 @@ flat out float vary_sign;
+ out vec3 vary_normal;
+ 
+ vec2 texture_transform(vec2 vertex_texcoord, vec4[2] khr_gltf_transform, mat4 sl_animation_transform);
+-vec3 tangent_space_transform(vec4 vertex_tangent, vec3 vertex_normal, vec4[2] khr_gltf_transform, mat4 sl_animation_transform);
++vec4 tangent_space_transform(vec4 vertex_tangent, vec3 vertex_normal, vec4[2] khr_gltf_transform, mat4 sl_animation_transform);
+ 
+ 
+ void main()
+@@ -103,8 +103,9 @@ void main()
+ 
+     n = normalize(n);
+ 
+-    vary_tangent = normalize(tangent_space_transform(vec4(t, tangent.w), n, texture_normal_transform, texture_matrix0));
+-    vary_sign = tangent.w;
++    vec4 transformed_tangent = tangent_space_transform(vec4(t, tangent.w), n, texture_normal_transform, texture_matrix0);
++    vary_tangent = normalize(transformed_tangent.xyz);
++    vary_sign = transformed_tangent.w;
+     vary_normal = n;
+ 
+     vertex_color = diffuse_color;"
+secondlife/viewer,1847,cfc1d42,indra/newview/app_settings/shaders/class1/deferred/pbropaqueV.glsl,modified,4,3,7,"@@ -63,7 +63,7 @@ out vec3 vary_normal;
+ out vec3 vary_position;
+ 
+ vec2 texture_transform(vec2 vertex_texcoord, vec4[2] khr_gltf_transform, mat4 sl_animation_transform);
+-vec3 tangent_space_transform(vec4 vertex_tangent, vec3 vertex_normal, vec4[2] khr_gltf_transform, mat4 sl_animation_transform);
++vec4 tangent_space_transform(vec4 vertex_tangent, vec3 vertex_normal, vec4[2] khr_gltf_transform, mat4 sl_animation_transform);
+ 
+ void main()
+ {
+@@ -97,8 +97,9 @@ void main()
+ 
+     n = normalize(n);
+ 
+-    vary_tangent = normalize(tangent_space_transform(vec4(t, tangent.w), n, texture_normal_transform, texture_matrix0));
+-    vary_sign = tangent.w;
++    vec4 transformed_tangent = tangent_space_transform(vec4(t, tangent.w), n, texture_normal_transform, texture_matrix0);
++    vary_tangent = normalize(transformed_tangent.xyz);
++    vary_sign = transformed_tangent.w;
+     vary_normal = n;
+ 
+     vertex_color = diffuse_color;"
+secondlife/viewer,1847,cfc1d42,indra/newview/app_settings/shaders/class1/deferred/pbrterrainF.glsl,modified,22,7,29,"@@ -75,6 +75,9 @@ PBRMix terrain_sample_and_multiply_pbr(
+ #endif
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+     , sampler2D tex_vNt
++#if TERRAIN_PLANAR_TEXTURE_SAMPLE_COUNT == 3
++    , float transform_sign
++#endif
+ #endif
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_EMISSIVE)
+     , sampler2D tex_emissive
+@@ -139,7 +142,7 @@ in vec3 vary_position;
+ in vec3 vary_normal;
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+ in vec3 vary_tangents[4];
+-flat in float vary_sign;
++flat in float vary_signs[4];
+ #endif
+ in vec4 vary_texcoord0;
+ in vec4 vary_texcoord1;
+@@ -150,11 +153,11 @@ float terrain_mix(TerrainMix tm, vec4 tms4);
+ 
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+ // from mikktspace.com
+-vec3 mikktspace(vec3 vNt, vec3 vT)
++vec3 mikktspace(vec3 vNt, vec3 vT, float sign)
+ {
+     vec3 vN = vary_normal;
+ 
+-    vec3 vB = vary_sign * cross(vN, vT);
++    vec3 vB = sign * cross(vN, vT);
+     vec3 tnorm = normalize( vNt.x * vT + vNt.y * vB + vNt.z * vN );
+ 
+     tnorm *= gl_FrontFacing ? 1.0 : -1.0;
+@@ -216,6 +219,9 @@ void main()
+ #endif
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+             , detail_0_normal
++#if TERRAIN_PLANAR_TEXTURE_SAMPLE_COUNT == 3
++            , vary_signs[0]
++#endif
+ #endif
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_EMISSIVE)
+             , detail_0_emissive
+@@ -231,7 +237,7 @@ void main()
+ #endif
+         );
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+-        mix2.vNt = mikktspace(mix2.vNt, vary_tangents[0]);
++        mix2.vNt = mikktspace(mix2.vNt, vary_tangents[0], vary_signs[0]);
+ #endif
+         pbr_mix = mix_pbr(pbr_mix, mix2, tm.weight.x);
+         break;
+@@ -258,6 +264,9 @@ void main()
+ #endif
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+             , detail_1_normal
++#if TERRAIN_PLANAR_TEXTURE_SAMPLE_COUNT == 3
++            , vary_signs[1]
++#endif
+ #endif
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_EMISSIVE)
+             , detail_1_emissive
+@@ -273,7 +282,7 @@ void main()
+ #endif
+         );
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+-        mix2.vNt = mikktspace(mix2.vNt, vary_tangents[1]);
++        mix2.vNt = mikktspace(mix2.vNt, vary_tangents[1], vary_signs[1]);
+ #endif
+         pbr_mix = mix_pbr(pbr_mix, mix2, tm.weight.y);
+         break;
+@@ -300,6 +309,9 @@ void main()
+ #endif
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+             , detail_2_normal
++#if TERRAIN_PLANAR_TEXTURE_SAMPLE_COUNT == 3
++            , vary_signs[2]
++#endif
+ #endif
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_EMISSIVE)
+             , detail_2_emissive
+@@ -315,7 +327,7 @@ void main()
+ #endif
+         );
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+-        mix2.vNt = mikktspace(mix2.vNt, vary_tangents[2]);
++        mix2.vNt = mikktspace(mix2.vNt, vary_tangents[2], vary_signs[2]);
+ #endif
+         pbr_mix = mix_pbr(pbr_mix, mix2, tm.weight.z);
+         break;
+@@ -342,6 +354,9 @@ void main()
+ #endif
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+             , detail_3_normal
++#if TERRAIN_PLANAR_TEXTURE_SAMPLE_COUNT == 3
++            , vary_signs[3]
++#endif
+ #endif
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_EMISSIVE)
+             , detail_3_emissive
+@@ -357,7 +372,7 @@ void main()
+ #endif
+         );
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+-        mix2.vNt = mikktspace(mix2.vNt, vary_tangents[3]);
++        mix2.vNt = mikktspace(mix2.vNt, vary_tangents[3], vary_signs[3]);
+ #endif
+         pbr_mix = mix_pbr(pbr_mix, mix2, tm.weight.w);
+         break;"
+secondlife/viewer,1847,cfc1d42,indra/newview/app_settings/shaders/class1/deferred/pbrterrainUtilF.glsl,modified,10,2,12,"@@ -256,11 +256,12 @@ vec3 _t_normal_post_1(vec3 vNt0, float sign_or_zero)
+ }
+ 
+ // Triplanar-specific normal texture fixes
+-vec3 _t_normal_post_x(vec3 vNt0)
++vec3 _t_normal_post_x(vec3 vNt0, float tangent_sign)
+ {
+     vec3 vNt_x = _t_normal_post_1(vNt0, sign(vary_vertex_normal.x));
+     // *HACK: Transform normals according to orientation of the UVs
+     vNt_x.xy = vec2(-vNt_x.y, vNt_x.x);
++    vNt_x.xy *= tangent_sign;
+     return vNt_x;
+ }
+ vec3 _t_normal_post_y(vec3 vNt0)
+@@ -285,6 +286,7 @@ PBRMix terrain_sample_pbr(
+ #endif
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+     , sampler2D tex_vNt
++    , float tangent_sign
+ #endif
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_EMISSIVE)
+     , sampler2D tex_emissive
+@@ -314,7 +316,7 @@ PBRMix terrain_sample_pbr(
+             );
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+         // Triplanar-specific normal texture fix
+-        mix_x.vNt = _t_normal_post_x(mix_x.vNt);
++        mix_x.vNt = _t_normal_post_x(mix_x.vNt, tangent_sign);
+ #endif
+         mix = mix_pbr(mix, mix_x, tw.weight.x);
+         break;
+@@ -420,6 +422,9 @@ PBRMix terrain_sample_and_multiply_pbr(
+ #endif
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+     , sampler2D tex_vNt
++#if TERRAIN_PLANAR_TEXTURE_SAMPLE_COUNT == 3
++    , float tangent_sign
++#endif
+ #endif
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_EMISSIVE)
+     , sampler2D tex_emissive
+@@ -446,6 +451,9 @@ PBRMix terrain_sample_and_multiply_pbr(
+ #endif
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+         , tex_vNt
++#if TERRAIN_PLANAR_TEXTURE_SAMPLE_COUNT == 3
++        , tangent_sign
++#endif
+ #endif
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_EMISSIVE)
+         , tex_emissive"
+secondlife/viewer,1847,cfc1d42,indra/newview/app_settings/shaders/class1/deferred/pbrterrainV.glsl,modified,15,8,23,"@@ -43,7 +43,7 @@ out vec3 vary_vertex_normal; // Used by pbrterrainUtilF.glsl
+ out vec3 vary_normal;
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+ out vec3 vary_tangents[4];
+-flat out float vary_sign;
++flat out float vary_signs[4];
+ #endif
+ out vec4 vary_texcoord0;
+ out vec4 vary_texcoord1;
+@@ -60,7 +60,7 @@ out vec3 vary_position;
+ uniform vec4[5] terrain_texture_transforms;
+ 
+ vec2 terrain_texture_transform(vec2 vertex_texcoord, vec4[2] khr_gltf_transform);
+-vec3 terrain_tangent_space_transform(vec4 vertex_tangent, vec3 vertex_normal, vec4[2] khr_gltf_transform);
++vec4 terrain_tangent_space_transform(vec4 vertex_tangent, vec3 vertex_normal, vec4[2] khr_gltf_transform);
+ 
+ void main()
+ {
+@@ -75,28 +75,35 @@ void main()
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+     {
+         vec4[2] ttt;
++        vec4 transformed_tangent;
+         // material 1
+         ttt[0].xyz = terrain_texture_transforms[0].xyz;
+         ttt[1].x = terrain_texture_transforms[0].w;
+         ttt[1].y = terrain_texture_transforms[1].x;
+-        vary_tangents[0] = normalize(terrain_tangent_space_transform(vec4(t, tangent.w), n, ttt));
++        transformed_tangent = terrain_tangent_space_transform(vec4(t, tangent.w), n, ttt);
++        vary_tangents[0] = normalize(transformed_tangent.xyz);
++        vary_signs[0] = transformed_tangent.w;
+         // material 2
+         ttt[0].xyz = terrain_texture_transforms[1].yzw;
+         ttt[1].xy = terrain_texture_transforms[2].xy;
+-        vary_tangents[1] = normalize(terrain_tangent_space_transform(vec4(t, tangent.w), n, ttt));
++        transformed_tangent = terrain_tangent_space_transform(vec4(t, tangent.w), n, ttt);
++        vary_tangents[1] = normalize(transformed_tangent.xyz);
++        vary_signs[1] = transformed_tangent.w;
+         // material 3
+         ttt[0].xy = terrain_texture_transforms[2].zw;
+         ttt[0].z = terrain_texture_transforms[3].x;
+         ttt[1].xy = terrain_texture_transforms[3].yz;
+-        vary_tangents[2] = normalize(terrain_tangent_space_transform(vec4(t, tangent.w), n, ttt));
++        transformed_tangent = terrain_tangent_space_transform(vec4(t, tangent.w), n, ttt);
++        vary_tangents[2] = normalize(transformed_tangent.xyz);
++        vary_signs[2] = transformed_tangent.w;
+         // material 4
+         ttt[0].x = terrain_texture_transforms[3].w;
+         ttt[0].yz = terrain_texture_transforms[4].xy;
+         ttt[1].xy = terrain_texture_transforms[4].zw;
+-        vary_tangents[3] = normalize(terrain_tangent_space_transform(vec4(t, tangent.w), n, ttt));
++        transformed_tangent = terrain_tangent_space_transform(vec4(t, tangent.w), n, ttt);
++        vary_tangents[3] = normalize(transformed_tangent.xyz);
++        vary_signs[3] = transformed_tangent.w;
+     }
+-
+-    vary_sign = tangent.w;
+ #endif
+     vary_normal = normalize(n);
+ "
+secondlife/viewer,1847,cfc1d42,indra/newview/app_settings/shaders/class1/deferred/textureUtilV.glsl,modified,22,6,28,"@@ -100,7 +100,7 @@ vec2 terrain_texture_transform(vec2 vertex_texcoord, vec4[2] khr_gltf_transform)
+ // https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Viewer/47a191931461a6f2e14de48d6da0f0eb6ec2d147/source/Renderer/shaders/material_info.glsl
+ // We may want to account for this case during GLTF model import.
+ // -Cosmic,2023-06-06
+-vec3 tangent_space_transform(vec4 vertex_tangent, vec3 vertex_normal, vec4[2] khr_gltf_transform, mat4 sl_animation_transform)
++vec4 tangent_space_transform(vec4 vertex_tangent, vec3 vertex_normal, vec4[2] khr_gltf_transform, mat4 sl_animation_transform)
+ {
+     vec2 weights = vec2(0, 1);
+ 
+@@ -117,13 +117,17 @@ vec3 tangent_space_transform(vec4 vertex_tangent, vec3 vertex_normal, vec4[2] kh
+     // Convert to left-handed coordinate system
+     weights.y = -weights.y;
+ 
+-    // Apply KHR_texture_transform (rotation only)
++    // Apply KHR_texture_transform (rotation and scale sign only)
+     float khr_rotation = khr_gltf_transform[0].z;
+     mat2 khr_rotation_mat = mat2(
+         cos(khr_rotation),-sin(khr_rotation),
+         sin(khr_rotation), cos(khr_rotation)
+     );
+     weights = khr_rotation_mat * weights;
++    vec2 khr_scale = khr_gltf_transform[0].xy;
++    // Set sign to +1 if 0 for some reason
++    vec2 khr_scale_sign = sign(sign(khr_scale) + vec2(0.5));
++    weights *= khr_scale_sign.yx;
+ 
+     // Convert back to right-handed coordinate system
+     weights.y = -weights.y;
+@@ -132,27 +136,39 @@ vec3 tangent_space_transform(vec4 vertex_tangent, vec3 vertex_normal, vec4[2] kh
+     // from the normal and tangent, as seen in the fragment shader
+     vec3 vertex_binormal = vertex_tangent.w * cross(vertex_normal, vertex_tangent.xyz);
+ 
+-    return (weights.x * vertex_binormal.xyz) + (weights.y * vertex_tangent.xyz);
++    // An additional sign flip prevents the binormal from being flipped as a
++    // result of a propagation of the tangent sign during the cross product.
++    float sign_flip = khr_scale_sign.x * khr_scale_sign.y;
++    return vec4((weights.x * vertex_binormal.xyz) + (weights.y * vertex_tangent.xyz), vertex_tangent.w * sign_flip);
+ }
+ 
+ // Similar to tangent_space_transform but no texture animation support.
+-vec3 terrain_tangent_space_transform(vec4 vertex_tangent, vec3 vertex_normal, vec4[2] khr_gltf_transform)
++vec4 terrain_tangent_space_transform(vec4 vertex_tangent, vec3 vertex_normal, vec4[2] khr_gltf_transform)
+ {
+     // Immediately convert to left-handed coordinate system ((0,1) -> (0, -1))
+     vec2 weights = vec2(0, -1);
+ 
+-    // Apply KHR_texture_transform (rotation only)
++    // Apply KHR_texture_transform (rotation and scale sign only)
+     float khr_rotation = khr_gltf_transform[0].z;
+     mat2 khr_rotation_mat = mat2(
+         cos(khr_rotation),-sin(khr_rotation),
+         sin(khr_rotation), cos(khr_rotation)
+     );
+     weights = khr_rotation_mat * weights;
++    vec2 khr_scale = khr_gltf_transform[0].xy;
++    // Set sign to +1 if 0 for some reason
++    vec2 khr_scale_sign = sign(sign(khr_scale) + vec2(0.5));
++    weights *= khr_scale_sign.yx;
+ 
+     // Convert back to right-handed coordinate system
+     weights.y = -weights.y;
+ 
++    // Similar to the MikkTSpace-compatible method of extracting the binormal
++    // from the normal and tangent, as seen in the fragment shader
+     vec3 vertex_binormal = vertex_tangent.w * cross(vertex_normal, vertex_tangent.xyz);
+ 
+-    return (weights.x * vertex_binormal.xyz) + (weights.y * vertex_tangent.xyz);
++    // An additional sign flip prevents the binormal from being flipped as a
++    // result of a propagation of the tangent sign during the cross product.
++    float sign_flip = khr_scale_sign.x * khr_scale_sign.y;
++    return vec4((weights.x * vertex_binormal.xyz) + (weights.y * vertex_tangent.xyz), vertex_tangent.w * sign_flip);
+ }"
+secondlife/viewer,1847,69576f7,doc/testplans/pbr_terrain_appearance.md,modified,11,0,11,"@@ -50,3 +50,14 @@ If triplanar mapping is enabled, and an avatar faces an axially-aligned wall, th
+ Textures of materials should not appear mirrored.
+ 
+ When triplanar mapping is enabled, rotations on the axially aligned walls should apply in the same direction as they would on flat ground.
++
++## PBR Terrain Normal Textures
++
++This section assumes terrain normal maps are enabled at the current graphics setting.
++
++PBR terrain should have approximately correct lighting based on the normal texture:
++
++- When on flat ground
++- On cliffs, when triplanar mapping is enabled. Lighting will be somewhat less accurate when the cliff face is not axially aligned.
++- If no Terrain Texture Transform is applied.
++- If a Terrain Texture Transform is applied, especially for rotation or negative scale."
+secondlife/viewer,1847,013c918,indra/newview/app_settings/shaders/class1/deferred/textureUtilV.glsl,modified,40,30,70,"@@ -94,6 +94,8 @@ vec2 terrain_texture_transform(vec2 vertex_texcoord, vec4[2] khr_gltf_transform)
+ // Take the rotation only from both transforms and apply to the tangent. This
+ // accounts for the change of the topology of the normal texture when a texture
+ // rotation is applied to it.
++// In practice, this applies the inverse of the texture transform to the tangent.
++// It is effectively an inverse of the rotation
+ // *HACK: Assume the imported GLTF model did not have both normal texture
+ // transforms and tangent vertices. The use of this function is inconsistent
+ // with the GLTF sample viewer when that is the case. See getNormalInfo in
+@@ -102,32 +104,38 @@ vec2 terrain_texture_transform(vec2 vertex_texcoord, vec4[2] khr_gltf_transform)
+ // -Cosmic,2023-06-06
+ vec4 tangent_space_transform(vec4 vertex_tangent, vec3 vertex_normal, vec4[2] khr_gltf_transform, mat4 sl_animation_transform)
+ {
+-    vec2 weights = vec2(0, 1);
+-
+-    // Apply texture animation first to avoid shearing and other artifacts (rotation only)
+-    mat2 sl_rot_scale;
+-    sl_rot_scale[0][0] = sl_animation_transform[0][0];
+-    sl_rot_scale[0][1] = sl_animation_transform[0][1];
+-    sl_rot_scale[1][0] = sl_animation_transform[1][0];
+-    sl_rot_scale[1][1] = sl_animation_transform[1][1];
+-    weights = sl_rot_scale * weights;
+-    // Remove scale
+-    weights = normalize(weights);
+-
+-    // Convert to left-handed coordinate system
+-    weights.y = -weights.y;
++    // Immediately convert to left-handed coordinate system, but it has no
++    // effect here because y is 0 ((1,0) -> (1,0))
++    vec2 weights = vec2(1, 0);
+ 
+-    // Apply KHR_texture_transform (rotation and scale sign only)
+-    float khr_rotation = khr_gltf_transform[0].z;
++    // Apply inverse KHR_texture_transform (rotation and scale sign only)
++    float khr_rotation = -khr_gltf_transform[0].z;
+     mat2 khr_rotation_mat = mat2(
+         cos(khr_rotation),-sin(khr_rotation),
+         sin(khr_rotation), cos(khr_rotation)
+     );
+     weights = khr_rotation_mat * weights;
+-    vec2 khr_scale = khr_gltf_transform[0].xy;
+-    // Set sign to +1 if 0 for some reason
+-    vec2 khr_scale_sign = sign(sign(khr_scale) + vec2(0.5));
+-    weights *= khr_scale_sign.yx;
++    vec2 khr_scale_sign = sign(khr_gltf_transform[0].xy);
++    weights *= khr_scale_sign.xy;
++
++    // *NOTE: Delay conversion to right-handed coordinate system here, to
++    // remove the need for computing the inverse of the SL texture animation
++    // matrix.
++
++    // Apply texture animation last to avoid shearing and other artifacts (rotation only)
++    mat2 inv_sl_rot_scale;
++    inv_sl_rot_scale[0][0] = sl_animation_transform[0][0];
++    inv_sl_rot_scale[0][1] = sl_animation_transform[0][1];
++    inv_sl_rot_scale[1][0] = sl_animation_transform[1][0];
++    inv_sl_rot_scale[1][1] = sl_animation_transform[1][1];
++    weights = inv_sl_rot_scale * weights;
++    // *NOTE: Scale to be removed later
++
++    // Set weights to default if 0 for some reason
++    weights.x += 1.0 - abs(sign(sign(weights.x) + (0.5 * sign(weights.y))));
++
++    // Remove scale from SL texture animation transform
++    weights = normalize(weights);
+ 
+     // Convert back to right-handed coordinate system
+     weights.y = -weights.y;
+@@ -139,26 +147,28 @@ vec4 tangent_space_transform(vec4 vertex_tangent, vec3 vertex_normal, vec4[2] kh
+     // An additional sign flip prevents the binormal from being flipped as a
+     // result of a propagation of the tangent sign during the cross product.
+     float sign_flip = khr_scale_sign.x * khr_scale_sign.y;
+-    return vec4((weights.x * vertex_binormal.xyz) + (weights.y * vertex_tangent.xyz), vertex_tangent.w * sign_flip);
++    return vec4((weights.x * vertex_tangent.xyz) + (weights.y * vertex_binormal.xyz), vertex_tangent.w * sign_flip);
+ }
+ 
+ // Similar to tangent_space_transform but no texture animation support.
+ vec4 terrain_tangent_space_transform(vec4 vertex_tangent, vec3 vertex_normal, vec4[2] khr_gltf_transform)
+ {
+-    // Immediately convert to left-handed coordinate system ((0,1) -> (0, -1))
+-    vec2 weights = vec2(0, -1);
++    // Immediately convert to left-handed coordinate system, but it has no
++    // effect here because y is 0 ((1,0) -> (1,0))
++    vec2 weights = vec2(1, 0);
+ 
+-    // Apply KHR_texture_transform (rotation and scale sign only)
+-    float khr_rotation = khr_gltf_transform[0].z;
++    // Apply inverse KHR_texture_transform (rotation and scale sign only)
++    float khr_rotation = -khr_gltf_transform[0].z;
+     mat2 khr_rotation_mat = mat2(
+         cos(khr_rotation),-sin(khr_rotation),
+         sin(khr_rotation), cos(khr_rotation)
+     );
+     weights = khr_rotation_mat * weights;
+-    vec2 khr_scale = khr_gltf_transform[0].xy;
+-    // Set sign to +1 if 0 for some reason
+-    vec2 khr_scale_sign = sign(sign(khr_scale) + vec2(0.5));
+-    weights *= khr_scale_sign.yx;
++    vec2 khr_scale_sign = sign(khr_gltf_transform[0].xy);
++    weights *= khr_scale_sign.xy;
++
++    // Set weights to default if 0 for some reason
++    weights.x += 1.0 - abs(sign(sign(weights.x) + (0.5 * sign(weights.y))));
+ 
+     // Convert back to right-handed coordinate system
+     weights.y = -weights.y;
+@@ -170,5 +180,5 @@ vec4 terrain_tangent_space_transform(vec4 vertex_tangent, vec3 vertex_normal, ve
+     // An additional sign flip prevents the binormal from being flipped as a
+     // result of a propagation of the tangent sign during the cross product.
+     float sign_flip = khr_scale_sign.x * khr_scale_sign.y;
+-    return vec4((weights.x * vertex_binormal.xyz) + (weights.y * vertex_tangent.xyz), vertex_tangent.w * sign_flip);
++    return vec4((weights.x * vertex_tangent.xyz) + (weights.y * vertex_binormal.xyz), vertex_tangent.w * sign_flip);
+ }"
+secondlife/viewer,1847,5a60b78,indra/newview/app_settings/shaders/class1/deferred/pbralphaV.glsl,modified,4,3,7,"@@ -69,7 +69,7 @@ flat out float vary_sign;
+ out vec3 vary_normal;
+ 
+ vec2 texture_transform(vec2 vertex_texcoord, vec4[2] khr_gltf_transform, mat4 sl_animation_transform);
+-vec3 tangent_space_transform(vec4 vertex_tangent, vec3 vertex_normal, vec4[2] khr_gltf_transform, mat4 sl_animation_transform);
++vec4 tangent_space_transform(vec4 vertex_tangent, vec3 vertex_normal, vec4[2] khr_gltf_transform, mat4 sl_animation_transform);
+ 
+ 
+ void main()
+@@ -103,8 +103,9 @@ void main()
+ 
+     n = normalize(n);
+ 
+-    vary_tangent = normalize(tangent_space_transform(vec4(t, tangent.w), n, texture_normal_transform, texture_matrix0));
+-    vary_sign = tangent.w;
++    vec4 transformed_tangent = tangent_space_transform(vec4(t, tangent.w), n, texture_normal_transform, texture_matrix0);
++    vary_tangent = normalize(transformed_tangent.xyz);
++    vary_sign = transformed_tangent.w;
+     vary_normal = n;
+ 
+     vertex_color = diffuse_color;"
+secondlife/viewer,1847,5a60b78,indra/newview/app_settings/shaders/class1/deferred/pbropaqueV.glsl,modified,4,3,7,"@@ -63,7 +63,7 @@ out vec3 vary_normal;
+ out vec3 vary_position;
+ 
+ vec2 texture_transform(vec2 vertex_texcoord, vec4[2] khr_gltf_transform, mat4 sl_animation_transform);
+-vec3 tangent_space_transform(vec4 vertex_tangent, vec3 vertex_normal, vec4[2] khr_gltf_transform, mat4 sl_animation_transform);
++vec4 tangent_space_transform(vec4 vertex_tangent, vec3 vertex_normal, vec4[2] khr_gltf_transform, mat4 sl_animation_transform);
+ 
+ void main()
+ {
+@@ -97,8 +97,9 @@ void main()
+ 
+     n = normalize(n);
+ 
+-    vary_tangent = normalize(tangent_space_transform(vec4(t, tangent.w), n, texture_normal_transform, texture_matrix0));
+-    vary_sign = tangent.w;
++    vec4 transformed_tangent = tangent_space_transform(vec4(t, tangent.w), n, texture_normal_transform, texture_matrix0);
++    vary_tangent = normalize(transformed_tangent.xyz);
++    vary_sign = transformed_tangent.w;
+     vary_normal = n;
+ 
+     vertex_color = diffuse_color;"
+secondlife/viewer,1847,5a60b78,indra/newview/app_settings/shaders/class1/deferred/pbrterrainF.glsl,modified,22,7,29,"@@ -75,6 +75,9 @@ PBRMix terrain_sample_and_multiply_pbr(
+ #endif
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+     , sampler2D tex_vNt
++#if TERRAIN_PLANAR_TEXTURE_SAMPLE_COUNT == 3
++    , float transform_sign
++#endif
+ #endif
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_EMISSIVE)
+     , sampler2D tex_emissive
+@@ -139,7 +142,7 @@ in vec3 vary_position;
+ in vec3 vary_normal;
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+ in vec3 vary_tangents[4];
+-flat in float vary_sign;
++flat in float vary_signs[4];
+ #endif
+ in vec4 vary_texcoord0;
+ in vec4 vary_texcoord1;
+@@ -150,11 +153,11 @@ float terrain_mix(TerrainMix tm, vec4 tms4);
+ 
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+ // from mikktspace.com
+-vec3 mikktspace(vec3 vNt, vec3 vT)
++vec3 mikktspace(vec3 vNt, vec3 vT, float sign)
+ {
+     vec3 vN = vary_normal;
+ 
+-    vec3 vB = vary_sign * cross(vN, vT);
++    vec3 vB = sign * cross(vN, vT);
+     vec3 tnorm = normalize( vNt.x * vT + vNt.y * vB + vNt.z * vN );
+ 
+     tnorm *= gl_FrontFacing ? 1.0 : -1.0;
+@@ -216,6 +219,9 @@ void main()
+ #endif
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+             , detail_0_normal
++#if TERRAIN_PLANAR_TEXTURE_SAMPLE_COUNT == 3
++            , vary_signs[0]
++#endif
+ #endif
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_EMISSIVE)
+             , detail_0_emissive
+@@ -231,7 +237,7 @@ void main()
+ #endif
+         );
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+-        mix2.vNt = mikktspace(mix2.vNt, vary_tangents[0]);
++        mix2.vNt = mikktspace(mix2.vNt, vary_tangents[0], vary_signs[0]);
+ #endif
+         pbr_mix = mix_pbr(pbr_mix, mix2, tm.weight.x);
+         break;
+@@ -258,6 +264,9 @@ void main()
+ #endif
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+             , detail_1_normal
++#if TERRAIN_PLANAR_TEXTURE_SAMPLE_COUNT == 3
++            , vary_signs[1]
++#endif
+ #endif
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_EMISSIVE)
+             , detail_1_emissive
+@@ -273,7 +282,7 @@ void main()
+ #endif
+         );
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+-        mix2.vNt = mikktspace(mix2.vNt, vary_tangents[1]);
++        mix2.vNt = mikktspace(mix2.vNt, vary_tangents[1], vary_signs[1]);
+ #endif
+         pbr_mix = mix_pbr(pbr_mix, mix2, tm.weight.y);
+         break;
+@@ -300,6 +309,9 @@ void main()
+ #endif
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+             , detail_2_normal
++#if TERRAIN_PLANAR_TEXTURE_SAMPLE_COUNT == 3
++            , vary_signs[2]
++#endif
+ #endif
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_EMISSIVE)
+             , detail_2_emissive
+@@ -315,7 +327,7 @@ void main()
+ #endif
+         );
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+-        mix2.vNt = mikktspace(mix2.vNt, vary_tangents[2]);
++        mix2.vNt = mikktspace(mix2.vNt, vary_tangents[2], vary_signs[2]);
+ #endif
+         pbr_mix = mix_pbr(pbr_mix, mix2, tm.weight.z);
+         break;
+@@ -342,6 +354,9 @@ void main()
+ #endif
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+             , detail_3_normal
++#if TERRAIN_PLANAR_TEXTURE_SAMPLE_COUNT == 3
++            , vary_signs[3]
++#endif
+ #endif
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_EMISSIVE)
+             , detail_3_emissive
+@@ -357,7 +372,7 @@ void main()
+ #endif
+         );
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+-        mix2.vNt = mikktspace(mix2.vNt, vary_tangents[3]);
++        mix2.vNt = mikktspace(mix2.vNt, vary_tangents[3], vary_signs[3]);
+ #endif
+         pbr_mix = mix_pbr(pbr_mix, mix2, tm.weight.w);
+         break;"
+secondlife/viewer,1847,5a60b78,indra/newview/app_settings/shaders/class1/deferred/pbrterrainUtilF.glsl,modified,10,2,12,"@@ -256,11 +256,12 @@ vec3 _t_normal_post_1(vec3 vNt0, float sign_or_zero)
+ }
+ 
+ // Triplanar-specific normal texture fixes
+-vec3 _t_normal_post_x(vec3 vNt0)
++vec3 _t_normal_post_x(vec3 vNt0, float tangent_sign)
+ {
+     vec3 vNt_x = _t_normal_post_1(vNt0, sign(vary_vertex_normal.x));
+     // *HACK: Transform normals according to orientation of the UVs
+     vNt_x.xy = vec2(-vNt_x.y, vNt_x.x);
++    vNt_x.xy *= tangent_sign;
+     return vNt_x;
+ }
+ vec3 _t_normal_post_y(vec3 vNt0)
+@@ -285,6 +286,7 @@ PBRMix terrain_sample_pbr(
+ #endif
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+     , sampler2D tex_vNt
++    , float tangent_sign
+ #endif
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_EMISSIVE)
+     , sampler2D tex_emissive
+@@ -314,7 +316,7 @@ PBRMix terrain_sample_pbr(
+             );
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+         // Triplanar-specific normal texture fix
+-        mix_x.vNt = _t_normal_post_x(mix_x.vNt);
++        mix_x.vNt = _t_normal_post_x(mix_x.vNt, tangent_sign);
+ #endif
+         mix = mix_pbr(mix, mix_x, tw.weight.x);
+         break;
+@@ -420,6 +422,9 @@ PBRMix terrain_sample_and_multiply_pbr(
+ #endif
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+     , sampler2D tex_vNt
++#if TERRAIN_PLANAR_TEXTURE_SAMPLE_COUNT == 3
++    , float tangent_sign
++#endif
+ #endif
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_EMISSIVE)
+     , sampler2D tex_emissive
+@@ -446,6 +451,9 @@ PBRMix terrain_sample_and_multiply_pbr(
+ #endif
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+         , tex_vNt
++#if TERRAIN_PLANAR_TEXTURE_SAMPLE_COUNT == 3
++        , tangent_sign
++#endif
+ #endif
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_EMISSIVE)
+         , tex_emissive"
+secondlife/viewer,1847,5a60b78,indra/newview/app_settings/shaders/class1/deferred/pbrterrainV.glsl,modified,15,8,23,"@@ -43,7 +43,7 @@ out vec3 vary_vertex_normal; // Used by pbrterrainUtilF.glsl
+ out vec3 vary_normal;
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+ out vec3 vary_tangents[4];
+-flat out float vary_sign;
++flat out float vary_signs[4];
+ #endif
+ out vec4 vary_texcoord0;
+ out vec4 vary_texcoord1;
+@@ -60,7 +60,7 @@ out vec3 vary_position;
+ uniform vec4[5] terrain_texture_transforms;
+ 
+ vec2 terrain_texture_transform(vec2 vertex_texcoord, vec4[2] khr_gltf_transform);
+-vec3 terrain_tangent_space_transform(vec4 vertex_tangent, vec3 vertex_normal, vec4[2] khr_gltf_transform);
++vec4 terrain_tangent_space_transform(vec4 vertex_tangent, vec3 vertex_normal, vec4[2] khr_gltf_transform);
+ 
+ void main()
+ {
+@@ -75,28 +75,35 @@ void main()
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+     {
+         vec4[2] ttt;
++        vec4 transformed_tangent;
+         // material 1
+         ttt[0].xyz = terrain_texture_transforms[0].xyz;
+         ttt[1].x = terrain_texture_transforms[0].w;
+         ttt[1].y = terrain_texture_transforms[1].x;
+-        vary_tangents[0] = normalize(terrain_tangent_space_transform(vec4(t, tangent.w), n, ttt));
++        transformed_tangent = terrain_tangent_space_transform(vec4(t, tangent.w), n, ttt);
++        vary_tangents[0] = normalize(transformed_tangent.xyz);
++        vary_signs[0] = transformed_tangent.w;
+         // material 2
+         ttt[0].xyz = terrain_texture_transforms[1].yzw;
+         ttt[1].xy = terrain_texture_transforms[2].xy;
+-        vary_tangents[1] = normalize(terrain_tangent_space_transform(vec4(t, tangent.w), n, ttt));
++        transformed_tangent = terrain_tangent_space_transform(vec4(t, tangent.w), n, ttt);
++        vary_tangents[1] = normalize(transformed_tangent.xyz);
++        vary_signs[1] = transformed_tangent.w;
+         // material 3
+         ttt[0].xy = terrain_texture_transforms[2].zw;
+         ttt[0].z = terrain_texture_transforms[3].x;
+         ttt[1].xy = terrain_texture_transforms[3].yz;
+-        vary_tangents[2] = normalize(terrain_tangent_space_transform(vec4(t, tangent.w), n, ttt));
++        transformed_tangent = terrain_tangent_space_transform(vec4(t, tangent.w), n, ttt);
++        vary_tangents[2] = normalize(transformed_tangent.xyz);
++        vary_signs[2] = transformed_tangent.w;
+         // material 4
+         ttt[0].x = terrain_texture_transforms[3].w;
+         ttt[0].yz = terrain_texture_transforms[4].xy;
+         ttt[1].xy = terrain_texture_transforms[4].zw;
+-        vary_tangents[3] = normalize(terrain_tangent_space_transform(vec4(t, tangent.w), n, ttt));
++        transformed_tangent = terrain_tangent_space_transform(vec4(t, tangent.w), n, ttt);
++        vary_tangents[3] = normalize(transformed_tangent.xyz);
++        vary_signs[3] = transformed_tangent.w;
+     }
+-
+-    vary_sign = tangent.w;
+ #endif
+     vary_normal = normalize(n);
+ "
+secondlife/viewer,1847,5a60b78,indra/newview/app_settings/shaders/class1/deferred/textureUtilV.glsl,modified,50,24,74,"@@ -94,36 +94,48 @@ vec2 terrain_texture_transform(vec2 vertex_texcoord, vec4[2] khr_gltf_transform)
+ // Take the rotation only from both transforms and apply to the tangent. This
+ // accounts for the change of the topology of the normal texture when a texture
+ // rotation is applied to it.
++// In practice, this applies the inverse of the texture transform to the tangent.
++// It is effectively an inverse of the rotation
+ // *HACK: Assume the imported GLTF model did not have both normal texture
+ // transforms and tangent vertices. The use of this function is inconsistent
+ // with the GLTF sample viewer when that is the case. See getNormalInfo in
+ // https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Viewer/47a191931461a6f2e14de48d6da0f0eb6ec2d147/source/Renderer/shaders/material_info.glsl
+ // We may want to account for this case during GLTF model import.
+ // -Cosmic,2023-06-06
+-vec3 tangent_space_transform(vec4 vertex_tangent, vec3 vertex_normal, vec4[2] khr_gltf_transform, mat4 sl_animation_transform)
++vec4 tangent_space_transform(vec4 vertex_tangent, vec3 vertex_normal, vec4[2] khr_gltf_transform, mat4 sl_animation_transform)
+ {
+-    vec2 weights = vec2(0, 1);
+-
+-    // Apply texture animation first to avoid shearing and other artifacts (rotation only)
+-    mat2 sl_rot_scale;
+-    sl_rot_scale[0][0] = sl_animation_transform[0][0];
+-    sl_rot_scale[0][1] = sl_animation_transform[0][1];
+-    sl_rot_scale[1][0] = sl_animation_transform[1][0];
+-    sl_rot_scale[1][1] = sl_animation_transform[1][1];
+-    weights = sl_rot_scale * weights;
+-    // Remove scale
+-    weights = normalize(weights);
+-
+-    // Convert to left-handed coordinate system
+-    weights.y = -weights.y;
++    // Immediately convert to left-handed coordinate system, but it has no
++    // effect here because y is 0 ((1,0) -> (1,0))
++    vec2 weights = vec2(1, 0);
+ 
+-    // Apply KHR_texture_transform (rotation only)
+-    float khr_rotation = khr_gltf_transform[0].z;
++    // Apply inverse KHR_texture_transform (rotation and scale sign only)
++    float khr_rotation = -khr_gltf_transform[0].z;
+     mat2 khr_rotation_mat = mat2(
+         cos(khr_rotation),-sin(khr_rotation),
+         sin(khr_rotation), cos(khr_rotation)
+     );
+     weights = khr_rotation_mat * weights;
++    vec2 khr_scale_sign = sign(khr_gltf_transform[0].xy);
++    weights *= khr_scale_sign.xy;
++
++    // *NOTE: Delay conversion to right-handed coordinate system here, to
++    // remove the need for computing the inverse of the SL texture animation
++    // matrix.
++
++    // Apply texture animation last to avoid shearing and other artifacts (rotation only)
++    mat2 inv_sl_rot_scale;
++    inv_sl_rot_scale[0][0] = sl_animation_transform[0][0];
++    inv_sl_rot_scale[0][1] = sl_animation_transform[0][1];
++    inv_sl_rot_scale[1][0] = sl_animation_transform[1][0];
++    inv_sl_rot_scale[1][1] = sl_animation_transform[1][1];
++    weights = inv_sl_rot_scale * weights;
++    // *NOTE: Scale to be removed later
++
++    // Set weights to default if 0 for some reason
++    weights.x += 1.0 - abs(sign(sign(weights.x) + (0.5 * sign(weights.y))));
++
++    // Remove scale from SL texture animation transform
++    weights = normalize(weights);
+ 
+     // Convert back to right-handed coordinate system
+     weights.y = -weights.y;
+@@ -132,27 +144,41 @@ vec3 tangent_space_transform(vec4 vertex_tangent, vec3 vertex_normal, vec4[2] kh
+     // from the normal and tangent, as seen in the fragment shader
+     vec3 vertex_binormal = vertex_tangent.w * cross(vertex_normal, vertex_tangent.xyz);
+ 
+-    return (weights.x * vertex_binormal.xyz) + (weights.y * vertex_tangent.xyz);
++    // An additional sign flip prevents the binormal from being flipped as a
++    // result of a propagation of the tangent sign during the cross product.
++    float sign_flip = khr_scale_sign.x * khr_scale_sign.y;
++    return vec4((weights.x * vertex_tangent.xyz) + (weights.y * vertex_binormal.xyz), vertex_tangent.w * sign_flip);
+ }
+ 
+ // Similar to tangent_space_transform but no texture animation support.
+-vec3 terrain_tangent_space_transform(vec4 vertex_tangent, vec3 vertex_normal, vec4[2] khr_gltf_transform)
++vec4 terrain_tangent_space_transform(vec4 vertex_tangent, vec3 vertex_normal, vec4[2] khr_gltf_transform)
+ {
+-    // Immediately convert to left-handed coordinate system ((0,1) -> (0, -1))
+-    vec2 weights = vec2(0, -1);
++    // Immediately convert to left-handed coordinate system, but it has no
++    // effect here because y is 0 ((1,0) -> (1,0))
++    vec2 weights = vec2(1, 0);
+ 
+-    // Apply KHR_texture_transform (rotation only)
+-    float khr_rotation = khr_gltf_transform[0].z;
++    // Apply inverse KHR_texture_transform (rotation and scale sign only)
++    float khr_rotation = -khr_gltf_transform[0].z;
+     mat2 khr_rotation_mat = mat2(
+         cos(khr_rotation),-sin(khr_rotation),
+         sin(khr_rotation), cos(khr_rotation)
+     );
+     weights = khr_rotation_mat * weights;
++    vec2 khr_scale_sign = sign(khr_gltf_transform[0].xy);
++    weights *= khr_scale_sign.xy;
++
++    // Set weights to default if 0 for some reason
++    weights.x += 1.0 - abs(sign(sign(weights.x) + (0.5 * sign(weights.y))));
+ 
+     // Convert back to right-handed coordinate system
+     weights.y = -weights.y;
+ 
++    // Similar to the MikkTSpace-compatible method of extracting the binormal
++    // from the normal and tangent, as seen in the fragment shader
+     vec3 vertex_binormal = vertex_tangent.w * cross(vertex_normal, vertex_tangent.xyz);
+ 
+-    return (weights.x * vertex_binormal.xyz) + (weights.y * vertex_tangent.xyz);
++    // An additional sign flip prevents the binormal from being flipped as a
++    // result of a propagation of the tangent sign during the cross product.
++    float sign_flip = khr_scale_sign.x * khr_scale_sign.y;
++    return vec4((weights.x * vertex_tangent.xyz) + (weights.y * vertex_binormal.xyz), vertex_tangent.w * sign_flip);
+ }"
+secondlife/viewer,1847,186395e,doc/testplans/pbr_terrain_appearance.md,modified,11,0,11,"@@ -50,3 +50,14 @@ If triplanar mapping is enabled, and an avatar faces an axially-aligned wall, th
+ Textures of materials should not appear mirrored.
+ 
+ When triplanar mapping is enabled, rotations on the axially aligned walls should apply in the same direction as they would on flat ground.
++
++## PBR Terrain Normal Textures
++
++This section assumes terrain normal maps are enabled at the current graphics setting.
++
++PBR terrain should have approximately correct lighting based on the normal texture:
++
++- When on flat ground
++- On cliffs, when triplanar mapping is enabled. Lighting will be somewhat less accurate when the cliff face is not axially aligned.
++- If no Terrain Texture Transform is applied.
++- If a Terrain Texture Transform is applied, especially for rotation or negative scale."
+secondlife/viewer,1847,e32f642,doc/testplans/pbr_terrain_appearance.md,modified,11,0,11,"@@ -50,3 +50,14 @@ If triplanar mapping is enabled, and an avatar faces an axially-aligned wall, th
+ Textures of materials should not appear mirrored.
+ 
+ When triplanar mapping is enabled, rotations on the axially aligned walls should apply in the same direction as they would on flat ground.
++
++## PBR Terrain Normal Textures
++
++This section assumes terrain normal maps are enabled at the current graphics setting.
++
++PBR terrain should have approximately correct lighting based on the normal texture:
++
++- When on flat ground
++- On cliffs, when triplanar mapping is enabled. Lighting will be somewhat less accurate when the cliff face is not axially aligned.
++- If no Terrain Texture Transform is applied.
++- If a Terrain Texture Transform is applied, especially for rotation or negative scale."
+secondlife/viewer,1847,e32f642,indra/newview/app_settings/shaders/class1/deferred/pbralphaV.glsl,modified,4,3,7,"@@ -69,7 +69,7 @@ flat out float vary_sign;
+ out vec3 vary_normal;
+ 
+ vec2 texture_transform(vec2 vertex_texcoord, vec4[2] khr_gltf_transform, mat4 sl_animation_transform);
+-vec3 tangent_space_transform(vec4 vertex_tangent, vec3 vertex_normal, vec4[2] khr_gltf_transform, mat4 sl_animation_transform);
++vec4 tangent_space_transform(vec4 vertex_tangent, vec3 vertex_normal, vec4[2] khr_gltf_transform, mat4 sl_animation_transform);
+ 
+ 
+ void main()
+@@ -103,8 +103,9 @@ void main()
+ 
+     n = normalize(n);
+ 
+-    vary_tangent = normalize(tangent_space_transform(vec4(t, tangent.w), n, texture_normal_transform, texture_matrix0));
+-    vary_sign = tangent.w;
++    vec4 transformed_tangent = tangent_space_transform(vec4(t, tangent.w), n, texture_normal_transform, texture_matrix0);
++    vary_tangent = normalize(transformed_tangent.xyz);
++    vary_sign = transformed_tangent.w;
+     vary_normal = n;
+ 
+     vertex_color = diffuse_color;"
+secondlife/viewer,1847,e32f642,indra/newview/app_settings/shaders/class1/deferred/pbropaqueV.glsl,modified,4,3,7,"@@ -63,7 +63,7 @@ out vec3 vary_normal;
+ out vec3 vary_position;
+ 
+ vec2 texture_transform(vec2 vertex_texcoord, vec4[2] khr_gltf_transform, mat4 sl_animation_transform);
+-vec3 tangent_space_transform(vec4 vertex_tangent, vec3 vertex_normal, vec4[2] khr_gltf_transform, mat4 sl_animation_transform);
++vec4 tangent_space_transform(vec4 vertex_tangent, vec3 vertex_normal, vec4[2] khr_gltf_transform, mat4 sl_animation_transform);
+ 
+ void main()
+ {
+@@ -97,8 +97,9 @@ void main()
+ 
+     n = normalize(n);
+ 
+-    vary_tangent = normalize(tangent_space_transform(vec4(t, tangent.w), n, texture_normal_transform, texture_matrix0));
+-    vary_sign = tangent.w;
++    vec4 transformed_tangent = tangent_space_transform(vec4(t, tangent.w), n, texture_normal_transform, texture_matrix0);
++    vary_tangent = normalize(transformed_tangent.xyz);
++    vary_sign = transformed_tangent.w;
+     vary_normal = n;
+ 
+     vertex_color = diffuse_color;"
+secondlife/viewer,1847,e32f642,indra/newview/app_settings/shaders/class1/deferred/pbrterrainF.glsl,modified,22,7,29,"@@ -75,6 +75,9 @@ PBRMix terrain_sample_and_multiply_pbr(
+ #endif
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+     , sampler2D tex_vNt
++#if TERRAIN_PLANAR_TEXTURE_SAMPLE_COUNT == 3
++    , float transform_sign
++#endif
+ #endif
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_EMISSIVE)
+     , sampler2D tex_emissive
+@@ -139,7 +142,7 @@ in vec3 vary_position;
+ in vec3 vary_normal;
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+ in vec3 vary_tangents[4];
+-flat in float vary_sign;
++flat in float vary_signs[4];
+ #endif
+ in vec4 vary_texcoord0;
+ in vec4 vary_texcoord1;
+@@ -150,11 +153,11 @@ float terrain_mix(TerrainMix tm, vec4 tms4);
+ 
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+ // from mikktspace.com
+-vec3 mikktspace(vec3 vNt, vec3 vT)
++vec3 mikktspace(vec3 vNt, vec3 vT, float sign)
+ {
+     vec3 vN = vary_normal;
+ 
+-    vec3 vB = vary_sign * cross(vN, vT);
++    vec3 vB = sign * cross(vN, vT);
+     vec3 tnorm = normalize( vNt.x * vT + vNt.y * vB + vNt.z * vN );
+ 
+     tnorm *= gl_FrontFacing ? 1.0 : -1.0;
+@@ -216,6 +219,9 @@ void main()
+ #endif
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+             , detail_0_normal
++#if TERRAIN_PLANAR_TEXTURE_SAMPLE_COUNT == 3
++            , vary_signs[0]
++#endif
+ #endif
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_EMISSIVE)
+             , detail_0_emissive
+@@ -231,7 +237,7 @@ void main()
+ #endif
+         );
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+-        mix2.vNt = mikktspace(mix2.vNt, vary_tangents[0]);
++        mix2.vNt = mikktspace(mix2.vNt, vary_tangents[0], vary_signs[0]);
+ #endif
+         pbr_mix = mix_pbr(pbr_mix, mix2, tm.weight.x);
+         break;
+@@ -258,6 +264,9 @@ void main()
+ #endif
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+             , detail_1_normal
++#if TERRAIN_PLANAR_TEXTURE_SAMPLE_COUNT == 3
++            , vary_signs[1]
++#endif
+ #endif
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_EMISSIVE)
+             , detail_1_emissive
+@@ -273,7 +282,7 @@ void main()
+ #endif
+         );
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+-        mix2.vNt = mikktspace(mix2.vNt, vary_tangents[1]);
++        mix2.vNt = mikktspace(mix2.vNt, vary_tangents[1], vary_signs[1]);
+ #endif
+         pbr_mix = mix_pbr(pbr_mix, mix2, tm.weight.y);
+         break;
+@@ -300,6 +309,9 @@ void main()
+ #endif
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+             , detail_2_normal
++#if TERRAIN_PLANAR_TEXTURE_SAMPLE_COUNT == 3
++            , vary_signs[2]
++#endif
+ #endif
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_EMISSIVE)
+             , detail_2_emissive
+@@ -315,7 +327,7 @@ void main()
+ #endif
+         );
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+-        mix2.vNt = mikktspace(mix2.vNt, vary_tangents[2]);
++        mix2.vNt = mikktspace(mix2.vNt, vary_tangents[2], vary_signs[2]);
+ #endif
+         pbr_mix = mix_pbr(pbr_mix, mix2, tm.weight.z);
+         break;
+@@ -342,6 +354,9 @@ void main()
+ #endif
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+             , detail_3_normal
++#if TERRAIN_PLANAR_TEXTURE_SAMPLE_COUNT == 3
++            , vary_signs[3]
++#endif
+ #endif
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_EMISSIVE)
+             , detail_3_emissive
+@@ -357,7 +372,7 @@ void main()
+ #endif
+         );
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+-        mix2.vNt = mikktspace(mix2.vNt, vary_tangents[3]);
++        mix2.vNt = mikktspace(mix2.vNt, vary_tangents[3], vary_signs[3]);
+ #endif
+         pbr_mix = mix_pbr(pbr_mix, mix2, tm.weight.w);
+         break;"
+secondlife/viewer,1847,e32f642,indra/newview/app_settings/shaders/class1/deferred/pbrterrainUtilF.glsl,modified,10,2,12,"@@ -256,11 +256,12 @@ vec3 _t_normal_post_1(vec3 vNt0, float sign_or_zero)
+ }
+ 
+ // Triplanar-specific normal texture fixes
+-vec3 _t_normal_post_x(vec3 vNt0)
++vec3 _t_normal_post_x(vec3 vNt0, float tangent_sign)
+ {
+     vec3 vNt_x = _t_normal_post_1(vNt0, sign(vary_vertex_normal.x));
+     // *HACK: Transform normals according to orientation of the UVs
+     vNt_x.xy = vec2(-vNt_x.y, vNt_x.x);
++    vNt_x.xy *= tangent_sign;
+     return vNt_x;
+ }
+ vec3 _t_normal_post_y(vec3 vNt0)
+@@ -285,6 +286,7 @@ PBRMix terrain_sample_pbr(
+ #endif
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+     , sampler2D tex_vNt
++    , float tangent_sign
+ #endif
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_EMISSIVE)
+     , sampler2D tex_emissive
+@@ -314,7 +316,7 @@ PBRMix terrain_sample_pbr(
+             );
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+         // Triplanar-specific normal texture fix
+-        mix_x.vNt = _t_normal_post_x(mix_x.vNt);
++        mix_x.vNt = _t_normal_post_x(mix_x.vNt, tangent_sign);
+ #endif
+         mix = mix_pbr(mix, mix_x, tw.weight.x);
+         break;
+@@ -420,6 +422,9 @@ PBRMix terrain_sample_and_multiply_pbr(
+ #endif
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+     , sampler2D tex_vNt
++#if TERRAIN_PLANAR_TEXTURE_SAMPLE_COUNT == 3
++    , float tangent_sign
++#endif
+ #endif
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_EMISSIVE)
+     , sampler2D tex_emissive
+@@ -446,6 +451,9 @@ PBRMix terrain_sample_and_multiply_pbr(
+ #endif
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+         , tex_vNt
++#if TERRAIN_PLANAR_TEXTURE_SAMPLE_COUNT == 3
++        , tangent_sign
++#endif
+ #endif
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_EMISSIVE)
+         , tex_emissive"
+secondlife/viewer,1847,e32f642,indra/newview/app_settings/shaders/class1/deferred/pbrterrainV.glsl,modified,15,8,23,"@@ -43,7 +43,7 @@ out vec3 vary_vertex_normal; // Used by pbrterrainUtilF.glsl
+ out vec3 vary_normal;
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+ out vec3 vary_tangents[4];
+-flat out float vary_sign;
++flat out float vary_signs[4];
+ #endif
+ out vec4 vary_texcoord0;
+ out vec4 vary_texcoord1;
+@@ -60,7 +60,7 @@ out vec3 vary_position;
+ uniform vec4[5] terrain_texture_transforms;
+ 
+ vec2 terrain_texture_transform(vec2 vertex_texcoord, vec4[2] khr_gltf_transform);
+-vec3 terrain_tangent_space_transform(vec4 vertex_tangent, vec3 vertex_normal, vec4[2] khr_gltf_transform);
++vec4 terrain_tangent_space_transform(vec4 vertex_tangent, vec3 vertex_normal, vec4[2] khr_gltf_transform);
+ 
+ void main()
+ {
+@@ -75,28 +75,35 @@ void main()
+ #if (TERRAIN_PBR_DETAIL >= TERRAIN_PBR_DETAIL_NORMAL)
+     {
+         vec4[2] ttt;
++        vec4 transformed_tangent;
+         // material 1
+         ttt[0].xyz = terrain_texture_transforms[0].xyz;
+         ttt[1].x = terrain_texture_transforms[0].w;
+         ttt[1].y = terrain_texture_transforms[1].x;
+-        vary_tangents[0] = normalize(terrain_tangent_space_transform(vec4(t, tangent.w), n, ttt));
++        transformed_tangent = terrain_tangent_space_transform(vec4(t, tangent.w), n, ttt);
++        vary_tangents[0] = normalize(transformed_tangent.xyz);
++        vary_signs[0] = transformed_tangent.w;
+         // material 2
+         ttt[0].xyz = terrain_texture_transforms[1].yzw;
+         ttt[1].xy = terrain_texture_transforms[2].xy;
+-        vary_tangents[1] = normalize(terrain_tangent_space_transform(vec4(t, tangent.w), n, ttt));
++        transformed_tangent = terrain_tangent_space_transform(vec4(t, tangent.w), n, ttt);
++        vary_tangents[1] = normalize(transformed_tangent.xyz);
++        vary_signs[1] = transformed_tangent.w;
+         // material 3
+         ttt[0].xy = terrain_texture_transforms[2].zw;
+         ttt[0].z = terrain_texture_transforms[3].x;
+         ttt[1].xy = terrain_texture_transforms[3].yz;
+-        vary_tangents[2] = normalize(terrain_tangent_space_transform(vec4(t, tangent.w), n, ttt));
++        transformed_tangent = terrain_tangent_space_transform(vec4(t, tangent.w), n, ttt);
++        vary_tangents[2] = normalize(transformed_tangent.xyz);
++        vary_signs[2] = transformed_tangent.w;
+         // material 4
+         ttt[0].x = terrain_texture_transforms[3].w;
+         ttt[0].yz = terrain_texture_transforms[4].xy;
+         ttt[1].xy = terrain_texture_transforms[4].zw;
+-        vary_tangents[3] = normalize(terrain_tangent_space_transform(vec4(t, tangent.w), n, ttt));
++        transformed_tangent = terrain_tangent_space_transform(vec4(t, tangent.w), n, ttt);
++        vary_tangents[3] = normalize(transformed_tangent.xyz);
++        vary_signs[3] = transformed_tangent.w;
+     }
+-
+-    vary_sign = tangent.w;
+ #endif
+     vary_normal = normalize(n);
+ "
+secondlife/viewer,1847,e32f642,indra/newview/app_settings/shaders/class1/deferred/textureUtilV.glsl,modified,50,24,74,"@@ -94,36 +94,48 @@ vec2 terrain_texture_transform(vec2 vertex_texcoord, vec4[2] khr_gltf_transform)
+ // Take the rotation only from both transforms and apply to the tangent. This
+ // accounts for the change of the topology of the normal texture when a texture
+ // rotation is applied to it.
++// In practice, this applies the inverse of the texture transform to the tangent.
++// It is effectively an inverse of the rotation
+ // *HACK: Assume the imported GLTF model did not have both normal texture
+ // transforms and tangent vertices. The use of this function is inconsistent
+ // with the GLTF sample viewer when that is the case. See getNormalInfo in
+ // https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Viewer/47a191931461a6f2e14de48d6da0f0eb6ec2d147/source/Renderer/shaders/material_info.glsl
+ // We may want to account for this case during GLTF model import.
+ // -Cosmic,2023-06-06
+-vec3 tangent_space_transform(vec4 vertex_tangent, vec3 vertex_normal, vec4[2] khr_gltf_transform, mat4 sl_animation_transform)
++vec4 tangent_space_transform(vec4 vertex_tangent, vec3 vertex_normal, vec4[2] khr_gltf_transform, mat4 sl_animation_transform)
+ {
+-    vec2 weights = vec2(0, 1);
+-
+-    // Apply texture animation first to avoid shearing and other artifacts (rotation only)
+-    mat2 sl_rot_scale;
+-    sl_rot_scale[0][0] = sl_animation_transform[0][0];
+-    sl_rot_scale[0][1] = sl_animation_transform[0][1];
+-    sl_rot_scale[1][0] = sl_animation_transform[1][0];
+-    sl_rot_scale[1][1] = sl_animation_transform[1][1];
+-    weights = sl_rot_scale * weights;
+-    // Remove scale
+-    weights = normalize(weights);
+-
+-    // Convert to left-handed coordinate system
+-    weights.y = -weights.y;
++    // Immediately convert to left-handed coordinate system, but it has no
++    // effect here because y is 0 ((1,0) -> (1,0))
++    vec2 weights = vec2(1, 0);
+ 
+-    // Apply KHR_texture_transform (rotation only)
+-    float khr_rotation = khr_gltf_transform[0].z;
++    // Apply inverse KHR_texture_transform (rotation and scale sign only)
++    float khr_rotation = -khr_gltf_transform[0].z;
+     mat2 khr_rotation_mat = mat2(
+         cos(khr_rotation),-sin(khr_rotation),
+         sin(khr_rotation), cos(khr_rotation)
+     );
+     weights = khr_rotation_mat * weights;
++    vec2 khr_scale_sign = sign(khr_gltf_transform[0].xy);
++    weights *= khr_scale_sign.xy;
++
++    // *NOTE: Delay conversion to right-handed coordinate system here, to
++    // remove the need for computing the inverse of the SL texture animation
++    // matrix.
++
++    // Apply texture animation last to avoid shearing and other artifacts (rotation only)
++    mat2 inv_sl_rot_scale;
++    inv_sl_rot_scale[0][0] = sl_animation_transform[0][0];
++    inv_sl_rot_scale[0][1] = sl_animation_transform[0][1];
++    inv_sl_rot_scale[1][0] = sl_animation_transform[1][0];
++    inv_sl_rot_scale[1][1] = sl_animation_transform[1][1];
++    weights = inv_sl_rot_scale * weights;
++    // *NOTE: Scale to be removed later
++
++    // Set weights to default if 0 for some reason
++    weights.x += 1.0 - abs(sign(sign(weights.x) + (0.5 * sign(weights.y))));
++
++    // Remove scale from SL texture animation transform
++    weights = normalize(weights);
+ 
+     // Convert back to right-handed coordinate system
+     weights.y = -weights.y;
+@@ -132,27 +144,41 @@ vec3 tangent_space_transform(vec4 vertex_tangent, vec3 vertex_normal, vec4[2] kh
+     // from the normal and tangent, as seen in the fragment shader
+     vec3 vertex_binormal = vertex_tangent.w * cross(vertex_normal, vertex_tangent.xyz);
+ 
+-    return (weights.x * vertex_binormal.xyz) + (weights.y * vertex_tangent.xyz);
++    // An additional sign flip prevents the binormal from being flipped as a
++    // result of a propagation of the tangent sign during the cross product.
++    float sign_flip = khr_scale_sign.x * khr_scale_sign.y;
++    return vec4((weights.x * vertex_tangent.xyz) + (weights.y * vertex_binormal.xyz), vertex_tangent.w * sign_flip);
+ }
+ 
+ // Similar to tangent_space_transform but no texture animation support.
+-vec3 terrain_tangent_space_transform(vec4 vertex_tangent, vec3 vertex_normal, vec4[2] khr_gltf_transform)
++vec4 terrain_tangent_space_transform(vec4 vertex_tangent, vec3 vertex_normal, vec4[2] khr_gltf_transform)
+ {
+-    // Immediately convert to left-handed coordinate system ((0,1) -> (0, -1))
+-    vec2 weights = vec2(0, -1);
++    // Immediately convert to left-handed coordinate system, but it has no
++    // effect here because y is 0 ((1,0) -> (1,0))
++    vec2 weights = vec2(1, 0);
+ 
+-    // Apply KHR_texture_transform (rotation only)
+-    float khr_rotation = khr_gltf_transform[0].z;
++    // Apply inverse KHR_texture_transform (rotation and scale sign only)
++    float khr_rotation = -khr_gltf_transform[0].z;
+     mat2 khr_rotation_mat = mat2(
+         cos(khr_rotation),-sin(khr_rotation),
+         sin(khr_rotation), cos(khr_rotation)
+     );
+     weights = khr_rotation_mat * weights;
++    vec2 khr_scale_sign = sign(khr_gltf_transform[0].xy);
++    weights *= khr_scale_sign.xy;
++
++    // Set weights to default if 0 for some reason
++    weights.x += 1.0 - abs(sign(sign(weights.x) + (0.5 * sign(weights.y))));
+ 
+     // Convert back to right-handed coordinate system
+     weights.y = -weights.y;
+ 
++    // Similar to the MikkTSpace-compatible method of extracting the binormal
++    // from the normal and tangent, as seen in the fragment shader
+     vec3 vertex_binormal = vertex_tangent.w * cross(vertex_normal, vertex_tangent.xyz);
+ 
+-    return (weights.x * vertex_binormal.xyz) + (weights.y * vertex_tangent.xyz);
++    // An additional sign flip prevents the binormal from being flipped as a
++    // result of a propagation of the tangent sign during the cross product.
++    float sign_flip = khr_scale_sign.x * khr_scale_sign.y;
++    return vec4((weights.x * vertex_tangent.xyz) + (weights.y * vertex_binormal.xyz), vertex_tangent.w * sign_flip);
+ }"
+secondlife/viewer,1847,9ccab0d,doc/testplans/pbr_materials.md,added,12,0,12,"@@ -0,0 +1,12 @@
++# PBR Materials
++
++## KHR Texture Transforms
++
++Texture repeats for PBR materials on prims are based on the [KHR\_texture\_transform](https://github.com/KhronosGroup/glTF/tree/main/extensions/2.0/Khronos/KHR_texture_transform) spec, and thus should be expected to behave according to the spec.
++
++PBR materials should have approximately correct lighting based on the normal texture:
++
++- With default texture transforms, assuming the prim or model has correct normals and tangents
++- With a texture transform applied, especially rotation or negative scale
++- With a texture animation applied via `llSetTextureAnim`, especially a rotation animation
++    - Note: Texture animations are not guaranteed to loop when a PBR texture transform is applied"
+secondlife/viewer,1847,b7ad221,doc/testplans/pbr_materials.md,modified,1,1,2,"@@ -2,7 +2,7 @@
+ 
+ ## KHR Texture Transforms
+ 
+-Texture repeats for PBR materials on prims are based on the [KHR\_texture\_transform](https://github.com/KhronosGroup/glTF/tree/main/extensions/2.0/Khronos/KHR_texture_transform) spec, and thus should be expected to behave according to the spec.
++Texture repeats for PBR materials on prims are based on the [KHR\_texture\_transform](https://github.com/KhronosGroup/glTF/tree/main/extensions/2.0/Khronos/KHR_texture_transform) spec, and thus should be expected to behave according to the spec. We currently suport offset, rotation, and scale from the spec. texCoord is not currently supported.
+ 
+ PBR materials should have approximately correct lighting based on the normal texture:
+ "
+secondlife/viewer,1847,b7ad221,doc/testplans/pbr_terrain_appearance.md,modified,1,1,2,"@@ -39,7 +39,7 @@ PBR terrain does not support materials with alpha blend or double-sided. In addi
+ 
+ ## PBR Terrain Texture Transforms
+ 
+-Like PBR materials on prims, PBR terrain repeats are based on the [KHR\_texture\_transform](https://github.com/KhronosGroup/glTF/tree/main/extensions/2.0/Khronos/KHR_texture_transform) spec, and thus should be expected to behave the same way.
++Like PBR materials on prims, PBR terrain repeats are based on the [KHR\_texture\_transform](https://github.com/KhronosGroup/glTF/tree/main/extensions/2.0/Khronos/KHR_texture_transform) spec, and thus should be expected to behave the same way. We currently suport offset, rotation, and scale from the spec. texCoord is not currently supported.
+ 
+ The southwest corner of a region, at z=0, is the UV origin for all texture coordinates of the whole region. Unless an offset is also applied, scale and rotation of the terrain texture transforms are relative to that point.
+ "
+secondlife/viewer,1847,51b329c,doc/testplans/pbr_materials.md,added,12,0,12,"@@ -0,0 +1,12 @@
++# PBR Materials
++
++## KHR Texture Transforms
++
++Texture repeats for PBR materials on prims are based on the [KHR\_texture\_transform](https://github.com/KhronosGroup/glTF/tree/main/extensions/2.0/Khronos/KHR_texture_transform) spec, and thus should be expected to behave according to the spec. We currently suport offset, rotation, and scale from the spec. texCoord is not currently supported.
++
++PBR materials should have approximately correct lighting based on the normal texture:
++
++- With default texture transforms, assuming the prim or model has correct normals and tangents
++- With a texture transform applied, especially rotation or negative scale
++- With a texture animation applied via `llSetTextureAnim`, especially a rotation animation
++    - Note: Texture animations are not guaranteed to loop when a PBR texture transform is applied"
+secondlife/viewer,1847,51b329c,doc/testplans/pbr_terrain_appearance.md,modified,1,1,2,"@@ -39,7 +39,7 @@ PBR terrain does not support materials with alpha blend or double-sided. In addi
+ 
+ ## PBR Terrain Texture Transforms
+ 
+-Like PBR materials on prims, PBR terrain repeats are based on the [KHR\_texture\_transform](https://github.com/KhronosGroup/glTF/tree/main/extensions/2.0/Khronos/KHR_texture_transform) spec, and thus should be expected to behave the same way.
++Like PBR materials on prims, PBR terrain repeats are based on the [KHR\_texture\_transform](https://github.com/KhronosGroup/glTF/tree/main/extensions/2.0/Khronos/KHR_texture_transform) spec, and thus should be expected to behave the same way. We currently suport offset, rotation, and scale from the spec. texCoord is not currently supported.
+ 
+ The southwest corner of a region, at z=0, is the UV origin for all texture coordinates of the whole region. Unless an offset is also applied, scale and rotation of the terrain texture transforms are relative to that point.
+ "

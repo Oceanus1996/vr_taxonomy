@@ -1,0 +1,97 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vrm-c/UniVRM,2119,f9d105d67da991bb23dcb76054ec1d0083d1f64c,Assets/VRM10/Editor/VRM10ExportSettings.cs,modified,11,3,14,"@@ -10,23 +10,31 @@ public class VRM10ExportSettings : ScriptableObject
+         /// <summary>
+         /// エクスポート時にBlendShapeClipから参照されないBlendShapeを削除する
+         /// </summary>
+-        [Tooltip(""not implemented yet. Remove blendshape that is not used from BlendShapeClip"")][ReadOnly]
++        [Tooltip(""not implemented yet. Remove blendshape that is not used from BlendShapeClip"")]
++        [ReadOnly]
+         public bool ReduceBlendshape = false;
+ 
+         /// <summary>
+         /// skip if BlendShapeClip.Preset == Unknown
+         /// </summary>
+-        [Tooltip(""not implemented yet. Remove blendShapeClip that preset is Unknown"")][ReadOnly]
++        [Tooltip(""not implemented yet. Remove blendShapeClip that preset is Unknown"")]
++        [ReadOnly]
+         public bool ReduceBlendshapeClip = false;
+ 
+         [Tooltip(""Use sparse accessor for morph target"")]
+         public bool MorphTargetUseSparse = true;
+ 
++        /// <summary>
++        /// FreezeBlendShape
++        /// </summary>
++        [Tooltip(""freeze rotation and scale and blendshape"")]
++        public bool FreezeMesh = false;
++
+         public GltfExportSettings MeshExportSettings => new GltfExportSettings
+         {
+             UseSparseAccessorForMorphTarget = MorphTargetUseSparse,
+             ExportOnlyBlendShapePosition = true,
+-            DivideVertexBuffer = true,            
++            DivideVertexBuffer = true,
+         };
+ 
+         public GameObject Root { get; set; }"
+vrm-c/UniVRM,2119,f9d105d67da991bb23dcb76054ec1d0083d1f64c,Assets/VRM10/Editor/Vrm10ExportDialog.cs,modified,42,0,42,"@@ -258,6 +258,24 @@ protected override bool DoGUI(bool isValid)
+ 
+         string m_logLabel;
+ 
++        class TmpDisposer : IDisposable
++        {
++            List<UnityEngine.Object> _disposables = new();
++            public void Push(UnityEngine.Object o)
++            {
++                _disposables.Add(o);
++            }
++
++            public void Dispose()
++            {
++                foreach (var o in _disposables)
++                {
++                    GameObject.DestroyImmediate(o);
++                }
++                _disposables.Clear();
++            }
++        }
++
+         protected override void ExportPath(string path)
+         {
+             m_logLabel = """";
+@@ -268,11 +286,35 @@ protected override void ExportPath(string path)
+ 
+             try
+             {
++                using (var disposer = new TmpDisposer())
+                 using (var arrayManager = new NativeArrayManager())
+                 {
++                    if (m_settings.FreezeMesh)
++                    {
++                        Debug.Log(""vrm-1.0 FreezeMesh"");
++                        var copy = GameObject.Instantiate(root);
++                        disposer.Push(copy);
++                        root = copy;
++
++                        // Transform の回転とスケールを Mesh に適用します。
++                        // - BlendShape は現状がbakeされます
++                        // - 回転とスケールが反映された新しい Mesh が作成されます
++                        // - Transform の回転とスケールはクリアされます。world position を維持します
++                        var newMeshMap = BoneNormalizer.NormalizeHierarchyFreezeMesh(root);
++
++                        // SkinnedMeshRenderer.sharedMesh と MeshFilter.sharedMesh を新しいMeshで置き換える
++                        BoneNormalizer.Replace(root, newMeshMap, true, true);
++                    }
++
+                     var converter = new UniVRM10.ModelExporter();
+                     var model = converter.Export(arrayManager, root);
+ 
++                    // /// <summary>
++                    // /// freezeblendshape
++                    // /// </summary>
++                    // [tooltip(""freeze rotation and scale and blendshape"")]
++                    // public bool FreezeMesh = false;
++
+                     // 右手系に変換
+                     m_logLabel += $""convert to right handed coordinate...\n"";
+                     model.ConvertCoordinate(VrmLib.Coordinates.Vrm1, ignoreVrm: false);"

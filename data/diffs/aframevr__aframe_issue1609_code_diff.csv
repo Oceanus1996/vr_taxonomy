@@ -1,0 +1,293 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+aframevr/aframe,1609,ac24946d36c7d99d0138dde042db235951581126,src/core/component.js,modified,1,0,1,"@@ -286,6 +286,7 @@ module.exports.registerComponent = function (name, definition) {
+   components[name] = {
+     Component: NewComponent,
+     dependencies: NewComponent.prototype.dependencies,
++    isSingleProp: isSingleProp(NewComponent.prototype.schema),
+     multiple: NewComponent.prototype.multiple,
+     parse: NewComponent.prototype.parse,
+     parseAttrValueForCache: NewComponent.prototype.parseAttrValueForCache,"
+aframevr/aframe,1609,ac24946d36c7d99d0138dde042db235951581126,src/extras/primitives/primitives.js,modified,54,60,114,"@@ -24,26 +24,13 @@ module.exports.registerPrimitive = function registerPrimitive (name, definition)
+       defaultComponentsFromPrimitive: {
+         value: definition.defaultComponents || definition.defaultAttributes || {}
+       },
+-
+-      deprecated: {
+-        value: definition.deprecated || null
+-      },
+-
+-      deprecatedMappings: {
+-        value: definition.deprecatedMappings || {}
+-      },
+-
+-      mappings: {
+-        value: definition.mappings || {}
+-      },
+-
+-      transforms: {
+-        value: definition.transforms || {}
+-      },
++      deprecated: {value: definition.deprecated || null},
++      deprecatedMappings: {value: definition.deprecatedMappings || {}},
++      mappings: {value: definition.mappings || {}},
++      transforms: {value: definition.transforms || {}},
+ 
+       createdCallback: {
+         value: function () {
+-          this.componentData = {};
+           if (definition.deprecated) {
+             console.warn(definition.deprecated);
+           }
+@@ -52,67 +39,74 @@ module.exports.registerPrimitive = function registerPrimitive (name, definition)
+ 
+       attachedCallback: {
+         value: function () {
++          var attr;
++          var Component;
++          var initialComponents;
++          var i;
++          var mapping;
++          var mixins;
++          var path;
+           var self = this;
+-          var attributes = this.attributes;
+-          this.applyDefaultComponents();
+-          // Apply initial attributes.
+-          Object.keys(attributes).forEach(function applyInitial (attributeName) {
+-            var attr = attributes[attributeName];
+-            self.syncAttributeToComponent(attr.name, attr.value);
+-          });
+-        }
+-      },
+-
+-      /**
+-       * Sync to attribute to component property whenever mapped attribute changes.
+-       */
+-      attributeChangedCallback: {
+-        value: function (attr, oldVal, newVal) {
+-          this.syncAttributeToComponent(attr, newVal);
+-        }
+-      },
+ 
+-      applyDefaultComponents: {
+-        value: function () {
+-          var self = this;
+-          var defaultData = this.defaultComponentsFromPrimitive;
+-
+-          // Apply default components.
+-          Object.keys(defaultData).forEach(function applyDefault (componentName) {
+-            var componentData = defaultData[componentName];
+-
+-            // Set component properties individually to not overwrite user-defined components.
+-            if (componentData instanceof Object) {
+-              var component = components[componentName];
+-              var attrValues = self.getDOMAttribute(componentName) || {};
+-              var data = component.parse(attrValues);
+-
+-              // Check if component property already defined.
+-              Object.keys(componentData).forEach(function setProperty (propName) {
+-                if (data[propName]) { return; }
+-                data[propName] = componentData[propName];
++          // Gather component data from default components.
++          initialComponents = utils.extend({}, this.defaultComponentsFromPrimitive);
++
++          // Gather component data from mixins.
++          mixins = this.getAttribute('mixin');
++          if (mixins) {
++            mixins = mixins.trim().split(' ');
++            mixins.forEach(function (mixinId) {
++              var mixinComponents = self.sceneEl.querySelector('#' + mixinId).componentCache;
++              Object.keys(mixinComponents).forEach(function setComponent (name) {
++                initialComponents[name] = utils.extendDeep(
++                  initialComponents[name], mixinComponents[name]);
+               });
+-              self.setAttribute(componentName, data);
+-              return;
++            });
++          }
++
++          for (i = 0; i < this.attributes.length; i++) {
++            attr = this.attributes[i];
++
++            // Gather component data from mappings.
++            mapping = this.mappings[attr.name];
++            if (mapping) {
++              path = utils.entity.getComponentPropertyPath(mapping);
++              initialComponents[path[0]][path[1]] = attr.value;
++              continue;
+             }
+ 
+-            // Component is single-property schema, just set the attribute.
+-            self.setAttribute(componentName, componentData);
++            // Gather component data from components.
++            if (components[attr.name]) {
++              Component = components[attr.name];
++              if (Component.isSingleProp) {
++                initialComponents[attr.name] = attr.value;
++              } else {
++                initialComponents[attr.name] = utils.extendDeep(
++                  initialComponents[attr.name], Component.parse(attr.value || {}));
++              }
++            }
++          }
++
++          // Set components.
++          Object.keys(initialComponents).forEach(function initComponent (componentName) {
++            self.setAttribute(componentName, initialComponents[componentName]);
+           });
+         }
+       },
+ 
+       /**
++       * Sync to attribute to component property whenever mapped attribute changes.
+        * If attribute is mapped to a component property, set the component property using
+        * the attribute value.
+        */
+-      syncAttributeToComponent: {
+-        value: function (attr, value) {
++      attributeChangedCallback: {
++        value: function (attr, oldVal, value) {
+           var componentName = this.mappings[attr];
+ 
+           if (attr in this.deprecatedMappings) {
+             console.warn(this.deprecatedMappings[attr]);
+           }
++
+           if (!attr || !componentName) { return; }
+ 
+           // Run transform."
+aframevr/aframe,1609,ac24946d36c7d99d0138dde042db235951581126,src/utils/entity.js,modified,11,0,11,"@@ -1,3 +1,14 @@
++/**
++ * Split a delimited component property string (e.g., `material.color`) to an object
++ * containing `component` name and `property` name. If there is no delimiter, just return the
++ * string back.
++ */
++module.exports.getComponentPropertyPath = function (str, delimiter) {
++  delimiter = delimiter || '.';
++  if (str.indexOf(delimiter) === -1) { return str; }
++  return str.split(delimiter);
++};
++
+ /**
+  * Get component property using encoded component name + component property name with a
+  * delimiter."
+aframevr/aframe,1609,ac24946d36c7d99d0138dde042db235951581126,tests/extras/primitives/primitives.test.js,modified,73,25,98,"@@ -1,4 +1,4 @@
+-/* global assert, suite, test */
++/* global AFRAME, assert, suite, test */
+ var helpers = require('../../helpers');
+ var registerPrimitive = require('extras/primitives/primitives').registerPrimitive;
+ var primitives = require('extras/primitives/primitives').primitives;
+@@ -9,7 +9,6 @@ function primitiveFactory (definition, cb) {
+   var el;
+   var entity = helpers.entityFactory();
+   var tagName = 'a-test-' + primitiveId++;
+-
+   registerPrimitive(tagName, definition);
+   el = document.createElement(tagName);
+   el.addEventListener('loaded', function () {
+@@ -58,29 +57,7 @@ suite('registerPrimitive', function () {
+     });
+   });
+ 
+-  test('does not destroy defined components when proxying attributes', function (done) {
+-    var entity = helpers.entityFactory();
+-    var tag = 'a-test-' + primitiveId++;
+-    registerPrimitive(tag, {
+-      defaultComponents: {
+-        material: {color: '#FFF'}
+-      },
+-
+-      mappings: {
+-        color: 'material.color'
+-      }
+-    });
+-    // Use innerHTML to set everything at once.
+-    entity.innerHTML = '<' + tag + ' color=""red"" material=""fog: false""></' + tag + '>';
+-    entity.children[0].addEventListener('loaded', function () {
+-      var material = entity.children[0].getAttribute('material');
+-      assert.equal(material.color, 'red');
+-      assert.equal(material.fog, false);
+-      done();
+-    });
+-  });
+-
+-  test('proxies attributes to components', function (done) {
++  test('maps attributes to components', function (done) {
+     primitiveFactory({
+       mappings: {
+         color: 'material.color',
+@@ -116,3 +93,74 @@ suite('registerPrimitive', function () {
+     });
+   });
+ });
++
++suite('registerPrimitive (using innerHTML)', function () {
++  function primitiveFactory (definition, attributes, cb, preCb) {
++    var el = helpers.entityFactory();
++    var tagName = 'a-test-' + primitiveId++;
++    registerPrimitive(tagName, definition);
++    if (preCb) { preCb(el.sceneEl); }
++    if (cb) {
++      el.addEventListener('child-attached', function (evt) {
++        evt.detail.el.addEventListener('loaded', function () {
++          cb(el.children[0], tagName);
++        });
++      });
++    }
++    el.innerHTML = `<${tagName} ${attributes}></${tagName}>`;
++  }
++
++  test('prioritizes defined components over default components', function (done) {
++    primitiveFactory({
++      defaultComponents: {
++        material: {color: '#FFF', metalness: 0.63}
++      }
++    }, 'material=""color: tomato""', function (el) {
++      var material = el.getAttribute('material');
++      assert.equal(material.color, 'tomato');
++      assert.equal(material.metalness, 0.63);
++      done();
++    });
++  });
++
++  test('batches default components and mappings for one `init` call', function (done) {
++    AFRAME.registerComponent('test', {
++      schema: {
++        foo: {default: ''},
++        qux: {default: ''},
++        quux: {default: ''}
++      },
++      init: function () {
++        // Set by default component.
++        assert.equal(this.data.foo, 'bar');
++        // Set by first mapping.
++        assert.equal(this.data.qux, 'qaz');
++        // Set by second mapping.
++        assert.equal(this.data.quux, 'corge');
++        done();
++      }
++    });
++    primitiveFactory({
++      defaultComponents: {
++        test: {foo: 'bar'}
++      },
++      mappings: {
++        qux: 'test.qux',
++        quux: 'test.quux'
++      }
++    }, 'qux=""qaz"" quux=""corge""');
++  });
++
++  test('prioritizes mixins over default components', function (done) {
++    primitiveFactory({
++      defaultComponents: {
++        material: {color: 'blue'}
++      }
++    }, 'mixin=""foo""', function postCreation (el) {
++      assert.equal(el.getAttribute('material').color, 'red');
++      done();
++    }, function preCreation (sceneEl) {
++      helpers.mixinFactory('foo', {material: 'color: red'}, sceneEl);
++    });
++  });
++});"

@@ -1,0 +1,320 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+Raicuparta/nomai-vr,251,36addf038cabd5c3eb3f369dd51ccc15a21f45af,NomaiVR/Hands/LaserPointer.cs,modified,132,49,181,"@@ -1,5 +1,6 @@
+ ﻿using OWML.ModHelper.Events;
+ using System;
++using System.Collections.Generic;
+ using UnityEngine;
+ using UnityEngine.UI;
+ 
+@@ -19,6 +20,8 @@ public class Behaviour : MonoBehaviour
+             private const float _menuLineLength = 2f;
+             private TabButton[] _tabButtons;
+             private bool _isReady;
++            private Transform _prevRayHit;
++            private DialogueBoxVer2 _dialogueBox;
+ 
+             private void Start()
+             {
+@@ -31,6 +34,7 @@ private void Start()
+                 if (SceneHelper.IsInGame())
+                 {
+                     SetUpFirstPersonManipulator();
++                    SetUpDialogueOptions();
+                 }
+ 
+                 if (SceneHelper.IsInTitle())
+@@ -67,6 +71,11 @@ private void SetUpFirstPersonManipulator()
+                 _isReady = true;
+             }
+ 
++            private void SetUpDialogueOptions()
++            {
++                _dialogueBox = FindObjectOfType<DialogueBoxVer2>();
++            }
++
+             private void SetUpTitleAnimationHandler()
+             {
+                 var titleAnimationController = FindObjectOfType<TitleAnimationController>();
+@@ -89,9 +98,7 @@ private void CreateButtonColliders()
+                             child.localPosition += Vector3.forward;
+                         }
+                     }
+-
+                     var collider = selectable.gameObject.AddComponent<BoxCollider>();
+-
+                     var rectTransform = selectable.GetComponent<RectTransform>();
+                     var thickness = 10f;
+                     var height = Math.Max(60f, rectTransform.rect.height);
+@@ -101,69 +108,145 @@ private void CreateButtonColliders()
+                 }
+             }
+ 
+-            private void UpdateUiRayCast()
++            private bool IsSelectNewlyPressed()
++            {
++                return OWInput.IsNewlyPressed(InputLibrary.select) || OWInput.IsNewlyPressed(InputLibrary.select2);
++            }
++
++            private void HandleSelectableRayHit(Selectable selectable)
++            {
++                var tab = selectable.transform.GetComponent<TabButton>();
++                if (tab == null)
++                {
++                    selectable.Select();
++                }
++                else
++                {
++                    DeselectAllTabs();
++                    tab.OnPointerEnter(null);
++                }
++
++                if (IsSelectNewlyPressed())
++                {
++                    if (tab == null)
++                    {
++                        HandleSelectableClick(selectable);
++                    }
++                    else
++                    {
++                        HandleTabClick(tab);
++                    }
++                }
++            }
++
++            private void HandleOptionsSelectorClick(OptionsSelectorElement optionsSelector)
++            {
++                optionsSelector.OnArrowSelectableOnRightClick();
++                optionsSelector.OnArrowSelectableOnDownClick();
++            }
++
++            private void handleTwoButtonToggleClick(TwoButtonToggleElement twoButtonToggle)
++            {
++                var selection = twoButtonToggle.GetValue();
++                twoButtonToggle.SetValue(""_selection"", !selection);
++                twoButtonToggle.Invoke(""UpdateToggleColors"");
++            }
++
++            private void handleSliderClick(Slider slider)
++            {
++                if (slider.value < slider.maxValue)
++                {
++                    slider.value += 1;
++                }
++                else
++                {
++                    slider.value = slider.minValue;
++                }
++            }
++
++            private void HandleSelectableClick(Selectable selectable)
++            {
++                var optionsSelector = selectable.GetComponent<OptionsSelectorElement>();
++                if (optionsSelector != null)
++                {
++                    HandleOptionsSelectorClick(optionsSelector);
++                    return;
++                }
++
++                var twoButtonToggle = selectable.GetComponent<TwoButtonToggleElement>();
++                if (twoButtonToggle != null)
++                {
++                    handleTwoButtonToggleClick(twoButtonToggle);
++                    return;
++                }
++
++                var slider = selectable.GetComponentInChildren<Slider>();
++                if (slider != null)
++                {
++                    handleSliderClick(slider);
++                }
++            }
++
++            private void HandleTabClick(TabButton tab)
+             {
+-                if (!_isReady || !InputHelper.IsUIInteractionMode())
++                tab.OnSelect(null);
++            }
++
++            private void HandleDialogueOptionHit(DialogueOptionUI dialogueOption)
++            {
++                if (_dialogueBox.GetValue<bool>(""_revealingOptions""))
+                 {
+                     return;
+                 }
++                var selectedOption = _dialogueBox.GetSelectedOption();
++                var options = _dialogueBox.GetValue<List<DialogueOptionUI>>(""_optionsUIElements"");
++                options[selectedOption].SetSelected(false);
++                _dialogueBox.SetValue(""_selectedOption"", options.IndexOf(dialogueOption));
++                dialogueOption.SetSelected(true);
++            }
+ 
++            private void DeselectAllTabs()
++            {
+                 foreach (var tabButton in _tabButtons)
+                 {
+                     tabButton.OnPointerExit(null);
+                 }
++            }
++
++            private void UpdateUiRayCast()
++            {
++                if (!_isReady || !InputHelper.IsUIInteractionMode(true) || LoadManager.IsBusy())
++                {
++                    return;
++                }
+ 
+                 if (Physics.Raycast(Laser.position, Laser.forward, out var hit, _menuLineLength, LayerMask.GetMask(""UI"")))
+                 {
++                    SetLineLength(hit.distance);
++                    if (hit.transform == _prevRayHit && !IsSelectNewlyPressed())
++                    {
++                        return;
++                    }
++                    _prevRayHit = hit.transform;
++
+                     var selectable = hit.transform.GetComponent<Selectable>();
+                     if (selectable != null)
+                     {
+-                        SetLineLength(hit.distance);
+-                        var tab = hit.transform.GetComponent<TabButton>();
+-                        if (tab != null)
+-                        {
+-                            tab.OnPointerEnter(null);
+-                        }
+-                        else
+-                        {
+-                            selectable.Select();
+-                        }
+-                        if (OWInput.IsNewlyPressed(InputLibrary.select) || OWInput.IsNewlyPressed(InputLibrary.select2))
+-                        {
+-                            var optionsSelector = selectable.GetComponent<OptionsSelectorElement>();
+-                            if (optionsSelector != null)
+-                            {
+-                                optionsSelector.OnArrowSelectableOnRightClick();
+-                                optionsSelector.OnArrowSelectableOnDownClick();
+-                            }
+-
+-                            var twoButtonToggle = selectable.GetComponent<TwoButtonToggleElement>();
+-                            if (twoButtonToggle != null)
+-                            {
+-                                var selection = twoButtonToggle.GetValue();
+-                                twoButtonToggle.SetValue(""_selection"", !selection);
+-                                twoButtonToggle.Invoke(""UpdateToggleColors"");
+-                            }
+-
+-                            var slider = selectable.GetComponentInChildren<Slider>();
+-                            if (slider != null)
+-                            {
+-                                if (slider.value < slider.maxValue)
+-                                {
+-                                    slider.value += 1;
+-                                }
+-                                else
+-                                {
+-                                    slider.value = slider.minValue;
+-                                }
+-                            }
+-                            if (tab != null)
+-                            {
+-                                selectable.Select();
+-                            }
+-                        }
++                        HandleSelectableRayHit(selectable);
++                        return;
++                    }
++                    var dialogueOption = hit.transform.GetComponent<DialogueOptionUI>();
++                    if (dialogueOption != null)
++                    {
++                        HandleDialogueOptionHit(dialogueOption);
++                        return;
+                     }
+                 }
++                else
++                {
++                    _prevRayHit = null;
++                    DeselectAllTabs();
++                }
+             }
+ 
+             private void SetLineLength(float length)
+@@ -174,7 +257,7 @@ private void SetLineLength(float length)
+ 
+             private void UpdateLineAppearance()
+             {
+-                if (InputHelper.IsUIInteractionMode())
++                if (InputHelper.IsUIInteractionMode(true))
+                 {
+                     SetLineLength(_menuLineLength);
+                     _lineRenderer.material.shader = Shader.Find(""Unlit/Color"");"
+Raicuparta/nomai-vr,251,36addf038cabd5c3eb3f369dd51ccc15a21f45af,NomaiVR/Helpers/InputHelper.cs,modified,6,2,8,"@@ -2,9 +2,13 @@
+ {
+     public static class InputHelper
+     {
+-        public static bool IsUIInteractionMode()
++        public static bool IsUIInteractionMode(bool includeDialogue = false)
+         {
+-            return OWInput.IsInputMode(InputMode.Menu | InputMode.KeyboardInput);
++            return OWInput.IsInputMode(
++                InputMode.Menu |
++                InputMode.KeyboardInput |
++                (includeDialogue ? InputMode.Dialogue : 0)
++            );
+         }
+     }
+ }"
+Raicuparta/nomai-vr,251,36addf038cabd5c3eb3f369dd51ccc15a21f45af,NomaiVR/Input/ControllerInput.cs,modified,0,1,1,"@@ -327,7 +327,6 @@ private static void PostEnableListanForAllJoysticks()
+                 {
+                     InputLibrary.landingCamera.ChangeBinding(XboxButton.DPadDown, KeyCode.None);
+                     InputLibrary.signalscope.ChangeBinding(XboxButton.DPadRight, KeyCode.None);
+-
+                     InputLibrary.tabL.ChangeBinding(XboxButton.None, KeyCode.None);
+                     InputLibrary.tabR.ChangeBinding(XboxButton.None, KeyCode.None);
+                     InputLibrary.setDefaults.ChangeBinding(XboxButton.None, KeyCode.None);"
+Raicuparta/nomai-vr,251,36addf038cabd5c3eb3f369dd51ccc15a21f45af,NomaiVR/UI/Dialogue.cs,modified,25,3,28,"@@ -20,7 +20,10 @@ private void Start()
+                 _canvasTransform = GameObject.Find(""DialogueCanvas"").transform;
+ 
+                 _canvasTransform.localScale *= _dialogeRenderSize;
+-                _canvasTransform.parent = Locator.GetPlayerTransform();
++
++                // Prevent dialogue box from flying off after a while.
++                _canvasTransform.parent = new GameObject().transform;
++                _canvasTransform.parent.gameObject.AddComponent<FollowTarget>().target = Locator.GetPlayerTransform();
+ 
+                 var canvas = _canvasTransform.gameObject.GetComponent<Canvas>();
+                 canvas.renderMode = RenderMode.WorldSpace;
+@@ -47,6 +50,27 @@ public override void ApplyPatches()
+                     NomaiVR.Pre<CharacterDialogueTree>(""StartConversation"", typeof(Patch), nameof(PreStartConversation));
+                     NomaiVR.Post<CharacterDialogueTree>(""StartConversation"", typeof(Patch), nameof(PostStartConversation));
+                     NomaiVR.Pre<CharacterDialogueTree>(""EndConversation"", typeof(Patch), nameof(PreEndConversation));
++                    NomaiVR.Post<DialogueOptionUI>(""Awake"", typeof(Patch), nameof(PostDialogueOptionAwake));
++                    NomaiVR.Post<DialogueOptionUI>(""SetSelected"", typeof(Patch), nameof(PreSetButtonPromptImage));
++                }
++
++                private static void PreSetButtonPromptImage(Image ____buttonPromptImage)
++                {
++                    var texture = AssetLoader.InteractIcon;
++                    ____buttonPromptImage.sprite = Sprite.Create(texture, new Rect(0f, 0f, texture.width, texture.height), new Vector2(0.5f, 0.5f), texture.width);
++                }
++
++                private static void PostDialogueOptionAwake(DialogueOptionUI __instance)
++                {
++                    var text = __instance.GetComponentInChildren<Text>();
++                    var collider = __instance.gameObject.AddComponent<BoxCollider>();
++
++                    var rectTransform = text.GetComponent<RectTransform>();
++                    var thickness = 10f;
++                    var height = 40;
++                    var width = rectTransform.rect.width;
++                    collider.size = new Vector3(width, height, thickness);
++                    collider.center = new Vector3(0, -height * 0.5f, thickness * 0.5f);
+                 }
+ 
+                 private static void PreStartConversation(CharacterDialogueTree __instance)
+@@ -70,7 +94,5 @@ private static void PreEndConversation()
+                 }
+             }
+         }
+-
+-
+     }
+ }"

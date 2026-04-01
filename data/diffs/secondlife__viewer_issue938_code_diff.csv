@@ -1,0 +1,111 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+secondlife/viewer,938,66d1b0f,indra/newview/llfloaterimsessiontab.cpp,modified,19,3,22,"@@ -267,9 +267,13 @@ BOOL LLFloaterIMSessionTab::postBuild()
+ 	mEmojiRecentEmptyText->setToolTip(mEmojiRecentEmptyText->getText());
+ 	mEmojiRecentEmptyText->setVisible(false);
+ 
++	mEmojiRecentContainer = getChild<LLPanel>(""emoji_recent_container"");
++	mEmojiRecentContainer->setVisible(false);
++
+ 	mEmojiRecentIconsCtrl = getChild<LLPanelEmojiComplete>(""emoji_recent_icons_ctrl"");
++	mEmojiRecentIconsCtrl->setFocusReceivedCallback([this](LLFocusableElement*) { onEmojiRecentPanelFocusReceived(); });
++	mEmojiRecentIconsCtrl->setFocusLostCallback([this](LLFocusableElement*) { onEmojiRecentPanelFocusLost(); });
+ 	mEmojiRecentIconsCtrl->setCommitCallback([this](LLUICtrl*, const LLSD& value) { onRecentEmojiPicked(value); });
+-	mEmojiRecentIconsCtrl->setVisible(false);
+ 
+ 	mEmojiPickerShowBtn = getChild<LLButton>(""emoji_picker_show_btn"");
+ 	mEmojiPickerShowBtn->setClickedCallback([this](LLUICtrl*, const LLSD&) { onEmojiPickerShowBtnClicked(); });
+@@ -475,7 +479,7 @@ void LLFloaterIMSessionTab::initEmojiRecentPanel()
+     if (recentlyUsed.empty())
+     {
+         mEmojiRecentEmptyText->setVisible(TRUE);
+-        mEmojiRecentIconsCtrl->setVisible(FALSE);
++        mEmojiRecentContainer->setVisible(FALSE);
+     }
+     else
+     {
+@@ -486,10 +490,22 @@ void LLFloaterIMSessionTab::initEmojiRecentPanel()
+         }
+         mEmojiRecentIconsCtrl->setEmojis(emojis);
+         mEmojiRecentEmptyText->setVisible(FALSE);
+-        mEmojiRecentIconsCtrl->setVisible(TRUE);
++        mEmojiRecentContainer->setVisible(TRUE);
+     }
+ }
+ 
++// static
++void LLFloaterIMSessionTab::onEmojiRecentPanelFocusReceived()
++{
++    mEmojiRecentContainer->addBorder();
++}
++
++// static
++void LLFloaterIMSessionTab::onEmojiRecentPanelFocusLost()
++{
++    mEmojiRecentContainer->removeBorder();
++}
++
+ void LLFloaterIMSessionTab::onRecentEmojiPicked(const LLSD& value)
+ {
+ 	LLSD::String str = value.asString();"
+secondlife/viewer,938,66d1b0f,indra/newview/llfloaterimsessiontab.h,modified,3,0,3,"@@ -173,6 +173,7 @@ class LLFloaterIMSessionTab
+ 	LLLayoutPanel* mInputButtonPanel;
+ 	LLLayoutPanel* mEmojiRecentPanel;
+ 	LLTextBox* mEmojiRecentEmptyText;
++	LLPanel* mEmojiRecentContainer;
+ 	LLPanelEmojiComplete* mEmojiRecentIconsCtrl;
+ 	LLParticipantList* getParticipantList();
+ 	conversations_widgets_map mConversationsWidgets;
+@@ -218,6 +219,8 @@ class LLFloaterIMSessionTab
+ 	void onEmojiRecentPanelToggleBtnClicked();
+ 	void onEmojiPickerShowBtnClicked();
+ 	void initEmojiRecentPanel();
++	void onEmojiRecentPanelFocusReceived();
++	void onEmojiRecentPanelFocusLost();
+ 	void onRecentEmojiPicked(const LLSD& value);
+ 
+ 	bool checkIfTornOff();"
+secondlife/viewer,938,66d1b0f,indra/newview/skins/default/xui/en/floater_im_session.xml,modified,17,8,25,"@@ -335,7 +335,7 @@
+             </layout_panel>
+             <layout_panel
+              name=""emoji_recent_layout_panel""
+-             height=""30""
++             height=""36""
+              auto_resize=""false"">
+                 <text
+                  name=""emoji_recent_empty_text""
+@@ -345,19 +345,28 @@
+                  h_pad=""20""
+                  v_pad=""10""
+                  top=""0""
+-                 left=""1""
++                 left=""2""
+                  right=""-65""
+-                 height=""30""
++                 height=""34""
+                 >Recently used emojis will appear here</text>
+-                <emoji_complete
+-                 name=""emoji_recent_icons_ctrl""
++                <panel
++                 name=""emoji_recent_container""
+                  follows=""top|left|right""
+                  layout=""topleft""
+-                 max_visible=""20""
+                  top=""0""
+-                 left=""1""
++                 left=""2""
+                  right=""-65""
+-                 height=""30""/>
++                 height=""34"">
++                    <emoji_complete
++                     name=""emoji_recent_icons_ctrl""
++                     follows=""top|left|right""
++                     layout=""topleft""
++                     max_visible=""20""
++                     top=""2""
++                     left=""2""
++                     right=""-2""
++                     height=""30""/>
++                </panel>
+                 <button
+                  name=""emoji_picker_show_btn""
+                  label=""More"""

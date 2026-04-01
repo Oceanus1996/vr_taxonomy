@@ -1,0 +1,317 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+dghost/quake2vr,25,e127766f583e71bb3a9a40e4d2d826f3ce27a4fa,client/renderer/r_main.c,modified,8,6,14,"@@ -702,6 +702,7 @@ void R_RenderView (refdef_t *fd)
+ 	projection.x.offset = 0;
+ 
+ 	R_SetProjection(projection);
++    R_SetFog();
+ 
+ 	R_DrawWorld ();
+ 	
+@@ -765,8 +766,6 @@ void R_RenderView (refdef_t *fd)
+ 		
+ 		R_Flash();
+ 	}
+-	R_SetFog();
+-
+ }
+ 
+ /*
+@@ -781,6 +780,7 @@ void R_DrawCameraEffect ();
+ void R_RenderViewIntoFBO (refdef_t *fd, eye_param_t parameters, fbo_t *destination, vrect_t *viewRect)
+ {
+ 	uint32_t oldWidth, oldHeight;
++
+ 	if (r_norefresh->value)
+ 		return;
+ 
+@@ -834,6 +834,7 @@ void R_RenderViewIntoFBO (refdef_t *fd, eye_param_t parameters, fbo_t *destinati
+ 
+ 	R_SetupGL ();
+ 	R_SetProjection(parameters.projection);
++    R_SetFog();
+ 
+ 	R_DrawWorld ();
+ 	
+@@ -908,9 +909,9 @@ void R_RenderViewIntoFBO (refdef_t *fd, eye_param_t parameters, fbo_t *destinati
+ 		GL_MBind(0,0);
+ 
+ 		R_ApplyPostProcess(destination);
++
+ 	}
+ 
+-	R_SetFog();
+ 	if ((r_newrefdef.rdflags & RDF_CAMERAEFFECT))
+ 		R_DrawCameraEffect ();
+ 	vid.width = oldWidth;
+@@ -964,7 +965,7 @@ R_SetGL2D
+ 
+ void R_SetGL2D (void)
+ {
+-	// set 2D virtual screen size
++    // set 2D virtual screen size
+ 	glViewport (0,0, vid.width, vid.height);
+ 	GL_SetIdentityOrtho(GL_PROJECTION, 0, vid.width, vid.height, 0, -99999, 99999);
+ 	GL_LoadIdentity(GL_MODELVIEW);
+@@ -973,7 +974,9 @@ void R_SetGL2D (void)
+ 	GL_Disable (GL_CULL_FACE);
+ 	GL_Disable (GL_BLEND);
+ 	GL_Enable (GL_ALPHA_TEST);
+-	glColor4f (1,1,1,1);
++    GL_Disable(GL_FOG);
++    glColor4f (1,1,1,1);
++    
+ }
+ 
+ /*
+@@ -1925,7 +1928,6 @@ void R_EndFrame(void)
+ 	GL_SetIdentity(GL_MODELVIEW);
+ 	GL_Disable(GL_DEPTH_TEST);
+ 	GL_Disable(GL_ALPHA_TEST);
+-
+ 	R_VR_EndFrame();
+ 	R_Stereo_EndFrame(frame);
+ "
+dghost/quake2vr,25,e127766f583e71bb3a9a40e4d2d826f3ce27a4fa,client/renderer/r_postprocess.c,modified,7,1,8,"@@ -505,7 +505,11 @@ void R_PolyBlend ();
+ void R_ApplyPostProcess(fbo_t *source)
+ {
+ 	fbo_t *currentFBO = glState.currentFBO;
+-
++    qboolean fog_on = glState.fog;
++    
++    if (fog_on)
++        GL_Disable(GL_FOG);
++    
+ 	GL_ClearColor(0,0,0,0);
+ 	R_SetupQuadState();
+ 	GL_Disable(GL_DEPTH_TEST);
+@@ -582,6 +586,8 @@ void R_ApplyPostProcess(fbo_t *source)
+ 	R_BindFBO(currentFBO);
+ 	GL_MBind(0,0);
+ 	glUseProgram(0);
++    if (fog_on)
++        GL_Enable(GL_FOG);
+ }
+ 
+ "
+dghost/quake2vr,25,efbb085d53bbae5aa2e7178c4285fb8f2ac8cc54,client/renderer/r_particle.c,modified,0,12,12,"@@ -369,13 +369,6 @@ void R_BeginParticles (qboolean decals)
+ 		VectorNegate   (particle_coord[0], particle_coord[2]);
+ 		VectorNegate   (particle_coord[1], particle_coord[3]);
+ 
+-		// no fog on particles
+-		fog_on = false;
+-		if (glIsEnabled(GL_FOG)) // check if fog is enabled
+-		{
+-			fog_on = true;
+-			glDisable(GL_FOG); // if so, disable it
+-		}
+ 	}
+ 	// clear particle rendering state
+ 	memset(&currentParticleState, 0, sizeof(particleRenderState_t));
+@@ -409,11 +402,6 @@ void R_FinishParticles (qboolean decals)
+ 	GL_Disable (GL_BLEND);
+ 	glColor4f (1,1,1,1);
+ 
+-	if (!decals)
+-	{	// re-enable fog if it was on
+-		if (fog_on)
+-			glEnable(GL_FOG);
+-	}
+ }
+ 
+ //==================================================="
+dghost/quake2vr,25,7d64584ef1c79f2162ee96bcdf0244fa7f6e48ac,client/renderer/include/r_local.h,modified,5,2,7,"@@ -698,7 +698,8 @@ void R_SetFog (void);
+ void R_InitFogVars (void);
+ void R_SetFogVars (qboolean enable, int32_t model, int32_t density,
+ 				   int32_t start, int32_t end, int32_t red, int32_t green, int32_t blue);
+-
++extern int32_t r_fogmodel;
++extern qboolean r_fogenable;
+ /*
+ ** GL config stuff
+ */
+@@ -1003,11 +1004,13 @@ typedef struct {
+ 	GLint scale_uniform;
+ 	GLint time_uniform;
+ 	GLint displacement_uniform;
++    GLint fogmodel_uniform;
+ } r_warpshader_t;
+ 
+ typedef struct {
+ 	r_shaderobject_t *shader;
+-	GLuint rgbscale_uniform;
++	GLint rgbscale_uniform;
++    GLint fogmodel_uniform;
+ } r_causticshader_t;
+ 
+ "
+dghost/quake2vr,25,7d64584ef1c79f2162ee96bcdf0244fa7f6e48ac,client/renderer/r_fog.c,modified,10,11,21,"@@ -26,8 +26,8 @@ Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
+ // global fog vars w/ defaults
+ int32_t FogModels[3] = {GL_LINEAR, GL_EXP, GL_EXP2};
+ 
+-static	qboolean r_fogenable = false;
+-static	int32_t		r_fogmodel = GL_LINEAR;
++int32_t	r_fogmodel = 0;
++qboolean r_fogenable = false;
+ static	float	r_fogdensity = 50.0;
+ static	float	r_fognear = 64.0;
+ static	float	r_fogfar = 1024.0;
+@@ -46,9 +46,9 @@ void R_SetFog (void)
+ 	r_fogColor[3] = 1.0;
+ 	glEnable(GL_FOG);
+ 	GL_ClearColor (r_fogColor[0], r_fogColor[1], r_fogColor[2], r_fogColor[3]); // Clear the background color to the fog color
+-	glFogi(GL_FOG_MODE, r_fogmodel);
++	glFogi(GL_FOG_MODE, FogModels[r_fogmodel]);
+ 	glFogfv(GL_FOG_COLOR, r_fogColor);
+-	if (r_fogmodel == GL_LINEAR)
++	if (r_fogmodel == 0)
+ 	{
+ 		glFogf(GL_FOG_START, r_fognear); 
+ 		glFogf(GL_FOG_END, r_fogfar);
+@@ -66,7 +66,7 @@ R_InitFogVars
+ void R_InitFogVars (void)
+ {
+ 	r_fogenable = false;
+-	r_fogmodel = GL_LINEAR;
++	r_fogmodel = 0;
+ 	r_fogdensity = 50.0;
+ 	r_fognear = 64.0;
+ 	r_fogfar = 1024.0;
+@@ -81,8 +81,6 @@ R_SetFogVars
+ void R_SetFogVars (qboolean enable, int32_t model, int32_t density,
+ 				   int32_t start, int32_t end, int32_t red, int32_t green, int32_t blue)
+ {
+-	int32_t	temp;
+-
+ 	//VID_Printf( PRINT_ALL, ""Setting fog variables: model %i density %i near %i far %i red %i green %i blue %i\n"",
+ 	//	model, density, start, end, red, green, blue );
+ 
+@@ -94,14 +92,15 @@ void R_SetFogVars (qboolean enable, int32_t model, int32_t density,
+ 		glDisable(GL_FOG);
+ 		return;
+ 	}
+-	temp = model;
+-	if ((temp > 2) || (temp < 0)) temp = 0;
+-	r_fogmodel = FogModels[temp];
++    
++    r_fogmodel = clamp(model,0,2);
++
+ 	r_fogdensity = (float)density;
+-	if (temp == 0) {	// GL_LINEAR
++	if (r_fogmodel == 0) {	// GL_LINEAR
+ 		r_fognear = (float)start;
+ 		r_fogfar = (float)end;
+ 	}
++    
+ 	r_fogColor[0] = ((float)red)/255.0;
+ 	r_fogColor[1] = ((float)green)/255.0;
+ 	r_fogColor[2] = ((float)blue)/255.0;"
+dghost/quake2vr,25,7d64584ef1c79f2162ee96bcdf0244fa7f6e48ac,client/renderer/r_shaderobjects.c,modified,3,0,3,"@@ -278,6 +278,7 @@ qboolean R_InitShaders(void)
+ 		warpshader.scale_uniform = glGetUniformLocation(warpshader.shader->program,""scale"");
+ 		warpshader.time_uniform = glGetUniformLocation(warpshader.shader->program,""time"");
+ 		warpshader.displacement_uniform = glGetUniformLocation(warpshader.shader->program,""displacement"");
++        warpshader.fogmodel_uniform = glGetUniformLocation(warpshader.shader->program,""fogmodel"");
+ 		glUseProgram(0);
+ 		success = true;
+ 	} 
+@@ -298,6 +299,7 @@ qboolean R_InitShaders(void)
+ 		simplexwarpshader.scale_uniform = glGetUniformLocation(simplexwarpshader.shader->program,""scale"");
+ 		simplexwarpshader.time_uniform = glGetUniformLocation(simplexwarpshader.shader->program,""time"");
+ 		simplexwarpshader.displacement_uniform = glGetUniformLocation(simplexwarpshader.shader->program,""displacement"");
++        simplexwarpshader.fogmodel_uniform = glGetUniformLocation(simplexwarpshader.shader->program,""fogmodel"");
+ 		glUseProgram(0);
+ 		success = success && true;
+ 	}
+@@ -315,6 +317,7 @@ qboolean R_InitShaders(void)
+ 		texloc = glGetUniformLocation(causticshader.shader->program,""texDistort"");
+ 		glUniform1i(texloc,1);
+ 		causticshader.rgbscale_uniform = glGetUniformLocation(causticshader.shader->program,""rgbscale"");
++        causticshader.fogmodel_uniform = glGetUniformLocation(causticshader.shader->program,""fogmodel"");
+ 		glUseProgram(0);
+ 		success = success && true;
+ 	}"
+dghost/quake2vr,25,7d64584ef1c79f2162ee96bcdf0244fa7f6e48ac,client/renderer/r_warp.c,modified,4,0,4,"@@ -303,6 +303,8 @@ void RB_RenderWarpSurface (msurface_t *fa)
+ 	*/
+ 	if (texShaderWarp)
+ 	{
++        int fog = (r_fogenable > 0) ? (r_fogmodel + 1) : 0;
++        
+ 		GLfloat param[4];
+ 		float rdt = r_newrefdef.time;
+ 		float scale[2] = {0.025,0.05};
+@@ -331,9 +333,11 @@ void RB_RenderWarpSurface (msurface_t *fa)
+ 			glUniform1f(warp->time_uniform,rdt);
+ 			glUniform1f(warp->displacement_uniform,r_waterwave->value);
+ 			glUniform2fv(warp->scale_uniform,1,scale);
++            glUniform1i(warp->fogmodel_uniform, fog);
+ 		} else {
+ 			glUseProgram(causticshader.shader->program);
+ 			glUniform4fv(causticshader.rgbscale_uniform,1,param);
++            glUniform1i(causticshader.fogmodel_uniform, fog);
+ 		}
+ 	}
+ 	else"
+dghost/quake2vr,25,7d64584ef1c79f2162ee96bcdf0244fa7f6e48ac,misc/vrquake2.pk3/shaders/caustic.vert,modified,3,1,4,"@@ -5,5 +5,7 @@ varying vec4 coords;
+ void main(void) {
+ 	color = gl_Color;
+ 	gl_Position = gl_ModelViewProjectionMatrix * gl_Vertex;
++	vec4 eyePos = gl_ModelViewMatrix * gl_Vertex;
++	gl_FogFragCoord = abs(eyePos.z/eyePos.w);
+ 	coords = vec4(gl_MultiTexCoord0.xy,gl_MultiTexCoord1.xy);
+-}
+\ No newline at end of file
++}"
+dghost/quake2vr,25,7d64584ef1c79f2162ee96bcdf0244fa7f6e48ac,misc/vrquake2.pk3/shaders/warp.frag,modified,19,2,21,"@@ -2,6 +2,8 @@
+ uniform sampler2D texImage;
+ uniform sampler2D texDistort;
+ uniform vec4 rgbscale;
++uniform int fogmodel;
++
+ varying vec4 color;
+ varying vec4 coords;
+ 
+@@ -10,5 +12,20 @@ void main() {
+ 	vec4 dist;
+ 	offset = texture2D(texDistort, coords.zw).zw * 0.5;
+ 	dist = texture2D(texImage, coords.xy + offset);
+-	gl_FragColor = color * dist * rgbscale;
+-}
+\ No newline at end of file
++	vec4 c = color * dist * rgbscale;
++
++	if (fogmodel == 1) {
++			float fogFactor = (gl_Fog.end - gl_FogFragCoord) * gl_Fog.scale;
++			fogFactor = clamp(fogFactor, 0.0, 1.0);
++			c = mix(gl_Fog.color, c, fogFactor);
++        } else if (fogmodel == 2) { 
++                        float fogFactor = exp(-gl_Fog.density * gl_FogFragCoord);
++                        fogFactor = clamp(fogFactor, 0.0, 1.0);
++                        c = mix(gl_Fog.color, c, fogFactor);
++	} else if (fogmodel == 3) {
++                        float fogFactor = exp(-pow((gl_Fog.density * gl_FogFragCoord), 2.0));
++                        fogFactor = clamp(fogFactor, 0.0, 1.0);
++                        c = mix(gl_Fog.color, c, fogFactor);
++	}
++	gl_FragColor = c;
++}"
+dghost/quake2vr,25,7d64584ef1c79f2162ee96bcdf0244fa7f6e48ac,misc/vrquake2.pk3/shaders/warp.vert,modified,4,1,5,"@@ -14,6 +14,9 @@ void main(void) {
+ 	vec4 vertex = gl_Vertex;
+ 	vec2 position = vertex.xy * scale + time;
+ 	vertex.z += displacement * deform(position);
++
+ 	gl_Position = gl_ModelViewProjectionMatrix * vertex;
++	vec4 eyePos = gl_ModelViewMatrix * gl_Vertex;
++	gl_FogFragCoord = abs(eyePos.z/eyePos.w);
+ 	coords = vec4(gl_MultiTexCoord0.xy,gl_MultiTexCoord1.xy);
+-}
+\ No newline at end of file
++}"
+dghost/quake2vr,25,7d64584ef1c79f2162ee96bcdf0244fa7f6e48ac,misc/vrquake2.pk3/shaders/warp_simplex.vert,modified,3,1,4,"@@ -113,5 +113,7 @@ void main(void) {
+ 	vec2 position = vertex.xy * scale + time;
+ 	vertex.z += displacement * snoise(vec3(position*0.25,time*0.1));
+ 	gl_Position = gl_ModelViewProjectionMatrix * vertex;
++        vec4 eyePos = gl_ModelViewMatrix * gl_Vertex;
++        gl_FogFragCoord = abs(eyePos.z/eyePos.w);
+ 	coords = vec4(gl_MultiTexCoord0.xy,gl_MultiTexCoord1.xy);
+-}
+\ No newline at end of file
++}"

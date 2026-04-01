@@ -1,0 +1,261 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+cosmoscout/cosmoscout-vr,332,19a5ea7,docs/changelog.md,modified,1,0,1,"@@ -16,6 +16,7 @@ SPDX-License-Identifier: CC-BY-4.0
+ #### New Features
+ 
+ * The `csp-timings` plugin now also shows the number of generated samples and primitives in the user interface.
++* A new ""Ambient Occlusion"" slider in the user interface can be used to control the amount of slope shading on the terrain.
+ 
+ #### Other Changes
+ "
+cosmoscout/cosmoscout-vr,332,19a5ea7,plugins/csp-lod-bodies/shaders/Planet.frag,modified,30,32,62,"@@ -14,6 +14,7 @@ uniform float heightMax;
+ uniform float slopeMin;
+ uniform float slopeMax;
+ uniform float ambientBrightness;
++uniform float ambientOcclusion;
+ uniform float texGamma;
+ uniform vec4  uSunDirIlluminance;
+ 
+@@ -126,55 +127,46 @@ void main() {
+   luminance *= VP_getShadow(fsIn.position);
+ #endif
+ 
++#if $ENABLE_HDR
++  // Make the amount of ambient brightness perceptually linear in HDR mode.
++  float ambient = pow(ambientBrightness, VP_E);
++  float f_r = BRDF_HDR(N, L, V);
++#else
+   float ambient = ambientBrightness;
++  float f_r = BRDF_NON_HDR(N, L, V);
++#endif
++
+ #if $ENABLE_LIGHTING
+-  // hill shading / pseudo ambient occlusion
+-  const float hillShadingIntensity = 0.5;
+-  ambient *= mix(1.0, max(0, dot(idealNormal, surfaceNormal)), hillShadingIntensity);
+   luminance *= max(0.0, cos_i);
+-#endif
+ 
+-#if ($ENABLE_HDR && $ENABLE_LIGHTING)
+-  if (cos_i < 0) {
+-    luminance *= 0;
+-  } else {
+-    float f_r = BRDF_HDR(N, L, V);
+-    if (f_r < 0 || isnan(f_r) || isinf(f_r)) {
+-      luminance *= 0;
+-    } else {
+-      luminance *= f_r * vec3(uSunDirIlluminance.w);
+-      luminance *= getEclipseShadow(fsIn.position);
+-    }
+-  }
+-  fragColor.rgb /= $AVG_LINEAR_IMG_INTENSITY;
+-  fragColor.rgb *= luminance;
+-#elif $ENABLE_HDR
+-  luminance *= vec3(uSunDirIlluminance.w);
+-  fragColor.rgb /= $AVG_LINEAR_IMG_INTENSITY;
+-  fragColor.rgb *= luminance;
+-#elif $ENABLE_LIGHTING
+-  if (cos_i < 0) {
+-    luminance *= 0;
+-  } else {
+-    float f_r = BRDF_NON_HDR(N, L, V);
++  if (cos_i > 0) {
+     if (f_r < 0 || isnan(f_r) || isinf(f_r)) {
+       luminance *= 0;
+     } else {
+       luminance *= f_r * getEclipseShadow(fsIn.position);
+     }
+   }
+-  fragColor.rgb =
+-      mix(fragColor.rgb * ambient, fragColor.rgb, max(max(luminance.r, luminance.g), luminance.b));
++  fragColor.rgb = mix(fragColor.rgb * luminance, fragColor.rgb, ambient);
++
++  // Add some hill shading (pseudo ambient occlusion).
++  fragColor.rgb *= mix(1.0, max(0, dot(idealNormal, surfaceNormal)), ambientOcclusion);
++#endif
++
++#if $ENABLE_HDR
++  // In HDR-mode, we have to add the sun's luminance and divide by the average intensity of the
++  // texture map.
++  fragColor.rgb *= uSunDirIlluminance.w / $AVG_LINEAR_IMG_INTENSITY;
+ #endif
+ 
+ #if $SHOW_TILE_BORDER
+   // color area by level
+   const float minLevel   = 1;
+   const float maxLevel   = 15;
+-  const float brightness = 0.5;
++  const float brightness = 0.3;
++  const float alpha      = 0.5;
+ 
+   float level      = clamp(log2(float(VP_offsetScale.z)), minLevel, maxLevel);
+-  vec4  debugColor = vec4(heat((level - minLevel) / (maxLevel - minLevel)), 0.5);
++  vec4  debugColor = vec4(heat((level - minLevel) / (maxLevel - minLevel)), alpha);
+   debugColor.rgb   = mix(debugColor.rgb, vec3(1), brightness);
+ 
+   // Create a red border around each tile. As the outer-most vertex is the bottom of the skirt, we
+@@ -185,9 +177,15 @@ void main() {
+   if (fsIn.vertexPosition.x < edgeWidth || fsIn.vertexPosition.y < edgeWidth ||
+       fsIn.vertexPosition.x > maxVertex - edgeWidth || 
+       fsIn.vertexPosition.y > maxVertex - edgeWidth) {
+-    debugColor = vec4(1.0, 0.0, 0.0, 0.5);
++    debugColor = vec4(1.0, 0.0, 0.0, alpha);
+   }
+ 
++#if $ENABLE_HDR
++  // Make sure that the color overlays are visible in HDR mode.
++  debugColor.rgb = SRGBtoLINEAR(debugColor.rgb);
++  debugColor.rgb *= uSunDirIlluminance.w / VP_PI / $AVG_LINEAR_IMG_INTENSITY;
++#endif
++
+   fragColor.rgb = mix(fragColor.rgb, debugColor.rgb, debugColor.a);
+ #endif
+ "
+cosmoscout/cosmoscout-vr,332,19a5ea7,plugins/csp-lod-bodies/shaders/VistaPlanetTerrainShaderUniforms.glsl,modified,2,1,3,"@@ -6,7 +6,8 @@
+ // SPDX-License-Identifier: MIT
+ 
+ // constants -------------------------------------------------------------------
+-const float VP_PI = 3.1415926535897932384626433832795;
++const float VP_PI = 3.141592653;
++const float VP_E  = 2.718281828;
+ 
+ // uniforms - global for a planet ----------------------------------------------
+ uniform mat4  VP_matProjection;"
+cosmoscout/cosmoscout-vr,332,19a5ea7,plugins/csp-lod-bodies/src/PlanetShader.cpp,modified,3,0,3,"@@ -231,6 +231,9 @@ void PlanetShader::bind() {
+   loc = mShader.GetUniformLocation(""ambientBrightness"");
+   mShader.SetUniform(loc, mSettings->mGraphics.pAmbientBrightness.get());
+ 
++  loc = mShader.GetUniformLocation(""ambientOcclusion"");
++  mShader.SetUniform(loc, mSettings->mGraphics.pAmbientOcclusion.get());
++
+   loc = mShader.GetUniformLocation(""texGamma"");
+   mShader.SetUniform(loc, mPluginSettings->mTextureGamma.get());
+ "
+cosmoscout/cosmoscout-vr,332,19a5ea7,plugins/csp-lod-bodies/src/TileRenderer.cpp,modified,2,0,2,"@@ -178,11 +178,13 @@ void TileRenderer::preRenderTiles(cs::graphics::ShadowMap* shadowMap) {
+   // bind textures with tile data
+   if (glDEM) {
+     glActiveTexture(texUnitNameDEM);
++    glBindTexture(GL_TEXTURE_2D, 0);
+     glBindTexture(GL_TEXTURE_2D_ARRAY, glDEM->getTextureId());
+   }
+ 
+   if (glIMG) {
+     glActiveTexture(texUnitNameIMG);
++    glBindTexture(GL_TEXTURE_2D, 0);
+     glBindTexture(GL_TEXTURE_2D_ARRAY, glIMG->getTextureId());
+   }
+ "
+cosmoscout/cosmoscout-vr,332,19a5ea7,plugins/csp-simple-bodies/src/SimpleBody.cpp,modified,7,3,10,"@@ -101,7 +101,8 @@ in vec3 vSunDirection;
+ // outputs
+ layout(location = 0) out vec3 oColor;
+ 
+-const float PI = 3.141592653589793;
++const float PI = 3.141592654;
++const float E  = 2.718281828;
+ 
+ vec3 SRGBtoLINEAR(vec3 srgbIn)
+ {
+@@ -157,14 +158,17 @@ void main()
+     oColor = texture(uSurfaceTexture, vTexCoords).rgb;
+ 
+     #ifdef ENABLE_HDR
++      // Make the amount of ambient brightness perceptually linear in HDR mode.
++      float ambient = pow(uAmbientBrightness, E);
+       oColor = SRGBtoLINEAR(oColor) * uSunIlluminance / PI;
+     #else
++      float ambient = uAmbientBrightness;
+       oColor = oColor * uSunIlluminance;
+     #endif
+ 
+     #ifdef ENABLE_LIGHTING
+-      float light = orenNayar(normalize(vNormal), normalize(vSunDirection), -normalize(vPosition));
+-      oColor = mix(oColor * uAmbientBrightness, oColor * getEclipseShadow(vPosition), light);
++      vec3 light = getEclipseShadow(vPosition) * orenNayar(normalize(vNormal), normalize(vSunDirection), -normalize(vPosition));
++      oColor = mix(oColor * light, oColor, ambient);
+     #endif
+ }
+ )"";"
+cosmoscout/cosmoscout-vr,332,19a5ea7,resources/gui/cosmoscout.html,modified,11,1,12,"@@ -267,6 +267,15 @@
+                       </div>
+                     </div>
+                   </div>
++                  <div class=""row"">
++                    <div class=""col-5"">
++                      Ambient Occlusion
++                    </div>
++                    <div class=""col-7"">
++                      <div data-callback=""graphics.setAmbientOcclusion"">
++                      </div>
++                    </div>
++                  </div>
+ 
+                   <hr class=""mt-2"">
+ 
+@@ -912,7 +921,8 @@
+       CosmoScout.gui.initSlider(""graphics.setFocalLength"", 5.0, 500, 1, [24]);
+       CosmoScout.gui.initSlider(""graphics.setExposureCompensation"", -10, 10, 0.5, [0]);
+       CosmoScout.gui.initSlider(""graphics.setExposureAdaptionSpeed"", 0, 20, 0.1, [3]);
+-      CosmoScout.gui.initSlider(""graphics.setAmbientLight"", 0.0, 1.0, 0.001, [0.25]);
++      CosmoScout.gui.initSlider(""graphics.setAmbientLight"", 0.0, 1.0, 0.001, [0.0]);
++      CosmoScout.gui.initSlider(""graphics.setAmbientOcclusion"", 0.0, 1.0, 0.001, [0.5]);
+       CosmoScout.gui.initSlider(""graphics.setExposureRange"", -30.0, 30, 0.1, [-14, 9]);
+       CosmoScout.gui.initSlider(""graphics.setGlareIntensity"", 0.0, 1, 0.01, [0.1]);
+       CosmoScout.gui.initSlider(""graphics.setGlareQuality"", 0, 5, 1, [0]);"
+cosmoscout/cosmoscout-vr,332,19a5ea7,src/cosmoscout/Application.cpp,modified,12,4,16,"@@ -1253,11 +1253,18 @@ void Application::registerGuiCallbacks() {
+   // Adjusts the amount of ambient lighting.
+   mGuiManager->getGui()->registerCallback(""graphics.setAmbientLight"",
+       ""Sets the amount of ambient light."", std::function([this](double val) {
+-        mSettings->mGraphics.pAmbientBrightness = static_cast<float>(std::pow(val, 10.0));
++        mSettings->mGraphics.pAmbientBrightness = static_cast<float>(val);
+       }));
+-  mSettings->mGraphics.pAmbientBrightness.connect([this](float val) {
+-    mGuiManager->setSliderValue(""graphics.setAmbientLight"", std::pow(val, 0.1F));
+-  });
++  mSettings->mGraphics.pAmbientBrightness.connect(
++      [this](float val) { mGuiManager->setSliderValue(""graphics.setAmbientLight"", val); });
++
++  // Adjusts the amount of ambient occlusion.
++  mGuiManager->getGui()->registerCallback(""graphics.setAmbientOcclusion"",
++      ""Sets the amount of ambient occlusion."", std::function([this](double val) {
++        mSettings->mGraphics.pAmbientOcclusion = static_cast<float>(val);
++      }));
++  mSettings->mGraphics.pAmbientOcclusion.connect(
++      [this](float val) { mGuiManager->setSliderValue(""graphics.setAmbientOcclusion"", val); });
+ 
+   // Adjusts the exposure range for auto exposure.
+   mGuiManager->getGui()->registerCallback(""graphics.setExposureRange"",
+@@ -1688,6 +1695,7 @@ void Application::unregisterGuiCallbacks() {
+   mGuiManager->getGui()->unregisterCallback(""core.reloadPlugin"");
+   mGuiManager->getGui()->unregisterCallback(""core.unloadPlugin"");
+   mGuiManager->getGui()->unregisterCallback(""graphics.setAmbientLight"");
++  mGuiManager->getGui()->unregisterCallback(""graphics.setAmbientOcclusion"");
+   mGuiManager->getGui()->unregisterCallback(""graphics.setEnableCascadesDebug"");
+   mGuiManager->getGui()->unregisterCallback(""graphics.setEnableLighting"");
+   mGuiManager->getGui()->unregisterCallback(""graphics.setEnableShadowFreeze"");"
+cosmoscout/cosmoscout-vr,332,19a5ea7,src/cs-core/Settings.cpp,modified,2,0,2,"@@ -298,6 +298,7 @@ void from_json(nlohmann::json const& j, Settings::Graphics& o) {
+   Settings::deserialize(j, ""sensorDiagonal"", o.pSensorDiagonal);
+   Settings::deserialize(j, ""focalLength"", o.pFocalLength);
+   Settings::deserialize(j, ""ambientBrightness"", o.pAmbientBrightness);
++  Settings::deserialize(j, ""ambientOcclusion"", o.pAmbientOcclusion);
+   Settings::deserialize(j, ""glareIntensity"", o.pGlareIntensity);
+   Settings::deserialize(j, ""glareRadius"", o.pGlareQuality);
+   Settings::deserialize(j, ""glareMode"", o.pGlareMode);
+@@ -333,6 +334,7 @@ void to_json(nlohmann::json& j, Settings::Graphics const& o) {
+   Settings::serialize(j, ""sensorDiagonal"", o.pSensorDiagonal);
+   Settings::serialize(j, ""focalLength"", o.pFocalLength);
+   Settings::serialize(j, ""ambientBrightness"", o.pAmbientBrightness);
++  Settings::serialize(j, ""ambientOcclusion"", o.pAmbientOcclusion);
+   Settings::serialize(j, ""glareIntensity"", o.pGlareIntensity);
+   Settings::serialize(j, ""glareRadius"", o.pGlareQuality);
+   Settings::serialize(j, ""glareMode"", o.pGlareMode);"
+cosmoscout/cosmoscout-vr,332,19a5ea7,src/cs-core/Settings.hpp,modified,4,1,5,"@@ -436,7 +436,10 @@ class CS_CORE_EXPORT Settings {
+     utils::DefaultProperty<float> pFocalLength{24.F};
+ 
+     /// The amount of ambient light. This should be in the range 0-1.
+-    utils::DefaultProperty<float> pAmbientBrightness{std::pow(0.25F, 10.F)};
++    utils::DefaultProperty<float> pAmbientBrightness{0.F};
++
++    /// The amount of ambient occlusion. This should be in the range 0-1.
++    utils::DefaultProperty<float> pAmbientOcclusion{0.5F};
+ 
+     /// The amount of artifical glare. Has no effect if HDR rendering is disabled. This should be in
+     /// the range 0-1. A value of zero disables the glare."

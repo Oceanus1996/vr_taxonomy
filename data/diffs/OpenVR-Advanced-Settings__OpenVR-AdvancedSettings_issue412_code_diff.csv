@@ -1,0 +1,199 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,412,b3e9e63cba9e8fa0efcec0ab98d1bf3f88dcb5e3,src/overlaycontroller.cpp,modified,21,13,34,"@@ -327,6 +327,24 @@ OverlayController::~OverlayController()
+     Shutdown();
+ }
+ 
++void OverlayController::exitApp()
++{
++    settings::saveAllSettings();
++
++    m_moveCenterTabController.shutdown();
++    // Un-mute mic before Exiting VR, as it is set at system level Not
++    // Vr level.
++    // m_audioTabController.setMicMuted( false, false );
++    m_audioTabController.shutdown();
++    m_chaperoneTabController.shutdown();
++    Shutdown();
++    QApplication::exit();
++
++    LOG( INFO ) << ""All systems exited."";
++    exit( EXIT_SUCCESS );
++    // Does not fallthrough
++}
++
+ void OverlayController::Shutdown()
+ {
+     disconnect( &m_pumpEventsTimer,
+@@ -1004,20 +1022,10 @@ void OverlayController::mainEventLoop()
+             vr::VRSystem()->AcknowledgeQuit_Exiting(); // Let us buy some
+                                                        // time just in case
+ 
+-            settings::saveAllSettings();
+-
+-            m_moveCenterTabController.shutdown();
+-            // Un-mute mic before Exiting VR, as it is set at system level Not
+-            // Vr level.
+-            // m_audioTabController.setMicMuted( false, false );
+-            m_audioTabController.shutdown();
+-            m_chaperoneTabController.shutdown();
+-            Shutdown();
+-            QApplication::exit();
+-
+-            LOG( INFO ) << ""All systems exited."";
++            exitApp();
++            // Won't fallthrough, but also exitApp() wont, but QT won't
++            // acknowledge
+             exit( EXIT_SUCCESS );
+-            // Does not fallthrough
+         }
+ 
+         case vr::VREvent_DashboardActivated:"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,412,b3e9e63cba9e8fa0efcec0ab98d1bf3f88dcb5e3,src/overlaycontroller.h,modified,1,0,1,"@@ -184,6 +184,7 @@ class OverlayController : public QObject
+     virtual ~OverlayController();
+ 
+     void Shutdown();
++    Q_INVOKABLE void exitApp();
+ 
+     bool isDashboardVisible()
+     {"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,412,b3e9e63cba9e8fa0efcec0ab98d1bf3f88dcb5e3,src/res/qml/SettingsPage.qml,modified,28,12,40,"@@ -156,17 +156,32 @@ MyStackViewPage {
+                 Layout.fillWidth: true
+             }
+         }
++        RowLayout{
+ 
+-        MyText {
+-            id: seatedOldExternalWarning
+-            wrapMode: Text.WordWrap
+-            font.pointSize: 20
+-            color: ""#FFA500""
+-            text: ""WARNING: 'Allow External App Chaperone Edits' + 'Old-Style Motion' + 'Enable Motion Features When in Seated Mode' active together may cause space center misalignment. Load the «Autosaved Profile» in the 'Chaperone' tab to fix.""
+-            horizontalAlignment: Text.AlignHCenter
+-            Layout.leftMargin: 20
+-            Layout.rightMargin: 20
+-            Layout.fillWidth: true
++            MyText {
++                id: seatedOldExternalWarning
++                wrapMode: Text.WordWrap
++                font.pointSize: 20
++                color: ""#FFA500""
++                text: ""WARNING: 'Allow External App Chaperone Edits' + 'Old-Style Motion' + 'Enable Motion Features When in Seated Mode' active together may cause space center misalignment. Load the «Autosaved Profile» in the 'Chaperone' tab to fix.""
++                horizontalAlignment: Text.AlignHCenter
++                Layout.leftMargin: 20
++                Layout.rightMargin: 20
++                Layout.fillWidth: true
++            }
++        }
++        RowLayout{
++            Item {
++                Layout.fillWidth: true
++            }
++            MyPushButton {
++                id: shutdownButton
++                Layout.preferredWidth: 250
++                text: ""Shutdown OVRAS""
++                onClicked: {
++                    OverlayController.exitApp()
++                    }
++                }
+         }
+ 
+         Item {
+@@ -175,14 +190,15 @@ MyStackViewPage {
+ 
+         RowLayout {
+             Layout.fillWidth: true
+-            // set visible to true here in builds when we need a debug toggle checkbox, otherwise false when on master branch.
+-            visible: false
++
+ 
+             Item {
+                 Layout.fillWidth: true
+             }
+ 
+             MyToggleButton {
++                // set visible to true here in builds when we need a debug toggle checkbox, otherwise false when on master branch.
++                visible: false
+                 id: debugToggle
+                 text: ""Debug""
+                 onCheckedChanged: {"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,412,b3e9e63cba9e8fa0efcec0ab98d1bf3f88dcb5e3,src/res/qml/video_page/brightness/BrightnessGroupBox.qml,modified,1,1,2,"@@ -51,7 +51,7 @@ GroupBox {
+ 
+             MySlider {
+                 id: brightnessSlider
+-                from: 0.01
++                from: 0.10
+                 to: 1.0
+                 stepSize: 0.01
+                 value: 1.0"
+OpenVR-Advanced-Settings/OpenVR-AdvancedSettings,412,b3e9e63cba9e8fa0efcec0ab98d1bf3f88dcb5e3,src/tabcontrollers/VideoTabController.cpp,modified,21,26,47,"@@ -70,6 +70,7 @@ void VideoTabController::initBrightnessOverlay()
+                      << vr::VROverlay()->GetOverlayErrorNameFromEnum(
+                             overlayError );
+     }
++    setBrightnessOpacityValue( brightnessOpacityValue(), false );
+ }
+ 
+ void VideoTabController::initColorOverlay()
+@@ -286,6 +287,7 @@ void VideoTabController::setBrightnessEnabled( bool value,
+         {
+             if ( overlayHandle != vr::k_ulOverlayHandleInvalid )
+             {
++                setBrightnessOpacityValue( brightnessOpacityValue(), false );
+                 vr::VROverlay()->ShowOverlay( getBrightnessOverlayHandle() );
+                 LOG( INFO ) << ""Brightness Overlay toggled on"";
+             }
+@@ -314,35 +316,28 @@ void VideoTabController::setBrightnessOpacityValue( float percvalue,
+     float realvalue = static_cast<float>(
+         std::pow( static_cast<double>( 1.0f - percvalue ), 1 / 3. ) );
+ 
+-    if ( fabs( static_cast<double>( percvalue - brightnessOpacityValue() ) )
+-         > .005 )
++    settings::setSetting( settings::DoubleSetting::VIDEO_brightnessOpacityValue,
++                          static_cast<double>( percvalue ) );
++
++    if ( realvalue >= 0.97f || realvalue <= 0.00f )
+     {
++        LOG( WARNING ) << ""alpha value is invalid setting to 1.0"";
+         settings::setSetting(
+-            settings::DoubleSetting::VIDEO_brightnessOpacityValue,
+-            static_cast<double>( percvalue ) );
+-
+-        if ( realvalue <= 1.0f && realvalue >= 0.00f )
+-        {
+-            vr::VROverlayError overlayError = vr::VROverlay()->SetOverlayAlpha(
+-                m_brightnessOverlayHandle, realvalue );
+-            if ( overlayError != vr::VROverlayError_None )
+-            {
+-                LOG( ERROR ) << ""Could not set alpha for brightness overlay: ""
+-                             << vr::VROverlay()->GetOverlayErrorNameFromEnum(
+-                                    overlayError );
+-            }
+-        }
+-        else
+-        {
+-            LOG( WARNING ) << ""alpha value is invalid setting to 1.0"";
+-            settings::setSetting(
+-                settings::DoubleSetting::VIDEO_brightnessOpacityValue, 0.0 );
+-        }
++            settings::DoubleSetting::VIDEO_brightnessOpacityValue, 1.0 );
++        realvalue = 0;
++    }
++    vr::VROverlayError overlayError = vr::VROverlay()->SetOverlayAlpha(
++        m_brightnessOverlayHandle, realvalue );
++    if ( overlayError != vr::VROverlayError_None )
++    {
++        LOG( ERROR ) << ""Could not set alpha for brightness overlay: ""
++                     << vr::VROverlay()->GetOverlayErrorNameFromEnum(
++                            overlayError );
++    }
+ 
+-        if ( notify )
+-        {
+-            emit brightnessOpacityValueChanged( percvalue );
+-        }
++    if ( notify )
++    {
++        emit brightnessOpacityValueChanged( percvalue );
+     }
+ }
+ "

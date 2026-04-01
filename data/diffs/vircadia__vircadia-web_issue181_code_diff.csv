@@ -1,0 +1,973 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vircadia/vircadia-web,181,5baa8cbf8631a8b303efaeb790e09a9b6356b139,src/components/JitsiContainer.vue,modified,2,3,5,"@@ -70,10 +70,9 @@ export default defineComponent({
+         },
+         setupWebEntity(room: JitsiRoomInfo, element: HTMLElement): void {
+             const gameObject = GameObject.getGameObjectByID(room.entity.id);
+-            const controller = gameObject?.getComponent(WebEntityController.typeName) as WebEntityController;
+-            if (controller) {
++            const controller = gameObject?.getComponent(WebEntityController.typeName);
++            if (controller instanceof WebEntityController) {
+                 controller.externalElement = element;
+-
+             }
+         }
+     }"
+vircadia/vircadia-web,181,5baa8cbf8631a8b303efaeb790e09a9b6356b139,src/components/overlays/avatar/Avatar.vue,modified,2,2,4,"@@ -515,8 +515,8 @@ export default defineComponent({
+             set: function(pVal: string): void {
+                 Log.debug(Log.types.AVATAR, `Avatar.vue: set displayNameStore. inputInfo=${pVal}`);
+                 const scene = Renderer.getScene();
+-                const avatarController = scene._myAvatar?.getComponent(MyAvatarController.typeName) as MyAvatarController;
+-                if (avatarController) {
++                const avatarController = scene._myAvatar?.getComponent(MyAvatarController.typeName);
++                if (avatarController instanceof MyAvatarController) {
+                     avatarController.displayName = pVal;
+                 }
+                 this.userStore.avatar.displayName = pVal;"
+vircadia/vircadia-web,181,5baa8cbf8631a8b303efaeb790e09a9b6356b139,src/components/overlays/explore/Explore.vue,modified,4,3,7,"@@ -479,7 +479,8 @@ import { Vector3, Vector4 } from ""@babylonjs/core"";
+ import { applicationStore, userStore } from ""@Stores/index"";
+ import { Utility } from ""@Modules/utility"";
+ import { Location } from ""@Modules/domain/location"";
+-import { Places, PlaceEntry } from ""@Modules/places"";
++import { API } from ""@Modules/metaverse/API"";
++import type { PlaceEntry } from ""@Modules/metaverse/APIPlaces"";
+ import { Renderer } from ""@Modules/scene"";
+ import Log from ""@Modules/debugging/log"";
+ import OverlayShell from ""../OverlayShell.vue"";
+@@ -515,7 +516,7 @@ export default defineComponent({
+ 
+     data() {
+         return {
+-            placesList: [] as PlaceEntry[],
++            placesList: new Array<PlaceEntry>(),
+             loading: false,
+             filterText: """",
+             locationInput: """",
+@@ -598,7 +599,7 @@ export default defineComponent({
+     methods: {
+         async loadPlacesList(): Promise<void> {
+             this.loading = true;
+-            this.placesList = await Places.getActiveList();
++            this.placesList = await API.getActivePlaceList();
+             this.loading = false;
+         },
+ "
+vircadia/vircadia-web,181,5baa8cbf8631a8b303efaeb790e09a9b6356b139,src/components/overlays/jitsi/Jitsi.vue,modified,3,2,5,"@@ -71,9 +71,10 @@ export default defineComponent({
+     },
+ 
+     methods: {
+-        getWebEntityController() : WebEntityController {
++        getWebEntityController(): WebEntityController | undefined {
+             const gameObject = GameObject.getGameObjectByID(this.room.entity.id);
+-            return gameObject?.getComponent(WebEntityController.typeName) as WebEntityController;
++            const component = gameObject?.getComponent(WebEntityController.typeName);
++            return component instanceof WebEntityController ? component : undefined;
+         }
+     },
+ "
+vircadia/vircadia-web,181,5baa8cbf8631a8b303efaeb790e09a9b6356b139,src/components/overlays/settings/Controls.vue,modified,26,0,26,"@@ -52,6 +52,9 @@ kbd {
+                 <q-tab name=""keyboard"" icon=""keyboard"" label="""">
+                     <q-tooltip class=""bg-black"">Keyboard</q-tooltip>
+                 </q-tab>
++                <q-tab name=""camera"" icon=""camera"" label="""">
++                    <q-tooltip class=""bg-black"">Camera</q-tooltip>
++                </q-tab>
+             </q-tabs>
+             <q-tab-panels
+                 v-model=""tab""
+@@ -158,6 +161,29 @@ kbd {
+                         </q-list>
+                     </q-scroll-area>
+                 </q-tab-panel>
++
++                <q-tab-panel name=""camera"" class=""q-px-none q-pb-none column no-wrap items-stretch"">
++                    <q-scroll-area class=""full-height"">
++                        <q-list class=""q-pb-md"">
++                            <q-item>
++                                <q-item-section
++                                    title=""Camera Bobbing""
++                                >
++                                    Camera Bobbing
++                                </q-item-section>
++                                <q-item-section class=""q-pl-sm"">
++                                    <q-toggle
++                                        name=""bloom""
++                                        v-model=""userStore.graphics.cameraBobbing""
++                                    />
++                                </q-item-section>
++                                <q-item-section side style=""min-width: 5ch;"">
++                                    <output for=""bloom"">{{ userStore.graphics.cameraBobbing ? `On` : `Off` }}</output>
++                                </q-item-section>
++                            </q-item>
++                        </q-list>
++                    </q-scroll-area>
++                </q-tab-panel>
+             </q-tab-panels>
+         </q-card>
+     </OverlayShell>"
+vircadia/vircadia-web,181,5baa8cbf8631a8b303efaeb790e09a9b6356b139,src/components/overlays/settings/Graphics.vue,modified,16,0,16,"@@ -63,6 +63,22 @@
+                             <output for=""fieldOfView"">{{ fieldOfView }}</output>
+                         </q-item-section>
+                     </q-item>
++                    <q-item>
++                        <q-item-section
++                            title=""Camera Bobbing""
++                        >
++                            Camera Bobbing
++                        </q-item-section>
++                        <q-item-section class=""q-pl-sm"">
++                            <q-toggle
++                                name=""bloom""
++                                v-model=""userStore.graphics.cameraBobbing""
++                            />
++                        </q-item-section>
++                        <q-item-section side style=""min-width: 5ch;"">
++                            <output for=""bloom"">{{ userStore.graphics.cameraBobbing ? `On` : `Off` }}</output>
++                        </q-item-section>
++                    </q-item>
+                     <q-item>
+                         <q-item-section
+                             title=""Bloom"""
+vircadia/vircadia-web,181,5baa8cbf8631a8b303efaeb790e09a9b6356b139,src/modules/avatar/controller/inputController.ts,modified,49,30,79,"@@ -33,16 +33,17 @@ import { IInputHandler } from ""./inputs/inputHandler"";
+ import { KeyboardInput } from ""./inputs/keyboardInput"";
+ import { VirtualJoystickInput } from ""./inputs/virtualJoystickInput"";
+ import { applicationStore, userStore } from ""@Stores/index"";
+-import type { SceneController } from ""@Modules/scene/controllers"";
+-import { MouseSettingsController } from ""@Base/modules/avatar/controller/inputs/mouseSettings"";
++import { Renderer } from ""@Modules/scene"";
++import { MouseSettingsController } from ""@Modules/avatar/controller/inputs/mouseSettings"";
++import { Hysteresis } from ""@Modules/utility/hysteresis"";
+ import { IglooCamera } from ""@Modules/apps/igloo/Igloo.js"";
+ 
+ // Custom camera controls.
+ class ArcRotateCameraCustomInput implements ICameraInput<ArcRotateCamera> {
+     className = ""ArcRotateCameraCustomInput"";
+     simpleName = ""customKeyboardRotate"";
+     camera: ArcRotateCamera;
+-    _keysPressed = [] as string[];
++    _keysPressed = new Array<string>();
+     sensibility = 0.01;
+     _preventDefault = false;
+ 
+@@ -69,9 +70,11 @@ class ArcRotateCameraCustomInput implements ICameraInput<ArcRotateCamera> {
+     attachControl(preventDefault: boolean): void {
+         this._preventDefault = preventDefault;
+         const engine = this.camera.getEngine();
+-        const element = engine.getInputElement() as HTMLElement;
++        const element = engine.getInputElement();
+         if (!this._onKeyDown || !this._onKeyUp) {
+-            element.tabIndex = 1;
++            if (element) {
++                element.tabIndex = 1;
++            }
+             // Define the keydown event handler.
+             this._onKeyDown = (event: KeyboardEvent) => {
+                 if (this._preventDefault) {
+@@ -83,7 +86,7 @@ class ArcRotateCameraCustomInput implements ICameraInput<ArcRotateCamera> {
+                     this._keysPressed.push(event.code);
+                 }
+             };
+-            element.addEventListener(""keydown"", (event) => {
++            element?.addEventListener(""keydown"", (event) => {
+                 if (this._onKeyDown) {
+                     this._onKeyDown(event);
+                 }
+@@ -99,7 +102,7 @@ class ArcRotateCameraCustomInput implements ICameraInput<ArcRotateCamera> {
+                     this._keysPressed.splice(index, 1);
+                 }
+             };
+-            element.addEventListener(""keyup"", (event) => {
++            element?.addEventListener(""keyup"", (event) => {
+                 if (this._onKeyUp) {
+                     this._onKeyUp(event);
+                 }
+@@ -115,16 +118,16 @@ class ArcRotateCameraCustomInput implements ICameraInput<ArcRotateCamera> {
+ 
+     detachControl(): void {
+         const engine = this.camera.getEngine();
+-        const element = engine.getInputElement() as HTMLElement;
++        const element = engine.getInputElement();
+         if (this._onKeyDown || this._onKeyUp) {
+             // Remove all event listeners.
+-            element.removeEventListener(""keydown"", (event) => {
++            element?.removeEventListener(""keydown"", (event) => {
+                 if (this._onKeyDown) {
+                     this._onKeyDown(event);
+                 }
+             });
+             this._onKeyDown = undefined;
+-            element.removeEventListener(""keyup"", (event) => {
++            element?.removeEventListener(""keyup"", (event) => {
+                 if (this._onKeyUp) {
+                     this._onKeyUp(event);
+                 }
+@@ -173,11 +176,13 @@ export class InputController extends ScriptComponent {
+     private _cameraSkin = 0.1;
+     private _cameraElastic = true;
+     private _cameraViewTransitionThreshold = 1.5;
+-    private _animGroups: Nullable<Array<AnimationGroup>> = null;
++    private _cameraHeightHysteresis: Nullable<Hysteresis> = null;
++    private _animGroups = new Array<AnimationGroup>();
+     private _animator: Nullable<Animator> = null;
+-    private _avatarState: AvatarState = new AvatarState();
++    private _avatarState = new AvatarState();
+     private _avatarHeight = 0;
+-    private _inputState: InputState = new InputState();
++    private _avatarRoot: Nullable<Vector3> = null;
++    private _inputState = new InputState();
+     private _input: Nullable<IInputHandler> = null;
+     private _isMobile = false;
+ 
+@@ -199,10 +204,20 @@ export class InputController extends ScriptComponent {
+         this._animGroups = value;
+     }
+ 
++    /**
++     * The height of the avatar model.
++     */
+     public set avatarHeight(value: number) {
+         this._avatarHeight = value;
+     }
+ 
++    /**
++     * The root vector of the avatar model.
++     */
++    public set avatarRoot(value: Vector3) {
++        this._avatarRoot = value;
++    }
++
+     public set camera(value: Nullable<ArcRotateCamera>) {
+         this._camera = value;
+ 
+@@ -229,6 +244,12 @@ export class InputController extends ScriptComponent {
+                 }
+             });
+ 
++            this._cameraHeightHysteresis = new Hysteresis(
++                () => (this._avatarRoot?.y ?? this._avatarHeight / 2) + this._avatarHeight / 2,
++                100,
++                0.1
++            );
++
+             // Remove the default camera controls.
+             this._camera.inputs.removeByType(""ArcRotateCameraKeyboardMoveInput"");
+ 
+@@ -342,9 +363,7 @@ export class InputController extends ScriptComponent {
+ 
+ 
+     public onInitialize(): void {
+-        this._animator = new Animator(
+-            this._gameObject as GameObject,
+-            this._animGroups as AnimationGroup[]);
++        this._animator = new Animator(this._gameObject as GameObject, this._animGroups);
+ 
+         // Jump animation-end handler.
+         const jumpAnim = this._animator.getAnimationGroup(""jump_standing_land_settle_all"");
+@@ -496,9 +515,7 @@ export class InputController extends ScriptComponent {
+                 return;
+             }
+             this._avatarState.state = State.Idle;
+-            const sceneManager = this._scene.rootNodes.find((node) => node.id === ""SceneManager"") as GameObject;
+-            const sceneController = sceneManager.components.get(""SceneController"") as SceneController | undefined;
+-            sceneController?.applyGravity();
++            Renderer.getScene().sceneController?.applyGravity();
+         }
+     }
+ 
+@@ -550,15 +567,13 @@ export class InputController extends ScriptComponent {
+             return;
+         }
+ 
+-        // Reset the avatar's rotation (so that it is standing up).
++        // Reset the avatar's rotation (so that it is standing upright).
+         if (this._gameObject && this._gameObject.rotationQuaternion) {
+             this._gameObject.rotationQuaternion.x = 0;
+             this._gameObject.rotationQuaternion.z = 0;
+         }
+ 
+-        const sceneManager = this._scene.rootNodes.find((node) => node.id === ""SceneManager"") as GameObject;
+-        const sceneController = sceneManager.components.get(""SceneController"") as SceneController | undefined;
+-        sceneController?.applyGravity();
++        Renderer.getScene().sceneController?.applyGravity();
+ 
+         this._avatarState.duration += delta;
+ 
+@@ -730,8 +745,15 @@ export class InputController extends ScriptComponent {
+             return;
+         }
+ 
++        const cameraMode = this._camera.radius <= this._cameraViewTransitionThreshold
++            ? CameraMode.FirstPerson
++            : CameraMode.ThirdPerson;
++
+         // Make the camera follow the avatar.
+-        this._defaultCameraTarget.y = this._avatarHeight;
++        const smoothHeight = cameraMode === CameraMode.FirstPerson && userStore.graphics.cameraBobbing
++            ? this._cameraHeightHysteresis?.getInstant()
++            : this._cameraHeightHysteresis?.get();
++        this._defaultCameraTarget.y = smoothHeight ?? this._avatarHeight;
+         this._gameObject.position.addToRef(this._defaultCameraTarget, this._camera.target);
+ 
+         // Update the FOV.
+@@ -742,9 +764,6 @@ export class InputController extends ScriptComponent {
+                 this._snapCamera(delta);
+             }
+ 
+-            const cameraMode = this._camera.radius <= this._cameraViewTransitionThreshold
+-                ? CameraMode.FirstPerson
+-                : CameraMode.ThirdPerson;
+             if (cameraMode === CameraMode.FirstPerson) {
+                 this._cameraViewTransitionThreshold = this._camera.lowerRadiusLimit;
+                 this._camera.wheelDeltaPercentage = MouseSettingsController.sensitivityComponents.wheelDeltaMultiplier;
+@@ -888,9 +907,9 @@ export class InputController extends ScriptComponent {
+         }
+ 
+         // Set the visibility of the avatar's mesh.
+-        const meshComp = this._gameObject.getComponent(MeshComponent.typeName) as MeshComponent;
+-        if (meshComp) {
+-            meshComp.visible = visible;
++        const meshComponent = this._gameObject.getComponent(""Mesh"");
++        if (meshComponent instanceof MeshComponent) {
++            meshComponent.visible = visible;
+         }
+     }
+ }"
+vircadia/vircadia-web,181,5baa8cbf8631a8b303efaeb790e09a9b6356b139,src/modules/avatar/controller/inputs/keyboardInput.ts,modified,2,7,9,"@@ -33,8 +33,6 @@ import { InputState, CameraMode, InputMode } from ""../inputState"";
+ import { applicationStore, userStore } from ""@Stores/index"";
+ import { AudioManager as AudioMgr } from ""@Modules/scene/audio"";
+ import { Renderer } from ""@Modules/scene"";
+-import type { GameObject } from ""@Modules/object"";
+-import type { SceneController } from ""@Modules/scene/controllers"";
+ 
+ 
+ export class KeyboardInput implements IInputHandler {
+@@ -162,8 +160,7 @@ export class KeyboardInput implements IInputHandler {
+ 
+         // Fly.
+         if (sourceEvent.code === userStore.controls.keyboard.movement.fly?.keycode) {
+-            const sceneManager = this._scene.rootNodes.find((node) => node.id === ""SceneManager"") as GameObject;
+-            const sceneController = sceneManager.components.get(""SceneController"") as SceneController | undefined;
++            const sceneController = Renderer.getScene().sceneController;
+ 
+             if (this._state.state === State.Fly) {
+                 this._state.action = Action.Jump;
+@@ -233,9 +230,7 @@ export class KeyboardInput implements IInputHandler {
+                     this._state.action = animation;
+ 
+                     // Remove gravity.
+-                    const sceneManager = this._scene.rootNodes.find((node) => node.id === ""SceneManager"") as GameObject;
+-                    const sceneController = sceneManager.components.get(""SceneController"") as SceneController | undefined;
+-                    sceneController?.removeGravity();
++                    Renderer.getScene().sceneController?.removeGravity();
+ 
+                     // Snap to the sittable object.
+                     avatarMesh.setAbsolutePosition(selectedSitObject[0].getAbsolutePosition());"
+vircadia/vircadia-web,181,5baa8cbf8631a8b303efaeb790e09a9b6356b139,src/modules/avatar/controller/myAvatarController.ts,modified,26,22,48,"@@ -9,7 +9,9 @@
+ //  See the accompanying file LICENSE or http://www.apache.org/licenses/LICENSE-2.0.html
+ //
+ 
+-import { TransformNode } from ""@babylonjs/core"";
++/* eslint-disable new-cap */
++
++import { TransformNode, Vector3 } from ""@babylonjs/core"";
+ import { AvatarMapper, BoneType } from ""../AvatarMapper"";
+ import { ScriptComponent, inspectorAccessor } from ""@Modules/script"";
+ 
+@@ -21,6 +23,7 @@ export class MyAvatarController extends ScriptComponent {
+     private _myAvatar: Nullable<MyAvatarInterface> = null;
+     private _skeletonNodes: Map<string, TransformNode> = new Map<string, TransformNode>();
+     private _modelURL: string | undefined;
++    public skeletonRootPosition = Vector3.Zero();
+ 
+     constructor() {
+         super(MyAvatarController.typeName);
+@@ -105,21 +108,21 @@ export class MyAvatarController extends ScriptComponent {
+         const skeleton = new Array<SkeletonJoint>();
+ 
+         this._skeletonNodes.clear();
+-        const comp = this._gameObject.getComponent(MeshComponent.typeName) as MeshComponent;
++        const component = this._gameObject.getComponent(MeshComponent.typeName);
+ 
+-        if (!comp || !comp.mesh) {
++        if (!(component instanceof MeshComponent) || !component.mesh) {
+             return;
+         }
+ 
+         // Collect the names of the bones in the skeleton.
+         const bones: string[] = [];
+-        if (comp.skeleton) {
+-            for (const bone of comp.skeleton.bones) {
++        if (component.skeleton) {
++            for (const bone of component.skeleton.bones) {
+                 bones.push(bone.name);
+             }
+         }
+ 
+-        const nodes = comp.mesh.getChildren((node) => node.getClassName() === ""TransformNode"", false);
++        const nodes = component.mesh.getChildren((node) => node.getClassName() === ""TransformNode"", false);
+         nodes?.forEach((node) => {
+             this._skeletonNodes.set(node.name, node as TransformNode);
+         });
+@@ -170,27 +173,28 @@ export class MyAvatarController extends ScriptComponent {
+         }
+ 
+         this._myAvatar.skeleton.forEach((joint) => {
+-            if (!this._myAvatar) {
++            const node = this._skeletonNodes.get(joint.jointName);
++            if (!this._myAvatar || !node) {
+                 return;
+             }
+-            const node = this._skeletonNodes.get(joint.jointName);
+ 
+-            if (node) {
+-                this._myAvatar.jointTranslations[joint.jointIndex]
+-                   = AvatarMapper.mapToDomainJointTranslation(node.position);
+-
+-                let rotation = node.rotationQuaternion;
+-                if (rotation) {
+-                    if (joint.parentIndex >= 0) {
+-                        const q = this._myAvatar.jointRotations[joint.parentIndex];
+-                        if (q) {
+-                            const parentRotation = AvatarMapper.mapToLocalJointRotation(q);
+-                            rotation = parentRotation.multiply(rotation);
+-                        }
+-                    }
++            this._myAvatar.jointTranslations[joint.jointIndex] = AvatarMapper.mapToDomainJointTranslation(node.position);
+ 
+-                    this._myAvatar.jointRotations[joint.jointIndex] = AvatarMapper.mapToDomainJointRotation(rotation);
++            if (joint.jointName === ""Hips"") {
++                this.skeletonRootPosition.copyFrom(node.position);
++            }
++
++            let rotation = node.rotationQuaternion;
++            if (rotation) {
++                if (joint.parentIndex >= 0) {
++                    const q = this._myAvatar.jointRotations[joint.parentIndex];
++                    if (q) {
++                        const parentRotation = AvatarMapper.mapToLocalJointRotation(q);
++                        rotation = parentRotation.multiply(rotation);
++                    }
+                 }
++
++                this._myAvatar.jointRotations[joint.jointIndex] = AvatarMapper.mapToDomainJointRotation(rotation);
+             }
+         });
+     }"
+vircadia/vircadia-web,181,5baa8cbf8631a8b303efaeb790e09a9b6356b139,src/modules/entity/EntityBuilder.ts,modified,0,1,1,"@@ -32,7 +32,6 @@ class EntityGameObjectBuilder {
+         this._builders.set(""Image"", new ImageEntityBuilder());
+         this._builders.set(""Material"", new MaterialEntityBuilder());
+         this._builders.set(""Web"", new WebEntityBuilder());
+-
+     }
+ 
+     public createEntity(entity: IEntity, scene: Nullable<Scene>): Nullable<GameObject> {"
+vircadia/vircadia-web,181,5baa8cbf8631a8b303efaeb790e09a9b6356b139,src/modules/entity/components/controllers/EntityController.ts,modified,0,1,1,"@@ -30,7 +30,6 @@ export abstract class EntityController extends ScriptComponent {
+         this._entity = entity;
+     }
+ 
+-
+     public onInitialize(): void {
+         this._entity.onCommonPropertiesChanged?.add(this._updateCommonProperties.bind(this));
+         this._entity.onRenderModeChanged?.add(this._updateRenderModeProperties.bind(this));"
+vircadia/vircadia-web,181,5baa8cbf8631a8b303efaeb790e09a9b6356b139,src/modules/entity/components/scripts/TeleportController.ts,modified,2,2,4,"@@ -77,9 +77,9 @@ export class TeleportController extends EntityScriptComponent {
+             return;
+         }
+ 
+-        const controller = avatar.getComponent(InputController.typeName) as InputController;
++        const controller = avatar.getComponent(InputController.typeName);
+ 
+-        if (controller && !controller.isTeleported) {
++        if (controller instanceof InputController && !controller.isTeleported) {
+             void Utility.connectionSetup(this._destination);
+         }
+     }"
+vircadia/vircadia-web,181,5baa8cbf8631a8b303efaeb790e09a9b6356b139,src/modules/entity/entities/NametagEntity.ts,modified,21,7,28,"@@ -12,7 +12,7 @@
+ /* eslint-disable @typescript-eslint/no-magic-numbers */
+ /* eslint-disable new-cap */
+ 
+-import { AbstractMesh,
++import { type AbstractMesh,
+     Color3,
+     DynamicTexture,
+     Matrix,
+@@ -25,6 +25,7 @@ import { AbstractMesh,
+ import { DEFAULT_MESH_RENDER_GROUP_ID } from ""@Modules/object"";
+ import { Renderer } from ""@Modules/scene"";
+ import { userStore } from ""@Stores/index"";
++import { Hysteresis } from ""@Modules/utility/hysteresis"";
+ 
+ /**
+  * Contains all of the memoized nametag meshes within the scene.
+@@ -60,7 +61,7 @@ function createSector(name: string, vector1: Vector3, vector2: Vector3, radius =
+     const segmentAngle = sectorAngle / segments;
+ 
+     // Create points to connect each segment.
+-    const points = [] as Vector3[];
++    const points = new Array<Vector3>();
+     for (let i = 0; i < segments; i++) {
+         const matrix = Matrix.RotationAxis(Vector3.Cross(vector1, vector2), segmentAngle * i);
+         const rotated = Vector3.TransformCoordinates(firstPoint, matrix);
+@@ -69,7 +70,7 @@ function createSector(name: string, vector1: Vector3, vector2: Vector3, radius =
+     points.push(lastPoint.add(origin));
+ 
+     // Connect each segment point back to the origin.
+-    const originPoints = [] as Vector3[];
++    const originPoints = new Array<Vector3>();
+     points.forEach(() => {
+         originPoints.push(origin);
+     });
+@@ -119,7 +120,7 @@ export class NametagEntity {
+      */
+     public static create(
+         object: Mesh | AbstractMesh | TransformNode,
+-        height: number,
++        height: number | (() => number),
+         name: string,
+         icon = false,
+         color?: Color3,
+@@ -224,7 +225,7 @@ export class NametagEntity {
+             plane.material = foregroundMaterial;
+ 
+             // Rounded corners.
+-            const corners = [] as Mesh[];
++            const corners = new Array<Mesh>();
+             const cornerPositions = [
+                 new Vector3(-tagWidth / 2, tagHeight / 2 - tagCornerRadius, 0),
+                 new Vector3(tagWidth / 2, tagHeight / 2 - tagCornerRadius, 0),
+@@ -251,7 +252,7 @@ export class NametagEntity {
+             }
+ 
+             // Left and right edges.
+-            const edges = [] as Mesh[];
++            const edges = new Array<Mesh>();
+             const edgeOptions = {
+                 width: tagCornerRadius,
+                 height: tagHeight - tagCornerRadius * 2,
+@@ -310,7 +311,15 @@ export class NametagEntity {
+ 
+         // Position the nametag above the center of the object.
+         const positionOffset = new Vector3(0, 0.15, 0);
+-        mesh.position = new Vector3(positionOffset.x, height + positionOffset.y, positionOffset.z);
++        let h = 0;
++        let heightHysteresis: Nullable<Hysteresis> = null;
++        if (typeof height === ""number"") {
++            h = height + positionOffset.y;
++        } else {
++            h = height() + positionOffset.y;
++            heightHysteresis = new Hysteresis(() => height() + positionOffset.y, 100, positionOffset.y);
++        }
++        mesh.position = new Vector3(positionOffset.x, h, positionOffset.z);
+ 
+         const scaleAdjustmentFactorX = object.scaling.x > 0 ? 1 / object.scaling.x : 1;
+         const scaleAdjustmentFactorY = object.scaling.y > 0 ? 1 / object.scaling.y : 1;
+@@ -331,6 +340,11 @@ export class NametagEntity {
+             if (!mesh) {
+                 return;
+             }
++            // Update the nametag's position.
++            if (heightHysteresis) {
++                mesh.position.y = heightHysteresis.get();
++            }
++            // Update the nametag's opacity.
+             const avatar = Renderer.getScene()?.getMyAvatar();
+             if (avatar) {
+                 const avatarPosition = avatar.getAbsolutePosition().clone();"
+vircadia/vircadia-web,181,5baa8cbf8631a8b303efaeb790e09a9b6356b139,src/modules/metaverse/API.ts,modified,32,1,33,"@@ -13,8 +13,9 @@ import { MetaverseManager } from ""@Modules/metaverse"";
+ import { Account } from ""../account"";
+ import { GetAccountAPI, PostUsersAPI } from ""@Modules/metaverse/APIAccount"";
+ import { MetaverseInfoAPI } from ""@Modules/metaverse/APIInfo"";
+-import { GetPlacesAPI } from ""@Modules/metaverse/APIPlaces"";
++import { GetPlacesAPI, type GetPlacesResponse, type PlaceEntry } from ""@Modules/metaverse/APIPlaces"";
+ import { OAuthTokenAPI } from ""@Modules/metaverse/APIToken"";
++import Log, { findErrorMessage } from ""@Modules/debugging/log"";
+ 
+ /**
+  * Standard response from Metaverse server API requests.
+@@ -124,4 +125,34 @@ export class API {
+         }
+         throw new Error(`Vircadia API POST request to ${path} failed: ${response.status}: ${response.statusText}`);
+     }
++
++    /**
++     * @returns A list of the places (worlds) available in the connected Metaverse.
++     */
++    public static async getActivePlaceList(): Promise<PlaceEntry[]> {
++        const places: PlaceEntry[] = [];
++
++        if (!MetaverseManager.activeMetaverse?.isConnected) {
++            Log.error(Log.types.PLACES, ""Attempted to get places when not connected to a Metaverse server."");
++        }
++
++        try {
++            const placesResponse = await this.get(this.endpoints.places + ""?status=online"") as GetPlacesResponse;
++
++            for (const place of placesResponse.places) {
++                places.push({
++                    name: place.name,
++                    placeId: place.placeId,
++                    address: place.address,
++                    description: place.description,
++                    thumbnail: place.thumbnail ?? """",
++                    currentAttendance: place.current_attendance ?? 0
++                });
++            }
++        } catch (error) {
++            Log.error(Log.types.PLACES, `Exception while attempting to get places: ${findErrorMessage(error)}`);
++        }
++
++        return places;
++    }
+ }"
+vircadia/vircadia-web,181,5baa8cbf8631a8b303efaeb790e09a9b6356b139,src/modules/metaverse/APIPlaces.ts,modified,8,0,8,"@@ -18,3 +18,11 @@ export interface GetPlacesResponse {
+     ""places"": PlaceInfo[],
+     ""maturity-categories"": string[]
+ }
++export interface PlaceEntry {
++    name: string;
++    placeId: string;
++    address: string;
++    description: string;
++    thumbnail: string;
++    currentAttendance: number;
++}"
+vircadia/vircadia-web,181,5baa8cbf8631a8b303efaeb790e09a9b6356b139,src/modules/places/index.ts,removed,0,56,56,"@@ -1,56 +0,0 @@
+-//
+-//  Copyright 2021 Vircadia contributors.
+-//  Copyright 2022 DigiSomni LLC.
+-//
+-//  Distributed under the Apache License, Version 2.0.
+-//  See the accompanying file LICENSE or http://www.apache.org/licenses/LICENSE-2.0.html
+-//
+-
+-import { MetaverseManager } from ""@Modules/metaverse"";
+-import { API } from ""@Modules/metaverse/API"";
+-import type { GetPlacesResponse } from ""@Modules/metaverse/APIPlaces"";
+-import Log, { findErrorMessage } from ""@Modules/debugging/log"";
+-
+-export interface PlaceEntry {
+-    name: string;
+-    placeId: string;
+-    address: string;
+-    description: string;
+-    thumbnail: string;
+-    currentAttendance: number;
+-}
+-
+-/**
+- * Static methods for interacting with places/worlds in the connected Metaverse.
+- */
+-export class Places {
+-    /**
+-     * @returns A list of the places (worlds) available in the connected Metaverse.
+-     */
+-    public static async getActiveList(): Promise<PlaceEntry[]> {
+-        const places: PlaceEntry[] = [];
+-
+-        if (!MetaverseManager.activeMetaverse?.isConnected) {
+-            Log.error(Log.types.PLACES, ""Attempted to get places when not connected to a Metaverse server."");
+-        }
+-
+-        try {
+-            const placesResponse = await API.get(API.endpoints.places + ""?status=online"") as GetPlacesResponse;
+-
+-            for (const place of placesResponse.places) {
+-                places.push({
+-                    name: place.name,
+-                    placeId: place.placeId,
+-                    address: place.address,
+-                    description: place.description,
+-                    thumbnail: place.thumbnail ?? """",
+-                    currentAttendance: place.current_attendance ?? 0
+-                });
+-            }
+-        } catch (error) {
+-            Log.error(Log.types.PLACES, `Exception while attempting to get places: ${findErrorMessage(error)}`);
+-        }
+-
+-        return places;
+-    }
+-}"
+vircadia/vircadia-web,181,5baa8cbf8631a8b303efaeb790e09a9b6356b139,src/modules/scene/controllers/domainController.ts,modified,5,9,14,"@@ -108,12 +108,9 @@ export class DomainController extends ScriptComponent {
+         } else if (state === ConnectionState.DISCONNECTED) {
+             this._vscene?.unloadAllAvatars();
+ 
+-            if (this._vscene && this._vscene._myAvatar) {
+-                const myAvatarController = this._vscene._myAvatar.getComponent(
+-                    MyAvatarController.typeName) as MyAvatarController;
+-                if (myAvatarController) {
+-                    myAvatarController.myAvatar = null;
+-                }
++            const myAvatarController = this._vscene?._myAvatar?.getComponent(MyAvatarController.typeName);
++            if (myAvatarController instanceof MyAvatarController) {
++                myAvatarController.myAvatar = null;
+             }
+ 
+             const avatarList = this._avatarMixer?.avatarList;
+@@ -157,9 +154,8 @@ export class DomainController extends ScriptComponent {
+                 myAvatarInterface.skeletonModelURL = this._vscene.myAvatarModelURL;
+             }
+ 
+-            const gameObject = this._vscene._myAvatar;
+-            if (gameObject) {
+-                const myAvatarController = gameObject.getComponent(MyAvatarController.typeName) as MyAvatarController;
++            const myAvatarController = this._vscene._myAvatar?.getComponent(MyAvatarController.typeName);
++            if (myAvatarController instanceof MyAvatarController) {
+                 myAvatarController.myAvatar = myAvatarInterface;
+             }
+         }"
+vircadia/vircadia-web,181,5baa8cbf8631a8b303efaeb790e09a9b6356b139,src/modules/scene/controllers/sceneController.ts,modified,2,10,12,"@@ -16,7 +16,6 @@
+ import { Vector3, Ray } from ""@babylonjs/core"";
+ import { ScriptComponent } from ""@Modules/script"";
+ import type { VScene } from ""@Modules/scene/vscene"";
+-import { InputController } from ""@Modules/avatar"";
+ import Log from ""@Modules/debugging/log"";
+ 
+ const DEFAULT_GRAVITY = 9.81;
+@@ -74,15 +73,8 @@ export class SceneController extends ScriptComponent {
+     }
+ 
+     public onUpdate(): void {
+-        if (this._scene.isReady()) {
+-            const avatar = this._vscene.getMyAvatar();
+-            const avatarController = avatar?.getComponent(InputController.typeName) as InputController | null;
+-            if (!avatarController) {
+-                return;
+-            }
+-            if (!this.isGravityApplied && this._detectGround()) {
+-                this.applyGravity();
+-            }
++        if (this._scene.isReady() && !this.isGravityApplied && this._detectGround()) {
++            this.applyGravity();
+         }
+     }
+ "
+vircadia/vircadia-web,181,5baa8cbf8631a8b303efaeb790e09a9b6356b139,src/modules/scene/vscene.ts,modified,24,22,46,"@@ -109,6 +109,10 @@ export class VScene {
+         return this._css3DRenderer;
+     }
+ 
++    public get sceneController(): Nullable<SceneController> {
++        return this._sceneController;
++    }
++
+     public render(): void {
+         this._scene.render();
+ 
+@@ -206,11 +210,9 @@ export class VScene {
+     }
+ 
+     public stopMyAvatar(): void {
+-        if (this._myAvatar) {
+-            const controller = this._myAvatar.getComponent(InputController.typeName) as InputController;
+-            if (controller) {
+-                controller.isStopped = true;
+-            }
++        const controller = this._myAvatar?.getComponent(InputController.typeName);
++        if (controller instanceof InputController) {
++            controller.isStopped = true;
+         }
+     }
+ 
+@@ -227,8 +229,8 @@ export class VScene {
+                 this._myAvatar.rotationQuaternion = rotation;
+             }
+ 
+-            const controller = this._myAvatar.getComponent(InputController.typeName) as InputController;
+-            if (controller) {
++            const controller = this._myAvatar.getComponent(InputController.typeName);
++            if (controller instanceof InputController) {
+                 controller.isTeleported = true;
+             }
+         }
+@@ -319,7 +321,8 @@ export class VScene {
+             }
+             const avatarHeight = boundingVectors.max.y - boundingVectors.min.y;
+ 
+-            const hipPosition = result.skeleton?.bones.find((bone) => bone.name === ""Hips"")?.position;
++            const hipBone = result.skeleton?.bones.find((bone) => bone.name === ""Hips"");
++            const hipPosition = hipBone?.position;
+ 
+             // Reload the avatar animations file in case the new avatar is a different size than the previous one.
+             // The browser cache will prevent this from being fetched over the network if the avatar is switched frequently.
+@@ -357,13 +360,14 @@ export class VScene {
+             }
+             this._myAvatar.addComponent(capsuleCollider);
+ 
++            const myAvatarController = new MyAvatarController();
+             const avatarController = new InputController();
+             avatarController.animGroups = this._avatarAnimationGroups;
+             avatarController.avatarHeight = avatarHeight;
++            avatarController.avatarRoot = myAvatarController.skeletonRootPosition;
+             avatarController.camera = this._camera as ArcRotateCamera;
++            const nametagHeightGetter = () => myAvatarController.skeletonRootPosition.y + avatarHeight / 2;
+             this._myAvatar.addComponent(avatarController);
+-
+-            const myAvatarController = new MyAvatarController();
+             this._myAvatar.addComponent(myAvatarController);
+             if (DomainManager.ActiveDomain && DomainManager.ActiveDomain.AvatarClient?.MyAvatar) {
+                 myAvatarController.myAvatar = DomainManager.ActiveDomain.AvatarClient?.MyAvatar;
+@@ -374,26 +378,20 @@ export class VScene {
+ 
+             // Add a nametag to the avatar.
+             let nametagColor = userStore.account.isAdmin ? Color3.FromHexString(applicationStore.theme.colors.primary) : undefined;
+-            NametagEntity.create(
+-                this._myAvatar,
+-                avatarHeight,
+-                userStore.avatar.displayName,
+-                false,
+-                nametagColor
+-            );
++            NametagEntity.create(this._myAvatar, nametagHeightGetter, userStore.avatar.displayName, false, nametagColor);
+             // Update the nametag color when the player's admin state is changed in the Store.
+             watch(() => userStore.account.isAdmin, (value: boolean) => {
+                 nametagColor = value ? Color3.FromHexString(applicationStore.theme.colors.primary) : undefined;
+                 NametagEntity.removeAll(this._myAvatar);
+                 if (this._myAvatar) {
+-                    NametagEntity.create(this._myAvatar, avatarHeight, userStore.avatar.displayName, false, nametagColor);
++                    NametagEntity.create(this._myAvatar, nametagHeightGetter, userStore.avatar.displayName, false, nametagColor);
+                 }
+             });
+             // Update the nametag when the displayName is changed in the Store.
+             watch(() => userStore.avatar.displayName, (value: string) => {
+                 NametagEntity.removeAll(this._myAvatar);
+                 if (this._myAvatar) {
+-                    NametagEntity.create(this._myAvatar, avatarHeight, value, false, nametagColor);
++                    NametagEntity.create(this._myAvatar, nametagHeightGetter, value, false, nametagColor);
+                 }
+             });
+ 
+@@ -444,28 +442,32 @@ export class VScene {
+             avatar.addComponent(meshComponent);
+             avatar.addComponent(new ScriptAvatarController(domain));
+ 
++            const hipBone = meshComponent.skeleton?.bones.find((bone) => bone.name === ""Hips"");
++            const hipPosition = hipBone?.position;
++            const nametagHeight = () => (hipPosition?.y ?? avatarHeight / 2) + avatarHeight / 2;
++
+             this._avatarList.set(stringId, avatar);
+ 
+             // Add a nametag to the avatar.
+             let nametagColor = applicationStore.avatars.avatarsInfo.get(id)?.isAdmin
+                 ? Color3.FromHexString(applicationStore.theme.colors.primary)
+                 : undefined;
+-            NametagEntity.create(avatar, avatarHeight, domain.displayName, false, nametagColor);
++            NametagEntity.create(avatar, nametagHeight, domain.displayName, false, nametagColor);
+             // Update the nametag color when the player's admin state is changed.
+             watch(() => Boolean(applicationStore.avatars.avatarsInfo.get(id)?.isAdmin), (value: boolean) => {
+                 nametagColor = value ? Color3.FromHexString(applicationStore.theme.colors.primary) : undefined;
+                 const nametagAvatar = this._avatarList.get(stringId);
+                 NametagEntity.removeAll(nametagAvatar);
+                 if (nametagAvatar) {
+-                    NametagEntity.create(nametagAvatar, avatarHeight, domain.displayName, false, nametagColor);
++                    NametagEntity.create(nametagAvatar, nametagHeight, domain.displayName, false, nametagColor);
+                 }
+             });
+             // Update the nametag when the displayName is changed.
+             domain.displayNameChanged.connect(() => {
+                 const nametagAvatar = this._avatarList.get(stringId);
+                 NametagEntity.removeAll(nametagAvatar);
+                 if (nametagAvatar) {
+-                    NametagEntity.create(nametagAvatar, avatarHeight, domain.displayName, false, nametagColor);
++                    NametagEntity.create(nametagAvatar, nametagHeight, domain.displayName, false, nametagColor);
+                 }
+             });
+         }"
+vircadia/vircadia-web,181,5baa8cbf8631a8b303efaeb790e09a9b6356b139,src/modules/utility/hysteresis.ts,added,62,0,62,"@@ -0,0 +1,62 @@
++//
++//  hysteresis.ts
++//
++//  Created by Giga on 4 September 2023.
++//  Copyright 2023 Vircadia contributors.
++//  Copyright 2023 DigiSomni LLC.
++//
++//  Distributed under the Apache License, Version 2.0.
++//  See the accompanying file LICENSE or http://www.apache.org/licenses/LICENSE-2.0.html
++//
++
++/**
++ * The default number of points to sample from.
++ */
++const defaultLength = 10;
++
++/**
++ * A rolling average hysteresis.
++ * @param getter A function to retrieve new values.
++ * @param length `(Optional)` The number of points to sample the rolling average from. (Increasing this number makes the output smoother.)
++ * @param threshold `(Optional)` The snapping threshold. New values with a delta greater than this threshold will cause the output to snap to said new value.
++ */
++export class Hysteresis {
++    private getter;
++    private history;
++    private length;
++    private threshold;
++
++    constructor(getter: () => number, length = defaultLength, threshold?: number) {
++        this.getter = getter;
++        this.history = new Array<number>();
++        this.length = length;
++        this.threshold = threshold;
++
++        const value = getter();
++        for (let i = 0; i < this.length; i++) {
++            this.history.push(value);
++        }
++    }
++
++    /**
++     * @returns The value from the getter with hysteresis smoothing applied.
++     */
++    public get(): number {
++        const value = this.getter();
++        this.history.shift();
++        this.history.push(value);
++        const average = this.history.reduce((a, b) => a + b) / this.length;
++        if (typeof this.threshold === ""number"" && Math.abs(value - this.history[this.history.length - 2]) > this.threshold) {
++            this.history = this.history.fill(value);
++            return value;
++        }
++        return average;
++    }
++
++    /**
++     * @returns The value from the getter **without** hysteresis smoothing applied.
++     */
++    public getInstant(): number {
++        return this.getter();
++    }
++}"
+vircadia/vircadia-web,181,5baa8cbf8631a8b303efaeb790e09a9b6356b139,src/pages/FirstTimeSetup.vue,modified,4,3,7,"@@ -498,7 +498,8 @@ import { defineComponent } from ""vue"";
+ import { uniqueNamesGenerator, adjectives, colors, animals } from ""unique-names-generator"";
+ import { AvatarStoreInterface } from ""@Modules/avatar/StoreInterface"";
+ import { Utility } from ""@Modules/utility"";
+-import { Places, PlaceEntry } from ""@Modules/places"";
++import { API } from ""@Modules/metaverse/API"";
++import type { PlaceEntry } from ""@Modules/metaverse/APIPlaces"";
+ 
+ export default defineComponent({
+     name: ""FirstTimeSetup"",
+@@ -509,7 +510,7 @@ export default defineComponent({
+             transition: false,
+             step: 1,
+             AvatarStoreInterface,
+-            placesList: [] as PlaceEntry[],
++            placesList: new Array<PlaceEntry>(),
+             selectedPlace: {} as PlaceEntry
+         };
+     },
+@@ -629,7 +630,7 @@ export default defineComponent({
+          */
+         async loadPlaces(): Promise<void> {
+             await Utility.metaverseConnectionSetup(applicationStore.defaultConnectionConfig.DEFAULT_METAVERSE_URL ?? """");
+-            this.placesList = await Places.getActiveList();
++            this.placesList = await API.getActivePlaceList();
+         },
+         /**
+          * Register the first-time-setup process as complete, and redirect to any pending location."
+vircadia/vircadia-web,181,5baa8cbf8631a8b303efaeb790e09a9b6356b139,src/stores/user-store.ts,modified,2,1,3,"@@ -99,7 +99,8 @@ export const useUserStore = defineStore(""user"", {
+                 fxaaEnabled: true,
+                 msaa: 2,
+                 sharpen: false,
+-                fpsCounter: false
++                fpsCounter: false,
++                cameraBobbing: true
+             },
+             persistentStorageMedium,
+             { mergeDefaults: true }"

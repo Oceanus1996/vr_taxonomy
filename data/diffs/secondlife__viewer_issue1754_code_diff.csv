@@ -1,0 +1,989 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+secondlife/viewer,1754,1d2ac0d,indra/newview/lldrawpoolterrain.h,modified,1,0,1,"@@ -38,6 +38,7 @@ class LLDrawPoolTerrain : public LLFacePool
+         VERTEX_DATA_MASK = LLVertexBuffer::MAP_VERTEX |
+                     LLVertexBuffer::MAP_NORMAL |
+                     LLVertexBuffer::MAP_TANGENT | // Only PBR terrain uses this currently
++                    LLVertexBuffer::MAP_TEXCOORD0 |
+                     LLVertexBuffer::MAP_TEXCOORD1
+     };
+ "
+secondlife/viewer,1754,1d2ac0d,indra/newview/llsurfacepatch.cpp,modified,6,1,7,"@@ -201,7 +201,7 @@ LLVector2 LLSurfacePatch::getTexCoords(const U32 x, const U32 y) const
+ 
+ 
+ void LLSurfacePatch::eval(const U32 x, const U32 y, const U32 stride, LLVector3 *vertex, LLVector3 *normal,
+-                          LLVector2 *tex1) const
++                          LLVector2* tex0, LLVector2 *tex1) const
+ {
+     if (!mSurfacep || !mSurfacep->getRegion() || !mSurfacep->getGridsPerEdge() || !mVObjp)
+     {
+@@ -210,6 +210,7 @@ void LLSurfacePatch::eval(const U32 x, const U32 y, const U32 stride, LLVector3
+     llassert_always(vertex && normal && tex1);
+ 
+     U32 surface_stride = mSurfacep->getGridsPerEdge();
++    U32 texture_stride = mSurfacep->getGridsPerEdge() - 1;
+     U32 point_offset = x + y*surface_stride;
+ 
+     *normal = getNormal(x, y);
+@@ -220,6 +221,10 @@ void LLSurfacePatch::eval(const U32 x, const U32 y, const U32 stride, LLVector3
+     pos_agent.mV[VZ]  = *(mDataZ + point_offset);
+     *vertex     = pos_agent-mVObjp->getRegion()->getOriginAgent();
+ 
++    LLVector3 rel_pos = pos_agent - mSurfacep->getOriginAgent();
++    LLVector3 tex_pos = rel_pos * (1.f / (texture_stride * mSurfacep->getMetersPerGrid()));
++    tex0->mV[0] = tex_pos.mV[0];
++    tex0->mV[1] = tex_pos.mV[1];
+     tex1->mV[0] = mSurfacep->getRegion()->getCompositionXY(llfloor(mOriginRegion.mV[0])+x, llfloor(mOriginRegion.mV[1])+y);
+ 
+     const F32 xyScale = 4.9215f*7.f; //0.93284f;"
+secondlife/viewer,1754,1d2ac0d,indra/newview/llsurfacepatch.h,modified,1,1,2,"@@ -116,7 +116,7 @@ class LLSurfacePatch
+     void calcNormalFlat(LLVector3& normal_out, const U32 x, const U32 y, const U32 index /* 0 or 1 */);
+ 
+     void eval(const U32 x, const U32 y, const U32 stride,
+-                LLVector3 *vertex, LLVector3 *normal, LLVector2 *tex1) const;
++                LLVector3 *vertex, LLVector3 *normal, LLVector2* tex0, LLVector2 *tex1) const;
+ 
+ 
+ "
+secondlife/viewer,1754,1d2ac0d,indra/newview/llterrainpaintmap.cpp,modified,2,1,3,"@@ -204,8 +204,9 @@ bool LLTerrainPaintMap::bakeHeightNoiseIntoPBRPaintMapRGB(const LLViewerRegion&
+                     {
+                         LLVector3 scratch3;
+                         LLVector3 pos3;
++                        LLVector2 tex0_temp;
+                         LLVector2 tex1_temp;
+-                        patch->eval(i, j, stride, &pos3, &scratch3, &tex1_temp);
++                        patch->eval(i, j, stride, &pos3, &scratch3, &tex0_temp, &tex1_temp);
+                         (*pos++).set(pos3.mV[VX], pos3.mV[VY], pos3.mV[VZ]);
+                         *tex1++ = tex1_temp;
+                         vertex_total++;"
+secondlife/viewer,1754,1d2ac0d,indra/newview/llvosurfacepatch.cpp,modified,37,14,51,"@@ -245,6 +245,7 @@ bool LLVOSurfacePatch::updateLOD()
+ 
+ void LLVOSurfacePatch::getTerrainGeometry(LLStrider<LLVector3> &verticesp,
+                                               LLStrider<LLVector3> &normalsp,
++                                              LLStrider<LLVector2> &texCoords0p,
+                                               LLStrider<LLVector2> &texCoords1p,
+                                               LLStrider<U16> &indicesp)
+ {
+@@ -259,18 +260,21 @@ void LLVOSurfacePatch::getTerrainGeometry(LLStrider<LLVector3> &verticesp,
+     updateMainGeometry(facep,
+                     verticesp,
+                     normalsp,
++                    texCoords0p,
+                     texCoords1p,
+                     indicesp,
+                     index_offset);
+     updateNorthGeometry(facep,
+                         verticesp,
+                         normalsp,
++                        texCoords0p,
+                         texCoords1p,
+                         indicesp,
+                         index_offset);
+     updateEastGeometry(facep,
+                         verticesp,
+                         normalsp,
++                        texCoords0p,
+                         texCoords1p,
+                         indicesp,
+                         index_offset);
+@@ -279,6 +283,7 @@ void LLVOSurfacePatch::getTerrainGeometry(LLStrider<LLVector3> &verticesp,
+ void LLVOSurfacePatch::updateMainGeometry(LLFace *facep,
+                                         LLStrider<LLVector3> &verticesp,
+                                         LLStrider<LLVector3> &normalsp,
++                                        LLStrider<LLVector2> &texCoords0p,
+                                         LLStrider<LLVector2> &texCoords1p,
+                                         LLStrider<U16> &indicesp,
+                                         U32 &index_offset)
+@@ -317,9 +322,10 @@ void LLVOSurfacePatch::updateMainGeometry(LLFace *facep,
+             {
+                 x = i * render_stride;
+                 y = j * render_stride;
+-                mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords1p.get());
++                mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords0p.get(), texCoords1p.get());
+                 verticesp++;
+                 normalsp++;
++                texCoords0p++;
+                 texCoords1p++;
+             }
+         }
+@@ -381,6 +387,7 @@ void LLVOSurfacePatch::updateMainGeometry(LLFace *facep,
+ void LLVOSurfacePatch::updateNorthGeometry(LLFace *facep,
+                                         LLStrider<LLVector3> &verticesp,
+                                         LLStrider<LLVector3> &normalsp,
++                                        LLStrider<LLVector2> &texCoords0p,
+                                         LLStrider<LLVector2> &texCoords1p,
+                                         LLStrider<U16> &indicesp,
+                                         U32 &index_offset)
+@@ -414,9 +421,10 @@ void LLVOSurfacePatch::updateNorthGeometry(LLFace *facep,
+             x = i * render_stride;
+             y = 16 - render_stride;
+ 
+-            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords1p.get());
++            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords0p.get(), texCoords1p.get());
+             verticesp++;
+             normalsp++;
++            texCoords0p++;
+             texCoords1p++;
+         }
+ 
+@@ -425,9 +433,10 @@ void LLVOSurfacePatch::updateNorthGeometry(LLFace *facep,
+         {
+             x = i * render_stride;
+             y = 16;
+-            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords1p.get());
++            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords0p.get(), texCoords1p.get());
+             verticesp++;
+             normalsp++;
++            texCoords0p++;
+             texCoords1p++;
+         }
+ 
+@@ -460,9 +469,10 @@ void LLVOSurfacePatch::updateNorthGeometry(LLFace *facep,
+             x = i * render_stride;
+             y = 16 - render_stride;
+ 
+-            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords1p.get());
++            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords0p.get(), texCoords1p.get());
+             verticesp++;
+             normalsp++;
++            texCoords0p++;
+             texCoords1p++;
+         }
+ 
+@@ -472,9 +482,10 @@ void LLVOSurfacePatch::updateNorthGeometry(LLFace *facep,
+             x = i * render_stride;
+             y = 16;
+ 
+-            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords1p.get());
++            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords0p.get(), texCoords1p.get());
+             verticesp++;
+             normalsp++;
++            texCoords0p++;
+             texCoords1p++;
+         }
+ 
+@@ -514,9 +525,10 @@ void LLVOSurfacePatch::updateNorthGeometry(LLFace *facep,
+             x = i * north_stride;
+             y = 16 - render_stride;
+ 
+-            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords1p.get());
++            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords0p.get(), texCoords1p.get());
+             verticesp++;
+             normalsp++;
++            texCoords0p++;
+             texCoords1p++;
+         }
+ 
+@@ -526,9 +538,10 @@ void LLVOSurfacePatch::updateNorthGeometry(LLFace *facep,
+             x = i * north_stride;
+             y = 16;
+ 
+-            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords1p.get());
++            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords0p.get(), texCoords1p.get());
+             verticesp++;
+             normalsp++;
++            texCoords0p++;
+             texCoords1p++;
+         }
+ 
+@@ -564,6 +577,7 @@ void LLVOSurfacePatch::updateNorthGeometry(LLFace *facep,
+ void LLVOSurfacePatch::updateEastGeometry(LLFace *facep,
+                                           LLStrider<LLVector3> &verticesp,
+                                           LLStrider<LLVector3> &normalsp,
++                                          LLStrider<LLVector2> &texCoords0p,
+                                           LLStrider<LLVector2> &texCoords1p,
+                                           LLStrider<U16> &indicesp,
+                                           U32 &index_offset)
+@@ -592,9 +606,10 @@ void LLVOSurfacePatch::updateEastGeometry(LLFace *facep,
+             x = 16 - render_stride;
+             y = i * render_stride;
+ 
+-            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords1p.get());
++            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords0p.get(), texCoords1p.get());
+             verticesp++;
+             normalsp++;
++            texCoords0p++;
+             texCoords1p++;
+         }
+ 
+@@ -603,9 +618,10 @@ void LLVOSurfacePatch::updateEastGeometry(LLFace *facep,
+         {
+             x = 16;
+             y = i * render_stride;
+-            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords1p.get());
++            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords0p.get(), texCoords1p.get());
+             verticesp++;
+             normalsp++;
++            texCoords0p++;
+             texCoords1p++;
+         }
+ 
+@@ -638,9 +654,10 @@ void LLVOSurfacePatch::updateEastGeometry(LLFace *facep,
+             x = 16 - render_stride;
+             y = i * render_stride;
+ 
+-            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords1p.get());
++            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords0p.get(), texCoords1p.get());
+             verticesp++;
+             normalsp++;
++            texCoords0p++;
+             texCoords1p++;
+         }
+         // Iterate through the east patch's points
+@@ -649,9 +666,10 @@ void LLVOSurfacePatch::updateEastGeometry(LLFace *facep,
+             x = 16;
+             y = i * render_stride;
+ 
+-            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords1p.get());
++            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords0p.get(), texCoords1p.get());
+             verticesp++;
+             normalsp++;
++            texCoords0p++;
+             texCoords1p++;
+         }
+ 
+@@ -690,9 +708,10 @@ void LLVOSurfacePatch::updateEastGeometry(LLFace *facep,
+             x = 16 - render_stride;
+             y = i * east_stride;
+ 
+-            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords1p.get());
++            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords0p.get(), texCoords1p.get());
+             verticesp++;
+             normalsp++;
++            texCoords0p++;
+             texCoords1p++;
+         }
+         // Iterate through the east patch's points
+@@ -701,9 +720,10 @@ void LLVOSurfacePatch::updateEastGeometry(LLFace *facep,
+             x = 16;
+             y = i * east_stride;
+ 
+-            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords1p.get());
++            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords0p.get(), texCoords1p.get());
+             verticesp++;
+             normalsp++;
++            texCoords0p++;
+             texCoords1p++;
+         }
+ 
+@@ -1022,12 +1042,14 @@ void LLTerrainPartition::getGeometry(LLSpatialGroup* group)
+     LLStrider<LLVector3> vertices_start;
+     LLStrider<LLVector3> normals_start;
+     LLStrider<LLVector4a> tangents_start;
++    LLStrider<LLVector2> texcoords0_start;
+     LLStrider<LLVector2> texcoords2_start;
+     LLStrider<U16> indices_start;
+ 
+     llassert_always(buffer->getVertexStrider(vertices_start));
+     llassert_always(buffer->getNormalStrider(normals_start));
+     llassert_always(buffer->getTangentStrider(tangents_start));
++    llassert_always(buffer->getTexCoord0Strider(texcoords0_start));
+     llassert_always(buffer->getTexCoord1Strider(texcoords2_start));
+     llassert_always(buffer->getIndexStrider(indices_start));
+ 
+@@ -1037,6 +1059,7 @@ void LLTerrainPartition::getGeometry(LLSpatialGroup* group)
+     {
+         LLStrider<LLVector3> vertices = vertices_start;
+         LLStrider<LLVector3> normals = normals_start;
++        LLStrider<LLVector2> texcoords0 = texcoords0_start;
+         LLStrider<LLVector2> texcoords2 = texcoords2_start;
+         LLStrider<U16> indices = indices_start;
+ 
+@@ -1049,7 +1072,7 @@ void LLTerrainPartition::getGeometry(LLSpatialGroup* group)
+             facep->setVertexBuffer(buffer);
+ 
+             LLVOSurfacePatch* patchp = (LLVOSurfacePatch*) facep->getViewerObject();
+-            patchp->getTerrainGeometry(vertices, normals, texcoords2, indices);
++            patchp->getTerrainGeometry(vertices, normals, texcoords0, texcoords2, indices);
+ 
+             indices_index += facep->getIndicesCount();
+             index_offset += facep->getGeomCount();"
+secondlife/viewer,1754,1d2ac0d,indra/newview/llvosurfacepatch.h,modified,4,0,4,"@@ -57,6 +57,7 @@ class LLVOSurfacePatch : public LLStaticViewerObject
+     /*virtual*/ void        updateFaceSize(S32 idx);
+     void getTerrainGeometry(LLStrider<LLVector3> &verticesp,
+                                 LLStrider<LLVector3> &normalsp,
++                                LLStrider<LLVector2> &texCoords0p,
+                                 LLStrider<LLVector2> &texCoords1p,
+                                 LLStrider<U16> &indicesp);
+ 
+@@ -109,18 +110,21 @@ class LLVOSurfacePatch : public LLStaticViewerObject
+     void updateMainGeometry(LLFace *facep,
+                        LLStrider<LLVector3> &verticesp,
+                        LLStrider<LLVector3> &normalsp,
++                       LLStrider<LLVector2> &texCoords0p,
+                        LLStrider<LLVector2> &texCoords1p,
+                        LLStrider<U16> &indicesp,
+                        U32 &index_offset);
+     void updateNorthGeometry(LLFace *facep,
+                        LLStrider<LLVector3> &verticesp,
+                        LLStrider<LLVector3> &normalsp,
++                       LLStrider<LLVector2> &texCoords0p,
+                        LLStrider<LLVector2> &texCoords1p,
+                        LLStrider<U16> &indicesp,
+                        U32 &index_offset);
+     void updateEastGeometry(LLFace *facep,
+                        LLStrider<LLVector3> &verticesp,
+                        LLStrider<LLVector3> &normalsp,
++                       LLStrider<LLVector2> &texCoords0p,
+                        LLStrider<LLVector2> &texCoords1p,
+                        LLStrider<U16> &indicesp,
+                        U32 &index_offset);"
+secondlife/viewer,1754,85873af,indra/newview/lldrawpoolterrain.h,modified,1,0,1,"@@ -38,6 +38,7 @@ class LLDrawPoolTerrain : public LLFacePool
+         VERTEX_DATA_MASK = LLVertexBuffer::MAP_VERTEX |
+                     LLVertexBuffer::MAP_NORMAL |
+                     LLVertexBuffer::MAP_TANGENT | // Only PBR terrain uses this currently
++                    LLVertexBuffer::MAP_TEXCOORD0 | // Ownership overlay
+                     LLVertexBuffer::MAP_TEXCOORD1
+     };
+ "
+secondlife/viewer,1754,85873af,indra/newview/llsurfacepatch.cpp,modified,8,1,9,"@@ -201,7 +201,7 @@ LLVector2 LLSurfacePatch::getTexCoords(const U32 x, const U32 y) const
+ 
+ 
+ void LLSurfacePatch::eval(const U32 x, const U32 y, const U32 stride, LLVector3 *vertex, LLVector3 *normal,
+-                          LLVector2 *tex1) const
++                          LLVector2* tex0, LLVector2 *tex1) const
+ {
+     if (!mSurfacep || !mSurfacep->getRegion() || !mSurfacep->getGridsPerEdge() || !mVObjp)
+     {
+@@ -210,6 +210,7 @@ void LLSurfacePatch::eval(const U32 x, const U32 y, const U32 stride, LLVector3
+     llassert_always(vertex && normal && tex1);
+ 
+     U32 surface_stride = mSurfacep->getGridsPerEdge();
++    U32 texture_stride = mSurfacep->getGridsPerEdge() - 1;
+     U32 point_offset = x + y*surface_stride;
+ 
+     *normal = getNormal(x, y);
+@@ -220,6 +221,12 @@ void LLSurfacePatch::eval(const U32 x, const U32 y, const U32 stride, LLVector3
+     pos_agent.mV[VZ]  = *(mDataZ + point_offset);
+     *vertex     = pos_agent-mVObjp->getRegion()->getOriginAgent();
+ 
++    // tex0 is used for ownership overlay
++    LLVector3 rel_pos = pos_agent - mSurfacep->getOriginAgent();
++    LLVector3 tex_pos = rel_pos * (1.f / (texture_stride * mSurfacep->getMetersPerGrid()));
++    tex0->mV[0] = tex_pos.mV[0];
++    tex0->mV[1] = tex_pos.mV[1];
++
+     tex1->mV[0] = mSurfacep->getRegion()->getCompositionXY(llfloor(mOriginRegion.mV[0])+x, llfloor(mOriginRegion.mV[1])+y);
+ 
+     const F32 xyScale = 4.9215f*7.f; //0.93284f;"
+secondlife/viewer,1754,85873af,indra/newview/llsurfacepatch.h,modified,1,1,2,"@@ -116,7 +116,7 @@ class LLSurfacePatch
+     void calcNormalFlat(LLVector3& normal_out, const U32 x, const U32 y, const U32 index /* 0 or 1 */);
+ 
+     void eval(const U32 x, const U32 y, const U32 stride,
+-                LLVector3 *vertex, LLVector3 *normal, LLVector2 *tex1) const;
++                LLVector3 *vertex, LLVector3 *normal, LLVector2* tex0, LLVector2 *tex1) const;
+ 
+ 
+ "
+secondlife/viewer,1754,85873af,indra/newview/llterrainpaintmap.cpp,modified,2,1,3,"@@ -204,8 +204,9 @@ bool LLTerrainPaintMap::bakeHeightNoiseIntoPBRPaintMapRGB(const LLViewerRegion&
+                     {
+                         LLVector3 scratch3;
+                         LLVector3 pos3;
++                        LLVector2 tex0_temp;
+                         LLVector2 tex1_temp;
+-                        patch->eval(i, j, stride, &pos3, &scratch3, &tex1_temp);
++                        patch->eval(i, j, stride, &pos3, &scratch3, &tex0_temp, &tex1_temp);
+                         (*pos++).set(pos3.mV[VX], pos3.mV[VY], pos3.mV[VZ]);
+                         *tex1++ = tex1_temp;
+                         vertex_total++;"
+secondlife/viewer,1754,85873af,indra/newview/llvosurfacepatch.cpp,modified,37,14,51,"@@ -245,6 +245,7 @@ bool LLVOSurfacePatch::updateLOD()
+ 
+ void LLVOSurfacePatch::getTerrainGeometry(LLStrider<LLVector3> &verticesp,
+                                               LLStrider<LLVector3> &normalsp,
++                                              LLStrider<LLVector2> &texCoords0p,
+                                               LLStrider<LLVector2> &texCoords1p,
+                                               LLStrider<U16> &indicesp)
+ {
+@@ -259,18 +260,21 @@ void LLVOSurfacePatch::getTerrainGeometry(LLStrider<LLVector3> &verticesp,
+     updateMainGeometry(facep,
+                     verticesp,
+                     normalsp,
++                    texCoords0p,
+                     texCoords1p,
+                     indicesp,
+                     index_offset);
+     updateNorthGeometry(facep,
+                         verticesp,
+                         normalsp,
++                        texCoords0p,
+                         texCoords1p,
+                         indicesp,
+                         index_offset);
+     updateEastGeometry(facep,
+                         verticesp,
+                         normalsp,
++                        texCoords0p,
+                         texCoords1p,
+                         indicesp,
+                         index_offset);
+@@ -279,6 +283,7 @@ void LLVOSurfacePatch::getTerrainGeometry(LLStrider<LLVector3> &verticesp,
+ void LLVOSurfacePatch::updateMainGeometry(LLFace *facep,
+                                         LLStrider<LLVector3> &verticesp,
+                                         LLStrider<LLVector3> &normalsp,
++                                        LLStrider<LLVector2> &texCoords0p,
+                                         LLStrider<LLVector2> &texCoords1p,
+                                         LLStrider<U16> &indicesp,
+                                         U32 &index_offset)
+@@ -317,9 +322,10 @@ void LLVOSurfacePatch::updateMainGeometry(LLFace *facep,
+             {
+                 x = i * render_stride;
+                 y = j * render_stride;
+-                mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords1p.get());
++                mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords0p.get(), texCoords1p.get());
+                 verticesp++;
+                 normalsp++;
++                texCoords0p++;
+                 texCoords1p++;
+             }
+         }
+@@ -381,6 +387,7 @@ void LLVOSurfacePatch::updateMainGeometry(LLFace *facep,
+ void LLVOSurfacePatch::updateNorthGeometry(LLFace *facep,
+                                         LLStrider<LLVector3> &verticesp,
+                                         LLStrider<LLVector3> &normalsp,
++                                        LLStrider<LLVector2> &texCoords0p,
+                                         LLStrider<LLVector2> &texCoords1p,
+                                         LLStrider<U16> &indicesp,
+                                         U32 &index_offset)
+@@ -414,9 +421,10 @@ void LLVOSurfacePatch::updateNorthGeometry(LLFace *facep,
+             x = i * render_stride;
+             y = 16 - render_stride;
+ 
+-            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords1p.get());
++            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords0p.get(), texCoords1p.get());
+             verticesp++;
+             normalsp++;
++            texCoords0p++;
+             texCoords1p++;
+         }
+ 
+@@ -425,9 +433,10 @@ void LLVOSurfacePatch::updateNorthGeometry(LLFace *facep,
+         {
+             x = i * render_stride;
+             y = 16;
+-            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords1p.get());
++            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords0p.get(), texCoords1p.get());
+             verticesp++;
+             normalsp++;
++            texCoords0p++;
+             texCoords1p++;
+         }
+ 
+@@ -460,9 +469,10 @@ void LLVOSurfacePatch::updateNorthGeometry(LLFace *facep,
+             x = i * render_stride;
+             y = 16 - render_stride;
+ 
+-            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords1p.get());
++            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords0p.get(), texCoords1p.get());
+             verticesp++;
+             normalsp++;
++            texCoords0p++;
+             texCoords1p++;
+         }
+ 
+@@ -472,9 +482,10 @@ void LLVOSurfacePatch::updateNorthGeometry(LLFace *facep,
+             x = i * render_stride;
+             y = 16;
+ 
+-            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords1p.get());
++            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords0p.get(), texCoords1p.get());
+             verticesp++;
+             normalsp++;
++            texCoords0p++;
+             texCoords1p++;
+         }
+ 
+@@ -514,9 +525,10 @@ void LLVOSurfacePatch::updateNorthGeometry(LLFace *facep,
+             x = i * north_stride;
+             y = 16 - render_stride;
+ 
+-            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords1p.get());
++            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords0p.get(), texCoords1p.get());
+             verticesp++;
+             normalsp++;
++            texCoords0p++;
+             texCoords1p++;
+         }
+ 
+@@ -526,9 +538,10 @@ void LLVOSurfacePatch::updateNorthGeometry(LLFace *facep,
+             x = i * north_stride;
+             y = 16;
+ 
+-            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords1p.get());
++            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords0p.get(), texCoords1p.get());
+             verticesp++;
+             normalsp++;
++            texCoords0p++;
+             texCoords1p++;
+         }
+ 
+@@ -564,6 +577,7 @@ void LLVOSurfacePatch::updateNorthGeometry(LLFace *facep,
+ void LLVOSurfacePatch::updateEastGeometry(LLFace *facep,
+                                           LLStrider<LLVector3> &verticesp,
+                                           LLStrider<LLVector3> &normalsp,
++                                          LLStrider<LLVector2> &texCoords0p,
+                                           LLStrider<LLVector2> &texCoords1p,
+                                           LLStrider<U16> &indicesp,
+                                           U32 &index_offset)
+@@ -592,9 +606,10 @@ void LLVOSurfacePatch::updateEastGeometry(LLFace *facep,
+             x = 16 - render_stride;
+             y = i * render_stride;
+ 
+-            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords1p.get());
++            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords0p.get(), texCoords1p.get());
+             verticesp++;
+             normalsp++;
++            texCoords0p++;
+             texCoords1p++;
+         }
+ 
+@@ -603,9 +618,10 @@ void LLVOSurfacePatch::updateEastGeometry(LLFace *facep,
+         {
+             x = 16;
+             y = i * render_stride;
+-            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords1p.get());
++            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords0p.get(), texCoords1p.get());
+             verticesp++;
+             normalsp++;
++            texCoords0p++;
+             texCoords1p++;
+         }
+ 
+@@ -638,9 +654,10 @@ void LLVOSurfacePatch::updateEastGeometry(LLFace *facep,
+             x = 16 - render_stride;
+             y = i * render_stride;
+ 
+-            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords1p.get());
++            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords0p.get(), texCoords1p.get());
+             verticesp++;
+             normalsp++;
++            texCoords0p++;
+             texCoords1p++;
+         }
+         // Iterate through the east patch's points
+@@ -649,9 +666,10 @@ void LLVOSurfacePatch::updateEastGeometry(LLFace *facep,
+             x = 16;
+             y = i * render_stride;
+ 
+-            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords1p.get());
++            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords0p.get(), texCoords1p.get());
+             verticesp++;
+             normalsp++;
++            texCoords0p++;
+             texCoords1p++;
+         }
+ 
+@@ -690,9 +708,10 @@ void LLVOSurfacePatch::updateEastGeometry(LLFace *facep,
+             x = 16 - render_stride;
+             y = i * east_stride;
+ 
+-            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords1p.get());
++            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords0p.get(), texCoords1p.get());
+             verticesp++;
+             normalsp++;
++            texCoords0p++;
+             texCoords1p++;
+         }
+         // Iterate through the east patch's points
+@@ -701,9 +720,10 @@ void LLVOSurfacePatch::updateEastGeometry(LLFace *facep,
+             x = 16;
+             y = i * east_stride;
+ 
+-            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords1p.get());
++            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords0p.get(), texCoords1p.get());
+             verticesp++;
+             normalsp++;
++            texCoords0p++;
+             texCoords1p++;
+         }
+ 
+@@ -1022,12 +1042,14 @@ void LLTerrainPartition::getGeometry(LLSpatialGroup* group)
+     LLStrider<LLVector3> vertices_start;
+     LLStrider<LLVector3> normals_start;
+     LLStrider<LLVector4a> tangents_start;
++    LLStrider<LLVector2> texcoords0_start; // ownership overlay
+     LLStrider<LLVector2> texcoords2_start;
+     LLStrider<U16> indices_start;
+ 
+     llassert_always(buffer->getVertexStrider(vertices_start));
+     llassert_always(buffer->getNormalStrider(normals_start));
+     llassert_always(buffer->getTangentStrider(tangents_start));
++    llassert_always(buffer->getTexCoord0Strider(texcoords0_start));
+     llassert_always(buffer->getTexCoord1Strider(texcoords2_start));
+     llassert_always(buffer->getIndexStrider(indices_start));
+ 
+@@ -1037,6 +1059,7 @@ void LLTerrainPartition::getGeometry(LLSpatialGroup* group)
+     {
+         LLStrider<LLVector3> vertices = vertices_start;
+         LLStrider<LLVector3> normals = normals_start;
++        LLStrider<LLVector2> texcoords0 = texcoords0_start;
+         LLStrider<LLVector2> texcoords2 = texcoords2_start;
+         LLStrider<U16> indices = indices_start;
+ 
+@@ -1049,7 +1072,7 @@ void LLTerrainPartition::getGeometry(LLSpatialGroup* group)
+             facep->setVertexBuffer(buffer);
+ 
+             LLVOSurfacePatch* patchp = (LLVOSurfacePatch*) facep->getViewerObject();
+-            patchp->getTerrainGeometry(vertices, normals, texcoords2, indices);
++            patchp->getTerrainGeometry(vertices, normals, texcoords0, texcoords2, indices);
+ 
+             indices_index += facep->getIndicesCount();
+             index_offset += facep->getGeomCount();"
+secondlife/viewer,1754,85873af,indra/newview/llvosurfacepatch.h,modified,4,0,4,"@@ -57,6 +57,7 @@ class LLVOSurfacePatch : public LLStaticViewerObject
+     /*virtual*/ void        updateFaceSize(S32 idx);
+     void getTerrainGeometry(LLStrider<LLVector3> &verticesp,
+                                 LLStrider<LLVector3> &normalsp,
++                                LLStrider<LLVector2> &texCoords0p,
+                                 LLStrider<LLVector2> &texCoords1p,
+                                 LLStrider<U16> &indicesp);
+ 
+@@ -109,18 +110,21 @@ class LLVOSurfacePatch : public LLStaticViewerObject
+     void updateMainGeometry(LLFace *facep,
+                        LLStrider<LLVector3> &verticesp,
+                        LLStrider<LLVector3> &normalsp,
++                       LLStrider<LLVector2> &texCoords0p,
+                        LLStrider<LLVector2> &texCoords1p,
+                        LLStrider<U16> &indicesp,
+                        U32 &index_offset);
+     void updateNorthGeometry(LLFace *facep,
+                        LLStrider<LLVector3> &verticesp,
+                        LLStrider<LLVector3> &normalsp,
++                       LLStrider<LLVector2> &texCoords0p,
+                        LLStrider<LLVector2> &texCoords1p,
+                        LLStrider<U16> &indicesp,
+                        U32 &index_offset);
+     void updateEastGeometry(LLFace *facep,
+                        LLStrider<LLVector3> &verticesp,
+                        LLStrider<LLVector3> &normalsp,
++                       LLStrider<LLVector2> &texCoords0p,
+                        LLStrider<LLVector2> &texCoords1p,
+                        LLStrider<U16> &indicesp,
+                        U32 &index_offset);"
+secondlife/viewer,1754,e43baa7,indra/newview/lldrawpoolterrain.h,modified,1,0,1,"@@ -38,6 +38,7 @@ class LLDrawPoolTerrain : public LLFacePool
+         VERTEX_DATA_MASK = LLVertexBuffer::MAP_VERTEX |
+                     LLVertexBuffer::MAP_NORMAL |
+                     LLVertexBuffer::MAP_TANGENT | // Only PBR terrain uses this currently
++                    LLVertexBuffer::MAP_TEXCOORD0 | // Ownership overlay
+                     LLVertexBuffer::MAP_TEXCOORD1
+     };
+ "
+secondlife/viewer,1754,e43baa7,indra/newview/llsurfacepatch.cpp,modified,8,1,9,"@@ -201,7 +201,7 @@ LLVector2 LLSurfacePatch::getTexCoords(const U32 x, const U32 y) const
+ 
+ 
+ void LLSurfacePatch::eval(const U32 x, const U32 y, const U32 stride, LLVector3 *vertex, LLVector3 *normal,
+-                          LLVector2 *tex1) const
++                          LLVector2* tex0, LLVector2 *tex1) const
+ {
+     if (!mSurfacep || !mSurfacep->getRegion() || !mSurfacep->getGridsPerEdge() || !mVObjp)
+     {
+@@ -210,6 +210,7 @@ void LLSurfacePatch::eval(const U32 x, const U32 y, const U32 stride, LLVector3
+     llassert_always(vertex && normal && tex1);
+ 
+     U32 surface_stride = mSurfacep->getGridsPerEdge();
++    U32 texture_stride = mSurfacep->getGridsPerEdge() - 1;
+     U32 point_offset = x + y*surface_stride;
+ 
+     *normal = getNormal(x, y);
+@@ -220,6 +221,12 @@ void LLSurfacePatch::eval(const U32 x, const U32 y, const U32 stride, LLVector3
+     pos_agent.mV[VZ]  = *(mDataZ + point_offset);
+     *vertex     = pos_agent-mVObjp->getRegion()->getOriginAgent();
+ 
++    // tex0 is used for ownership overlay
++    LLVector3 rel_pos = pos_agent - mSurfacep->getOriginAgent();
++    LLVector3 tex_pos = rel_pos * (1.f / (texture_stride * mSurfacep->getMetersPerGrid()));
++    tex0->mV[0] = tex_pos.mV[0];
++    tex0->mV[1] = tex_pos.mV[1];
++
+     tex1->mV[0] = mSurfacep->getRegion()->getCompositionXY(llfloor(mOriginRegion.mV[0])+x, llfloor(mOriginRegion.mV[1])+y);
+ 
+     const F32 xyScale = 4.9215f*7.f; //0.93284f;"
+secondlife/viewer,1754,e43baa7,indra/newview/llsurfacepatch.h,modified,1,1,2,"@@ -116,7 +116,7 @@ class LLSurfacePatch
+     void calcNormalFlat(LLVector3& normal_out, const U32 x, const U32 y, const U32 index /* 0 or 1 */);
+ 
+     void eval(const U32 x, const U32 y, const U32 stride,
+-                LLVector3 *vertex, LLVector3 *normal, LLVector2 *tex1) const;
++                LLVector3 *vertex, LLVector3 *normal, LLVector2* tex0, LLVector2 *tex1) const;
+ 
+ 
+ "
+secondlife/viewer,1754,e43baa7,indra/newview/llterrainpaintmap.cpp,modified,2,1,3,"@@ -204,8 +204,9 @@ bool LLTerrainPaintMap::bakeHeightNoiseIntoPBRPaintMapRGB(const LLViewerRegion&
+                     {
+                         LLVector3 scratch3;
+                         LLVector3 pos3;
++                        LLVector2 tex0_temp;
+                         LLVector2 tex1_temp;
+-                        patch->eval(i, j, stride, &pos3, &scratch3, &tex1_temp);
++                        patch->eval(i, j, stride, &pos3, &scratch3, &tex0_temp, &tex1_temp);
+                         (*pos++).set(pos3.mV[VX], pos3.mV[VY], pos3.mV[VZ]);
+                         *tex1++ = tex1_temp;
+                         vertex_total++;"
+secondlife/viewer,1754,e43baa7,indra/newview/llvosurfacepatch.cpp,modified,37,14,51,"@@ -245,6 +245,7 @@ bool LLVOSurfacePatch::updateLOD()
+ 
+ void LLVOSurfacePatch::getTerrainGeometry(LLStrider<LLVector3> &verticesp,
+                                               LLStrider<LLVector3> &normalsp,
++                                              LLStrider<LLVector2> &texCoords0p,
+                                               LLStrider<LLVector2> &texCoords1p,
+                                               LLStrider<U16> &indicesp)
+ {
+@@ -259,18 +260,21 @@ void LLVOSurfacePatch::getTerrainGeometry(LLStrider<LLVector3> &verticesp,
+     updateMainGeometry(facep,
+                     verticesp,
+                     normalsp,
++                    texCoords0p,
+                     texCoords1p,
+                     indicesp,
+                     index_offset);
+     updateNorthGeometry(facep,
+                         verticesp,
+                         normalsp,
++                        texCoords0p,
+                         texCoords1p,
+                         indicesp,
+                         index_offset);
+     updateEastGeometry(facep,
+                         verticesp,
+                         normalsp,
++                        texCoords0p,
+                         texCoords1p,
+                         indicesp,
+                         index_offset);
+@@ -279,6 +283,7 @@ void LLVOSurfacePatch::getTerrainGeometry(LLStrider<LLVector3> &verticesp,
+ void LLVOSurfacePatch::updateMainGeometry(LLFace *facep,
+                                         LLStrider<LLVector3> &verticesp,
+                                         LLStrider<LLVector3> &normalsp,
++                                        LLStrider<LLVector2> &texCoords0p,
+                                         LLStrider<LLVector2> &texCoords1p,
+                                         LLStrider<U16> &indicesp,
+                                         U32 &index_offset)
+@@ -317,9 +322,10 @@ void LLVOSurfacePatch::updateMainGeometry(LLFace *facep,
+             {
+                 x = i * render_stride;
+                 y = j * render_stride;
+-                mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords1p.get());
++                mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords0p.get(), texCoords1p.get());
+                 verticesp++;
+                 normalsp++;
++                texCoords0p++;
+                 texCoords1p++;
+             }
+         }
+@@ -381,6 +387,7 @@ void LLVOSurfacePatch::updateMainGeometry(LLFace *facep,
+ void LLVOSurfacePatch::updateNorthGeometry(LLFace *facep,
+                                         LLStrider<LLVector3> &verticesp,
+                                         LLStrider<LLVector3> &normalsp,
++                                        LLStrider<LLVector2> &texCoords0p,
+                                         LLStrider<LLVector2> &texCoords1p,
+                                         LLStrider<U16> &indicesp,
+                                         U32 &index_offset)
+@@ -414,9 +421,10 @@ void LLVOSurfacePatch::updateNorthGeometry(LLFace *facep,
+             x = i * render_stride;
+             y = 16 - render_stride;
+ 
+-            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords1p.get());
++            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords0p.get(), texCoords1p.get());
+             verticesp++;
+             normalsp++;
++            texCoords0p++;
+             texCoords1p++;
+         }
+ 
+@@ -425,9 +433,10 @@ void LLVOSurfacePatch::updateNorthGeometry(LLFace *facep,
+         {
+             x = i * render_stride;
+             y = 16;
+-            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords1p.get());
++            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords0p.get(), texCoords1p.get());
+             verticesp++;
+             normalsp++;
++            texCoords0p++;
+             texCoords1p++;
+         }
+ 
+@@ -460,9 +469,10 @@ void LLVOSurfacePatch::updateNorthGeometry(LLFace *facep,
+             x = i * render_stride;
+             y = 16 - render_stride;
+ 
+-            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords1p.get());
++            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords0p.get(), texCoords1p.get());
+             verticesp++;
+             normalsp++;
++            texCoords0p++;
+             texCoords1p++;
+         }
+ 
+@@ -472,9 +482,10 @@ void LLVOSurfacePatch::updateNorthGeometry(LLFace *facep,
+             x = i * render_stride;
+             y = 16;
+ 
+-            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords1p.get());
++            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords0p.get(), texCoords1p.get());
+             verticesp++;
+             normalsp++;
++            texCoords0p++;
+             texCoords1p++;
+         }
+ 
+@@ -514,9 +525,10 @@ void LLVOSurfacePatch::updateNorthGeometry(LLFace *facep,
+             x = i * north_stride;
+             y = 16 - render_stride;
+ 
+-            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords1p.get());
++            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords0p.get(), texCoords1p.get());
+             verticesp++;
+             normalsp++;
++            texCoords0p++;
+             texCoords1p++;
+         }
+ 
+@@ -526,9 +538,10 @@ void LLVOSurfacePatch::updateNorthGeometry(LLFace *facep,
+             x = i * north_stride;
+             y = 16;
+ 
+-            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords1p.get());
++            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords0p.get(), texCoords1p.get());
+             verticesp++;
+             normalsp++;
++            texCoords0p++;
+             texCoords1p++;
+         }
+ 
+@@ -564,6 +577,7 @@ void LLVOSurfacePatch::updateNorthGeometry(LLFace *facep,
+ void LLVOSurfacePatch::updateEastGeometry(LLFace *facep,
+                                           LLStrider<LLVector3> &verticesp,
+                                           LLStrider<LLVector3> &normalsp,
++                                          LLStrider<LLVector2> &texCoords0p,
+                                           LLStrider<LLVector2> &texCoords1p,
+                                           LLStrider<U16> &indicesp,
+                                           U32 &index_offset)
+@@ -592,9 +606,10 @@ void LLVOSurfacePatch::updateEastGeometry(LLFace *facep,
+             x = 16 - render_stride;
+             y = i * render_stride;
+ 
+-            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords1p.get());
++            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords0p.get(), texCoords1p.get());
+             verticesp++;
+             normalsp++;
++            texCoords0p++;
+             texCoords1p++;
+         }
+ 
+@@ -603,9 +618,10 @@ void LLVOSurfacePatch::updateEastGeometry(LLFace *facep,
+         {
+             x = 16;
+             y = i * render_stride;
+-            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords1p.get());
++            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords0p.get(), texCoords1p.get());
+             verticesp++;
+             normalsp++;
++            texCoords0p++;
+             texCoords1p++;
+         }
+ 
+@@ -638,9 +654,10 @@ void LLVOSurfacePatch::updateEastGeometry(LLFace *facep,
+             x = 16 - render_stride;
+             y = i * render_stride;
+ 
+-            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords1p.get());
++            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords0p.get(), texCoords1p.get());
+             verticesp++;
+             normalsp++;
++            texCoords0p++;
+             texCoords1p++;
+         }
+         // Iterate through the east patch's points
+@@ -649,9 +666,10 @@ void LLVOSurfacePatch::updateEastGeometry(LLFace *facep,
+             x = 16;
+             y = i * render_stride;
+ 
+-            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords1p.get());
++            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords0p.get(), texCoords1p.get());
+             verticesp++;
+             normalsp++;
++            texCoords0p++;
+             texCoords1p++;
+         }
+ 
+@@ -690,9 +708,10 @@ void LLVOSurfacePatch::updateEastGeometry(LLFace *facep,
+             x = 16 - render_stride;
+             y = i * east_stride;
+ 
+-            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords1p.get());
++            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords0p.get(), texCoords1p.get());
+             verticesp++;
+             normalsp++;
++            texCoords0p++;
+             texCoords1p++;
+         }
+         // Iterate through the east patch's points
+@@ -701,9 +720,10 @@ void LLVOSurfacePatch::updateEastGeometry(LLFace *facep,
+             x = 16;
+             y = i * east_stride;
+ 
+-            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords1p.get());
++            mPatchp->eval(x, y, render_stride, verticesp.get(), normalsp.get(), texCoords0p.get(), texCoords1p.get());
+             verticesp++;
+             normalsp++;
++            texCoords0p++;
+             texCoords1p++;
+         }
+ 
+@@ -1022,12 +1042,14 @@ void LLTerrainPartition::getGeometry(LLSpatialGroup* group)
+     LLStrider<LLVector3> vertices_start;
+     LLStrider<LLVector3> normals_start;
+     LLStrider<LLVector4a> tangents_start;
++    LLStrider<LLVector2> texcoords0_start; // ownership overlay
+     LLStrider<LLVector2> texcoords2_start;
+     LLStrider<U16> indices_start;
+ 
+     llassert_always(buffer->getVertexStrider(vertices_start));
+     llassert_always(buffer->getNormalStrider(normals_start));
+     llassert_always(buffer->getTangentStrider(tangents_start));
++    llassert_always(buffer->getTexCoord0Strider(texcoords0_start));
+     llassert_always(buffer->getTexCoord1Strider(texcoords2_start));
+     llassert_always(buffer->getIndexStrider(indices_start));
+ 
+@@ -1037,6 +1059,7 @@ void LLTerrainPartition::getGeometry(LLSpatialGroup* group)
+     {
+         LLStrider<LLVector3> vertices = vertices_start;
+         LLStrider<LLVector3> normals = normals_start;
++        LLStrider<LLVector2> texcoords0 = texcoords0_start;
+         LLStrider<LLVector2> texcoords2 = texcoords2_start;
+         LLStrider<U16> indices = indices_start;
+ 
+@@ -1049,7 +1072,7 @@ void LLTerrainPartition::getGeometry(LLSpatialGroup* group)
+             facep->setVertexBuffer(buffer);
+ 
+             LLVOSurfacePatch* patchp = (LLVOSurfacePatch*) facep->getViewerObject();
+-            patchp->getTerrainGeometry(vertices, normals, texcoords2, indices);
++            patchp->getTerrainGeometry(vertices, normals, texcoords0, texcoords2, indices);
+ 
+             indices_index += facep->getIndicesCount();
+             index_offset += facep->getGeomCount();"
+secondlife/viewer,1754,e43baa7,indra/newview/llvosurfacepatch.h,modified,4,0,4,"@@ -57,6 +57,7 @@ class LLVOSurfacePatch : public LLStaticViewerObject
+     /*virtual*/ void        updateFaceSize(S32 idx);
+     void getTerrainGeometry(LLStrider<LLVector3> &verticesp,
+                                 LLStrider<LLVector3> &normalsp,
++                                LLStrider<LLVector2> &texCoords0p,
+                                 LLStrider<LLVector2> &texCoords1p,
+                                 LLStrider<U16> &indicesp);
+ 
+@@ -109,18 +110,21 @@ class LLVOSurfacePatch : public LLStaticViewerObject
+     void updateMainGeometry(LLFace *facep,
+                        LLStrider<LLVector3> &verticesp,
+                        LLStrider<LLVector3> &normalsp,
++                       LLStrider<LLVector2> &texCoords0p,
+                        LLStrider<LLVector2> &texCoords1p,
+                        LLStrider<U16> &indicesp,
+                        U32 &index_offset);
+     void updateNorthGeometry(LLFace *facep,
+                        LLStrider<LLVector3> &verticesp,
+                        LLStrider<LLVector3> &normalsp,
++                       LLStrider<LLVector2> &texCoords0p,
+                        LLStrider<LLVector2> &texCoords1p,
+                        LLStrider<U16> &indicesp,
+                        U32 &index_offset);
+     void updateEastGeometry(LLFace *facep,
+                        LLStrider<LLVector3> &verticesp,
+                        LLStrider<LLVector3> &normalsp,
++                       LLStrider<LLVector2> &texCoords0p,
+                        LLStrider<LLVector2> &texCoords1p,
+                        LLStrider<U16> &indicesp,
+                        U32 &index_offset);"

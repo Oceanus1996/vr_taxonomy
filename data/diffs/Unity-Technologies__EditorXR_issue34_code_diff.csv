@@ -1,0 +1,248 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+Unity-Technologies/EditorXR,34,255c57283c54327465cfb592aeb563d710d45101,Menus/MainMenu/Scripts/MainMenuUI.cs,modified,1,1,2,"@@ -442,7 +442,7 @@ IEnumerator AnimateFaceReveal(int faceIndex)
+ 
+ 			const float kSmoothTime = 0.1f;
+ 			var currentDelay = 0f;
+-			var delayTarget = 0.5f + (faceIndex * 0.1f); // delay duration before starting the face reveal
++			var delayTarget = 0.25f + (faceIndex * 0.1f); // delay duration before starting the face reveal
+ 			while (currentDelay < delayTarget) // delay the reveal of each face slightly more than the previous
+ 			{
+ 				currentDelay += Time.unscaledDeltaTime;"
+Unity-Technologies/EditorXR,34,255c57283c54327465cfb592aeb563d710d45101,Menus/RadialMenu/Scripts/RadialMenuSlot.cs,modified,3,3,6,"@@ -189,7 +189,7 @@ IEnumerator AnimateShow()
+ 			var positionWait = orderIndex * 0.05f;
+ 			while (opacity < 1)
+ 			{
+-				opacity += Time.unscaledDeltaTime / positionWait;
++				opacity += Time.unscaledDeltaTime / positionWait * 2;
+ 				var opacityShaped = Mathf.Pow(opacity, opacity);
+ 
+ 				transform.localScale = Vector3.Lerp(kHiddenLocalScale, Vector3.one, opacity);
+@@ -215,7 +215,7 @@ IEnumerator ShowInset()
+ 			var positionWait = (orderIndex + 1) * 0.075f;
+ 			while (duration < 2)
+ 			{
+-				duration += Time.unscaledDeltaTime / positionWait;
++				duration += Time.unscaledDeltaTime / positionWait * 2;
+ 				var opacity = duration / 2;
+ 				opacity *= opacity;
+ 				m_CanvasGroup.alpha = Mathf.Clamp01(duration - 1);
+@@ -320,7 +320,7 @@ IEnumerator IconHighlightAnimatedShow(bool pressed = false)
+ 			while (transitionAmount < 1)
+ 			{
+ 				m_IconTransform.localPosition = Vector3.Lerp(currentPosition, targetPosition, transitionAmount);
+-				transitionAmount = transitionAmount + Time.unscaledDeltaTime * transitionAddMultiplier;
++				transitionAmount = transitionAmount + Time.unscaledDeltaTime * transitionAddMultiplier * 2;
+ 				yield return null;
+ 			}
+ "
+Unity-Technologies/EditorXR,34,255c57283c54327465cfb592aeb563d710d45101,Menus/RadialMenu/Scripts/RadialMenuUI.cs,modified,3,3,6,"@@ -261,7 +261,7 @@ IEnumerator AnimateShow()
+ 
+ 			while (revealAmount < 1)
+ 			{
+-				revealAmount += Time.unscaledDeltaTime * 5;
++				revealAmount += Time.unscaledDeltaTime * 8;
+ 
+ 				for (int i = 0; i < m_RadialMenuSlots.Count; ++i)
+ 				{
+@@ -280,7 +280,7 @@ IEnumerator AnimateShow()
+ 			revealAmount = 0;
+ 			while (revealAmount < 1)
+ 			{
+-				revealAmount += Time.unscaledDeltaTime * 0.5f;
++				revealAmount += Time.unscaledDeltaTime;
+ 				m_SlotsMask.fillAmount = Mathf.Lerp(m_SlotsMask.fillAmount, 0f, revealAmount);
+ 				yield return null;
+ 			}
+@@ -304,7 +304,7 @@ IEnumerator AnimateHide()
+ 			revealAmount = 1;
+ 			while (revealAmount > 0)
+ 			{
+-				revealAmount -= Time.unscaledDeltaTime * 5;
++				revealAmount -= Time.unscaledDeltaTime * 8;
+ 
+ 				for (int i = 0; i < m_RadialMenuSlots.Count; ++i)
+ 					m_RadialMenuSlots[i].transform.localRotation = Quaternion.Lerp(hiddenSlotRotation, m_RadialMenuSlots[i].visibleLocalRotation, revealAmount);"
+Unity-Technologies/EditorXR,34,255c57283c54327465cfb592aeb563d710d45101,Scripts/Core/EditorVR.Menus.cs,modified,61,19,80,"@@ -6,6 +6,7 @@
+ using UnityEngine.Experimental.EditorVR.Menus;
+ using UnityEngine.Experimental.EditorVR.Tools;
+ using UnityEngine.Experimental.EditorVR.Utilities;
++using UnityEngine.Experimental.EditorVR.Workspaces;
+ using UnityEngine.InputNew;
+ 
+ namespace UnityEditor.Experimental.EditorVR
+@@ -41,44 +42,85 @@ void UpdateMenuVisibilityNearWorkspaces()
+ 				for (int i = 0; i < m_UpdateVisibilityMenus.Count; i++)
+ 				{
+ 					var menu = m_UpdateVisibilityMenus[i];
+-					// AE 12/7/16 - Disabling main menu hiding near workspaces for now because it confuses people; Needs improvement
+-					if (menu is IMainMenu)
+-						continue;
+-
+ 					var menuSizes = deviceData.menuSizes;
+ 					var menuBounds = U.Object.GetBounds(menu.menuContent);
+ 					var menuBoundsSize = menuBounds.size;
+-
+-					// Because menus can change size, store the maximum size to avoid ping ponging visibility
+-					float maxComponent;
+-					if (!menuSizes.TryGetValue(menu, out maxComponent))
++					float size; // Because menus can change size, store the maximum size to avoid ping ponging visibility
++					if (!menuSizes.TryGetValue(menu, out size))
+ 					{
+-						maxComponent = menuBoundsSize.MaxComponent();
+-						menuSizes[menu] = maxComponent;
++						size = menuBoundsSize.AveragedComponents();
++						menuSizes[menu] = size;
+ 					}
+ 
+ 					var menuHideFlags = deviceData.menuHideFlags;
+ 					var flags = menuHideFlags[menu];
+-					var currentMaxComponent = menuBoundsSize.MaxComponent();
+-					if (currentMaxComponent > maxComponent && flags == 0)
++					var currentMaxComponent = menuBoundsSize.AveragedComponents();
++					if (currentMaxComponent > size && flags == 0)
+ 					{
+-						maxComponent = currentMaxComponent;
++						size = currentMaxComponent;
+ 						menuSizes[menu] = currentMaxComponent;
+ 					}
+ 
+ 					var intersection = false;
+-
+-					for (int j = 0; i < m_Workspaces.Count; i++)
++					for (int j = 0; j < m_Workspaces.Count; j++)
+ 					{
+ 						var workspace = m_Workspaces[j];
+-						var outerBounds = workspace.transform.TransformBounds(workspace.outerBounds);
++						var workspaceTransform = workspace.transform;
++						var outerBounds = workspaceTransform.TransformBounds(workspace.outerBounds);
++						var workspaceVerticalOrentationDot = Vector3.Dot(Vector3.up, workspaceTransform.forward);
++						const float kWorkspaceVerticalOrientationDotThreshold = 0.85f;
++						const float kWorkspaceVerticalOrientationDotRange = 1f - kWorkspaceVerticalOrientationDotThreshold;
++						if (workspaceVerticalOrentationDot > kWorkspaceVerticalOrientationDotThreshold)
++						{
++							// Increase the height of the workspace if the top-panel is rotated parallel to the Y-axis
++							// Extend the height of the workspace, to include potential front-panel blendshape bounds additions not accounted for in the bounds for better UX usability
++							var lerpAmount = Mathf.Abs(kWorkspaceVerticalOrientationDotThreshold - workspaceVerticalOrentationDot) / kWorkspaceVerticalOrientationDotRange;
++							var currentBounds = outerBounds.extents;
++							const float kBoundsHeightIncrease = 0.075f;
++							currentBounds.y += Mathf.Lerp(0f, kBoundsHeightIncrease, lerpAmount);
++							outerBounds.extents = currentBounds;
++						}
++
+ 						if (flags == 0)
+-							outerBounds.extents -= Vector3.one * maxComponent;
++						{
++							var extentsReduction = menu is IMainMenu ? 0.85f : 0.65f;
++							outerBounds.extents -= Vector3.one * size * extentsReduction;
++						}
+ 
+ 						if (menuBounds.Intersects(outerBounds))
+ 						{
+-							intersection = true;
+-							break;
++							var standardWorkspace = workspace as Workspace;
++							var pairDevice = pair.Value;
++							var deviceForwardVector = pairDevice.forward;
++							var workspaceTopFaceForwardVector = workspaceTransform.up;
++							if (standardWorkspace)
++							{
++								var frontPanelTransform = standardWorkspace.frontPanel;
++								var frontPanelForwardVector = frontPanelTransform.forward;
++								var topPanelPosition = standardWorkspace.topPanel.position;
++								var devicePositionTopPanelDot = Vector3.Dot(workspaceTopFaceForwardVector, topPanelPosition - pairDevice.position);
++								if (devicePositionTopPanelDot > -0.02f && devicePositionTopPanelDot < 0.095f // Verify that the device is within the front-panel's top & bottom boundaries
++									&& Vector3.Dot(frontPanelForwardVector, workspaceTopFaceForwardVector) > -0.7f // Verify the front-panel is not parallel with the workspace top-panel
++									&& Vector3.Dot(frontPanelForwardVector, frontPanelTransform.position - pairDevice.position) > 0 // Verify that the device is in front of the front-panel
++									&& Vector3.Dot(frontPanelForwardVector, deviceForwardVector) > 0.75f) // Verify that the device is pointing towards the front-panel
++								{
++									// If the device is in front of the front-panel, pointing at the front-panel, and the front-panel is not parallel to the top-panel, allow for vaild intersection
++									intersection = true;
++								}
++								// Handle for top-panel user interactions if the user is not attempting to interact with the front-face of a standard workspace
++								else if (Vector3.Dot(deviceForwardVector, workspaceTopFaceForwardVector) < -0.35f  // verify that the user is pointing at the top of the workspace
++									&& Vector3.Dot(workspaceTopFaceForwardVector, topPanelPosition - pairDevice.position) < 0) // Verify that the device is in front of the top-panel)
++								{
++									// Hide the menu if the device is above the top of the workspace, within the intersection range, and pointing towards the workspace
++									intersection = true;
++								}
++							}
++							// Support non-standard workspace menu hiding
++							else if (Vector3.Dot(deviceForwardVector, workspaceTopFaceForwardVector) < -0.35f)
++								intersection = true;
++
++							if (intersection)
++								break;
+ 						}
+ 					}
+ "
+Unity-Technologies/EditorXR,34,255c57283c54327465cfb592aeb563d710d45101,Scripts/Extensions/TransformExtensions.cs,modified,0,2,2,"@@ -1,5 +1,3 @@
+-using UnityEngine;
+-
+ namespace UnityEngine.Experimental.EditorVR.Extensions
+ {
+ 	public static class TransformExtensions"
+Unity-Technologies/EditorXR,34,255c57283c54327465cfb592aeb563d710d45101,Scripts/Extensions/Vector3Extensions.cs,modified,5,0,5,"@@ -16,4 +16,9 @@ public static float MaxComponent(this Vector3 vec)
+ 	{
+ 		return Mathf.Max(Mathf.Max(vec.x, vec.y), vec.z);
+ 	}
++
++	public static float AveragedComponents(this Vector3 vec)
++	{
++		return (vec.x + vec.y + vec.z) / 3f;
++	}
+ }
+\ No newline at end of file"
+Unity-Technologies/EditorXR,34,255c57283c54327465cfb592aeb563d710d45101,Workspaces/Base/Workspace.cs,modified,9,4,13,"@@ -20,7 +20,6 @@ public abstract class Workspace : MonoBehaviour, IWorkspace, IInstantiateUI, ISe
+ 		protected Vector3? m_CustomStartingBounds;
+ 
+ 		public static readonly Vector3 kMinBounds = new Vector3(0.55f, 0.4f, 0.1f);
+-		private const float kExtraHeight = 0.15f; //Extra space for frame model
+ 
+ 		public Vector3 minBounds { get { return m_MinBounds; } set { m_MinBounds = value; } }
+ 		[SerializeField]
+@@ -63,11 +62,13 @@ public Bounds contentBounds
+ 
+ 		public Bounds outerBounds
+ 		{
+-			get {
+-				return new Bounds(contentBounds.center + Vector3.down * kExtraHeight * 0.5f,
++			get
++			{
++				const float kOuterBoundsCenterOffset = 0.225f; //Amount to lower the center of the outerBounds for better interaction with menus
++				return new Bounds(contentBounds.center + Vector3.down * kOuterBoundsCenterOffset,
+ 					new Vector3(
+ 						contentBounds.size.x,
+-						contentBounds.size.y + kExtraHeight,
++						contentBounds.size.y,
+ 						contentBounds.size.z
+ 						));
+ 			}
+@@ -111,6 +112,10 @@ public float topPanelDividerOffset
+ 			}
+ 		}
+ 
++		public Transform topPanel { get { return m_WorkspaceUI.topPanel; } }
++
++		public Transform frontPanel { get { return m_WorkspaceUI.frontPanel; } }
++
+ 		public virtual void Setup()
+ 		{
+ 			GameObject baseObject = instantiateUI(m_BasePrefab);"
+Unity-Technologies/EditorXR,34,255c57283c54327465cfb592aeb563d710d45101,Workspaces/Base/WorkspaceUI.cs,modified,4,0,4,"@@ -52,6 +52,8 @@ public class WorkspaceUI : MonoBehaviour, IUsesStencilRef
+ 		[SerializeField]
+ 		private RectTransform m_FrontPanel;
+ 
++		public Transform topPanel { get; private set; }
++		
+ 		public DirectManipulator directManipulator { get { return m_DirectManipulator; } }
+ 		[SerializeField]
+ 		private DirectManipulator m_DirectManipulator;
+@@ -395,6 +397,8 @@ void Awake()
+ 
+ 			if (m_TopPanelDividerOffset == null)
+ 				m_TopPanelDividerTransform.gameObject.SetActive(false);
++
++			topPanel = m_TopFaceContainer; // The TopFaceContainer serves as the transform that the workspace expects when fetching the TopPanel
+ 		}
+ 
+ 		IEnumerator Start()"

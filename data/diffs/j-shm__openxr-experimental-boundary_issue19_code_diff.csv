@@ -1,0 +1,883 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+j-shm/openxr-experimental-boundary,19,f1b5a59af51c55214ed2809d44b6e3514c3e5220,Assets/Self/Draw Object/ModifyExistingObject.cs,modified,6,6,12,"@@ -23,7 +23,7 @@ public class ModifyExistingObject : MonoBehaviour
+     private Vector3 dirToScale;
+     private float initalScale;
+     private GameObject pivot;
+-    private MeshCollider objSelectedMeshRend;
++    private MeshCollider objSelectedMeshCol;
+     void Start()
+     {
+         rayInteractor = GetComponent<XRRayInteractor>();
+@@ -59,7 +59,7 @@ private void Deselect(SelectExitEventArgs args)
+         selector = null;
+         Destroy(pivot);
+         pivot = null;
+-        objSelectedMeshRend = null;
++        objSelectedMeshCol = null;
+ 
+         
+     }
+@@ -96,15 +96,15 @@ private void Main()
+             Rigidbody selRB = selector.GetComponent<Rigidbody>();
+             initalScale = Mathf.Sign(FloatFromVector(objSelected.transform.localScale, dirToScale));
+             pivot = new GameObject(""Pivot"");
+-            objSelectedMeshRend = objSelected.GetComponent<MeshCollider>();
++            objSelectedMeshCol = objSelected.GetComponent<MeshCollider>();
+             Vector3 absDir = GetAbsoluteDirection(dirToScale);
+             int dirSign = (int)Mathf.Sign(FloatFromVector(dirToScale, dirToScale));
+-            float extent = FloatFromVector(objSelectedMeshRend.bounds.extents, dirToScale);
++            float extent = FloatFromVector(objSelectedMeshCol.bounds.extents, dirToScale);
+             pivot.transform.position = objSelected.transform.position;
+             objSelected.transform.SetParent(pivot.transform);
+             pivot.transform.position += dirToScale * extent;
+             objSelected.transform.localPosition += -dirToScale * extent;
+-
++            Debug.Log("""" + dirToScale);
+             if (dirToScale.x == 0)
+             {
+                 selRB.constraints = RigidbodyConstraints.FreezePositionX;
+@@ -133,7 +133,7 @@ private Vector3 FindLargestDirection(Vector3 point)
+             largestPoint = Mathf.Abs(point.z);
+             dir = Vector3.back;
+         }
+-        return Vector3.Scale(dir, new Vector3(Mathf.Sign(point.z), Mathf.Sign(point.y), Mathf.Sign(point.z)));
++        return Vector3.Scale(dir, new Vector3(Mathf.Sign(point.x), Mathf.Sign(point.y), Mathf.Sign(point.z)));
+     }
+     
+     private float FloatFromVector(Vector3 point, Vector3 direction)"
+j-shm/openxr-experimental-boundary,19,5d1bc8fe337d32ac07c2b64efb0c9208a28f724e,Assets/Self/Draw Object/HandleRayTable.cs,modified,5,0,5,"@@ -124,6 +124,7 @@ private void CleanUp()
+ 
+         if(placedObject != null)
+         {
++            placedObject.transform.localScale = GetAbsoluteVector(placedObject.transform.localScale);
+             placedObject.GetComponent<Collider>().enabled = true;
+             if(corner != null)
+             {
+@@ -133,6 +134,10 @@ private void CleanUp()
+         }
+ 
+     }
++    private Vector3 GetAbsoluteVector(Vector3 vector)
++    {
++        return new Vector3(Mathf.Abs(vector.x), Mathf.Abs(vector.y), Mathf.Abs(vector.z));
++    }
+ 
+     //used for the loading system
+     public void FullCleanUp()"
+j-shm/openxr-experimental-boundary,19,5d1bc8fe337d32ac07c2b64efb0c9208a28f724e,Assets/Self/Draw Object/ModifyExistingObject.cs,modified,44,13,57,"@@ -21,6 +21,9 @@ public class ModifyExistingObject : MonoBehaviour
+     private DrawObject resizer;
+ 
+     private Vector3 dirToScale;
++    private float initalScale;
++    private GameObject pivot;
++    private MeshCollider objSelectedMeshRend;
+     void Start()
+     {
+         rayInteractor = GetComponent<XRRayInteractor>();
+@@ -47,28 +50,29 @@ private void Select(SelectEnterEventArgs args)
+     }
+     private void Deselect(SelectExitEventArgs args)
+     {
+-        resizer.ResizeObject(objSelected, FloatFromVector(objSelected.transform.localScale, dirToScale), dirToScale);
+-        resizer.ResizeObject(objSelected,
+-            FloatFromVector(objSelected.transform.position - selector.transform.position,
+-                GetAbsoluteDirection(dirToScale)),
+-            dirToScale);
++        Resize();
+         Destroy(selector);
+         objSelected.transform.SetParent(objSelectedParent, true);
++        objSelected.transform.localScale = GetAbsoluteDirection(objSelected.transform.localScale);
+         objSelectedParent = null;
+         objSelected = null;
+         selector = null;
++        Destroy(pivot);
++        pivot = null;
++        objSelectedMeshRend = null;
++
+         
++    }
++    private void Resize()
++    {
++        pivot.transform.localScale = MakeVectorBaseOne(Vector3.Scale(-dirToScale, selector.transform.position - pivot.transform.position) / FloatFromVector(objSelected.transform.localScale, dirToScale));
+     }
+     private void Update()
+     {
+ 
+         if (selector != null)
+         {
+-            resizer.ResizeObject(objSelected, FloatFromVector(objSelected.transform.localScale, dirToScale), dirToScale);
+-            resizer.ResizeObject(objSelected,
+-                FloatFromVector(objSelected.transform.position - selector.transform.position,
+-                    GetAbsoluteDirection(dirToScale)),
+-                dirToScale);
++            Resize();
+         }
+     }
+     protected virtual void selected(SelectEnterEventArgs args) => Select(args);
+@@ -83,13 +87,24 @@ private void Main()
+             var spawnedSelectorGrabComp = selector.GetComponent<XRGrabInteractable>();
+             man.SelectEnter((IXRSelectInteractor)objectRayInteractor, spawnedSelectorGrabComp);
+             spawnedSelectorGrabComp.selectExited.AddListener(exited);
++            var gkjfdgjkdfg = new GameObject(""LOOK HERE!!"");
++            gkjfdgjkdfg.transform.position = res.point;
++            gkjfdgjkdfg.transform.SetParent(objSelected.transform,true);
+             selector.transform.SetParent(objSelected.transform, true);
+             dirToScale = FindLargestDirection(selector.transform.localPosition);
+             selector.transform.SetParent(null, true);
+             Rigidbody selRB = selector.GetComponent<Rigidbody>();
+-            Debug.DrawRay(objSelected.transform.position, dirToScale*100);
+-            Debug.DrawRay(selector.transform.position, dirToScale*100);
+-            Debug.Log(dirToScale);
++            initalScale = Mathf.Sign(FloatFromVector(objSelected.transform.localScale, dirToScale));
++            pivot = new GameObject(""Pivot"");
++            objSelectedMeshRend = objSelected.GetComponent<MeshCollider>();
++            Vector3 absDir = GetAbsoluteDirection(dirToScale);
++            int dirSign = (int)Mathf.Sign(FloatFromVector(dirToScale, dirToScale));
++            float extent = FloatFromVector(objSelectedMeshRend.bounds.extents, dirToScale);
++            pivot.transform.position = objSelected.transform.position;
++            objSelected.transform.SetParent(pivot.transform);
++            pivot.transform.position += dirToScale * extent;
++            objSelected.transform.localPosition += -dirToScale * extent;
++
+             if (dirToScale.x == 0)
+             {
+                 selRB.constraints = RigidbodyConstraints.FreezePositionX;
+@@ -142,4 +157,20 @@ private Vector3 GetAbsoluteDirection(Vector3 direction)
+     {
+         return new Vector3(Mathf.Abs(direction.x), Mathf.Abs(direction.y), Mathf.Abs(direction.z));
+     }
++    private Vector3 MakeVectorBaseOne(Vector3 vector)
++    {
++        if (vector.x != 0)
++        {
++            return new Vector3(vector.x, 1, 1);
++        }
++        if (vector.y != 0)
++        {
++            return new Vector3(1, vector.y, 1);
++        }
++        if (vector.z != 0)
++        {
++            return new Vector3(1, 1, vector.z);
++        }
++        return vector;
++    }
+ }"
+j-shm/openxr-experimental-boundary,19,01e462894f6b17ceaae4b174f11793c8561e78d0,Assets/Self/Draw Object/DrawObject.cs,modified,1,12,13,"@@ -14,18 +14,7 @@ private void Resize(GameObject obj,float amount, Vector3 direction)
+     }
+     public void ResizeObject(GameObject obj, float amount, Vector3 direction)
+     {
+-        /*
+-        if(direction == Vector3.up || direction == Vector3.down)
+-        {
+-            Resize(obj, obj.transform.localScale.y, Vector3.down);
+-        } else if(direction == Vector3.left || direction == Vector3.right)
+-        {
+-            Resize(obj, obj.transform.localScale.x, Vector3.left);
+-        } else
+-        {
+-            Resize(obj, obj.transform.localScale.z, Vector3.back);
+-        }
+-        */
++
+         Resize(obj, amount, direction);
+     }
+     public void ResizeObject(GameObject placedObject, Vector3 spawnPoint, Vector3 maxPoint, Vector3 addPoint)"
+j-shm/openxr-experimental-boundary,19,01e462894f6b17ceaae4b174f11793c8561e78d0,Assets/Self/Draw Object/ModifyExistingObject.cs,modified,17,5,22,"@@ -47,7 +47,11 @@ private void Select(SelectEnterEventArgs args)
+     }
+     private void Deselect(SelectExitEventArgs args)
+     {
+-        resizer.ResizeObject(objSelected, FloatFromVector(selector.transform.position - objSelected.transform.position, dirToScale), dirToScale);
++        resizer.ResizeObject(objSelected, FloatFromVector(objSelected.transform.localScale, dirToScale), dirToScale);
++        resizer.ResizeObject(objSelected,
++            FloatFromVector(objSelected.transform.position - selector.transform.position,
++                GetAbsoluteDirection(dirToScale)),
++            dirToScale);
+         Destroy(selector);
+         objSelected.transform.SetParent(objSelectedParent, true);
+         objSelectedParent = null;
+@@ -60,7 +64,11 @@ private void Update()
+ 
+         if (selector != null)
+         {
+-            resizer.ResizeObject(objSelected, FloatFromVector(selector.transform.position - objSelected.transform.position, dirToScale), dirToScale);
++            resizer.ResizeObject(objSelected, FloatFromVector(objSelected.transform.localScale, dirToScale), dirToScale);
++            resizer.ResizeObject(objSelected,
++                FloatFromVector(objSelected.transform.position - selector.transform.position,
++                    GetAbsoluteDirection(dirToScale)),
++                dirToScale);
+         }
+     }
+     protected virtual void selected(SelectEnterEventArgs args) => Select(args);
+@@ -118,16 +126,20 @@ private float FloatFromVector(Vector3 point, Vector3 direction)
+         Vector3 multipliedPoint = Vector3.Scale(point , direction);
+         if(multipliedPoint.x != 0)
+         {
+-            return multipliedPoint.x;
++            return point.x;
+         }
+         if (multipliedPoint.y != 0)
+         {
+-            return multipliedPoint.y;
++            return point.y;
+         }
+         if (multipliedPoint.z != 0)
+         {
+-            return multipliedPoint.z;
++            return point.z;
+         }
+         return 0;
+     }
++    private Vector3 GetAbsoluteDirection(Vector3 direction)
++    {
++        return new Vector3(Mathf.Abs(direction.x), Mathf.Abs(direction.y), Mathf.Abs(direction.z));
++    }
+ }"
+j-shm/openxr-experimental-boundary,19,b60cf66ee9475b86d868fdfdcba0047d0e8bf6b4,Assets/Scenes/DemoScene.unity,modified,6,6,12,"@@ -997,7 +997,7 @@ PrefabInstance:
+     - target: {fileID: 7462879561657043759, guid: ad818c36731146e994540a1896ad8f24,
+         type: 3}
+       propertyPath: m_EnableUIInteraction
+-      value: 0
++      value: 1
+       objectReference: {fileID: 0}
+     - target: {fileID: 7462879561657043759, guid: ad818c36731146e994540a1896ad8f24,
+         type: 3}
+@@ -2810,12 +2810,12 @@ PrefabInstance:
+     - target: {fileID: 7462879561657043759, guid: ad818c36731146e994540a1896ad8f24,
+         type: 3}
+       propertyPath: m_RaycastMask.m_Bits
+-      value: 8
++      value: 4294967295
+       objectReference: {fileID: 0}
+     - target: {fileID: 7462879561657043759, guid: ad818c36731146e994540a1896ad8f24,
+         type: 3}
+       propertyPath: m_EnableUIInteraction
+-      value: 0
++      value: 1
+       objectReference: {fileID: 0}
+     - target: {fileID: 7462879561657043759, guid: ad818c36731146e994540a1896ad8f24,
+         type: 3}
+@@ -5192,7 +5192,7 @@ PrefabInstance:
+     - target: {fileID: 7462879561657043759, guid: ad818c36731146e994540a1896ad8f24,
+         type: 3}
+       propertyPath: m_EnableUIInteraction
+-      value: 0
++      value: 1
+       objectReference: {fileID: 0}
+     - target: {fileID: 7462879561657043759, guid: ad818c36731146e994540a1896ad8f24,
+         type: 3}
+@@ -6067,7 +6067,7 @@ PrefabInstance:
+     - target: {fileID: 7462879561657043759, guid: ad818c36731146e994540a1896ad8f24,
+         type: 3}
+       propertyPath: m_EnableUIInteraction
+-      value: 0
++      value: 1
+       objectReference: {fileID: 0}
+     - target: {fileID: 7462879561657043759, guid: ad818c36731146e994540a1896ad8f24,
+         type: 3}
+@@ -6425,7 +6425,7 @@ PrefabInstance:
+     - target: {fileID: 7462879561657043759, guid: ad818c36731146e994540a1896ad8f24,
+         type: 3}
+       propertyPath: m_EnableUIInteraction
+-      value: 0
++      value: 1
+       objectReference: {fileID: 0}
+     - target: {fileID: 7462879561657043759, guid: ad818c36731146e994540a1896ad8f24,
+         type: 3}"
+j-shm/openxr-experimental-boundary,19,b60cf66ee9475b86d868fdfdcba0047d0e8bf6b4,Assets/Self/Draw Object/HandleRayTable.cs,modified,1,0,1,"@@ -124,6 +124,7 @@ private void CleanUp()
+ 
+         if(placedObject != null)
+         {
++            placedObject.GetComponent<Collider>().enabled = true;
+             if(corner != null)
+             {
+                 placedObject.transform.SetParent(corner.transform, true);"
+j-shm/openxr-experimental-boundary,19,b60cf66ee9475b86d868fdfdcba0047d0e8bf6b4,Assets/Self/Prefabs/Obstacle.prefab,modified,2,1,3,"@@ -197,7 +197,7 @@ MeshCollider:
+   m_GameObject: {fileID: 5997841491947964950}
+   m_Material: {fileID: 0}
+   m_IsTrigger: 0
+-  m_Enabled: 1
++  m_Enabled: 0
+   serializedVersion: 4
+   m_Convex: 1
+   m_CookingOptions: 30
+@@ -215,3 +215,4 @@ MonoBehaviour:
+   m_Name: 
+   m_EditorClassIdentifier: 
+   placed: 0
++  objectType: 0"
+j-shm/openxr-experimental-boundary,19,25b409007414cb6f30ee901db252e0159d8fc098,Assets/Scenes/DemoScene.unity,modified,4,4,8,"@@ -709,8 +709,8 @@ RectTransform:
+   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+   m_AnchorMin: {x: 0, y: 0}
+   m_AnchorMax: {x: 0, y: 0}
+-  m_AnchoredPosition: {x: 0, y: 0}
+-  m_SizeDelta: {x: 0, y: 0}
++  m_AnchoredPosition: {x: 147.05, y: 0}
++  m_SizeDelta: {x: 262.1, y: 0}
+   m_Pivot: {x: 0.5, y: 0.5}
+ --- !u!114 &248855836
+ MonoBehaviour:
+@@ -4556,8 +4556,8 @@ RectTransform:
+   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+   m_AnchorMin: {x: 0, y: 0}
+   m_AnchorMax: {x: 0, y: 0}
+-  m_AnchoredPosition: {x: 0, y: 0}
+-  m_SizeDelta: {x: 0, y: 0}
++  m_AnchoredPosition: {x: 147.05, y: 0}
++  m_SizeDelta: {x: 262.1, y: 0}
+   m_Pivot: {x: 0.5, y: 0.5}
+ --- !u!1 &3797002579361771127
+ GameObject:"
+j-shm/openxr-experimental-boundary,19,25b409007414cb6f30ee901db252e0159d8fc098,Assets/Self/Draw Object/ModifyExistingObject.cs,modified,5,3,8,"@@ -41,6 +41,7 @@ private void Select(SelectEnterEventArgs args)
+             Debug.Log(""we're getting to the selected part!"");
+             objSelected = args.interactableObject.transform.gameObject;
+             objSelectedParent = objSelected.transform.parent;
++            objSelected.transform.SetParent(null, true);
+             Main();
+         }
+     }
+@@ -78,8 +79,10 @@ private void Main()
+             dirToScale = FindLargestDirection(selector.transform.localPosition);
+             selector.transform.SetParent(null, true);
+             Rigidbody selRB = selector.GetComponent<Rigidbody>();
+-            Debug.DrawRay(objSelected.transform.position, dirToScale); 
+-            if(dirToScale.x == 0)
++            Debug.DrawRay(objSelected.transform.position, dirToScale*100);
++            Debug.DrawRay(selector.transform.position, dirToScale*100);
++            Debug.Log(dirToScale);
++            if (dirToScale.x == 0)
+             {
+                 selRB.constraints = RigidbodyConstraints.FreezePositionX;
+             }
+@@ -91,7 +94,6 @@ private void Main()
+             {
+                 selRB.constraints = RigidbodyConstraints.FreezePositionZ;
+             }
+-            objSelected.transform.SetParent(null, true);
+         }
+     }
+     private Vector3 FindLargestDirection(Vector3 point)"
+j-shm/openxr-experimental-boundary,19,25b409007414cb6f30ee901db252e0159d8fc098,Assets/XR/Settings/OpenXR Package Settings.asset,added,507,0,507,"@@ -0,0 +1,507 @@
++%YAML 1.1
++%TAG !u! tag:unity3d.com,2011:
++--- !u!114 &-9083199056600912302
++MonoBehaviour:
++  m_ObjectHideFlags: 0
++  m_CorrespondingSourceObject: {fileID: 0}
++  m_PrefabInstance: {fileID: 0}
++  m_PrefabAsset: {fileID: 0}
++  m_GameObject: {fileID: 0}
++  m_Enabled: 1
++  m_EditorHideFlags: 0
++  m_Script: {fileID: 11500000, guid: 0d6ccd3d0ef0f1d458e69421dccbdae1, type: 3}
++  m_Name: ValveIndexControllerProfile Standalone
++  m_EditorClassIdentifier: 
++  m_enabled: 0
++  nameUi: Valve Index Controller Profile
++  version: 0.0.1
++  featureIdInternal: com.unity.openxr.feature.input.valveindex
++  openxrExtensionStrings: 
++  company: Unity
++  priority: 0
++  required: 0
++--- !u!114 &-7188521201929514181
++MonoBehaviour:
++  m_ObjectHideFlags: 0
++  m_CorrespondingSourceObject: {fileID: 0}
++  m_PrefabInstance: {fileID: 0}
++  m_PrefabAsset: {fileID: 0}
++  m_GameObject: {fileID: 0}
++  m_Enabled: 1
++  m_EditorHideFlags: 0
++  m_Script: {fileID: 11500000, guid: 056125dd64c0ed540b40a4af74f7b495, type: 3}
++  m_Name: RuntimeDebuggerOpenXRFeature Standalone
++  m_EditorClassIdentifier: 
++  m_enabled: 0
++  nameUi: Runtime Debugger
++  version: 1
++  featureIdInternal: com.unity.openxr.features.runtimedebugger
++  openxrExtensionStrings: 
++  company: Unity
++  priority: 0
++  required: 0
++  cacheSize: 1048576
++  perThreadCacheSize: 51200
++--- !u!114 &-6340285869465700631
++MonoBehaviour:
++  m_ObjectHideFlags: 0
++  m_CorrespondingSourceObject: {fileID: 0}
++  m_PrefabInstance: {fileID: 0}
++  m_PrefabAsset: {fileID: 0}
++  m_GameObject: {fileID: 0}
++  m_Enabled: 1
++  m_EditorHideFlags: 0
++  m_Script: {fileID: 11500000, guid: c4b862ee14fb479fbfe5fffe655d3ed3, type: 3}
++  m_Name: MetaQuestTouchProControllerProfile Android
++  m_EditorClassIdentifier: 
++  m_enabled: 0
++  nameUi: Meta Quest Touch Pro Controller Profile
++  version: 0.0.1
++  featureIdInternal: com.unity.openxr.feature.input.metaquestpro
++  openxrExtensionStrings: XR_FB_touch_controller_pro
++  company: Unity
++  priority: 0
++  required: 0
++--- !u!114 &-3953246091308595203
++MonoBehaviour:
++  m_ObjectHideFlags: 0
++  m_CorrespondingSourceObject: {fileID: 0}
++  m_PrefabInstance: {fileID: 0}
++  m_PrefabAsset: {fileID: 0}
++  m_GameObject: {fileID: 0}
++  m_Enabled: 1
++  m_EditorHideFlags: 0
++  m_Script: {fileID: 11500000, guid: 0f6bfdbcb316ed242b30a8798c9eb853, type: 3}
++  m_Name: KHRSimpleControllerProfile Android
++  m_EditorClassIdentifier: 
++  m_enabled: 0
++  nameUi: Khronos Simple Controller Profile
++  version: 0.0.1
++  featureIdInternal: com.unity.openxr.feature.input.khrsimpleprofile
++  openxrExtensionStrings: 
++  company: Unity
++  priority: 0
++  required: 0
++--- !u!114 &-2759203911792874803
++MonoBehaviour:
++  m_ObjectHideFlags: 0
++  m_CorrespondingSourceObject: {fileID: 0}
++  m_PrefabInstance: {fileID: 0}
++  m_PrefabAsset: {fileID: 0}
++  m_GameObject: {fileID: 0}
++  m_Enabled: 1
++  m_EditorHideFlags: 0
++  m_Script: {fileID: 11500000, guid: c4b862ee14fb479fbfe5fffe655d3ed3, type: 3}
++  m_Name: MetaQuestTouchProControllerProfile Standalone
++  m_EditorClassIdentifier: 
++  m_enabled: 0
++  nameUi: Meta Quest Touch Pro Controller Profile
++  version: 0.0.1
++  featureIdInternal: com.unity.openxr.feature.input.metaquestpro
++  openxrExtensionStrings: XR_FB_touch_controller_pro
++  company: Unity
++  priority: 0
++  required: 0
++--- !u!114 &-2594433866958198178
++MonoBehaviour:
++  m_ObjectHideFlags: 0
++  m_CorrespondingSourceObject: {fileID: 0}
++  m_PrefabInstance: {fileID: 0}
++  m_PrefabAsset: {fileID: 0}
++  m_GameObject: {fileID: 0}
++  m_Enabled: 1
++  m_EditorHideFlags: 0
++  m_Script: {fileID: 11500000, guid: 9ef793c31862a37448e907829482ef80, type: 3}
++  m_Name: OculusQuestFeature Android
++  m_EditorClassIdentifier: 
++  m_enabled: 0
++  nameUi: Oculus Quest Support
++  version: 1.0.0
++  featureIdInternal: com.unity.openxr.feature.oculusquest
++  openxrExtensionStrings: XR_OCULUS_android_initialize_loader
++  company: Unity
++  priority: 0
++  required: 0
++  targetQuest: 1
++  targetQuest2: 1
++--- !u!114 &-1670958270969576330
++MonoBehaviour:
++  m_ObjectHideFlags: 0
++  m_CorrespondingSourceObject: {fileID: 0}
++  m_PrefabInstance: {fileID: 0}
++  m_PrefabAsset: {fileID: 0}
++  m_GameObject: {fileID: 0}
++  m_Enabled: 1
++  m_EditorHideFlags: 0
++  m_Script: {fileID: 11500000, guid: 7de993716e042c6499d0c18eed3a773c, type: 3}
++  m_Name: MockRuntime Android
++  m_EditorClassIdentifier: 
++  m_enabled: 0
++  nameUi: Mock Runtime
++  version: 0.0.2
++  featureIdInternal: com.unity.openxr.feature.mockruntime
++  openxrExtensionStrings: XR_UNITY_null_gfx XR_UNITY_android_present
++  company: Unity
++  priority: 0
++  required: 0
++  ignoreValidationErrors: 0
++--- !u!114 &-1151483725411070790
++MonoBehaviour:
++  m_ObjectHideFlags: 0
++  m_CorrespondingSourceObject: {fileID: 0}
++  m_PrefabInstance: {fileID: 0}
++  m_PrefabAsset: {fileID: 0}
++  m_GameObject: {fileID: 0}
++  m_Enabled: 1
++  m_EditorHideFlags: 0
++  m_Script: {fileID: 11500000, guid: 056125dd64c0ed540b40a4af74f7b495, type: 3}
++  m_Name: RuntimeDebuggerOpenXRFeature Android
++  m_EditorClassIdentifier: 
++  m_enabled: 0
++  nameUi: Runtime Debugger
++  version: 1
++  featureIdInternal: com.unity.openxr.features.runtimedebugger
++  openxrExtensionStrings: 
++  company: Unity
++  priority: 0
++  required: 0
++  cacheSize: 1048576
++  perThreadCacheSize: 51200
++--- !u!114 &-1044386352166045250
++MonoBehaviour:
++  m_ObjectHideFlags: 0
++  m_CorrespondingSourceObject: {fileID: 0}
++  m_PrefabInstance: {fileID: 0}
++  m_PrefabAsset: {fileID: 0}
++  m_GameObject: {fileID: 0}
++  m_Enabled: 1
++  m_EditorHideFlags: 0
++  m_Script: {fileID: 11500000, guid: feeef8d85de8db242bdda70cc7ff5acd, type: 3}
++  m_Name: OculusTouchControllerProfile Standalone
++  m_EditorClassIdentifier: 
++  m_enabled: 0
++  nameUi: Oculus Touch Controller Profile
++  version: 0.0.1
++  featureIdInternal: com.unity.openxr.feature.input.oculustouch
++  openxrExtensionStrings: 
++  company: Unity
++  priority: 0
++  required: 0
++--- !u!114 &-685605031405881764
++MonoBehaviour:
++  m_ObjectHideFlags: 0
++  m_CorrespondingSourceObject: {fileID: 0}
++  m_PrefabInstance: {fileID: 0}
++  m_PrefabAsset: {fileID: 0}
++  m_GameObject: {fileID: 0}
++  m_Enabled: 1
++  m_EditorHideFlags: 0
++  m_Script: {fileID: 11500000, guid: b3cf79659a011bd419c7a2a30eb74e9a, type: 3}
++  m_Name: EyeGazeInteraction Android
++  m_EditorClassIdentifier: 
++  m_enabled: 0
++  nameUi: Eye Gaze Interaction Profile
++  version: 0.0.1
++  featureIdInternal: com.unity.openxr.feature.input.eyetracking
++  openxrExtensionStrings: XR_EXT_eye_gaze_interaction
++  company: Unity
++  priority: 0
++  required: 0
++--- !u!114 &11400000
++MonoBehaviour:
++  m_ObjectHideFlags: 0
++  m_CorrespondingSourceObject: {fileID: 0}
++  m_PrefabInstance: {fileID: 0}
++  m_PrefabAsset: {fileID: 0}
++  m_GameObject: {fileID: 0}
++  m_Enabled: 1
++  m_EditorHideFlags: 0
++  m_Script: {fileID: 11500000, guid: 9f0ebc320a151d3408ea1e9fce54d40e, type: 3}
++  m_Name: OpenXR Package Settings
++  m_EditorClassIdentifier: 
++  Keys: 0100000007000000
++  Values:
++  - {fileID: 8293528528515457800}
++  - {fileID: 5954323850861451434}
++--- !u!114 &161610402706193131
++MonoBehaviour:
++  m_ObjectHideFlags: 0
++  m_CorrespondingSourceObject: {fileID: 0}
++  m_PrefabInstance: {fileID: 0}
++  m_PrefabAsset: {fileID: 0}
++  m_GameObject: {fileID: 0}
++  m_Enabled: 1
++  m_EditorHideFlags: 0
++  m_Script: {fileID: 11500000, guid: 7de993716e042c6499d0c18eed3a773c, type: 3}
++  m_Name: MockRuntime Standalone
++  m_EditorClassIdentifier: 
++  m_enabled: 0
++  nameUi: Mock Runtime
++  version: 0.0.2
++  featureIdInternal: com.unity.openxr.feature.mockruntime
++  openxrExtensionStrings: XR_UNITY_null_gfx XR_UNITY_android_present
++  company: Unity
++  priority: 0
++  required: 0
++  ignoreValidationErrors: 0
++--- !u!114 &2427256587327152754
++MonoBehaviour:
++  m_ObjectHideFlags: 0
++  m_CorrespondingSourceObject: {fileID: 0}
++  m_PrefabInstance: {fileID: 0}
++  m_PrefabAsset: {fileID: 0}
++  m_GameObject: {fileID: 0}
++  m_Enabled: 1
++  m_EditorHideFlags: 0
++  m_Script: {fileID: 11500000, guid: f928d0d73a35f294fbe357ca17aa3547, type: 3}
++  m_Name: MicrosoftHandInteraction Standalone
++  m_EditorClassIdentifier: 
++  m_enabled: 0
++  nameUi: Microsoft Hand Interaction Profile
++  version: 0.0.1
++  featureIdInternal: com.unity.openxr.feature.input.handtracking
++  openxrExtensionStrings: XR_MSFT_hand_interaction
++  company: Unity
++  priority: 0
++  required: 0
++--- !u!114 &2803610657427535655
++MonoBehaviour:
++  m_ObjectHideFlags: 0
++  m_CorrespondingSourceObject: {fileID: 0}
++  m_PrefabInstance: {fileID: 0}
++  m_PrefabAsset: {fileID: 0}
++  m_GameObject: {fileID: 0}
++  m_Enabled: 1
++  m_EditorHideFlags: 0
++  m_Script: {fileID: 11500000, guid: feeef8d85de8db242bdda70cc7ff5acd, type: 3}
++  m_Name: OculusTouchControllerProfile Android
++  m_EditorClassIdentifier: 
++  m_enabled: 0
++  nameUi: Oculus Touch Controller Profile
++  version: 0.0.1
++  featureIdInternal: com.unity.openxr.feature.input.oculustouch
++  openxrExtensionStrings: 
++  company: Unity
++  priority: 0
++  required: 0
++--- !u!114 &3766736776869462410
++MonoBehaviour:
++  m_ObjectHideFlags: 0
++  m_CorrespondingSourceObject: {fileID: 0}
++  m_PrefabInstance: {fileID: 0}
++  m_PrefabAsset: {fileID: 0}
++  m_GameObject: {fileID: 0}
++  m_Enabled: 1
++  m_EditorHideFlags: 0
++  m_Script: {fileID: 11500000, guid: f928d0d73a35f294fbe357ca17aa3547, type: 3}
++  m_Name: MicrosoftHandInteraction Android
++  m_EditorClassIdentifier: 
++  m_enabled: 0
++  nameUi: Microsoft Hand Interaction Profile
++  version: 0.0.1
++  featureIdInternal: com.unity.openxr.feature.input.handtracking
++  openxrExtensionStrings: XR_MSFT_hand_interaction
++  company: Unity
++  priority: 0
++  required: 0
++--- !u!114 &5115512578310483404
++MonoBehaviour:
++  m_ObjectHideFlags: 0
++  m_CorrespondingSourceObject: {fileID: 0}
++  m_PrefabInstance: {fileID: 0}
++  m_PrefabAsset: {fileID: 0}
++  m_GameObject: {fileID: 0}
++  m_Enabled: 1
++  m_EditorHideFlags: 0
++  m_Script: {fileID: 11500000, guid: 486b5e28864f9a94b979b9620ce5006d, type: 3}
++  m_Name: ConformanceAutomationFeature Standalone
++  m_EditorClassIdentifier: 
++  m_enabled: 0
++  nameUi: Conformance Automation
++  version: 0.0.1
++  featureIdInternal: com.unity.openxr.feature.conformance
++  openxrExtensionStrings: XR_EXT_conformance_automation
++  company: Unity
++  priority: 0
++  required: 0
++--- !u!114 &5503003918200912158
++MonoBehaviour:
++  m_ObjectHideFlags: 0
++  m_CorrespondingSourceObject: {fileID: 0}
++  m_PrefabInstance: {fileID: 0}
++  m_PrefabAsset: {fileID: 0}
++  m_GameObject: {fileID: 0}
++  m_Enabled: 1
++  m_EditorHideFlags: 0
++  m_Script: {fileID: 11500000, guid: 0f6bfdbcb316ed242b30a8798c9eb853, type: 3}
++  m_Name: KHRSimpleControllerProfile Standalone
++  m_EditorClassIdentifier: 
++  m_enabled: 0
++  nameUi: Khronos Simple Controller Profile
++  version: 0.0.1
++  featureIdInternal: com.unity.openxr.feature.input.khrsimpleprofile
++  openxrExtensionStrings: 
++  company: Unity
++  priority: 0
++  required: 0
++--- !u!114 &5954323850861451434
++MonoBehaviour:
++  m_ObjectHideFlags: 0
++  m_CorrespondingSourceObject: {fileID: 0}
++  m_PrefabInstance: {fileID: 0}
++  m_PrefabAsset: {fileID: 0}
++  m_GameObject: {fileID: 0}
++  m_Enabled: 1
++  m_EditorHideFlags: 0
++  m_Script: {fileID: 11500000, guid: b5a1f07dc5afe854f9f12a4194aca3fb, type: 3}
++  m_Name: Android
++  m_EditorClassIdentifier: 
++  features:
++  - {fileID: 8779424031101604545}
++  - {fileID: -685605031405881764}
++  - {fileID: -3953246091308595203}
++  - {fileID: 7541269222913831058}
++  - {fileID: -6340285869465700631}
++  - {fileID: 3766736776869462410}
++  - {fileID: -1670958270969576330}
++  - {fileID: -2594433866958198178}
++  - {fileID: 2803610657427535655}
++  - {fileID: -1151483725411070790}
++  m_renderMode: 1
++  m_depthSubmissionMode: 0
++--- !u!114 &6441674838042268749
++MonoBehaviour:
++  m_ObjectHideFlags: 0
++  m_CorrespondingSourceObject: {fileID: 0}
++  m_PrefabInstance: {fileID: 0}
++  m_PrefabAsset: {fileID: 0}
++  m_GameObject: {fileID: 0}
++  m_Enabled: 1
++  m_EditorHideFlags: 0
++  m_Script: {fileID: 11500000, guid: 274c02963f889a64e90bc2e596e21d13, type: 3}
++  m_Name: HTCViveControllerProfile Standalone
++  m_EditorClassIdentifier: 
++  m_enabled: 0
++  nameUi: HTC Vive Controller Profile
++  version: 0.0.1
++  featureIdInternal: com.unity.openxr.feature.input.htcvive
++  openxrExtensionStrings: 
++  company: Unity
++  priority: 0
++  required: 0
++--- !u!114 &6878156396379313718
++MonoBehaviour:
++  m_ObjectHideFlags: 0
++  m_CorrespondingSourceObject: {fileID: 0}
++  m_PrefabInstance: {fileID: 0}
++  m_PrefabAsset: {fileID: 0}
++  m_GameObject: {fileID: 0}
++  m_Enabled: 1
++  m_EditorHideFlags: 0
++  m_Script: {fileID: 11500000, guid: 761fdd4502cb7a84e9ec7a2b24f33f37, type: 3}
++  m_Name: MicrosoftMotionControllerProfile Standalone
++  m_EditorClassIdentifier: 
++  m_enabled: 0
++  nameUi: Microsoft Motion Controller Profile
++  version: 0.0.1
++  featureIdInternal: com.unity.openxr.feature.input.microsoftmotioncontroller
++  openxrExtensionStrings: 
++  company: Unity
++  priority: 0
++  required: 0
++--- !u!114 &7181267672549027817
++MonoBehaviour:
++  m_ObjectHideFlags: 0
++  m_CorrespondingSourceObject: {fileID: 0}
++  m_PrefabInstance: {fileID: 0}
++  m_PrefabAsset: {fileID: 0}
++  m_GameObject: {fileID: 0}
++  m_Enabled: 1
++  m_EditorHideFlags: 0
++  m_Script: {fileID: 11500000, guid: b3cf79659a011bd419c7a2a30eb74e9a, type: 3}
++  m_Name: EyeGazeInteraction Standalone
++  m_EditorClassIdentifier: 
++  m_enabled: 0
++  nameUi: Eye Gaze Interaction Profile
++  version: 0.0.1
++  featureIdInternal: com.unity.openxr.feature.input.eyetracking
++  openxrExtensionStrings: XR_EXT_eye_gaze_interaction
++  company: Unity
++  priority: 0
++  required: 0
++--- !u!114 &7541269222913831058
++MonoBehaviour:
++  m_ObjectHideFlags: 0
++  m_CorrespondingSourceObject: {fileID: 0}
++  m_PrefabInstance: {fileID: 0}
++  m_PrefabAsset: {fileID: 0}
++  m_GameObject: {fileID: 0}
++  m_Enabled: 1
++  m_EditorHideFlags: 0
++  m_Script: {fileID: 11500000, guid: f647cc0545697264a9878224faada6d5, type: 3}
++  m_Name: MetaQuestFeature Android
++  m_EditorClassIdentifier: 
++  m_enabled: 0
++  nameUi: Meta Quest Support
++  version: 1.0.0
++  featureIdInternal: com.unity.openxr.feature.metaquest
++  openxrExtensionStrings: XR_OCULUS_android_initialize_loader
++  company: Unity
++  priority: 0
++  required: 0
++  targetDevices:
++  - visibleName: Quest
++    manifestName: quest
++    enabled: 1
++  - visibleName: Quest 2
++    manifestName: quest2
++    enabled: 1
++  - visibleName: Quest Pro
++    manifestName: cambria
++    enabled: 1
++--- !u!114 &8293528528515457800
++MonoBehaviour:
++  m_ObjectHideFlags: 0
++  m_CorrespondingSourceObject: {fileID: 0}
++  m_PrefabInstance: {fileID: 0}
++  m_PrefabAsset: {fileID: 0}
++  m_GameObject: {fileID: 0}
++  m_Enabled: 1
++  m_EditorHideFlags: 0
++  m_Script: {fileID: 11500000, guid: b5a1f07dc5afe854f9f12a4194aca3fb, type: 3}
++  m_Name: Standalone
++  m_EditorClassIdentifier: 
++  features:
++  - {fileID: 5115512578310483404}
++  - {fileID: 7181267672549027817}
++  - {fileID: 6441674838042268749}
++  - {fileID: 5503003918200912158}
++  - {fileID: -2759203911792874803}
++  - {fileID: 2427256587327152754}
++  - {fileID: 6878156396379313718}
++  - {fileID: 161610402706193131}
++  - {fileID: -1044386352166045250}
++  - {fileID: -7188521201929514181}
++  - {fileID: -9083199056600912302}
++  m_renderMode: 1
++  m_depthSubmissionMode: 0
++--- !u!114 &8779424031101604545
++MonoBehaviour:
++  m_ObjectHideFlags: 0
++  m_CorrespondingSourceObject: {fileID: 0}
++  m_PrefabInstance: {fileID: 0}
++  m_PrefabAsset: {fileID: 0}
++  m_GameObject: {fileID: 0}
++  m_Enabled: 1
++  m_EditorHideFlags: 0
++  m_Script: {fileID: 11500000, guid: 486b5e28864f9a94b979b9620ce5006d, type: 3}
++  m_Name: ConformanceAutomationFeature Android
++  m_EditorClassIdentifier: 
++  m_enabled: 0
++  nameUi: Conformance Automation
++  version: 0.0.1
++  featureIdInternal: com.unity.openxr.feature.conformance
++  openxrExtensionStrings: XR_EXT_conformance_automation
++  company: Unity
++  priority: 0
++  required: 0"
+j-shm/openxr-experimental-boundary,19,25b409007414cb6f30ee901db252e0159d8fc098,Assets/XR/Settings/OpenXR Package Settings.asset.meta,added,8,0,8,"@@ -0,0 +1,8 @@
++fileFormatVersion: 2
++guid: 6b543f9b3e92aa1428cd74665f1b0a96
++NativeFormatImporter:
++  externalObjects: {}
++  mainObjectFileID: 11400000
++  userData: 
++  assetBundleName: 
++  assetBundleVariant: "
+j-shm/openxr-experimental-boundary,19,25b409007414cb6f30ee901db252e0159d8fc098,ProjectSettings/EditorBuildSettings.asset,modified,1,1,2,"@@ -16,5 +16,5 @@ EditorBuildSettings:
+       type: 2}
+     com.unity.xr.management.loader_settings: {fileID: 11400000, guid: 1a4c68ca72a83449f938d669337cb305,
+       type: 2}
+-    com.unity.xr.openxr.settings4: {fileID: 11400000, guid: 944f2c49ee5ec8148b12ae588c1e7cd0,
++    com.unity.xr.openxr.settings4: {fileID: 11400000, guid: 6b543f9b3e92aa1428cd74665f1b0a96,
+       type: 2}"

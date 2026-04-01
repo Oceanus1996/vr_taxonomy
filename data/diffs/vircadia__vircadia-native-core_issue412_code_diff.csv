@@ -1,0 +1,273 @@
+repo,issue_id,commit_sha,filename,file_status,additions,deletions,changes,patch
+vircadia/vircadia-native-core,412,b1bf855,cmake/ports/tbb/CMakeLists.txt,removed,0,25,25,"@@ -1,25 +0,0 @@
+-project(tbb CXX)
+-
+-file(GLOB SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/*)
+-file(COPY ${SOURCES} DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/src)
+-
+-include(${CMAKE_CURRENT_BINARY_DIR}/src/cmake/TBBBuild.cmake REQUIRED)
+-if(NOT BUILD_SHARED_LIBS)
+-    set(TBB_STATIC_INCLUDE extra_inc=big_iron.inc)
+-endif()
+-if(CMAKE_SYSTEM_NAME STREQUAL ""Darwin"")
+-  set(FORWARD_SDK_ROOT ""SDKROOT=${CMAKE_OSX_SYSROOT}"")
+-endif()
+-
+-tbb_build(TBB_ROOT ${CMAKE_CURRENT_BINARY_DIR}/src MAKE_ARGS ${TBB_STATIC_INCLUDE} ${FORWARD_SDK_ROOT})
+-
+-set(SUBDIR ${CMAKE_CURRENT_BINARY_DIR}/tbb_cmake_build/tbb_cmake_build_subdir)
+-if(CMAKE_BUILD_TYPE STREQUAL ""Release"")
+-    set(SUBDIR ""${SUBDIR}_release"")
+-else()
+-    set(SUBDIR ""${SUBDIR}_debug"")
+-endif()
+-
+-file(GLOB OUTPUTS ${SUBDIR}/*.so.* ${SUBDIR}/*.so ${SUBDIR}/*.a ${SUBDIR}/*.dylib ${SUBDIR}/*.dylib.*)
+-
+-install(FILES ${OUTPUTS} DESTINATION lib)"
+vircadia/vircadia-native-core,412,b1bf855,cmake/ports/tbb/CONTROL,modified,1,1,2,"@@ -1,4 +1,4 @@
+ Source: tbb
+-Version: 2019_U8-1
++Version: 2021.5.0
+ Homepage: https://github.com/oneapi-src/oneTBB
+ Description: Intel's Threading Building Blocks."
+vircadia/vircadia-native-core,412,b1bf855,cmake/ports/tbb/add-find-dependency.patch,added,13,0,13,"@@ -0,0 +1,13 @@
++diff --git a/CMakeLists.txt b/CMakeLists.txt
++index f71eff1..88a1315 100644
++--- a/CMakeLists.txt
+++++ b/CMakeLists.txt
++@@ -207,7 +207,7 @@ else()
++             DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}
++             COMPONENT devel)
++     file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake
++-               ""include(\${CMAKE_CURRENT_LIST_DIR}/${PROJECT_NAME}Targets.cmake)\n"")
+++               ""include(CMakeFindDependencyMacro)\nfind_dependency(Threads)\ninclude(\${CMAKE_CURRENT_LIST_DIR}/${PROJECT_NAME}Targets.cmake)\n"")
++ 
++     write_basic_package_version_file(""${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}ConfigVersion.cmake""
++                                      COMPATIBILITY AnyNewerVersion)"
+vircadia/vircadia-native-core,412,b1bf855,cmake/ports/tbb/fix-static-build.patch,modified,39,13,52,"@@ -1,13 +1,39 @@
+-diff --git a/src/tbb/cilk-tbb-interop.h b/src/tbb/cilk-tbb-interop.h
+-index 295734b..f35531e 100644
+---- a/src/tbb/cilk-tbb-interop.h
+-+++ b/src/tbb/cilk-tbb-interop.h
+-@@ -29,6 +29,8 @@
+- #else
+- #ifdef IN_CILK_RUNTIME
+- #define CILK_EXPORT __declspec(dllexport)
+-+#elif defined(IN_CILK_STATIC)
+-+#define CILK_EXPORT /* nothing */
+- #else
+- #define CILK_EXPORT __declspec(dllimport)
+- #endif  // IN_CILK_RUNTIME
++diff --git a/src/tbb/CMakeLists.txt b/src/tbb/CMakeLists.txt
++index f518086..02ca310 100644
++--- a/src/tbb/CMakeLists.txt
+++++ b/src/tbb/CMakeLists.txt
++@@ -12,7 +12,7 @@
++ # See the License for the specific language governing permissions and
++ # limitations under the License.
++ 
++-add_library(tbb SHARED
+++add_library(tbb
++     allocator.cpp
++     arena.cpp
++     arena_slot.cpp
++diff --git a/src/tbbmalloc/CMakeLists.txt b/src/tbbmalloc/CMakeLists.txt
++index 528436d..1311eab 100644
++--- a/src/tbbmalloc/CMakeLists.txt
+++++ b/src/tbbmalloc/CMakeLists.txt
++@@ -12,7 +12,7 @@
++ # See the License for the specific language governing permissions and
++ # limitations under the License.
++ 
++-add_library(tbbmalloc SHARED
+++add_library(tbbmalloc
++     backend.cpp
++     backref.cpp
++     frontend.cpp
++diff --git a/src/tbbmalloc_proxy/CMakeLists.txt b/src/tbbmalloc_proxy/CMakeLists.txt
++index c639e78..892f26e 100644
++--- a/src/tbbmalloc_proxy/CMakeLists.txt
+++++ b/src/tbbmalloc_proxy/CMakeLists.txt
++@@ -12,7 +12,7 @@
++ # See the License for the specific language governing permissions and
++ # limitations under the License.
++ 
++-add_library(tbbmalloc_proxy SHARED
+++add_library(tbbmalloc_proxy
++     function_replacement.cpp
++     proxy.cpp)
++ "
+vircadia/vircadia-native-core,412,b1bf855,cmake/ports/tbb/portfile.cmake,modified,28,107,135,"@@ -1,118 +1,39 @@
+ vcpkg_from_github(
+     OUT_SOURCE_PATH SOURCE_PATH
+     REPO oneapi-src/oneTBB
+-    REF eca91f16d7490a8abfdee652dadf457ec820cc37
+-    SHA512 7144e1dc68304b5358e6ea330431b6f0c61fadb147efa353a5b242777d6fabf7b8cf99b79cffb51b49b911dd17a9f1879619d6eebdf319f23ec3235c89cffc25
+-    HEAD_REF tbb_2019
+-    PATCHES fix-static-build.patch
++    REF 3df08fe234f23e732a122809b40eb129ae22733f
++    SHA512 078b0aef93fb49a974adc365a4147cd2d12704e59d448fa2e510cd4ac8fa77cc4c83eebc5612684ed36a907449c876e5717eba581c195e1d9a7faf0ae832cb00
++    HEAD_REF v2021.5.0
++    PATCHES
++        add-find-dependency.patch
+ )
+ 
+-file(COPY ${CMAKE_CURRENT_LIST_DIR}/CMakeLists.txt DESTINATION ${SOURCE_PATH})
+-
+-if (NOT VCPKG_TARGET_IS_WINDOWS)
+-    vcpkg_configure_cmake(
+-        SOURCE_PATH ${SOURCE_PATH}
+-        PREFER_NINJA
+-    )
+-
+-    vcpkg_install_cmake()
+-
+-    # Settings for TBBConfigInternal.cmake.in
+-    set(TBB_LIB_EXT a)
+-    set(TBB_LIB_PREFIX lib)
+-else()
+-    if (VCPKG_CRT_LINKAGE STREQUAL static)
+-        set(RELEASE_CONFIGURATION Release-MT)
+-        set(DEBUG_CONFIGURATION Debug-MT)
+-    else()
+-        set(RELEASE_CONFIGURATION Release)
+-        set(DEBUG_CONFIGURATION Debug)
+-    endif()
+-    
+-    macro(CONFIGURE_PROJ_FILE arg)
+-        set(CONFIGURE_FILE_NAME ${arg})
+-        set(CONFIGURE_BAK_FILE_NAME ${arg}.bak)
+-        if (NOT EXISTS ${CONFIGURE_BAK_FILE_NAME})
+-            configure_file(${CONFIGURE_FILE_NAME} ${CONFIGURE_BAK_FILE_NAME} COPYONLY)
+-        endif()
+-        configure_file(${CONFIGURE_BAK_FILE_NAME} ${CONFIGURE_FILE_NAME} COPYONLY)
+-        if (VCPKG_LIBRARY_LINKAGE STREQUAL static)
+-            file(READ ${CONFIGURE_FILE_NAME} SLN_CONFIGURE)
+-            string(REPLACE ""<ConfigurationType>DynamicLibrary<\/ConfigurationType>""
+-                        ""<ConfigurationType>StaticLibrary<\/ConfigurationType>"" SLN_CONFIGURE ""${SLN_CONFIGURE}"")
+-            string(REPLACE ""\/D_CRT_SECURE_NO_DEPRECATE""
+-                        ""\/D_CRT_SECURE_NO_DEPRECATE \/DIN_CILK_STATIC"" SLN_CONFIGURE ""${SLN_CONFIGURE}"")
+-            file(WRITE ${CONFIGURE_FILE_NAME} ""${SLN_CONFIGURE}"")
+-        else()
+-            file(READ ${CONFIGURE_FILE_NAME} SLN_CONFIGURE)
+-            string(REPLACE ""\/D_CRT_SECURE_NO_DEPRECATE""
+-                        ""\/D_CRT_SECURE_NO_DEPRECATE \/DIN_CILK_RUNTIME"" SLN_CONFIGURE ""${SLN_CONFIGURE}"")
+-            file(WRITE ${CONFIGURE_FILE_NAME} ""${SLN_CONFIGURE}"")
+-        endif()
+-    endmacro()
+-    
+-    CONFIGURE_PROJ_FILE(${SOURCE_PATH}/build/vs2013/tbb.vcxproj)
+-    CONFIGURE_PROJ_FILE(${SOURCE_PATH}/build/vs2013/tbbmalloc.vcxproj)
+-    CONFIGURE_PROJ_FILE(${SOURCE_PATH}/build/vs2013/tbbmalloc_proxy.vcxproj)
+-
+-    vcpkg_install_msbuild(
+-        SOURCE_PATH ${SOURCE_PATH}
+-        PROJECT_SUBPATH build/vs2013/makefile.sln
+-        RELEASE_CONFIGURATION ${RELEASE_CONFIGURATION}
+-        DEBUG_CONFIGURATION ${DEBUG_CONFIGURATION}
+-    )
+-    # Settings for TBBConfigInternal.cmake.in
+-    set(TBB_LIB_EXT lib)
+-    set(TBB_LIB_PREFIX)
+-endif()
+-
+-file(COPY
+-  ${SOURCE_PATH}/include/tbb
+-  ${SOURCE_PATH}/include/serial
+-  DESTINATION ${CURRENT_PACKAGES_DIR}/include)
++vcpkg_configure_cmake(
++    SOURCE_PATH ${SOURCE_PATH}
++    PREFER_NINJA
++    OPTIONS
++        -DTBB_TEST=OFF
++        -DTBB_EXAMPLES=OFF
++        -DTBB_STRICT=OFF
++        -DTBB_WINDOWS_DRIVER=OFF
++        -DTBB_NO_APPCONTAINER=OFF
++        -DTBB4PY_BUILD=OFF
++        -DTBB_CPF=OFF
++        -DTBB_FIND_PACKAGE=OFF
++)
+ 
+-# Settings for TBBConfigInternal.cmake.in
+-if(VCPKG_LIBRARY_LINKAGE STREQUAL ""static"")
+-    set(TBB_DEFAULT_COMPONENTS tbb tbbmalloc)
+-else()
+-    set(TBB_DEFAULT_COMPONENTS tbb tbbmalloc tbbmalloc_proxy)
+-endif()
++vcpkg_install_cmake()
++vcpkg_copy_pdbs()
+ 
+-file(READ ""${SOURCE_PATH}/include/tbb/tbb_stddef.h"" _tbb_stddef)
+-string(REGEX REPLACE "".*#define TBB_VERSION_MAJOR ([0-9]+).*"" ""\\1"" _tbb_ver_major ""${_tbb_stddef}"")
+-string(REGEX REPLACE "".*#define TBB_VERSION_MINOR ([0-9]+).*"" ""\\1"" _tbb_ver_minor ""${_tbb_stddef}"")
+-string(REGEX REPLACE "".*#define TBB_INTERFACE_VERSION ([0-9]+).*"" ""\\1"" TBB_INTERFACE_VERSION ""${_tbb_stddef}"")
+-set(TBB_VERSION ""${_tbb_ver_major}.${_tbb_ver_minor}"")
+-set(TBB_RELEASE_DIR ""\${_tbb_root}/lib"")
+-set(TBB_DEBUG_DIR ""\${_tbb_root}/debug/lib"")
++vcpkg_fixup_cmake_targets(CONFIG_PATH lib/cmake TARGET_PATH share)
+ 
+-configure_file(
+-    ${SOURCE_PATH}/cmake/templates/TBBConfigInternal.cmake.in
+-    ${CURRENT_PACKAGES_DIR}/share/tbb/TBBConfig.cmake
+-    @ONLY
+-)
+-file(READ ${CURRENT_PACKAGES_DIR}/share/tbb/TBBConfig.cmake _contents)
+-string(REPLACE
+-    ""get_filename_component(_tbb_root \""\${_tbb_root}\"" PATH)""
+-    ""get_filename_component(_tbb_root \""\${_tbb_root}\"" PATH)\nget_filename_component(_tbb_root \""\${_tbb_root}\"" PATH)""
+-    _contents
+-    ""${_contents}""
+-)
+-string(REPLACE
+-    ""set(_tbb_release_lib \""/${TBB_LIB_PREFIX}""
+-    ""set(_tbb_release_lib \""\${_tbb_root}/lib/${TBB_LIB_PREFIX}""
+-    _contents
+-    ""${_contents}""
++# Delete unnamed libraries, they are deprecated
++file(REMOVE ""${CURRENT_PACKAGES_DIR}/debug/tbb${VCPKG_TARGET_STATIC_LIBRARY_SUFFIX}""
++    ""${CURRENT_PACKAGES_DIR}/tbb${VCPKG_TARGET_STATIC_LIBRARY_SUFFIX}""
+ )
+-string(REPLACE
+-    ""set(_tbb_debug_lib \""/${TBB_LIB_PREFIX}""
+-    ""set(_tbb_debug_lib \""\${_tbb_root}/debug/lib/${TBB_LIB_PREFIX}""
+-    _contents
+-    ""${_contents}""
+-)
+-string(REPLACE ""SHARED IMPORTED)"" ""UNKNOWN IMPORTED)"" _contents ""${_contents}"")
+-file(WRITE ${CURRENT_PACKAGES_DIR}/share/tbb/TBBConfig.cmake ""${_contents}"")
++
++file(REMOVE_RECURSE ""${CURRENT_PACKAGES_DIR}/debug/include"")
++file(REMOVE_RECURSE ""${CURRENT_PACKAGES_DIR}/debug/share/TBB"")
+ 
+ # Handle copyright
+-file(COPY ${SOURCE_PATH}/LICENSE ${CMAKE_CURRENT_LIST_DIR}/usage DESTINATION ${CURRENT_PACKAGES_DIR}/share/tbb)
+-file(RENAME ${CURRENT_PACKAGES_DIR}/share/tbb/LICENSE ${CURRENT_PACKAGES_DIR}/share/tbb/copyright)
++file(INSTALL ""${SOURCE_PATH}/LICENSE.txt"" DESTINATION ""${CURRENT_PACKAGES_DIR}/share/${PORT}"" RENAME copyright)"
+vircadia/vircadia-native-core,412,b1bf855,libraries/shared/src/TBBHelpers.h,modified,13,0,13,"@@ -17,12 +17,25 @@
+ 
+ #if !defined(Q_MOC_RUN)
+ // Work around https://bugreports.qt.io/browse/QTBUG-80990
++
++// This causes a compile error in profiling.h:
++// profiling.h:229:15: error: expected unqualified-id before ‘)’ token
++//   229 |     void emit() { }
++//
++// 'emit' is defined to nothing in qt and is just syntactic sugar, so get rid of it
++#undef emit
++
+ #include <tbb/concurrent_queue.h>
+ #include <tbb/concurrent_unordered_map.h>
+ #include <tbb/concurrent_unordered_set.h>
+ #include <tbb/concurrent_vector.h>
+ #include <tbb/parallel_for.h>
+ #include <tbb/blocked_range2d.h>
++
++
++// and re-add later.
++#define emit
++
+ #endif
+ 
+ #ifdef _WIN32"
